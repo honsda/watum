@@ -21,7 +21,7 @@ Database assignment for [Studycase Group 10](https://github.com/partadox/praktik
 The project uses **MySQL/MariaDB** for development. The connection string is configured in `.env`:
 
 ```env
-DATABASE_URL="mysql://mariadb:dharon1234@coolify.bumimas12.web.id:3306/"
+DATABASE_URL="mysql://mariadb:dharon1234@coolify.bumimas12.web.id:5432/"
 ```
 
 ### Database Migrations
