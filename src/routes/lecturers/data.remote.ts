@@ -3,6 +3,7 @@ import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import { getPool } from '$lib/server/db';
+import { requireRole } from '$lib/server/auth';
 import {
 	selectLecturers,
 	insertLecturer,
@@ -12,10 +13,12 @@ import {
 import { lecturerSchema } from '$lib/validations/lecturer';
 
 export const getLecturers = query(async () => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	return selectLecturers(getPool());
 });
 
 export const getLecturer = query(v.string(), async (id) => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const [lecturer] = await selectLecturers(getPool(), { where: [['id', '=', id]] });
 	if (!lecturer) {
 		throw error(404, 'Dosen tidak ditemukan');
@@ -24,6 +27,7 @@ export const getLecturer = query(v.string(), async (id) => {
 });
 
 export const createLecturer = form(lecturerSchema, async (data) => {
+	await requireRole(['ADMIN']);
 	const [existing] = await selectLecturers(getPool(), { where: [['id', '=', data.id]] });
 	if (existing) {
 		throw error(400, 'ID dosen sudah digunakan');
@@ -44,6 +48,7 @@ export const createLecturer = form(lecturerSchema, async (data) => {
 });
 
 export const updateLecturer = form(lecturerSchema, async (data) => {
+	await requireRole(['ADMIN']);
 	const [existingEmail] = await selectLecturers(getPool(), {
 		where: [
 			['email', '=', data.email],
@@ -73,6 +78,7 @@ export const updateLecturer = form(lecturerSchema, async (data) => {
 });
 
 export const deleteLecturer = command(v.string(), async (id) => {
+	await requireRole(['ADMIN']);
 	const [lecturer] = await selectLecturers(getPool(), { where: [['id', '=', id]] });
 	if (!lecturer) {
 		throw error(404, 'Dosen tidak ditemukan');

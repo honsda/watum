@@ -3,7 +3,6 @@ import { error } from '@sveltejs/kit';
 import { verify } from 'argon2';
 import { getPool } from './db';
 import { selectUsers } from './sql';
-import type { Return } from '@prisma/client/runtime/client';
 
 interface User {
 	id: string;

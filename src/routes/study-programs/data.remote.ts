@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import { getPool } from '$lib/server/db';
+import { requireRole } from '$lib/server/auth';
 import {
 	selectStudyPrograms,
 	selectFaculties,
@@ -12,10 +13,12 @@ import {
 import { studyProgramSchema } from '$lib/validations/study-program';
 
 export const getStudyPrograms = query(async () => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	return selectStudyPrograms(getPool());
 });
 
 export const getStudyProgram = query(v.string(), async (id) => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const [sp] = await selectStudyPrograms(getPool(), { where: [['id', '=', id]] });
 	if (!sp) {
 		throw error(404, 'program studi tidak ditemukan');
@@ -24,6 +27,7 @@ export const getStudyProgram = query(v.string(), async (id) => {
 });
 
 export const createStudyProgram = form(studyProgramSchema, async (data) => {
+	await requireRole(['ADMIN']);
 	const [existing] = await selectStudyPrograms(getPool(), { where: [['id', '=', data.id]] });
 	if (existing) {
 		throw error(400, 'ID program studi sudah digunakan');
@@ -44,6 +48,7 @@ export const createStudyProgram = form(studyProgramSchema, async (data) => {
 });
 
 export const updateStudyProgram = form(studyProgramSchema, async (data) => {
+	await requireRole(['ADMIN']);
 	const [existing] = await selectStudyPrograms(getPool(), { where: [['id', '=', data.id]] });
 	if (!existing) {
 		throw error(404, 'program studi tidak ditemukan');
@@ -57,20 +62,21 @@ export const updateStudyProgram = form(studyProgramSchema, async (data) => {
 		},
 		{ id: data.id }
 	);
-    await getStudyPrograms().refresh();
-    await getStudyProgram(data.id).refresh();
-    return { success: true, id: data.id };
+	await getStudyPrograms().refresh();
+	await getStudyProgram(data.id).refresh();
+	return { success: true, id: data.id };
 });
 
 export const deleteStudyProgram = command(v.string(), async (id) => {
-    const [sp] = await selectStudyPrograms(getPool(), { where: [['id', '=', id]] });
-    if (!sp) {
-        throw error(404, 'program studi tidak ditemukan');
-    }
-    if (sp.student_count ?? 0 > 0) {
-        throw error(400, 'Program studi masih memiliki mahasiswa, hapus mahasiswa terlebih dahulu');
-    }
-    await deleteStudyProgramDb(getPool(), { id: id });
-    await getStudyPrograms().refresh();
-    return { success: true, id };
+	await requireRole(['ADMIN']);
+	const [sp] = await selectStudyPrograms(getPool(), { where: [['id', '=', id]] });
+	if (!sp) {
+		throw error(404, 'program studi tidak ditemukan');
+	}
+	if (sp.student_count ?? 0 > 0) {
+		throw error(400, 'Program studi masih memiliki mahasiswa, hapus mahasiswa terlebih dahulu');
+	}
+	await deleteStudyProgramDb(getPool(), { id: id });
+	await getStudyPrograms().refresh();
+	return { success: true, id };
 });
