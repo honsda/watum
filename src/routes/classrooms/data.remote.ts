@@ -26,9 +26,9 @@ export const getClassRoom = query(v.string(), async (id) => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const [classRoom] = await selectClassRooms(getPool(), { where: [['id', '=', id]] });
 	if (!classRoom) {
-		error(404, 'Ruang kelas tidak ditemukan');
-		return classRoom;
+		throw error(404, 'Ruang kelas tidak ditemukan');
 	}
+	return classRoom;
 });
 
 export const getClassRoomUtilization = query(

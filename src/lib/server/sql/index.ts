@@ -37,3 +37,4 @@ export * from "./update-lecturer.js";
 export * from "./update-schedule.js";
 export * from "./update-student.js";
 export * from "./update-study-program.js";
+export * from "./update-user.js";

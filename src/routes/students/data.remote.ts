@@ -3,7 +3,7 @@ import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import { hash } from 'argon2';
 import { randomUUID } from 'crypto';
-import { getPool } from '$lib/server/db';
+import { getPool, withTransaction } from '$lib/server/db';
 import { requireRole, requireUser } from '$lib/server/auth';
 import { generateNRP } from '$lib/server/NRP-generator';
 import {
@@ -31,7 +31,7 @@ export const getStudent = query(v.string(), async (id) => {
 		throw error(403, 'Anda tidak berhak melihat data mahasiswa lain');
 	}
 	const [student] = await selectStudents(getPool(), { where: [['id', '=', id]] });
-	if (!student) error(404, 'Mahasiswa tidak ditemukan');
+	if (!student) throw error(404, 'Mahasiswa tidak ditemukan');
 	return student;
 });
 
@@ -70,25 +70,26 @@ export const createStudent = form(studentSchema, async (data) => {
 	if (!studyProgram) throw error(400, 'Program studi tidak ditemukan');
 
 	const nrp = await generateNRP(data.studyProgramId, data.yearAdmitted);
-
-	await insertStudent(getPool(), {
-		id: nrp,
-		name: data.name,
-		email: data.email,
-		phone: data.phone ?? undefined,
-		address: data.address ?? undefined,
-		year_admitted: data.yearAdmitted,
-		study_program_id: data.studyProgramId
-	});
-
 	const hashedPassword = await hash(nrp);
-	await insertUser(getPool(), {
-		id: randomUUID(),
-		email: data.email,
-		password: hashedPassword,
-		role: 'STUDENT',
-		student_id: nrp,
-		lecturer_id: undefined
+	await withTransaction(async (conn) => {
+		await insertStudent(conn, {
+			id: nrp,
+			name: data.name,
+			email: data.email,
+			phone: data.phone ?? undefined,
+			address: data.address ?? undefined,
+			year_admitted: data.yearAdmitted,
+			study_program_id: data.studyProgramId
+		});
+
+		await insertUser(conn, {
+			id: randomUUID(),
+			email: data.email,
+			password: hashedPassword,
+			role: 'STUDENT',
+			student_id: nrp,
+			lecturer_id: undefined
+		});
 	});
 
 	await getStudents().refresh();
@@ -100,6 +101,8 @@ export const updateStudent = form(
 	async (data) => {
 		await requireRole(['ADMIN']);
 		const { id, ...updateData } = data;
+		const [student] = await selectStudents(getPool(), { where: [['id', '=', id]] });
+		if (!student) throw error(404, 'Mahasiswa tidak ditemukan');
 		const [existingEmail] = await selectStudents(getPool(), {
 			where: [['email', '=', updateData.email]]
 		});
@@ -130,12 +133,14 @@ export const deleteStudent = command(v.string(), async (id) => {
 	if ((student.enrollment_count ?? 0) > 0)
 		throw error(400, 'Tidak dapat menghapus mahasiswa yang memiliki data KRS');
 
-	await deleteStudentDb(getPool(), { id });
+	await withTransaction(async (conn) => {
+		await deleteStudentDb(conn, { id });
 
-	const [user] = await selectUsers(getPool(), { where: [['student_id', '=', id]] });
-	if (user?.id) {
-		await deleteUser(getPool(), { id: user.id });
-	}
+		const [user] = await selectUsers(conn, { where: [['student_id', '=', id]] });
+		if (user?.id) {
+			await deleteUser(conn, { id: user.id });
+		}
+	});
 
 	await getStudents().refresh();
 	return { success: true };

@@ -3,7 +3,7 @@ import { query, form } from '$app/server';
 import { error, invalid } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import { calculateGrade } from '$lib/validations/grade';
-import { getPool } from '$lib/server/db';
+import { getPool, withTransaction } from '$lib/server/db';
 import { requireRole, requireUser } from '$lib/server/auth';
 import {
 	selectGrades,
@@ -28,7 +28,7 @@ export const getGrades = query(async () => {
 export const getGrade = query(v.string(), async (id) => {
 	const user = await requireUser();
 	const [grade] = await selectGrades(getPool(), { where: [['id', '=', id]] });
-	if (!grade) error(404, 'Nilai tidak ditemukan');
+	if (!grade) throw error(404, 'Nilai tidak ditemukan');
 	if (user.role === 'STUDENT' && grade.student_id !== user.studentId) {
 		throw error(403, 'Anda tidak berhak melihat nilai ini');
 	}
@@ -139,43 +139,48 @@ export const batchInputGrades = form(
 	async (data) => {
 		const user = await requireRole(['LECTURER', 'ADMIN']);
 
-		for (const g of data.grades) {
-			const [enrollment] = await selectEnrollments(getPool(), {
-				where: [['id', '=', g.enrollmentId]]
-			});
+		await withTransaction(async (conn) => {
+			for (const g of data.grades) {
+				const [enrollment] = await selectEnrollments(conn, {
+					where: [['id', '=', g.enrollmentId]]
+				});
 
-			if (user.role === 'LECTURER' && enrollment?.lecturer_id !== user.lecturerId) {
-				throw error(403, `Anda tidak berhak menginput nilai untuk enrollment ${g.enrollmentId}`);
-			}
+				if (!enrollment) {
+					throw error(404, `Data KRS dengan ID ${g.enrollmentId} tidak ditemukan`);
+				}
+				if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
+					throw error(403, `Anda tidak berhak menginput nilai untuk enrollment ${g.enrollmentId}`);
+				}
 
-			const { total, letter } = calculateGrade(g.assignmentScore, g.midtermScore, g.finalScore);
-			const [existing] = await selectGrades(getPool(), {
-				where: [['enrollment_id', '=', g.enrollmentId]]
-			});
-			if (existing && existing.id) {
-				await updateGradeDb(
-					getPool(),
-					{
+				const { total, letter } = calculateGrade(g.assignmentScore, g.midtermScore, g.finalScore);
+				const [existing] = await selectGrades(conn, {
+					where: [['enrollment_id', '=', g.enrollmentId]]
+				});
+				if (existing && existing.id) {
+					await updateGradeDb(
+						conn,
+						{
+							assignment_score: g.assignmentScore,
+							midterm_score: g.midtermScore,
+							final_score: g.finalScore,
+							total_score: total,
+							letter_grade: letter
+						},
+						{ id: existing.id }
+					);
+				} else {
+					await insertGrade(conn, {
+						id: randomUUID(),
+						enrollment_id: g.enrollmentId,
 						assignment_score: g.assignmentScore,
 						midterm_score: g.midtermScore,
 						final_score: g.finalScore,
 						total_score: total,
 						letter_grade: letter
-					},
-					{ id: existing.id }
-				);
-			} else {
-				await insertGrade(getPool(), {
-					id: randomUUID(),
-					enrollment_id: g.enrollmentId,
-					assignment_score: g.assignmentScore,
-					midterm_score: g.midtermScore,
-					final_score: g.finalScore,
-					total_score: total,
-					letter_grade: letter
-				});
+					});
+				}
 			}
-		}
+		});
 		await getGrades().refresh();
 		return { success: true, count: data.grades.length };
 	}

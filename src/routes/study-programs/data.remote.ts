@@ -73,7 +73,7 @@ export const deleteStudyProgram = command(v.string(), async (id) => {
 	if (!sp) {
 		throw error(404, 'program studi tidak ditemukan');
 	}
-	if (sp.student_count ?? 0 > 0) {
+	if ((sp.student_count ?? 0) > 0) {
 		throw error(400, 'Program studi masih memiliki mahasiswa, hapus mahasiswa terlebih dahulu');
 	}
 	await deleteStudyProgramDb(getPool(), { id: id });

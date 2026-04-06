@@ -4,7 +4,7 @@ import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import { hash } from 'argon2';
 import { randomUUID } from 'crypto';
-import { getPool } from '$lib/server/db';
+import { getPool, withTransaction } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
 import {
 	selectLecturers,
@@ -41,22 +41,24 @@ export const createLecturer = form(lecturerSchema, async (data) => {
 	if (existingEmail) {
 		throw error(400, 'Email sudah digunakan');
 	}
-	await insertLecturer(getPool(), {
-		id: data.id,
-		name: data.name,
-		email: data.email,
-		phone: data.phone!,
-		address: data.address!
-	});
-
 	const hashedPassword = await hash(data.id);
-	await insertUser(getPool(), {
-		id: randomUUID(),
-		email: data.email,
-		password: hashedPassword,
-		role: 'LECTURER',
-		student_id: undefined,
-		lecturer_id: data.id
+	await withTransaction(async (conn) => {
+		await insertLecturer(conn, {
+			id: data.id,
+			name: data.name,
+			email: data.email,
+			phone: data.phone!,
+			address: data.address!
+		});
+
+		await insertUser(conn, {
+			id: randomUUID(),
+			email: data.email,
+			password: hashedPassword,
+			role: 'LECTURER',
+			student_id: undefined,
+			lecturer_id: data.id
+		});
 	});
 
 	await getLecturers().refresh();
@@ -68,7 +70,7 @@ export const updateLecturer = form(lecturerSchema, async (data) => {
 	const [existingEmail] = await selectLecturers(getPool(), {
 		where: [
 			['email', '=', data.email],
-			['id', '=', data.id]
+			['id', '<>', data.id]
 		]
 	});
 	if (existingEmail) {
@@ -99,16 +101,18 @@ export const deleteLecturer = command(v.string(), async (id) => {
 	if (!lecturer) {
 		throw error(404, 'Dosen tidak ditemukan');
 	}
-	if (lecturer.schedule_count ?? 0 > 0) {
+	if ((lecturer.schedule_count ?? 0) > 0) {
 		throw error(400, 'Dosen masih memiliki jadwal mengajar, hapus jadwal terlebih dahulu');
 	}
 
-	await deleteLecturerDb(getPool(), { id });
+	await withTransaction(async (conn) => {
+		await deleteLecturerDb(conn, { id });
 
-	const [user] = await selectUsers(getPool(), { where: [['lecturer_id', '=', id]] });
-	if (user?.id) {
-		await deleteUser(getPool(), { id: user.id });
-	}
+		const [user] = await selectUsers(conn, { where: [['lecturer_id', '=', id]] });
+		if (user?.id) {
+			await deleteUser(conn, { id: user.id });
+		}
+	});
 
 	await getLecturers().refresh();
 	return { success: true };

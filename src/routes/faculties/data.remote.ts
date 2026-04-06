@@ -53,7 +53,7 @@ export const deleteFaculty = command(v.string(), async (id) => {
 	if (!faculty) {
 		throw error(404, 'fakultas tidak ditemukan');
 	}
-	if (faculty.study_program_count ?? 0 > 0) {
+	if ((faculty.study_program_count ?? 0) > 0) {
 		throw error(400, 'fakultas masih memiliki program studi, hapus program studi terlebih dahulu');
 	}
 	await deleteFacultyDb(getPool(), { id });

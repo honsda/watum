@@ -75,7 +75,7 @@ export const deleteCourse = command(v.string(), async (id) => {
 	if (!course) {
 		throw error(404, 'mata kuliah tidak ditemukan');
 	}
-	if (course.enrollment_count ?? 0 > 0) {
+	if ((course.enrollment_count ?? 0) > 0) {
 		throw error(
 			400,
 			'mata kuliah masih memiliki mahasiswa yang terdaftar, hapus data KRS terlebih dahulu'
