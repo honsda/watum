@@ -2,11 +2,16 @@
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
+import { hash } from 'argon2';
+import { randomUUID } from 'crypto';
 import { getPool } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
 import {
 	selectLecturers,
+	selectUsers,
 	insertLecturer,
+	insertUser,
+	deleteUser,
 	updateLecturer as updateLecturerDb,
 	deleteLectuer as deleteLecturerDb
 } from '$lib/server/sql';
@@ -43,6 +48,17 @@ export const createLecturer = form(lecturerSchema, async (data) => {
 		phone: data.phone!,
 		address: data.address!
 	});
+
+	const hashedPassword = await hash(data.id);
+	await insertUser(getPool(), {
+		id: randomUUID(),
+		email: data.email,
+		password: hashedPassword,
+		role: 'LECTURER',
+		student_id: undefined,
+		lecturer_id: data.id
+	});
+
 	await getLecturers().refresh();
 	return { success: true, id: data.id };
 });
@@ -86,7 +102,14 @@ export const deleteLecturer = command(v.string(), async (id) => {
 	if (lecturer.schedule_count ?? 0 > 0) {
 		throw error(400, 'Dosen masih memiliki jadwal mengajar, hapus jadwal terlebih dahulu');
 	}
+
 	await deleteLecturerDb(getPool(), { id });
+
+	const [user] = await selectUsers(getPool(), { where: [['lecturer_id', '=', id]] });
+	if (user?.id) {
+		await deleteUser(getPool(), { id: user.id });
+	}
+
 	await getLecturers().refresh();
 	return { success: true };
 });

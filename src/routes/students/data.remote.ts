@@ -1,6 +1,8 @@
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
+import { hash } from 'argon2';
+import { randomUUID } from 'crypto';
 import { getPool } from '$lib/server/db';
 import { requireRole, requireUser } from '$lib/server/auth';
 import { generateNRP } from '$lib/server/NRP-generator';
@@ -8,7 +10,10 @@ import {
 	selectStudents,
 	selectStudyPrograms,
 	selectGrades,
+	selectUsers,
 	insertStudent,
+	insertUser,
+	deleteUser,
 	updateStudent as updateStudentDb,
 	deleteStudent as deleteStudentDb
 } from '$lib/server/sql';
@@ -75,6 +80,17 @@ export const createStudent = form(studentSchema, async (data) => {
 		year_admitted: data.yearAdmitted,
 		study_program_id: data.studyProgramId
 	});
+
+	const hashedPassword = await hash(nrp);
+	await insertUser(getPool(), {
+		id: randomUUID(),
+		email: data.email,
+		password: hashedPassword,
+		role: 'STUDENT',
+		student_id: nrp,
+		lecturer_id: undefined
+	});
+
 	await getStudents().refresh();
 	return { success: true, nrp };
 });
@@ -115,5 +131,12 @@ export const deleteStudent = command(v.string(), async (id) => {
 		throw error(400, 'Tidak dapat menghapus mahasiswa yang memiliki data KRS');
 
 	await deleteStudentDb(getPool(), { id });
+
+	const [user] = await selectUsers(getPool(), { where: [['student_id', '=', id]] });
+	if (user?.id) {
+		await deleteUser(getPool(), { id: user.id });
+	}
+
 	await getStudents().refresh();
+	return { success: true };
 });
