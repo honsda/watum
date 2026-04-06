@@ -1516,6 +1516,160 @@ export const deleteCourse = command(v.string(), async (id) => {
 });
 ```
 
+### 5.9 User Management
+
+**SQL Files:**
+
+```sql
+-- src/lib/server/sql/select-users.sql  (@dynamicQuery)
+-- @dynamicQuery
+SELECT
+    u.id, u.email, u.role, u.password, u.student_id, u.lecturer_id,
+    s.name as student_name, l.name as lecturer_name
+FROM users u
+LEFT JOIN students s ON u.student_id = s.id
+LEFT JOIN lecturers l ON u.lecturer_id = l.id
+```
+
+```sql
+-- src/lib/server/sql/insert-user.sql
+INSERT INTO users (id, email, password, role, student_id, lecturer_id)
+VALUES (:id, :email, :password, :role, :student_id, :lecturer_id)
+```
+
+```sql
+-- src/lib/server/sql/update-user.sql
+UPDATE users
+SET email = :email, role = :role, student_id = :student_id, lecturer_id = :lecturer_id
+WHERE id = :id
+```
+
+```sql
+-- src/lib/server/sql/delete-user.sql
+DELETE FROM users WHERE id = :id
+```
+
+**Validation Schema:**
+
+```ts
+// src/lib/validations/user.ts
+import * as v from 'valibot';
+
+export const userRoleSchema = v.picklist(['ADMIN', 'STUDENT', 'LECTURER']);
+
+export const userSchema = v.object({
+	email: v.pipe(v.string(), v.email('Email tidak valid')),
+	password: v.pipe(v.string(), v.minLength(6, 'Password minimal 6 karakter')),
+	role: userRoleSchema,
+	studentId: v.optional(v.string()),
+	lecturerId: v.optional(v.string())
+});
+```
+
+**Remote Functions:**
+
+```ts
+// src/routes/(app)/users/data.remote.ts
+import * as v from 'valibot';
+import { query, form, command } from '$app/server';
+import { error } from '@sveltejs/kit';
+import { hash } from 'argon2';
+import { randomUUID } from 'crypto';
+import { getPool } from '$lib/server/db';
+import { requireRole } from '$lib/server/auth';
+import {
+	selectUsers,
+	insertUser,
+	updateUser as updateUserDb,
+	deleteUser as deleteUserDb
+} from '$lib/server/sql';
+import { userSchema } from '$lib/validations/user';
+
+export const getUsers = query(async () => {
+	await requireRole(['ADMIN']);
+	return await selectUsers(getPool());
+});
+
+export const getUser = query(v.string(), async (id) => {
+	await requireRole(['ADMIN']);
+	const [user] = await selectUsers(getPool(), { where: [['id', '=', id]] });
+	if (!user) throw error(404, 'User tidak ditemukan');
+	return user;
+});
+
+export const createUser = form(userSchema, async (data) => {
+	await requireRole(['ADMIN']);
+
+	// Check email uniqueness
+	const [existing] = await selectUsers(getPool(), { where: [['email', '=', data.email]] });
+	if (existing) throw error(400, 'Email sudah terdaftar');
+
+	// Validate role-specific IDs
+	if (data.role === 'STUDENT' && !data.studentId) {
+		throw error(400, 'Student ID wajib diisi untuk role STUDENT');
+	}
+	if (data.role === 'LECTURER' && !data.lecturerId) {
+		throw error(400, 'Lecturer ID wajib diisi untuk role LECTURER');
+	}
+
+	const hashedPassword = await hash(data.password);
+	const id = randomUUID();
+
+	await insertUser(getPool(), {
+		id,
+		email: data.email,
+		password: hashedPassword,
+		role: data.role,
+		student_id: data.studentId ?? null,
+		lecturer_id: data.lecturerId ?? null
+	});
+
+	await getUsers().refresh();
+	return { success: true, id };
+});
+
+export const updateUser = form(
+	v.object({ id: v.string(), ...userSchema.entries }),
+	async (data) => {
+		await requireRole(['ADMIN']);
+		const { id, password, ...updateData } = data;
+
+		// Check email uniqueness (excluding current user)
+		const [existing] = await selectUsers(getPool(), {
+			where: [['email', '=', updateData.email]]
+		});
+		if (existing && existing.id !== id) {
+			throw error(400, 'Email sudah digunakan');
+		}
+
+		await updateUserDb(
+			getPool(),
+			{
+				email: updateData.email,
+				role: updateData.role,
+				student_id: updateData.studentId ?? null,
+				lecturer_id: updateData.lecturerId ?? null
+			},
+			{ id }
+		);
+
+		await getUsers().refresh();
+		await getUser(id).refresh();
+		return { success: true };
+	}
+);
+
+export const deleteUser = command(v.string(), async (id) => {
+	await requireRole(['ADMIN']);
+	const [user] = await selectUsers(getPool(), { where: [['id', '=', id]] });
+	if (!user) throw error(404, 'User tidak ditemukan');
+
+	await deleteUserDb(getPool(), { id });
+	await getUsers().refresh();
+	return { success: true };
+});
+```
+
 ## 6. Validation
 
 ### 6.1 Shared Validation Schemas
