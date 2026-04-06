@@ -101,7 +101,7 @@ Note: enrollment create/update/delete already uses backend transactions (`withTr
 
 - query: `getGrades`, `getGrade`, `getGradesByCourse`, `getGradesByStudent`
 - form: `createGrade`, `updateGrade`, `batchInputGrades`
-- command: none
+- command: `deleteGrade`
 
 `batchInputGrades` is transactional (all-or-nothing).
 
