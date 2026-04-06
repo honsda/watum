@@ -1,0 +1,2 @@
+DELETE FROM lecturers
+WHERE `id` = :id

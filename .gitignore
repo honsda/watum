@@ -13,13 +13,12 @@ node_modules
 # OS
 .DS_Store
 Thumbs.db
-
 # Env
 .env
 .env.*
 !.env.example
 !.env.test
-
+.kilo/kilo.json
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*

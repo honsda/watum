@@ -1,0 +1,24 @@
+INSERT INTO students
+(
+    `id`,
+    `name`,
+    `email`,
+    `phone`,
+    `address`,
+    `year_admitted`,
+    `study_program_id`,
+    `created_at`,
+    `updated_at`
+)
+VALUES
+(
+    :id,
+    :name,
+    :email,
+    :phone,
+    :address,
+    :year_admitted,
+    :study_program_id,
+    :created_at,
+    :updated_at
+)

@@ -1,0 +1,2 @@
+DELETE FROM study_programs
+WHERE `id` = :id

@@ -4,10 +4,215 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider = "prisma-client"
-  output   = "../../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
+}
+
+// Ruang Kelas
+enum ClassRoomType {
+  REGULER
+  LAB_KOMPUTER
+  LAB_BAHASA
+  AUDITORIUM
+}
+
+model ClassRoom {
+  id            String        @id @default(cuid())
+  name          String        @unique
+  classRoomType ClassRoomType
+  capacity      Int
+  hasProjector  Boolean       @default(false)
+  hasAC         Boolean       @default(false)
+
+  enrollments Enrollment[]
+  schedules   Schedule[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("class_rooms")
+}
+
+// Prodi / Fakultas
+model StudyProgram {
+  id        String    @id
+  name      String    @unique
+  head      String
+  facultyId String
+  faculty   Faculty   @relation(fields: [facultyId], references: [id])
+  students  Student[]
+  courses   Course[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("study_programs")
+}
+
+model Faculty {
+  id   String @id
+  name String @unique
+
+  studyPrograms StudyProgram[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("faculties")
+}
+
+// Mahasiswa
+model Student {
+  id             String  @id
+  name           String
+  email          String  @unique
+  phone          String?
+  address        String?
+  yearAdmitted   Int 
+  studyProgramId String
+
+  studyProgram StudyProgram @relation(fields: [studyProgramId], references: [id])
+  enrollments  Enrollment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User?
+
+  @@map("students")
+}
+
+// Dosen
+model Lecturer {
+  id      String  @id
+  name    String
+  email   String  @unique
+  phone   String?
+  address String?
+
+  courses   Course[]
+  schedules Schedule[]
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  enrollments Enrollment[]
+  user        User?
+
+  @@map("lecturers")
+}
+
+// Mata Kuliah
+model Course {
+  id             String @id
+  name           String
+  credits        Int
+  studyProgramId String
+
+  studyProgram StudyProgram @relation(fields: [studyProgramId], references: [id])
+  enrollments  Enrollment[]
+  lecturers    Lecturer[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("courses")
+}
+
+// Jadwal Kuliah
+enum Day {
+  SENIN
+  SELASA
+  RABU
+  KAMIS
+  JUMAT
+  SABTU
+}
+
+model Schedule {
+  id          String  @id @default(cuid())
+  classRoomId String
+  day         Day
+  startTime   DateTime @db.DateTime(3) // Stored as UTC, with millisecond precision
+  endTime     DateTime @db.DateTime(3) // Stored as UTC, with millisecond precision
+  lecturerId  String?
+
+  classRoom  ClassRoom   @relation(fields: [classRoomId], references: [id])
+  lecturer   Lecturer?   @relation(fields: [lecturerId], references: [id])
+  enrollment Enrollment?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("schedules")
+}
+
+model Enrollment {
+  id           String @id @default(cuid())
+  studentId    String
+  courseId     String
+  classRoomId  String
+  lecturerId   String
+  scheduleId   String @unique
+  semester     String
+  academicYear String
+
+  student   Student   @relation(fields: [studentId], references: [id])
+  course    Course    @relation(fields: [courseId], references: [id])
+  lecturer  Lecturer  @relation(fields: [lecturerId], references: [id])
+  schedule  Schedule  @relation(fields: [scheduleId], references: [id])
+  classRoom ClassRoom @relation(fields: [classRoomId], references: [id])
+  grade     Grade?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("enrollments")
+}
+
+// Nilai
+
+model Grade {
+  id           String @id @default(cuid())
+  enrollmentId String @unique
+
+  assignmentScore Float?
+  midtermScore    Float?
+  finalScore      Float?
+  totalScore      Float?
+  letterGrade     String?
+
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("grades")
+}
+
+// User
+
+enum Role {
+  ADMIN
+  STUDENT
+  LECTURER
+}
+
+model User {
+  id       String @id @default(cuid())
+  email    String @unique
+  password String
+  role     Role
+
+  studentId  String? @unique
+  lecturerId String? @unique
+
+  student  Student?  @relation(fields: [studentId], references: [id])
+  lecturer Lecturer? @relation(fields: [lecturerId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
 }

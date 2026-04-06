@@ -1,0 +1,2 @@
+DELETE FROM enrollments
+WHERE `id` = :id

@@ -1,5 +1,58 @@
 {
 	"files.associations": {
 		"*.css": "tailwindcss"
-	}
+	},
+	"cSpell.enabled": false,
+	"editor.quickSuggestions": {
+		"strings": "on"
+	},
+	"sqltools.connections": [
+		{
+			"mysqlOptions": {
+				"authProtocol": "default",
+				"enableSsl": "Disabled"
+			},
+			"ssh": "Disabled",
+			"previewLimit": 50,
+			"server": "coolify.bumimas12.web.id",
+			"port": 5432,
+			"sshOptions": {
+				"port": 22
+			},
+			"driver": "MariaDB",
+			"name": "watum",
+			"database": "projectbasdat",
+			"username": "mariadb",
+			"askForPassword": true
+		}
+	],
+	"js/ts.tsdk.path": "node_modules/typescript/lib",
+	"dbcode.connections": [
+		{
+			"connectionId": "CBNm9JumBvKNcJTtVptWR",
+			"name": "projectbasdat",
+			"driver": "mariadb",
+			"connectionType": "host",
+			"host": "coolify.bumimas12.web.id",
+			"port": 5432,
+			"ssl": false,
+			"authMethod": "password",
+			"username": "mariadb",
+			"password": "",
+			"savePassword": "secretStorage",
+			"database": "projectbasdat",
+			"readOnly": false,
+			"postConnectionSqlType": "inline",
+			"connectionTimeout": 30,
+			"pinnedConnectionTimeout": "0",
+			"driverOptions": {
+				"retrievePublickey": true,
+				"disableMultiStatements": false,
+				"permitLocalInfile": false
+			},
+			"introspection": {
+				"progressive": false
+			}
+		}
+	]
 }

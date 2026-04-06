@@ -10,23 +10,48 @@ Database assignment for [Studycase Group 10](https://github.com/partadox/praktik
 
 # sv
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+**Watum (Website Akademik Terintegrasi untuk Mahasiswa)** is a website that integrates the KRS system with the university's class and schedule management framework, and end semester results.
 
-## Creating a project
+Database assignment for [Studycase Group 10](https://github.com/partadox/praktikum-mysql-case/blob/main/kelompok10_akademik_b.md)
 
-If you're seeing this, you've probably already done this step. Congrats!
+## Tech Stack
 
-```sh
-# create a new project
-npx sv create my-app
+- **Framework**: [SvelteKit](https://svelte.dev/docs/kit) - Full-stack Svelte framework
+- **Database**: [Prisma](https://prisma.io/) with MySQL/MariaDB
+- **ORM**: Prisma Client for database operations
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/) for utility-first CSS
+- **UI Components**: [shadcn-svelte](https://www.shadcn-svelte.com/) for accessible components
+- **Testing**: [Playwright](https://playwright.dev/) for E2E testing
+- **Linting**: ESLint + Prettier for code quality
+
+## Database Configuration
+
+### Development Database
+
+The project uses **MySQL/MariaDB** for development. The connection string is configured in `.env`:
+
+```env
+DATABASE_URL="mysql://mariadb:dharon1234@coolify.bumimas12.web.id:5432/"
 ```
 
-To recreate this project with the same configuration:
+### Database Migrations
 
 ```sh
-# recreate this project
-npx sv@0.13.1 create --template minimal --types ts --add prettier eslint playwright tailwindcss="plugins:none" sveltekit-adapter="adapter:node" mcp="ide:other+setup:remote" --install npm .
+# Generate migration from schema changes
+npx prisma migrate dev --name <migration_name>
+
+# Deploy migrations to database
+npx prisma migrate deploy
+
+# Open Prisma Studio (database GUI)
+npx prisma studio
 ```
+
+## Group 10
+
+- Muhammad Abdullah
+- Dharon Yusuf
+- Hans Jovan
 
 ## Developing
 

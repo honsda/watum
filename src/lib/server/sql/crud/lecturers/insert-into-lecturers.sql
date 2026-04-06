@@ -1,0 +1,20 @@
+INSERT INTO lecturers
+(
+    `id`,
+    `name`,
+    `email`,
+    `phone`,
+    `address`,
+    `created_at`,
+    `updated_at`
+)
+VALUES
+(
+    :id,
+    :name,
+    :email,
+    :phone,
+    :address,
+    :created_at,
+    :updated_at
+)
