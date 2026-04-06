@@ -459,6 +459,8 @@ DELETE FROM students WHERE id = :id
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
+import { hash } from 'argon2';
+import { randomUUID } from 'crypto';
 import { getPool } from '$lib/server/db';
 import { requireRole, requireUser } from '$lib/server/auth';
 import { generateNRP } from '$lib/server/NRP-generator';
@@ -466,7 +468,10 @@ import {
 	selectStudents,
 	selectStudyPrograms,
 	selectGrades,
+	selectUsers,
 	insertStudent,
+	insertUser,
+	deleteUser,
 	updateStudent as updateStudentDb,
 	deleteStudent as deleteStudentDb
 } from '$lib/server/sql';
@@ -535,6 +540,18 @@ export const createStudent = form(studentSchema, async (data) => {
 		year_admitted: data.yearAdmitted,
 		study_program_id: data.studyProgramId
 	});
+
+	// Create user account with NRP as default password
+	const hashedPassword = await hash(nrp);
+	await insertUser(getPool(), {
+		id: randomUUID(),
+		email: data.email,
+		password: hashedPassword,
+		role: 'STUDENT',
+		student_id: nrp,
+		lecturer_id: null
+	});
+
 	await getStudents().refresh();
 	return { success: true, nrp };
 });
@@ -575,7 +592,15 @@ export const deleteStudent = command(v.string(), async (id) => {
 		throw error(400, 'Tidak dapat menghapus mahasiswa yang memiliki data KRS');
 
 	await deleteStudentDb(getPool(), { id });
+
+	// Delete associated user account
+	const [user] = await selectUsers(getPool(), { where: [['student_id', '=', id]] });
+	if (user?.id) {
+		await deleteUser(getPool(), { id: user.id });
+	}
+
 	await getStudents().refresh();
+	return { success: true };
 });
 ```
 
@@ -1337,11 +1362,16 @@ DELETE FROM lecturers WHERE id = :id
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
+import { hash } from 'argon2';
+import { randomUUID } from 'crypto';
 import { getPool } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
 import {
 	selectLecturers,
+	selectUsers,
 	insertLecturer,
+	insertUser,
+	deleteUser,
 	updateLecturer as updateLecturerDb,
 	deleteLectuer as deleteLecturerDb
 } from '$lib/server/sql';
@@ -1374,6 +1404,18 @@ export const createLecturer = form(lecturerSchema, async (data) => {
 		phone: data.phone ?? null,
 		address: data.address ?? null
 	});
+
+	// Create user account with lecturer ID as default password
+	const hashedPassword = await hash(data.id);
+	await insertUser(getPool(), {
+		id: randomUUID(),
+		email: data.email,
+		password: hashedPassword,
+		role: 'LECTURER',
+		student_id: null,
+		lecturer_id: data.id
+	});
+
 	await getLecturers().refresh();
 	return { success: true };
 });
@@ -1408,7 +1450,15 @@ export const deleteLecturer = command(v.string(), async (id) => {
 		throw error(400, 'Tidak dapat menghapus dosen yang masih memiliki jadwal');
 
 	await deleteLecturerDb(getPool(), { id });
+
+	// Delete associated user account
+	const [user] = await selectUsers(getPool(), { where: [['lecturer_id', '=', id]] });
+	if (user?.id) {
+		await deleteUser(getPool(), { id: user.id });
+	}
+
 	await getLecturers().refresh();
+	return { success: true };
 });
 ```
 
