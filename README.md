@@ -14,16 +14,6 @@ Database assignment for [Studycase Group 10](https://github.com/partadox/praktik
 
 Database assignment for [Studycase Group 10](https://github.com/partadox/praktikum-mysql-case/blob/main/kelompok10_akademik_b.md)
 
-## Tech Stack
-
-- **Framework**: [SvelteKit](https://svelte.dev/docs/kit) - Full-stack Svelte framework
-- **Database**: [Prisma](https://prisma.io/) with MySQL/MariaDB
-- **ORM**: Prisma Client for database operations
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/) for utility-first CSS
-- **UI Components**: [shadcn-svelte](https://www.shadcn-svelte.com/) for accessible components
-- **Testing**: [Playwright](https://playwright.dev/) for E2E testing
-- **Linting**: ESLint + Prettier for code quality
-
 ## Database Configuration
 
 ### Development Database
@@ -47,11 +37,6 @@ npx prisma migrate deploy
 npx prisma studio
 ```
 
-## Group 10
-
-- Muhammad Abdullah
-- Dharon Yusuf
-- Hans Jovan
 
 ## Developing
 
