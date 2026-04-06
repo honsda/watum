@@ -23,6 +23,7 @@ export type SelectGradesResult = {
     course_id?: string;
     course_name?: string;
     credits?: number;
+    lecturer_id?: string;
 }
 
 export type SelectGradesSelect = {
@@ -42,6 +43,7 @@ export type SelectGradesSelect = {
     course_id?: boolean;
     course_name?: boolean;
     credits?: boolean;
+    lecturer_id?: boolean;
 }
 
 const selectFragments = {
@@ -61,6 +63,7 @@ const selectFragments = {
     course_id: `c.id`,
     course_name: `c.name`,
     credits: `c.credits`,
+    lecturer_id: `e.lecturer_id`,
 } as const;
 
 const NumericOperatorList = ['=', '<>', '>', '<', '>=', '<='] as const;
@@ -118,6 +121,9 @@ export type SelectGradesWhere =
     | ['credits', NumericOperator, number | null]
     | ['credits', SetOperator, number[]]
     | ['credits', BetweenOperator, number | null, number | null]
+    | ['lecturer_id', StringOperator, string | null]
+    | ['lecturer_id', SetOperator, string[]]
+    | ['lecturer_id', BetweenOperator, string | null, string | null]
 
 export async function selectGrades(connection: Connection, params?: SelectGradesDynamicParams): Promise<SelectGradesResult[]> {
     const where = whereConditionsToObject(params?.where);
@@ -171,6 +177,9 @@ export async function selectGrades(connection: Connection, params?: SelectGrades
     if (params?.select == null || params.select.credits) {
         sql = appendSelect(sql, `c.credits`);
     }
+    if (params?.select == null || params.select.lecturer_id) {
+        sql = appendSelect(sql, `e.lecturer_id`);
+    }
     sql += EOL + `FROM grades g`;
     if (params?.select == null
         || params.select.student_id
@@ -179,12 +188,14 @@ export async function selectGrades(connection: Connection, params?: SelectGrades
         || params.select.course_id
         || params.select.course_name
         || params.select.credits
+        || params.select.lecturer_id
         || where.student_id != null
         || where.student_name != null
         || where.student_email != null
         || where.course_id != null
         || where.course_name != null
-        || where.credits != null) {
+        || where.credits != null
+        || where.lecturer_id != null) {
         sql += EOL + `INNER JOIN enrollments e ON g.enrollment_id = e.id`;
     }
     if (params?.select == null
@@ -275,6 +286,9 @@ function mapArrayToSelectGradesResult(data: any, select?: SelectGradesSelect) {
     }
     if (select == null || select.credits) {
         result.credits = data[rowIndex++];
+    }
+    if (select == null || select.lecturer_id) {
+        result.lecturer_id = data[rowIndex++];
     }
     return result;
 }

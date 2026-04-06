@@ -2,7 +2,8 @@ import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error, invalid } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
-import { getPool } from '$lib/server';
+import { getPool, withTransaction } from '$lib/server';
+import { requireRole, requireUser } from '$lib/server/auth';
 import { parseISO, formatDateTime } from '$lib/time-helpers';
 import {
 	selectEnrollments,
@@ -17,26 +18,47 @@ import {
 import { enrollmentSchema } from '$lib/validations/enrollment';
 
 export const getEnrollments = query(async () => {
+	const user = await requireUser();
+	if (user.role === 'STUDENT') {
+		return await selectEnrollments(getPool(), {
+			where: [['student_id', '=', user.studentId!]]
+		});
+	}
+	if (user.role === 'LECTURER') {
+		return await selectEnrollments(getPool(), {
+			where: [['lecturer_id', '=', user.lecturerId!]]
+		});
+	}
 	return selectEnrollments(getPool());
 });
 
 export const getEnrollment = query(v.string(), async (id) => {
+	const user = await requireUser();
 	const [enrollment] = await selectEnrollments(getPool(), { where: [['id', '=', id]] });
 	if (!enrollment) {
 		throw error(404, 'Data KRS tidak ditemukan');
+	}
+	if (user.role === 'STUDENT' && enrollment.student_id !== user.studentId) {
+		throw error(403, 'Anda tidak berhak melihat data KRS ini');
+	}
+	if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
+		throw error(403, 'Anda tidak berhak melihat data KRS ini');
 	}
 	return enrollment;
 });
 
 export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
+	const user = await requireRole(['ADMIN', 'STUDENT']);
+	if (user.role === 'STUDENT' && data.studentId !== user.studentId) {
+		throw error(403, 'Anda tidak berhak membuat KRS untuk mahasiswa lain');
+	}
+
 	const startDate = parseISO(data.startTime);
 	const endDate = parseISO(data.endTime);
 
 	if (endDate <= startDate) {
 		invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
 	}
-	// const durationStr = getDuration(startDate, endDate, 'simple');
-	// const durationHours = parseFloat(durationStr);
 
 	const existingSchedules = await selectSchedules(getPool(), {
 		where: [
@@ -72,25 +94,27 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 	}
 
 	const scheduleId = randomUUID();
-	await insertSchedule(getPool(), {
-		id: scheduleId,
-		class_room_id: data.classRoomId,
-		day: data.day,
-		start_time: startDate,
-		end_time: endDate,
-		lecturer_id: data.lecturerId
-	});
-
 	const enrollmentId = randomUUID();
-	await insertEnrollment(getPool(), {
-		id: enrollmentId,
-		student_id: data.studentId,
-		course_id: data.courseId,
-		class_room_id: data.classRoomId,
-		lecturer_id: data.lecturerId,
-		schedule_id: scheduleId,
-		semester: data.semester,
-		academic_year: data.academicYear
+	await withTransaction(async (conn) => {
+		await insertSchedule(conn, {
+			id: scheduleId,
+			class_room_id: data.classRoomId,
+			day: data.day,
+			start_time: startDate,
+			end_time: endDate,
+			lecturer_id: data.lecturerId
+		});
+
+		await insertEnrollment(conn, {
+			id: enrollmentId,
+			student_id: data.studentId,
+			course_id: data.courseId,
+			class_room_id: data.classRoomId,
+			lecturer_id: data.lecturerId,
+			schedule_id: scheduleId,
+			semester: data.semester,
+			academic_year: data.academicYear
+		});
 	});
 
 	await getEnrollments().refresh();
@@ -100,6 +124,7 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 export const updateEnrollment = form(
 	v.object({ id: v.string(), ...enrollmentSchema.entries }),
 	async (data, issue) => {
+		await requireRole(['ADMIN']);
 		const [enrollment] = await selectEnrollments(getPool(), { where: [['id', '=', data.id]] });
 		if (!enrollment) {
 			throw error(404, 'Data KRS tidak ditemukan');
@@ -149,29 +174,31 @@ export const updateEnrollment = form(
 				issue.courseId('Mahasiswa sudah terdaftar di mata kuliah ini pada semester yang sama')
 			);
 		}
-		await updateSchedule(
-			getPool(),
-			{
-				class_room_id: data.classRoomId,
-				day: data.day,
-				start_time: startDate,
-				end_time: endDate,
-				lecturer_id: data.lecturerId
-			},
-			{ id: enrollment.schedule_id! }
-		);
-		await updateEnrollmentDb(
-			getPool(),
-			{
-				student_id: data.studentId,
-				course_id: data.courseId,
-				class_room_id: data.classRoomId,
-				lecturer_id: data.lecturerId,
-				semester: data.semester,
-				academic_year: data.academicYear
-			},
-			{ id: data.id }
-		);
+		await withTransaction(async (conn) => {
+			await updateSchedule(
+				conn,
+				{
+					class_room_id: data.classRoomId,
+					day: data.day,
+					start_time: startDate,
+					end_time: endDate,
+					lecturer_id: data.lecturerId
+				},
+				{ id: enrollment.schedule_id! }
+			);
+			await updateEnrollmentDb(
+				conn,
+				{
+					student_id: data.studentId,
+					course_id: data.courseId,
+					class_room_id: data.classRoomId,
+					lecturer_id: data.lecturerId,
+					semester: data.semester,
+					academic_year: data.academicYear
+				},
+				{ id: data.id }
+			);
+		});
 		await getEnrollments().refresh();
 		await getEnrollment(data.id).refresh();
 		return { success: true };
@@ -179,12 +206,15 @@ export const updateEnrollment = form(
 );
 
 export const deleteEnrollment = command(v.string(), async (id) => {
+	await requireRole(['ADMIN']);
 	const [enrollment] = await selectEnrollments(getPool(), { where: [['id', '=', id]] });
 	if (!enrollment) {
 		throw error(404, 'Data KRS tidak ditemukan');
 	}
-	await deleteEnrollmentDb(getPool(), { id });
-	await deleteSchedule(getPool(), { id: enrollment.schedule_id! });
+	await withTransaction(async (conn) => {
+		await deleteEnrollmentDb(conn, { id });
+		await deleteSchedule(conn, { id: enrollment.schedule_id! });
+	});
 	await getEnrollments().refresh();
 	return { success: true };
 });

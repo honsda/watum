@@ -15,7 +15,8 @@ SELECT
     sp.name AS study_program_name,
     c.id AS course_id,
     c.name AS course_name,
-    c.credits
+    c.credits,
+    e.lecturer_id
 FROM grades g
 INNER JOIN enrollments e ON g.enrollment_id = e.id
 INNER JOIN students s ON e.student_id = s.id

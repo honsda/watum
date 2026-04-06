@@ -1,275 +1,167 @@
-# Remote Functions - Frontend Guide
+# Frontend Guide (Current Project)
 
-## Quick Start
+This guide explains the current frontend state of the `watum` project, and how the data layer works using SvelteKit Remote Functions.
 
-Remote functions are your API. Import and use them directly in your Svelte components.
+## 1. Current Frontend Status
+
+The project currently has:
+
+- Root layout: `src/routes/+layout.svelte`
+- Global styling: `src/routes/layout.css` (Tailwind v4 + shadcn-svelte tokens)
+- Basic landing placeholder: `src/routes/+page.svelte`
+- Demo routes:
+  - `src/routes/demo/+page.svelte`
+  - `src/routes/demo/playwright/+page.svelte`
+
+For business modules (classrooms, courses, students, etc.), each route folder currently contains `data.remote.ts`, but full CRUD UI pages have not been implemented yet.
+
+## 2. Stack & UI Foundation
+
+- Framework: SvelteKit (`@sveltejs/kit`)
+- Runtime syntax: Svelte 5 (runes)
+- Styling: Tailwind CSS v4
+- Component baseline: shadcn-svelte (`src/lib/components/ui`)
+- Utility helper: `cn()` in `src/lib/utils.ts`
+
+## 3. Data Access Pattern (Remote Functions)
+
+In this project, the frontend reads/writes data through module-level `data.remote.ts` files.
+
+The three function types are:
+
+- `query` -> read data (reactive store)
+- `form` -> submit validated payloads
+- `command` -> simple argument-based actions (for example, delete by id)
+
+Example module-page pattern (for example, `src/routes/courses/+page.svelte`):
 
 ```svelte
 <script lang="ts">
 	import { getCourses, createCourse, deleteCourse } from './data.remote';
 
-	// Queries return reactive stores
 	const courses = getCourses();
-</script>
 
-{#each $courses as course}
-	<div>{course.name}</div>
-{/each}
-```
-
-## Function Types
-
-| Type      | Purpose        | Returns                  |
-| --------- | -------------- | ------------------------ |
-| `query`   | Fetch data     | Reactive store (`$data`) |
-| `form`    | Submit forms   | Promise with result      |
-| `command` | Simple actions | Promise with result      |
-
-## Reading Data
-
-### Fetch a List
-
-```svelte
-<script lang="ts">
-	import { getCourses } from './data.remote';
-
-	const courses = getCourses(); // Returns a store
-</script>
-
-{#if $courses}
-	<ul>
-		{#each $courses as course}
-			<li>{course.name} ({course.credits} credits)</li>
-		{/each}
-	</ul>
-{/if}
-```
-
-### Fetch Single Item
-
-```svelte
-<script lang="ts">
-	import { getCourse } from './data.remote';
-
-	let { id } = $props();
-	const course = getCourse(id); // Pass ID as parameter
-</script>
-
-{#if $course}
-	<h1>{$course.name}</h1>
-{/if}
-```
-
-## Writing Data
-
-### Create (Form Submission)
-
-```svelte
-<script lang="ts">
-	import { createCourse, getCourses } from './data.remote';
-
-	let formData = $state({
+	let newCourse = $state({
 		id: '',
 		name: '',
 		credits: 3,
 		studyProgramId: ''
 	});
 
-	async function handleSubmit(e: Event) {
-		e.preventDefault();
-
-		const result = await createCourse(formData);
-
-		if (result.success) {
-			// Cache auto-refreshes! No manual refetch needed.
-			formData = { id: '', name: '', credits: 3, studyProgramId: '' };
-		}
+	async function onCreate() {
+		await createCourse(newCourse);
 	}
-</script>
 
-<form onsubmit={handleSubmit}>
-	<input bind:value={formData.id} placeholder="Course ID" required />
-	<input bind:value={formData.name} placeholder="Name" required />
-	<input type="number" bind:value={formData.credits} min="1" max="6" />
-	<button type="submit">Create</button>
-</form>
-```
-
-### Update
-
-```svelte
-<script lang="ts">
-	import { updateCourse, getCourse } from './data.remote';
-
-	let { id } = $props();
-	const course = getCourse(id);
-
-	async function saveChanges() {
-		await updateCourse({
-			id,
-			...$course
-		});
-		// UI updates automatically after cache refresh
+	async function onDelete(id: string) {
+		await deleteCourse(id);
 	}
-</script>
-```
-
-### Delete
-
-```svelte
-<script lang="ts">
-	import { deleteCourse, getCourses } from './data.remote';
-
-	async function remove(id: string) {
-		if (confirm('Delete this course?')) {
-			await deleteCourse(id);
-			// List auto-refreshes
-		}
-	}
-</script>
-
-<button onclick={() => remove(course.id)}>Delete</button>
-```
-
-## Error Handling
-
-```svelte
-<script lang="ts">
-	import { getCourse, createCourse } from './data.remote';
-
-	let error = $state<string | null>(null);
-
-	async function handleSubmit(data: CourseData) {
-		error = null;
-		try {
-			await createCourse(data);
-		} catch (e: any) {
-			// Backend throws error(404) or error(400)
-			error = e.body?.message || 'Something went wrong';
-		}
-	}
-</script>
-
-{#if error}
-	<div class="error">{error}</div>
-{/if}
-```
-
-## Working with Related Data
-
-Sometimes you need data from multiple sources:
-
-```svelte
-<script lang="ts">
-	import { getStudents, getStudyPrograms } from './data.remote';
-
-	const students = getStudents();
-	const programs = getStudyPrograms();
-
-	// Combine when both loaded
-	let studentsWithPrograms = $derived(
-		$students && $programs
-			? $students.map((s) => ({
-					...s,
-					programName: $programs.find((p) => p.id === s.studyProgramId)?.name
-				}))
-			: []
-	);
-</script>
-```
-
-## Common Patterns
-
-### Loading States
-
-```svelte
-<script lang="ts">
-	import { getCourses } from './data.remote';
-
-	const courses = getCourses();
-	let isCreating = $state(false);
 </script>
 
 {#if !$courses}
 	<p>Loading...</p>
 {:else}
-	{#each $courses as course}
-		<div>{course.name}</div>
+	{#each $courses as c}
+		<div>
+			{c.name}
+			<button onclick={() => onDelete(c.id!)}>Delete</button>
+		</div>
 	{/each}
 {/if}
-
-<button
-	disabled={isCreating}
-	onclick={async () => {
-		isCreating = true;
-		await createCourse(newCourse);
-		isCreating = false;
-	}}
->
-	{isCreating ? 'Creating...' : 'Create'}
-</button>
 ```
 
-### Optimistic Updates
+## 4. Current Module Function Map
 
-```svelte
-<script lang="ts">
-	import { getCourses, deleteCourse } from './data.remote';
+### `classrooms`
 
-	const courses = getCourses();
-	let localCourses = $state<Course[]>([]);
+- query: `getClassRooms`, `getClassRoom`, `getClassRoomUtilization`
+- form: `createClassRoom`, `updateClassRoom`
+- command: `deleteClassRoom`
 
-	// Sync with remote
-	$effect(() => {
-		if ($courses) localCourses = $courses;
-	});
+### `courses`
 
-	async function remove(id: string) {
-		// Remove immediately (optimistic)
-		localCourses = localCourses.filter((c) => c.id !== id);
+- query: `getCourses`, `getCourse`
+- form: `createCourse`, `updateCourse`
+- command: `deleteCourse`
 
-		try {
-			await deleteCourse(id);
-		} catch {
-			// Revert on error
-			localCourses = $courses || [];
-		}
-	}
-</script>
+### `enrollments`
 
-{#each localCourses as course}
-	<div>{course.name} <button onclick={() => remove(course.id)}>×</button></div>
-{/each}
+- query: `getEnrollments`, `getEnrollment`
+- form: `createEnrollment`, `updateEnrollment`
+- command: `deleteEnrollment`
+
+Note: enrollment create/update/delete already uses backend transactions (`withTransaction`) to prevent partial writes.
+
+### `faculties`
+
+- query: `getFaculties`, `getFaculty`
+- form: `createFaculty`, `updateFaculty`
+- command: `deleteFaculty`
+
+### `grades`
+
+- query: `getGrades`, `getGrade`, `getGradesByCourse`, `getGradesByStudent`
+- form: `createGrade`, `updateGrade`, `batchInputGrades`
+- command: none
+
+`batchInputGrades` is transactional (all-or-nothing).
+
+### `lecturers`
+
+- query: `getLecturers`, `getLecturer`
+- form: `createLecturer`, `updateLecturer`
+- command: `deleteLecturer`
+
+### `students`
+
+- query: `getStudents`, `getStudent`, `getStudentGPA`
+- form: `createStudent`, `updateStudent`
+- command: `deleteStudent`
+
+### `study-programs`
+
+- query: `getStudyPrograms`, `getStudyProgram`
+- form: `createStudyProgram`, `updateStudyProgram`
+- command: `deleteStudyProgram`
+
+### `users`
+
+- query: `getUsers`, `getUser`
+- form: `createUser`, `updateUser`
+- command: `deleteUser`
+
+## 5. Authorization Behavior in the UI
+
+Many backend handlers enforce authorization using `requireRole` or `requireUser`. In the frontend:
+
+- Do not assume every role can access every dataset.
+- Handle `403` (forbidden) and `404` (not found) clearly in UI states.
+- Avoid rendering write-action controls (create/update/delete) for unauthorized roles.
+
+## 6. Error Handling Pattern
+
+Use `try/catch` when calling `form`/`command`:
+
+```ts
+try {
+	await updateCourse(payload);
+} catch (e: any) {
+	const message = e?.body?.message ?? 'Something went wrong';
+	// show toast/alert
+}
 ```
 
-## Available Functions by Module
+## 7. Frontend Development Checklist
 
-| Module             | Queries                                                | Forms                                                  | Commands                 |
-| ------------------ | ------------------------------------------------------ | ------------------------------------------------------ | ------------------------ |
-| **courses**        | `getCourses()`, `getCourse(id)`                        | `createCourse(data)`, `updateCourse(data)`             | `deleteCourse(id)`       |
-| **students**       | `getStudents()`, `getStudent(id)`, `getStudentGPA(id)` | `createStudent(data)`, `updateStudent(data)`           | `deleteStudent(id)`      |
-| **enrollments**    | `getEnrollments()`, `getEnrollment(id)`                | `createEnrollment(data)`, `updateEnrollment(data)`     | `deleteEnrollment(id)`   |
-| **grades**         | `getGrades()`                                          | `createGrade(data)`, `updateGrade(data)`               | `deleteGrade(id)`        |
-| **lecturers**      | `getLecturers()`, `getLecturer(id)`                    | `createLecturer(data)`, `updateLecturer(data)`         | `deleteLecturer(id)`     |
-| **classrooms**     | `getClassRooms()`, `getClassRoom(id)`                  | `createClassRoom(data)`, `updateClassRoom(data)`       | `deleteClassRoom(id)`    |
-| **study-programs** | `getStudyPrograms()`, `getStudyProgram(id)`            | `createStudyProgram(data)`, `updateStudyProgram(data)` | `deleteStudyProgram(id)` |
-| **faculties**      | `getFaculties()`, `getFaculty(id)`                     | `createFaculty(data)`, `updateFaculty(data)`           | `deleteFaculty(id)`      |
+When adding a new module page:
 
-## TypeScript Types
+1. Create `+page.svelte` in the module route folder.
+2. Import functions from `./data.remote` (co-located).
+3. Render query stores (`$queryStore`) with loading/empty/error states.
+4. Connect forms to `form` functions and show success/failure feedback.
+5. Confirm destructive actions (`command`) before execution.
 
-Types are auto-generated from schemas:
+## 8. Notes for Next Iteration
 
-```typescript
-import type { CourseSchema } from '$lib/validations/course';
-import type { StudentSchema } from '$lib/validations/student';
-
-let course: CourseSchema = { ... };
-let student: StudentSchema = { ... };
-```
-
-## Key Points
-
-1. **Always use `$` prefix** for query stores: `$courses`, not `courses`
-2. **Cache auto-refreshes** after form/command calls - no manual refetch needed
-3. **Errors throw exceptions** - wrap in try/catch
-4. **Check for null** - queries start as `undefined` before loading
+- Root page (`src/routes/+page.svelte`) is still the default SvelteKit placeholder.
+- CRUD module pages are not implemented yet (data layer is already available).
+- Recommended next step: implement module UIs incrementally, starting with `courses`, `students`, and `enrollments`.

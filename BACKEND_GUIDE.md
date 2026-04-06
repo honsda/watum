@@ -311,6 +311,7 @@ import { error } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import { formatDateTime } from '$lib/time-helpers';
 import { getPool } from '$lib/server/db';
+import { requireRole } from '$lib/server/auth';
 import {
 	selectClassRooms,
 	selectSchedules,
@@ -321,10 +322,12 @@ import {
 import { classRoomSchema } from '$lib/validations/classroom';
 
 export const getClassRooms = query(async () => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	return await selectClassRooms(getPool());
 });
 
 export const getClassRoom = query(v.string(), async (id) => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const [classRoom] = await selectClassRooms(getPool(), { where: [['id', '=', id]] });
 	if (!classRoom) {
 		error(404, 'Ruang kelas tidak ditemukan');
@@ -335,6 +338,7 @@ export const getClassRoom = query(v.string(), async (id) => {
 export const getClassRoomUtilization = query(
 	v.object({ classRoomId: v.string(), timezone: v.string() }),
 	async ({ classRoomId, timezone }) => {
+		await requireRole(['ADMIN', 'LECTURER']);
 		const schedules = await selectSchedules(getPool(), {
 			where: [['class_room_id', '=', classRoomId]]
 		});
@@ -354,6 +358,7 @@ export const getClassRoomUtilization = query(
 );
 
 export const createClassRoom = form(classRoomSchema, async (data) => {
+	await requireRole(['ADMIN']);
 	const [existing] = await selectClassRooms(getPool(), { where: [['name', '=', data.name]] });
 	if (existing) throw error(400, 'Ruang kelas dengan nama tersebut sudah ada');
 
@@ -373,6 +378,7 @@ export const createClassRoom = form(classRoomSchema, async (data) => {
 export const updateClassRoom = form(
 	v.object({ id: v.string(), ...classRoomSchema.entries }),
 	async (data) => {
+		await requireRole(['ADMIN']);
 		const { id, ...updateData } = data;
 		const [existing] = await selectClassRooms(getPool(), {
 			where: [['name', '=', updateData.name]]
@@ -398,6 +404,7 @@ export const updateClassRoom = form(
 );
 
 export const deleteClassRoom = command(v.string(), async (id) => {
+	await requireRole(['ADMIN']);
 	const [classRoom] = await selectClassRooms(getPool(), { where: [['id', '=', id]] });
 	if (!classRoom) throw error(404, 'Ruang kelas tidak ditemukan');
 	if ((classRoom.schedule_count ?? 0) > 0)
@@ -452,13 +459,19 @@ DELETE FROM students WHERE id = :id
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
+import { hash } from 'argon2';
+import { randomUUID } from 'crypto';
 import { getPool } from '$lib/server/db';
+import { requireRole, requireUser } from '$lib/server/auth';
 import { generateNRP } from '$lib/server/NRP-generator';
 import {
 	selectStudents,
 	selectStudyPrograms,
 	selectGrades,
+	selectUsers,
 	insertStudent,
+	insertUser,
+	deleteUser,
 	updateStudent as updateStudentDb,
 	deleteStudent as deleteStudentDb
 } from '$lib/server/sql';
@@ -466,16 +479,27 @@ import { studentSchema } from '$lib/validations/student';
 import { gradePoints } from '$lib/validations/grade';
 
 export const getStudents = query(async () => {
+	await requireRole(['ADMIN', 'LECTURER']);
 	return await selectStudents(getPool());
 });
 
 export const getStudent = query(v.string(), async (id) => {
+	const user = await requireUser();
+	// Students can only view their own data
+	if (user.role === 'STUDENT' && user.studentId !== id) {
+		throw error(403, 'Anda tidak berhak melihat data mahasiswa lain');
+	}
 	const [student] = await selectStudents(getPool(), { where: [['id', '=', id]] });
 	if (!student) error(404, 'Mahasiswa tidak ditemukan');
 	return student;
 });
 
 export const getStudentGPA = query(v.string(), async (studentId) => {
+	const user = await requireUser();
+	// Students can only view their own GPA
+	if (user.role === 'STUDENT' && user.studentId !== studentId) {
+		throw error(403, 'Anda tidak berhak melihat IPK mahasiswa lain');
+	}
 	const grades = await selectGrades(getPool(), {
 		select: { letter_grade: true, credits: true },
 		where: [['student_id', '=', studentId]]
@@ -496,6 +520,7 @@ export const getStudentGPA = query(v.string(), async (studentId) => {
 });
 
 export const createStudent = form(studentSchema, async (data) => {
+	await requireRole(['ADMIN']);
 	const [existingEmail] = await selectStudents(getPool(), { where: [['email', '=', data.email]] });
 	if (existingEmail) throw error(400, 'Email sudah terdaftar');
 
@@ -515,6 +540,18 @@ export const createStudent = form(studentSchema, async (data) => {
 		year_admitted: data.yearAdmitted,
 		study_program_id: data.studyProgramId
 	});
+
+	// Create user account with NRP as default password
+	const hashedPassword = await hash(nrp);
+	await insertUser(getPool(), {
+		id: randomUUID(),
+		email: data.email,
+		password: hashedPassword,
+		role: 'STUDENT',
+		student_id: nrp,
+		lecturer_id: null
+	});
+
 	await getStudents().refresh();
 	return { success: true, nrp };
 });
@@ -522,6 +559,7 @@ export const createStudent = form(studentSchema, async (data) => {
 export const updateStudent = form(
 	v.object({ id: v.string(), ...studentSchema.entries }),
 	async (data) => {
+		await requireRole(['ADMIN']);
 		const { id, ...updateData } = data;
 		const [existingEmail] = await selectStudents(getPool(), {
 			where: [['email', '=', updateData.email]]
@@ -547,13 +585,22 @@ export const updateStudent = form(
 );
 
 export const deleteStudent = command(v.string(), async (id) => {
+	await requireRole(['ADMIN']);
 	const [student] = await selectStudents(getPool(), { where: [['id', '=', id]] });
 	if (!student) throw error(404, 'Mahasiswa tidak ditemukan');
 	if ((student.enrollment_count ?? 0) > 0)
 		throw error(400, 'Tidak dapat menghapus mahasiswa yang memiliki data KRS');
 
 	await deleteStudentDb(getPool(), { id });
+
+	// Delete associated user account
+	const [user] = await selectUsers(getPool(), { where: [['student_id', '=', id]] });
+	if (user?.id) {
+		await deleteUser(getPool(), { id: user.id });
+	}
+
 	await getStudents().refresh();
+	return { success: true };
 });
 ```
 
@@ -602,25 +649,79 @@ import { error, invalid } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import { calculateGrade, gradeSchema } from '$lib/validations/grade';
 import { getPool } from '$lib/server/db';
-import { selectGrades, insertGrade, updateGrade as updateGradeDb } from '$lib/server/sql';
+import { requireRole, requireUser } from '$lib/server/auth';
+import {
+	selectGrades,
+	selectEnrollments,
+	insertGrade,
+	updateGrade as updateGradeDb
+} from '$lib/server/sql';
 
-export const getGrades = query(async () => selectGrades(getPool()));
+export const getGrades = query(async () => {
+	const user = await requireUser();
+	// Lecturers see grades for their courses, students see their own
+	if (user.role === 'LECTURER') {
+		return await selectGrades(getPool(), {
+			where: [['lecturer_id', '=', user.lecturerId!]]
+		});
+	}
+	if (user.role === 'STUDENT') {
+		return await selectGrades(getPool(), {
+			where: [['student_id', '=', user.studentId!]]
+		});
+	}
+	return await selectGrades(getPool());
+});
 
 export const getGrade = query(v.string(), async (id) => {
+	const user = await requireUser();
 	const [grade] = await selectGrades(getPool(), { where: [['id', '=', id]] });
 	if (!grade) error(404, 'Nilai tidak ditemukan');
+	// Students can only view their own grades
+	if (user.role === 'STUDENT' && grade.student_id !== user.studentId) {
+		throw error(403, 'Anda tidak berhak melihat nilai ini');
+	}
+	// Lecturers can only view grades for their courses
+	if (user.role === 'LECTURER') {
+		const [enrollment] = await selectEnrollments(getPool(), {
+			where: [['id', '=', grade.enrollment_id]]
+		});
+		if (enrollment?.lecturer_id !== user.lecturerId) {
+			throw error(403, 'Anda tidak berhak melihat nilai ini');
+		}
+	}
 	return grade;
 });
 
-export const getGradesByCourse = query(v.string(), async (courseId) =>
-	selectGrades(getPool(), { where: [['course_id', '=', courseId]] })
-);
+export const getGradesByCourse = query(v.string(), async (courseId) => {
+	await requireRole(['ADMIN', 'LECTURER']);
+	return selectGrades(getPool(), { where: [['course_id', '=', courseId]] });
+});
 
-export const getGradesByStudent = query(v.string(), async (studentId) =>
-	selectGrades(getPool(), { where: [['student_id', '=', studentId]] })
-);
+export const getGradesByStudent = query(v.string(), async (studentId) => {
+	const user = await requireUser();
+	// Students can only view their own grades
+	if (user.role === 'STUDENT' && user.studentId !== studentId) {
+		throw error(403, 'Anda tidak berhak melihat nilai mahasiswa lain');
+	}
+	return selectGrades(getPool(), { where: [['student_id', '=', studentId]] });
+});
 
 export const createGrade = form(gradeSchema, async (data, issue) => {
+	const user = await requireRole(['LECTURER', 'ADMIN']);
+
+	const [enrollment] = await selectEnrollments(getPool(), {
+		where: [['id', '=', data.enrollmentId]]
+	});
+	if (!enrollment) {
+		throw error(404, 'Data KRS tidak ditemukan');
+	}
+
+	// Lecturers can only grade their own courses
+	if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
+		throw error(403, 'Anda tidak berhak menginput nilai untuk mata kuliah ini');
+	}
+
 	const [existing] = await selectGrades(getPool(), {
 		where: [['enrollment_id', '=', data.enrollmentId]]
 	});
@@ -648,6 +749,24 @@ export const createGrade = form(gradeSchema, async (data, issue) => {
 export const updateGrade = form(
 	v.object({ id: v.string(), ...gradeSchema.entries }),
 	async (data) => {
+		const user = await requireRole(['LECTURER', 'ADMIN']);
+
+		const [existingGrade] = await selectGrades(getPool(), {
+			where: [['id', '=', data.id]]
+		});
+		if (!existingGrade) {
+			throw error(404, 'Nilai tidak ditemukan');
+		}
+
+		const [enrollment] = await selectEnrollments(getPool(), {
+			where: [['id', '=', existingGrade.enrollment_id]]
+		});
+
+		// Lecturers can only update grades for their own courses
+		if (user.role === 'LECTURER' && enrollment?.lecturer_id !== user.lecturerId) {
+			throw error(403, 'Anda tidak berhak mengubah nilai ini');
+		}
+
 		const { id, ...scores } = data;
 		const { total, letter } = calculateGrade(
 			scores.assignmentScore,
@@ -677,7 +796,18 @@ export const batchInputGrades = form(
 		grades: v.array(v.object(gradeSchema.entries))
 	}),
 	async (data) => {
+		const user = await requireRole(['LECTURER', 'ADMIN']);
+
 		for (const g of data.grades) {
+			const [enrollment] = await selectEnrollments(getPool(), {
+				where: [['id', '=', g.enrollmentId]]
+			});
+
+			// Lecturers can only grade their own courses
+			if (user.role === 'LECTURER' && enrollment?.lecturer_id !== user.lecturerId) {
+				throw error(403, `Anda tidak berhak menginput nilai untuk enrollment ${g.enrollmentId}`);
+			}
+
 			const { total, letter } = calculateGrade(g.assignmentScore, g.midtermScore, g.finalScore);
 			const [existing] = await selectGrades(getPool(), {
 				where: [['enrollment_id', '=', g.enrollmentId]]
@@ -786,6 +916,7 @@ import { query, form, command } from '$app/server';
 import { error, invalid } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import { getPool } from '$lib/server/db';
+import { requireRole, requireUser } from '$lib/server/auth';
 import { parseISO, formatDateTime, getDuration } from '$lib/time-helpers';
 import {
 	selectEnrollments,
@@ -799,15 +930,46 @@ import {
 } from '$lib/server/sql';
 import { enrollmentSchema } from '$lib/validations/enrollment';
 
-export const getEnrollments = query(async () => selectEnrollments(getPool()));
+export const getEnrollments = query(async () => {
+	const user = await requireUser();
+	// Students see only their own enrollments
+	if (user.role === 'STUDENT') {
+		return await selectEnrollments(getPool(), {
+			where: [['student_id', '=', user.studentId!]]
+		});
+	}
+	// Lecturers see enrollments for their courses
+	if (user.role === 'LECTURER') {
+		return await selectEnrollments(getPool(), {
+			where: [['lecturer_id', '=', user.lecturerId!]]
+		});
+	}
+	return await selectEnrollments(getPool());
+});
 
 export const getEnrollment = query(v.string(), async (id) => {
+	const user = await requireUser();
 	const [enrollment] = await selectEnrollments(getPool(), { where: [['id', '=', id]] });
 	if (!enrollment) error(404, 'Data KRS tidak ditemukan');
+
+	// Students can only view their own enrollments
+	if (user.role === 'STUDENT' && enrollment.student_id !== user.studentId) {
+		throw error(403, 'Anda tidak berhak melihat data KRS ini');
+	}
+	// Lecturers can only view enrollments for their courses
+	if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
+		throw error(403, 'Anda tidak berhak melihat data KRS ini');
+	}
 	return enrollment;
 });
 
 export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
+	const user = await requireRole(['ADMIN', 'STUDENT']);
+	// Students can only create enrollments for themselves
+	if (user.role === 'STUDENT' && data.studentId !== user.studentId) {
+		throw error(403, 'Anda tidak berhak membuat KRS untuk mahasiswa lain');
+	}
+
 	const startDate = parseISO(data.startTime);
 	const endDate = parseISO(data.endTime);
 
@@ -878,6 +1040,7 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 export const updateEnrollment = form(
 	v.object({ id: v.string(), ...enrollmentSchema.entries }),
 	async (data, issue) => {
+		await requireRole(['ADMIN']);
 		const [enrollment] = await selectEnrollments(getPool(), { where: [['id', '=', data.id]] });
 		if (!enrollment) throw error(404, 'Data KRS tidak ditemukan');
 		if (enrollment.grade_id) throw error(400, 'Tidak dapat mengubah KRS yang sudah memiliki nilai');
@@ -957,6 +1120,7 @@ export const updateEnrollment = form(
 );
 
 export const deleteEnrollment = command(v.string(), async (id) => {
+	await requireRole(['ADMIN']);
 	const [enrollment] = await selectEnrollments(getPool(), { where: [['id', '=', id]] });
 	if (!enrollment) throw error(404, 'Data KRS tidak ditemukan');
 	if (enrollment.grade_id) throw error(400, 'Tidak dapat menghapus KRS yang sudah memiliki nilai');
@@ -1005,6 +1169,7 @@ import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import { getPool } from '$lib/server/db';
+import { requireRole } from '$lib/server/auth';
 import {
 	selectFaculties,
 	insertFaculty,
@@ -1013,15 +1178,20 @@ import {
 } from '$lib/server/sql';
 import { facultySchema } from '$lib/validations/faculty';
 
-export const getFaculties = query(async () => selectFaculties(getPool()));
+export const getFaculties = query(async () => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
+	return selectFaculties(getPool());
+});
 
 export const getFaculty = query(v.string(), async (id) => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const [faculty] = await selectFaculties(getPool(), { where: [['id', '=', id]] });
 	if (!faculty) error(404, 'Fakultas tidak ditemukan');
 	return faculty;
 });
 
 export const createFaculty = form(facultySchema, async (data) => {
+	await requireRole(['ADMIN']);
 	const [existing] = await selectFaculties(getPool(), { where: [['id', '=', data.id]] });
 	if (existing) throw error(400, 'ID fakultas sudah digunakan');
 
@@ -1031,6 +1201,7 @@ export const createFaculty = form(facultySchema, async (data) => {
 });
 
 export const updateFaculty = form(facultySchema, async (data) => {
+	await requireRole(['ADMIN']);
 	await updateFacultyDb(getPool(), { name: data.name }, { id: data.id });
 	await getFaculties().refresh();
 	await getFaculty(data.id).refresh();
@@ -1038,6 +1209,7 @@ export const updateFaculty = form(facultySchema, async (data) => {
 });
 
 export const deleteFaculty = command(v.string(), async (id) => {
+	await requireRole(['ADMIN']);
 	const [faculty] = await selectFaculties(getPool(), { where: [['id', '=', id]] });
 	if (!faculty) throw error(404, 'Fakultas tidak ditemukan');
 	if ((faculty.study_program_count ?? 0) > 0)
@@ -1088,6 +1260,7 @@ import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import { getPool } from '$lib/server/db';
+import { requireRole } from '$lib/server/auth';
 import {
 	selectStudyPrograms,
 	selectFaculties,
@@ -1097,15 +1270,20 @@ import {
 } from '$lib/server/sql';
 import { studyProgramSchema } from '$lib/validations/study-program';
 
-export const getStudyPrograms = query(async () => selectStudyPrograms(getPool()));
+export const getStudyPrograms = query(async () => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
+	return selectStudyPrograms(getPool());
+});
 
 export const getStudyProgram = query(v.string(), async (id) => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const [sp] = await selectStudyPrograms(getPool(), { where: [['id', '=', id]] });
 	if (!sp) error(404, 'Program studi tidak ditemukan');
 	return sp;
 });
 
 export const createStudyProgram = form(studyProgramSchema, async (data) => {
+	await requireRole(['ADMIN']);
 	const [existing] = await selectStudyPrograms(getPool(), { where: [['id', '=', data.id]] });
 	if (existing) throw error(400, 'ID program studi sudah digunakan');
 
@@ -1123,6 +1301,7 @@ export const createStudyProgram = form(studyProgramSchema, async (data) => {
 });
 
 export const updateStudyProgram = form(studyProgramSchema, async (data) => {
+	await requireRole(['ADMIN']);
 	await updateStudyProgramDb(
 		getPool(),
 		{ name: data.name, head: data.head, faculty_id: data.facultyId },
@@ -1134,6 +1313,7 @@ export const updateStudyProgram = form(studyProgramSchema, async (data) => {
 });
 
 export const deleteStudyProgram = command(v.string(), async (id) => {
+	await requireRole(['ADMIN']);
 	const [sp] = await selectStudyPrograms(getPool(), { where: [['id', '=', id]] });
 	if (!sp) throw error(404, 'Program studi tidak ditemukan');
 	if ((sp.student_count ?? 0) > 0)
@@ -1182,24 +1362,35 @@ DELETE FROM lecturers WHERE id = :id
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
+import { hash } from 'argon2';
+import { randomUUID } from 'crypto';
 import { getPool } from '$lib/server/db';
+import { requireRole } from '$lib/server/auth';
 import {
 	selectLecturers,
+	selectUsers,
 	insertLecturer,
+	insertUser,
+	deleteUser,
 	updateLecturer as updateLecturerDb,
 	deleteLectuer as deleteLecturerDb
 } from '$lib/server/sql';
 import { lecturerSchema } from '$lib/validations/lecturer';
 
-export const getLecturers = query(async () => selectLecturers(getPool()));
+export const getLecturers = query(async () => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
+	return selectLecturers(getPool());
+});
 
 export const getLecturer = query(v.string(), async (id) => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const [lecturer] = await selectLecturers(getPool(), { where: [['id', '=', id]] });
 	if (!lecturer) error(404, 'Dosen tidak ditemukan');
 	return lecturer;
 });
 
 export const createLecturer = form(lecturerSchema, async (data) => {
+	await requireRole(['ADMIN']);
 	const [existingId] = await selectLecturers(getPool(), { where: [['id', '=', data.id]] });
 	if (existingId) throw error(400, 'ID dosen sudah digunakan');
 
@@ -1213,11 +1404,24 @@ export const createLecturer = form(lecturerSchema, async (data) => {
 		phone: data.phone ?? null,
 		address: data.address ?? null
 	});
+
+	// Create user account with lecturer ID as default password
+	const hashedPassword = await hash(data.id);
+	await insertUser(getPool(), {
+		id: randomUUID(),
+		email: data.email,
+		password: hashedPassword,
+		role: 'LECTURER',
+		student_id: null,
+		lecturer_id: data.id
+	});
+
 	await getLecturers().refresh();
 	return { success: true };
 });
 
 export const updateLecturer = form(lecturerSchema, async (data) => {
+	await requireRole(['ADMIN']);
 	const [existingEmail] = await selectLecturers(getPool(), {
 		where: [['email', '=', data.email]]
 	});
@@ -1239,13 +1443,22 @@ export const updateLecturer = form(lecturerSchema, async (data) => {
 });
 
 export const deleteLecturer = command(v.string(), async (id) => {
+	await requireRole(['ADMIN']);
 	const [lecturer] = await selectLecturers(getPool(), { where: [['id', '=', id]] });
 	if (!lecturer) throw error(404, 'Dosen tidak ditemukan');
 	if ((lecturer.schedule_count ?? 0) > 0)
 		throw error(400, 'Tidak dapat menghapus dosen yang masih memiliki jadwal');
 
 	await deleteLecturerDb(getPool(), { id });
+
+	// Delete associated user account
+	const [user] = await selectUsers(getPool(), { where: [['lecturer_id', '=', id]] });
+	if (user?.id) {
+		await deleteUser(getPool(), { id: user.id });
+	}
+
 	await getLecturers().refresh();
+	return { success: true };
 });
 ```
 
@@ -1289,6 +1502,7 @@ import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import { getPool } from '$lib/server/db';
+import { requireRole } from '$lib/server/auth';
 import {
 	selectCourses,
 	selectStudyPrograms,
@@ -1298,15 +1512,20 @@ import {
 } from '$lib/server/sql';
 import { courseSchema } from '$lib/validations/course';
 
-export const getCourses = query(async () => selectCourses(getPool()));
+export const getCourses = query(async () => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
+	return selectCourses(getPool());
+});
 
 export const getCourse = query(v.string(), async (id) => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const [course] = await selectCourses(getPool(), { where: [['id', '=', id]] });
 	if (!course) error(404, 'Mata kuliah tidak ditemukan');
 	return course;
 });
 
 export const createCourse = form(courseSchema, async (data) => {
+	await requireRole(['ADMIN']);
 	const [existing] = await selectCourses(getPool(), { where: [['id', '=', data.id]] });
 	if (existing) throw error(400, 'ID mata kuliah sudah digunakan');
 
@@ -1324,6 +1543,7 @@ export const createCourse = form(courseSchema, async (data) => {
 });
 
 export const updateCourse = form(courseSchema, async (data) => {
+	await requireRole(['ADMIN']);
 	await updateCourseDb(
 		getPool(),
 		{ name: data.name, credits: data.credits, study_program_id: data.studyProgramId },
@@ -1335,6 +1555,7 @@ export const updateCourse = form(courseSchema, async (data) => {
 });
 
 export const deleteCourse = command(v.string(), async (id) => {
+	await requireRole(['ADMIN']);
 	const [course] = await selectCourses(getPool(), { where: [['id', '=', id]] });
 	if (!course) throw error(404, 'Mata kuliah tidak ditemukan');
 	if ((course.enrollment_count ?? 0) > 0)
@@ -1342,6 +1563,160 @@ export const deleteCourse = command(v.string(), async (id) => {
 
 	await deleteCourseDb(getPool(), { id });
 	await getCourses().refresh();
+});
+```
+
+### 5.9 User Management
+
+**SQL Files:**
+
+```sql
+-- src/lib/server/sql/select-users.sql  (@dynamicQuery)
+-- @dynamicQuery
+SELECT
+    u.id, u.email, u.role, u.password, u.student_id, u.lecturer_id,
+    s.name as student_name, l.name as lecturer_name
+FROM users u
+LEFT JOIN students s ON u.student_id = s.id
+LEFT JOIN lecturers l ON u.lecturer_id = l.id
+```
+
+```sql
+-- src/lib/server/sql/insert-user.sql
+INSERT INTO users (id, email, password, role, student_id, lecturer_id)
+VALUES (:id, :email, :password, :role, :student_id, :lecturer_id)
+```
+
+```sql
+-- src/lib/server/sql/update-user.sql
+UPDATE users
+SET email = :email, role = :role, student_id = :student_id, lecturer_id = :lecturer_id
+WHERE id = :id
+```
+
+```sql
+-- src/lib/server/sql/delete-user.sql
+DELETE FROM users WHERE id = :id
+```
+
+**Validation Schema:**
+
+```ts
+// src/lib/validations/user.ts
+import * as v from 'valibot';
+
+export const userRoleSchema = v.picklist(['ADMIN', 'STUDENT', 'LECTURER']);
+
+export const userSchema = v.object({
+	email: v.pipe(v.string(), v.email('Email tidak valid')),
+	password: v.pipe(v.string(), v.minLength(6, 'Password minimal 6 karakter')),
+	role: userRoleSchema,
+	studentId: v.optional(v.string()),
+	lecturerId: v.optional(v.string())
+});
+```
+
+**Remote Functions:**
+
+```ts
+// src/routes/(app)/users/data.remote.ts
+import * as v from 'valibot';
+import { query, form, command } from '$app/server';
+import { error } from '@sveltejs/kit';
+import { hash } from 'argon2';
+import { randomUUID } from 'crypto';
+import { getPool } from '$lib/server/db';
+import { requireRole } from '$lib/server/auth';
+import {
+	selectUsers,
+	insertUser,
+	updateUser as updateUserDb,
+	deleteUser as deleteUserDb
+} from '$lib/server/sql';
+import { userSchema } from '$lib/validations/user';
+
+export const getUsers = query(async () => {
+	await requireRole(['ADMIN']);
+	return await selectUsers(getPool());
+});
+
+export const getUser = query(v.string(), async (id) => {
+	await requireRole(['ADMIN']);
+	const [user] = await selectUsers(getPool(), { where: [['id', '=', id]] });
+	if (!user) throw error(404, 'User tidak ditemukan');
+	return user;
+});
+
+export const createUser = form(userSchema, async (data) => {
+	await requireRole(['ADMIN']);
+
+	// Check email uniqueness
+	const [existing] = await selectUsers(getPool(), { where: [['email', '=', data.email]] });
+	if (existing) throw error(400, 'Email sudah terdaftar');
+
+	// Validate role-specific IDs
+	if (data.role === 'STUDENT' && !data.studentId) {
+		throw error(400, 'Student ID wajib diisi untuk role STUDENT');
+	}
+	if (data.role === 'LECTURER' && !data.lecturerId) {
+		throw error(400, 'Lecturer ID wajib diisi untuk role LECTURER');
+	}
+
+	const hashedPassword = await hash(data.password);
+	const id = randomUUID();
+
+	await insertUser(getPool(), {
+		id,
+		email: data.email,
+		password: hashedPassword,
+		role: data.role,
+		student_id: data.studentId ?? null,
+		lecturer_id: data.lecturerId ?? null
+	});
+
+	await getUsers().refresh();
+	return { success: true, id };
+});
+
+export const updateUser = form(
+	v.object({ id: v.string(), ...userSchema.entries }),
+	async (data) => {
+		await requireRole(['ADMIN']);
+		const { id, password, ...updateData } = data;
+
+		// Check email uniqueness (excluding current user)
+		const [existing] = await selectUsers(getPool(), {
+			where: [['email', '=', updateData.email]]
+		});
+		if (existing && existing.id !== id) {
+			throw error(400, 'Email sudah digunakan');
+		}
+
+		await updateUserDb(
+			getPool(),
+			{
+				email: updateData.email,
+				role: updateData.role,
+				student_id: updateData.studentId ?? null,
+				lecturer_id: updateData.lecturerId ?? null
+			},
+			{ id }
+		);
+
+		await getUsers().refresh();
+		await getUser(id).refresh();
+		return { success: true };
+	}
+);
+
+export const deleteUser = command(v.string(), async (id) => {
+	await requireRole(['ADMIN']);
+	const [user] = await selectUsers(getPool(), { where: [['id', '=', id]] });
+	if (!user) throw error(404, 'User tidak ditemukan');
+
+	await deleteUserDb(getPool(), { id });
+	await getUsers().refresh();
+	return { success: true };
 });
 ```
 
@@ -1486,7 +1861,7 @@ export const gradePoints: Record<string, number> = {
 
 ---
 
-## 7. Authentication & Authorization
+## 7. Authentication, Authorization & User Settings
 
 ### 7.1 Auth Helper
 
@@ -1599,6 +1974,112 @@ export const createGrade = form(gradeSchema, async (data) => {
 		}
 	}
 });
+```
+
+### 7.3 User Settings
+
+Store user preferences (theme, language, notifications) in the database for persistence across devices.
+
+**SQL (add to users table or create separate settings table):**
+
+```sql
+-- Option A: Add columns to existing users table
+ALTER TABLE users ADD COLUMN theme_preference VARCHAR(20) DEFAULT 'light';
+ALTER TABLE users ADD COLUMN language VARCHAR(10) DEFAULT 'id';
+ALTER TABLE users ADD COLUMN notifications_enabled BOOLEAN DEFAULT true;
+
+-- Option B: Separate settings table (if many settings)
+CREATE TABLE user_settings (
+    user_id VARCHAR(36) PRIMARY KEY,
+    theme_preference VARCHAR(20) DEFAULT 'light',
+    language VARCHAR(10) DEFAULT 'id',
+    notifications_enabled BOOLEAN DEFAULT true,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+```
+
+**SQL File for Settings:**
+
+```sql
+-- src/lib/server/sql/select-user-settings.sql
+-- @dynamicQuery
+SELECT user_id, theme_preference, language, notifications_enabled, updated_at
+FROM user_settings
+```
+
+```sql
+-- src/lib/server/sql/insert-user-settings.sql
+INSERT INTO user_settings (user_id, theme_preference, language, notifications_enabled)
+VALUES (:user_id, :theme_preference, :language, :notifications_enabled)
+ON DUPLICATE KEY UPDATE
+    theme_preference = VALUES(theme_preference),
+    language = VALUES(language),
+    notifications_enabled = VALUES(notifications_enabled)
+```
+
+**Remote Functions:**
+
+```ts
+// src/routes/settings/data.remote.ts
+import * as v from 'valibot';
+import { query, form } from '$app/server';
+import { error } from '@sveltejs/kit';
+import { getPool } from '$lib/server/db';
+import { selectUserSettings, insertUserSettings } from '$lib/server/sql';
+import { requireUser } from '$lib/server/auth';
+
+const settingsSchema = v.object({
+	theme: v.optional(v.picklist(['light', 'dark', 'system'])),
+	language: v.optional(v.picklist(['id', 'en'])),
+	notifications: v.optional(v.boolean())
+});
+
+export const getUserSettings = query(async () => {
+	const user = await requireUser();
+	const [settings] = await selectUserSettings(getPool(), {
+		where: [['user_id', '=', user.id]]
+	});
+
+	return {
+		theme: settings?.theme_preference ?? 'light',
+		language: settings?.language ?? 'id',
+		notifications: settings?.notifications_enabled ?? true
+	};
+});
+
+export const updateSettings = form(settingsSchema, async (data) => {
+	const user = await requireUser();
+
+	await insertUserSettings(getPool(), {
+		user_id: user.id,
+		theme_preference: data.theme ?? 'light',
+		language: data.language ?? 'id',
+		notifications_enabled: data.notifications ?? true
+	});
+
+	await getUserSettings().refresh();
+	return { success: true };
+});
+```
+
+**Frontend Usage:**
+
+```svelte
+<script lang="ts">
+	import { getUserSettings, updateSettings } from './data.remote';
+
+	const settings = getUserSettings();
+
+	async function toggleTheme() {
+		const newTheme = $settings.theme === 'dark' ? 'light' : 'dark';
+		await updateSettings({ theme: newTheme });
+	}
+</script>
+
+<button onclick={toggleTheme}>
+	Theme: {$settings?.theme}
+</button>
 ```
 
 ---

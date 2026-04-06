@@ -3,6 +3,11 @@
 
 Database assignment for [Studycase Group 10](https://github.com/partadox/praktikum-mysql-case/blob/main/kelompok10_akademik_b.md)
 
+## Documentation
+
+- Frontend guide: `docs/REMOTE_FUNCTIONS_GUIDE.md`
+- Backend guide: `BACKEND_GUIDE.md`
+
 ## Group 10
 * Muhammad Abdullah
 * Dharon Yusuf

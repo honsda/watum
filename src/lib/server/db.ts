@@ -31,7 +31,7 @@ export async function getConnection(): Promise<PoolConnection> {
 	return getPool().getConnection();
 }
 
-export async function transaction<T>(fn: (conn: PoolConnection) => Promise<T>): Promise<T> {
+export async function withTransaction<T>(fn: (conn: PoolConnection) => Promise<T>): Promise<T> {
 	const conn = await getConnection();
 	await conn.beginTransaction();
 	try {
