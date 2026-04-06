@@ -10,7 +10,7 @@ export async function generateNRP(studyProgramId: string, yearAdmitted: number):
 	}
 
 	const yearCode = yearAdmitted.toString().slice(-2);
-	const facultyCode = (studyProgram.faculty_name ?? '').padStart(2, '0');
+	const facultyCode = (studyProgram.faculty_id ?? '').padStart(2, '0');
 	const studyProgramCode = studyProgramId.padStart(2, '0');
 
 	const students = await selectStudents(getPool(), {

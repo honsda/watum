@@ -17,12 +17,41 @@ import {
 	updateStudent as updateStudentDb,
 	deleteStudent as deleteStudentDb
 } from '$lib/server/sql';
+import { type SelectStudentsWhere } from '$lib/server/sql';
 import { studentSchema } from '$lib/validations/student';
 import { gradePoints } from '$lib/validations/grade';
 
 export const getStudents = query(async () => {
 	await requireRole(['ADMIN', 'LECTURER']);
 	return await selectStudents(getPool());
+});
+
+const searchStudentsSchema = v.object({
+	id: v.optional(v.string()),
+	name: v.optional(v.string()),
+	email: v.optional(v.string()),
+	studyProgramId: v.optional(v.string()),
+	facultyId: v.optional(v.string()),
+	minYearAdmitted: v.optional(v.number()),
+	maxYearAdmitted: v.optional(v.number())
+});
+
+export const searchStudents = query(searchStudentsSchema, async (filters) => {
+	await requireRole(['ADMIN', 'LECTURER']);
+	const where: SelectStudentsWhere[] = [];
+	if (filters.id) where.push(['id', '=', filters.id]);
+	if (filters.name) where.push(['name', 'LIKE', filters.name]);
+	if (filters.email) where.push(['email', 'LIKE', filters.email]);
+	if (filters.studyProgramId) where.push(['study_program_id', '=', filters.studyProgramId]);
+	if (filters.facultyId) where.push(['faculty_id', '=', filters.facultyId]);
+	if (filters.minYearAdmitted != null && filters.maxYearAdmitted != null) {
+		where.push(['year_admitted', 'BETWEEN', filters.minYearAdmitted, filters.maxYearAdmitted]);
+	} else if (filters.minYearAdmitted != null) {
+		where.push(['year_admitted', '>=', filters.minYearAdmitted]);
+	} else if (filters.maxYearAdmitted != null) {
+		where.push(['year_admitted', '<=', filters.maxYearAdmitted]);
+	}
+	return selectStudents(getPool(), { where });
 });
 
 export const getStudent = query(v.string(), async (id) => {
@@ -134,9 +163,8 @@ export const deleteStudent = command(v.string(), async (id) => {
 		throw error(400, 'Tidak dapat menghapus mahasiswa yang memiliki data KRS');
 
 	await withTransaction(async (conn) => {
-		await deleteStudentDb(conn, { id });
-
 		const [user] = await selectUsers(conn, { where: [['student_id', '=', id]] });
+		await deleteStudentDb(conn, { id });
 		if (user?.id) {
 			await deleteUser(conn, { id: user.id });
 		}

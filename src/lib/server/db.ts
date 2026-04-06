@@ -1,3 +1,4 @@
+import { env } from '$env/dynamic/private';
 import {
 	createPool,
 	type Pool,
@@ -13,11 +14,11 @@ let pool: Pool | null = null;
 export function getPool(): Pool {
 	if (!pool) {
 		pool = createPool({
-			host: process.env.DB_HOST || 'localhost',
-			user: process.env.DB_USER || 'root',
-			password: process.env.DB_PASSWORD || '',
-			database: process.env.DB_NAME || 'akademik_db',
-			port: parseInt(process.env.DB_PORT || '3306'),
+			host: env.DB_HOST || 'localhost',
+			user: env.DB_USER || 'root',
+			password: env.DB_PASSWORD || '',
+			database: env.DB_NAME || 'akademik_db',
+			port: parseInt(env.DB_PORT || '3306'),
 			timezone: '+00:00',
 			waitForConnections: true,
 			connectionLimit: 10,

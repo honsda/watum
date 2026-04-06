@@ -61,6 +61,27 @@ export async function requireRole(roles: Array<User['role']>): Promise<User> {
 	return user;
 }
 
+export function setSession(userId: string) {
+	const { cookies, url } = getRequestEvent();
+	cookies.set('session_id', userId, {
+		path: '/',
+		httpOnly: true,
+		sameSite: 'lax',
+		secure: url.protocol === 'https:',
+		maxAge: 60 * 60 * 24 * 7
+	});
+}
+
+export function clearSession() {
+	const { cookies, url } = getRequestEvent();
+	cookies.delete('session_id', {
+		path: '/',
+		httpOnly: true,
+		sameSite: 'lax',
+		secure: url.protocol === 'https:'
+	});
+}
+
 export async function login( email: string, password: string): Promise<User> {
 	const [user] = await selectUsers(getPool(), { where: [['email', '=', email]]})
 	if (!user) {

@@ -12,6 +12,7 @@ import {
 	updateClassRoom as updateClassRoomDb,
 	deleteClassRoom as deleteClassRoomDb
 } from '$lib/server/sql';
+import { type SelectClassRoomsWhere } from '$lib/server/sql';
 import { classRoomSchema } from '$lib/validations/classroom';
 import dayjs from 'dayjs';
 
@@ -20,6 +21,30 @@ type ClassRoomType = v.InferOutput<typeof classRoomSchema>['classRoomType'];
 export const getClassRooms = query(async () => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	return await selectClassRooms(getPool());
+});
+
+const searchClassRoomsSchema = v.object({
+	id: v.optional(v.string()),
+	name: v.optional(v.string()),
+	classRoomType: v.optional(v.picklist(['REGULER', 'LAB_KOMPUTER', 'LAB_BAHASA', 'AUDITORIUM'])),
+	minCapacity: v.optional(v.number()),
+	maxCapacity: v.optional(v.number())
+});
+
+export const searchClassRooms = query(searchClassRoomsSchema, async (filters) => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
+	const where: SelectClassRoomsWhere[] = [];
+	if (filters.id) where.push(['id', '=', filters.id]);
+	if (filters.name) where.push(['name', 'LIKE', filters.name]);
+	if (filters.classRoomType) where.push(['class_room_type', '=', filters.classRoomType]);
+	if (filters.minCapacity != null && filters.maxCapacity != null) {
+		where.push(['capacity', 'BETWEEN', filters.minCapacity, filters.maxCapacity]);
+	} else if (filters.minCapacity != null) {
+		where.push(['capacity', '>=', filters.minCapacity]);
+	} else if (filters.maxCapacity != null) {
+		where.push(['capacity', '<=', filters.maxCapacity]);
+	}
+	return selectClassRooms(getPool(), { where });
 });
 
 export const getClassRoom = query(v.string(), async (id) => {

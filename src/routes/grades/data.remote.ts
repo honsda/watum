@@ -12,6 +12,7 @@ import {
 	updateGrade as updateGradeDb,
 	deleteGrade as deleteGradeDb
 } from '$lib/server/sql';
+import { type SelectGradesWhere } from '$lib/server/sql';
 import { gradeSchema } from '$lib/validations/grade';
 
 export const getGrades = query(async () => {
@@ -24,6 +25,49 @@ export const getGrades = query(async () => {
 		return allGrades.filter((g) => g.student_id === user.studentId);
 	}
 	return allGrades;
+});
+
+const searchGradesSchema = v.object({
+	id: v.optional(v.string()),
+	enrollmentId: v.optional(v.string()),
+	studentId: v.optional(v.string()),
+	studentName: v.optional(v.string()),
+	studentEmail: v.optional(v.string()),
+	studyProgramName: v.optional(v.string()),
+	courseId: v.optional(v.string()),
+	courseName: v.optional(v.string()),
+	lecturerId: v.optional(v.string()),
+	letterGrade: v.optional(v.string()),
+	minTotalScore: v.optional(v.number()),
+	maxTotalScore: v.optional(v.number())
+});
+
+export const searchGrades = query(searchGradesSchema, async (filters) => {
+	const user = await requireUser();
+	const where: SelectGradesWhere[] = [];
+	if (user.role === 'LECTURER') {
+		where.push(['lecturer_id', '=', user.lecturerId!]);
+	} else if (user.role === 'STUDENT') {
+		where.push(['student_id', '=', user.studentId!]);
+	}
+	if (filters.id) where.push(['id', '=', filters.id]);
+	if (filters.enrollmentId) where.push(['enrollment_id', '=', filters.enrollmentId]);
+	if (filters.studentId) where.push(['student_id', '=', filters.studentId]);
+	if (filters.studentName) where.push(['student_name', 'LIKE', filters.studentName]);
+	if (filters.studentEmail) where.push(['student_email', 'LIKE', filters.studentEmail]);
+	if (filters.studyProgramName) where.push(['study_program_name', 'LIKE', filters.studyProgramName]);
+	if (filters.courseId) where.push(['course_id', '=', filters.courseId]);
+	if (filters.courseName) where.push(['course_name', 'LIKE', filters.courseName]);
+	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
+	if (filters.letterGrade) where.push(['letter_grade', '=', filters.letterGrade]);
+	if (filters.minTotalScore != null && filters.maxTotalScore != null) {
+		where.push(['total_score', 'BETWEEN', filters.minTotalScore, filters.maxTotalScore]);
+	} else if (filters.minTotalScore != null) {
+		where.push(['total_score', '>=', filters.minTotalScore]);
+	} else if (filters.maxTotalScore != null) {
+		where.push(['total_score', '<=', filters.maxTotalScore]);
+	}
+	return selectGrades(getPool(), { where });
 });
 
 export const getGrade = query(v.string(), async (id) => {
