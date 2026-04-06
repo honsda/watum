@@ -1,0 +1,2 @@
+INSERT INTO grades (id, enrollment_id, assignment_score, midterm_score, final_score, total_score, letter_grade)
+VALUES (:id, :enrollment_id, :assignment_score, :midterm_score, :final_score, :total_score, :letter_grade)

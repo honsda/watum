@@ -1,0 +1,46 @@
+[     479ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://kilo.ai/settings:0
+[     879ms] [LOG] %c
+██╗  ██╗██╗██╗      ██████╗      ██████╗ ██████╗ ██████╗ ███████╗
+██║ ██╔╝██║██║     ██╔═══██╗    ██╔════╝██╔═══██╗██╔══██╗██╔════╝
+█████╔╝ ██║██║     ██║   ██║    ██║     ██║   ██║██║  ██║█████╗
+██╔═██╗ ██║██║     ██║   ██║    ██║     ██║   ██║██║  ██║██╔══╝
+██║  ██╗██║███████╗╚██████╔╝    ╚██████╗╚██████╔╝██████╔╝███████╗
+╚═╝  ╚═╝╚═╝╚══════╝ ╚═════╝      ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
+ color: #f4e04d; font-size: 16px; font-weight: bold; font-family: monospace; @ https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:1
+[     879ms] [LOG] %c🚀 Hey developer! 👋 color: #f4e04d; font-size: 18px; font-weight: bold; margin-top: 10px; @ https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:1
+[     879ms] [LOG] %c
+Looks like you're curious about what's under the hood... color: #888; font-size: 13px; font-family: system-ui; @ https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:1
+[     880ms] [LOG] %c
+Want AI coding superpowers in your terminal? color: #888; font-size: 13px; font-family: system-ui; @ https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:1
+[     880ms] [LOG] %c
+Install Kilo Code CLI now: color: #fff; font-size: 14px; font-weight: bold; margin-top: 8px; @ https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:1
+[     880ms] [LOG] %c npm install -g @kilocode/cli  background: #1a1a1a; color: #f4e04d; padding: 12px 16px; border-radius: 6px; font-family: 'Courier New', monospace; font-size: 14px; display: inline-block; margin: 8px 0; @ https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:1
+[     880ms] [LOG] %c
+✨ Build smarter, ship faster, code better. color: #f4e04d; font-size: 14px; font-style: italic; margin-top: 8px; @ https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:1
+[     881ms] [LOG] %c
+🔗 Learn more: %ckilo.ai/cli color: #888; font-size: 13px; font-family: system-ui; color: #f4e04d; font-size: 13px; font-family: system-ui; @ https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:1
+[     881ms] [LOG] %c
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ color: #333; @ https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:1
+[     881ms] [LOG] %c
+P.S. We see you checking the console. You're our kind of person. 😎 color: #888; font-size: 12px; font-style: italic; @ https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:1
+[    1992ms] [ERROR] Access to fetch at 'https://app.kilo.ai/users/sign_in' (redirected from 'https://kilo.ai/api/impact/redirect?target=https%3A%2F%2Fapp.kilo.ai%2Fusers%2Fsign_in&_rsc=a0eu7') from origin 'https://kilo.ai' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource. @ https://kilo.ai/settings:0
+[    1993ms] [ERROR] Failed to load resource: net::ERR_FAILED @ https://app.kilo.ai/users/sign_in:0
+[    1993ms] [ERROR] Failed to fetch RSC payload for https://kilo.ai/api/impact/redirect?target=https%3A%2F%2Fapp.kilo.ai%2Fusers%2Fsign_in. Falling back to browser navigation. TypeError: Failed to fetch (kilo.ai)
+    at https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:12:14440
+    at g (https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:16:73719)
+    at _ (https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:16:72533)
+    at https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:9:33170
+    at Object.o [as task] (https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:16:52290)
+    at u.c (https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:16:52995)
+    at u.enqueue (https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:16:52420)
+    at c (https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:9:33133)
+    at l (https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:9:32649)
+    at i (https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:9:36193)
+    at Object.prefetch (https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:1:12267)
+    at https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:12:103998
+    at P (https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:12:104033)
+    at E (https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:12:103326)
+    at IntersectionObserver.rootMargin (https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:12:102335) @ https://kilo.ai/_next/static/chunks/2378-a2a849ce51a09006.js?dpl=dpl_AUrPK8MrDHWWRKUcLebdNYnUqsQP:1
+[    2356ms] [ERROR] Attestation check for Attribution Reporting on https://www.facebook.com failed. @ https://kilo.ai/settings:0
+[  137492ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_TIMED_OUT @ https://alb.reddit.com/rp.gif?ts=1775201418967&id=a2_gws68xi53fgh&event=Custom&m.itemCount=1&m.value=&m.valueDecimal=1&m.currency=USD&m.transactionId=&m.customEventName=page_view&m.products=&m.conversionId=&uuid=620a2ebf-bd7d-490a-b3cb-f9bb23405adf&aaid=&external_id=&idfa=&integration=gtm&partner=&partner_version=1.0.2&opt_out=0&sh=2560&sw=1440&v=rdt_f3936046&dpm=&dpcc=&dprc=:0
+[  137492ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_TIMED_OUT @ https://pixel-config.reddit.com/pixels/a2_gws68xi53fgh/config:0

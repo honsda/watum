@@ -1,0 +1,17 @@
+{
+	"databaseUri": "mysql://mariadb:dharon1234@coolify.bumimas12.web.id:5432/projectbasdat?connectTimeout=30000",
+	"sqlDir": "./src/lib/server/sql",
+	"client": "mysql2",
+	"includeCrudTables": [
+		"faculties",
+		"study_programs",
+		"class_rooms",
+		"students",
+		"lecturers",
+		"courses",
+		"schedules",
+		"enrollments",
+		"grades",
+		"users"
+	]
+}

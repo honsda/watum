@@ -1,0 +1,26 @@
+INSERT INTO enrollments
+(
+    `id`,
+    `student_id`,
+    `course_id`,
+    `class_room_id`,
+    `lecturer_id`,
+    `schedule_id`,
+    `semester`,
+    `academic_year`,
+    `created_at`,
+    `updated_at`
+)
+VALUES
+(
+    :id,
+    :student_id,
+    :course_id,
+    :class_room_id,
+    :lecturer_id,
+    :schedule_id,
+    :semester,
+    :academic_year,
+    :created_at,
+    :updated_at
+)
