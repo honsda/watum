@@ -639,12 +639,17 @@ SET assignment_score = :assignment_score, midterm_score = :midterm_score,
 WHERE id = :id
 ```
 
+```sql
+-- src/lib/server/sql/delete-grade.sql
+DELETE FROM grades WHERE id = :id
+```
+
 **Remote Functions:**
 
 ```ts
 // src/routes/(app)/grades/data.remote.ts
 import * as v from 'valibot';
-import { query, form } from '$app/server';
+import { query, form, command } from '$app/server';
 import { error, invalid } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import { calculateGrade, gradeSchema } from '$lib/validations/grade';
@@ -654,7 +659,8 @@ import {
 	selectGrades,
 	selectEnrollments,
 	insertGrade,
-	updateGrade as updateGradeDb
+	updateGrade as updateGradeDb,
+	deleteGrade as deleteGradeDb
 } from '$lib/server/sql';
 
 export const getGrades = query(async () => {
@@ -840,6 +846,29 @@ export const batchInputGrades = form(
 		return { success: true, count: data.grades.length };
 	}
 );
+
+export const deleteGrade = command(v.string(), async (id) => {
+	const user = await requireRole(['LECTURER', 'ADMIN']);
+
+	const [existingGrade] = await selectGrades(getPool(), {
+		where: [['id', '=', id]]
+	});
+	if (!existingGrade || !existingGrade.enrollment_id) {
+		throw error(404, 'Nilai tidak ditemukan');
+	}
+
+	const [enrollment] = await selectEnrollments(getPool(), {
+		where: [['id', '=', existingGrade.enrollment_id]]
+	});
+
+	if (user.role === 'LECTURER' && enrollment?.lecturer_id !== user.lecturerId) {
+		throw error(403, 'Anda tidak berhak menghapus nilai ini');
+	}
+
+	await deleteGradeDb(getPool(), { id });
+	await getGrades().refresh();
+	return { success: true };
+});
 ```
 
 ### 5.4 Enrollment (KRS) Management

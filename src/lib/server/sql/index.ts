@@ -2,6 +2,7 @@ export * from "./delete-class-room.js";
 export * from "./delete-course.js";
 export * from "./delete-enrollment.js";
 export * from "./delete-faculty.js";
+export * from "./delete-grade.js";
 export * from "./delete-lectuer.js";
 export * from "./delete-schedule.js";
 export * from "./delete-student.js";
