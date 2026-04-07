@@ -9,5 +9,5 @@ SELECT
     sp.updated_at,
     (SELECT COUNT(*) FROM students s WHERE s.study_program_id = sp.id) AS student_count
 FROM study_programs sp
-INNER JOIN faculties f ON sp.faculty_id - f.id
+INNER JOIN faculties f ON sp.faculty_id = f.id
 ORDER BY sp.name ASC

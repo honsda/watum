@@ -1,4 +1,3 @@
-// src/routes/(app)/lecturers/data.remote.ts
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';

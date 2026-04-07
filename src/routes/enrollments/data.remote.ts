@@ -9,7 +9,6 @@ import {
 	selectClassRooms,
 	selectCourses,
 	selectEnrollments,
-	selectLecturers,
 	selectSchedules,
 	selectStudents,
 	insertSchedule,
@@ -70,7 +69,8 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 	if (filters.semester) where.push(['semester', 'LIKE', filters.semester]);
 	if (filters.academicYear) where.push(['academic_year', 'LIKE', filters.academicYear]);
 	if (filters.studentName) where.push(['student_name', 'LIKE', filters.studentName]);
-	if (filters.studyProgramName) where.push(['study_program_name', 'LIKE', filters.studyProgramName]);
+	if (filters.studyProgramName)
+		where.push(['study_program_name', 'LIKE', filters.studyProgramName]);
 	if (filters.courseName) where.push(['course_name', 'LIKE', filters.courseName]);
 	if (filters.lecturerName) where.push(['lecturer_name', 'LIKE', filters.lecturerName]);
 	if (filters.classRoomName) where.push(['class_room_name', 'LIKE', filters.classRoomName]);
@@ -109,19 +109,18 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 	if (!course) {
 		invalid(issue.courseId('Mata kuliah tidak ditemukan'));
 	}
+	if (!course.lecturer_id) {
+		invalid(issue.courseId('Mata kuliah belum memiliki dosen pengampu'));
+	}
 
 	const [classRoom] = await selectClassRooms(getPool(), { where: [['id', '=', data.classRoomId]] });
 	if (!classRoom) {
 		invalid(issue.classRoomId('Ruang kelas tidak ditemukan'));
 	}
+	const clientTimezone = data.timezone ?? 'UTC';
 
-	const [lecturer] = await selectLecturers(getPool(), { where: [['id', '=', data.lecturerId]] });
-	if (!lecturer) {
-		invalid(issue.lecturerId('Dosen tidak ditemukan'));
-	}
-
-	const startDate = parseISO(data.startTime);
-	const endDate = parseISO(data.endTime);
+	const startDate = parseISO(data.startTime, clientTimezone);
+	const endDate = parseISO(data.endTime, clientTimezone);
 
 	if (endDate <= startDate) {
 		invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
@@ -144,7 +143,7 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 	if (hasConflict) {
 		invalid(
 			issue.classRoomId(
-				`Jadwal bentrok (${formatDateTime(startDate, 'time')} - ${formatDateTime(endDate, 'time')}) dengan jadwal yang sudah ada`
+				`Jadwal bentrok (${formatDateTime(startDate, 'time', clientTimezone)} - ${formatDateTime(endDate, 'time', clientTimezone)}) dengan jadwal yang sudah ada`
 			)
 		);
 	}
@@ -169,7 +168,7 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 			day: data.day,
 			start_time: startDate,
 			end_time: endDate,
-			lecturer_id: data.lecturerId
+			lecturer_id: course.lecturer_id
 		});
 
 		await insertEnrollment(conn, {
@@ -177,7 +176,6 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 			student_id: data.studentId,
 			course_id: data.courseId,
 			class_room_id: data.classRoomId,
-			lecturer_id: data.lecturerId,
 			schedule_id: scheduleId,
 			semester: data.semester,
 			academic_year: data.academicYear
@@ -209,19 +207,20 @@ export const updateEnrollment = form(
 		if (!course) {
 			invalid(issue.courseId('Mata kuliah tidak ditemukan'));
 		}
+		if (!course.lecturer_id) {
+			invalid(issue.courseId('Mata kuliah belum memiliki dosen pengampu'));
+		}
 
-		const [classRoom] = await selectClassRooms(getPool(), { where: [['id', '=', data.classRoomId]] });
+		const [classRoom] = await selectClassRooms(getPool(), {
+			where: [['id', '=', data.classRoomId]]
+		});
 		if (!classRoom) {
 			invalid(issue.classRoomId('Ruang kelas tidak ditemukan'));
 		}
+		const clientTimezone = data.timezone ?? 'UTC';
 
-		const [lecturer] = await selectLecturers(getPool(), { where: [['id', '=', data.lecturerId]] });
-		if (!lecturer) {
-			invalid(issue.lecturerId('Dosen tidak ditemukan'));
-		}
-
-		const startDate = parseISO(data.startTime);
-		const endDate = parseISO(data.endTime);
+		const startDate = parseISO(data.startTime, clientTimezone);
+		const endDate = parseISO(data.endTime, clientTimezone);
 
 		if (endDate <= startDate) {
 			invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
@@ -245,7 +244,7 @@ export const updateEnrollment = form(
 		if (hasConflict) {
 			invalid(
 				issue.classRoomId(
-					`Jadwal bentrok (${formatDateTime(startDate, 'time')} - ${formatDateTime(endDate, 'time')}) dengan jadwal yang sudah ada`
+					`Jadwal bentrok (${formatDateTime(startDate, 'time', clientTimezone)} - ${formatDateTime(endDate, 'time', clientTimezone)}) dengan jadwal yang sudah ada`
 				)
 			);
 		}
@@ -270,7 +269,7 @@ export const updateEnrollment = form(
 					day: data.day,
 					start_time: startDate,
 					end_time: endDate,
-					lecturer_id: data.lecturerId
+					lecturer_id: course.lecturer_id
 				},
 				{ id: enrollment.schedule_id! }
 			);
@@ -280,7 +279,6 @@ export const updateEnrollment = form(
 					student_id: data.studentId,
 					course_id: data.courseId,
 					class_room_id: data.classRoomId,
-					lecturer_id: data.lecturerId,
 					semester: data.semester,
 					academic_year: data.academicYear
 				},

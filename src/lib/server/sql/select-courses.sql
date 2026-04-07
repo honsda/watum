@@ -4,6 +4,7 @@ SELECT
     c.name,
     c.credits,
     c.study_program_id,
+    c.lecturer_id,
     sp.name AS study_program_name,
     c.created_at,
     c.updated_at,

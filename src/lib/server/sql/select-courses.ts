@@ -11,6 +11,7 @@ export type SelectCoursesResult = {
     name?: string;
     credits?: number;
     study_program_id?: string;
+    lecturer_id?: string;
     study_program_name?: string;
     created_at?: Date;
     updated_at?: Date;
@@ -22,6 +23,7 @@ export type SelectCoursesSelect = {
     name?: boolean;
     credits?: boolean;
     study_program_id?: boolean;
+    lecturer_id?: boolean;
     study_program_name?: boolean;
     created_at?: boolean;
     updated_at?: boolean;
@@ -33,6 +35,7 @@ const selectFragments = {
     name: `c.name`,
     credits: `c.credits`,
     study_program_id: `c.study_program_id`,
+    lecturer_id: `c.lecturer_id`,
     study_program_name: `sp.name`,
     created_at: `c.created_at`,
     updated_at: `c.updated_at`,
@@ -58,6 +61,9 @@ export type SelectCoursesWhere =
     | ['study_program_id', StringOperator, string | null]
     | ['study_program_id', SetOperator, string[]]
     | ['study_program_id', BetweenOperator, string | null, string | null]
+    | ['lecturer_id', StringOperator, string | null]
+    | ['lecturer_id', SetOperator, string[]]
+    | ['lecturer_id', BetweenOperator, string | null, string | null]
     | ['study_program_name', StringOperator, string | null]
     | ['study_program_name', SetOperator, string[]]
     | ['study_program_name', BetweenOperator, string | null, string | null]
@@ -86,6 +92,9 @@ export async function selectCourses(connection: Connection, params?: SelectCours
     }
     if (params?.select == null || params.select.study_program_id) {
         sql = appendSelect(sql, `c.study_program_id`);
+    }
+    if (params?.select == null || params.select.lecturer_id) {
+        sql = appendSelect(sql, `c.lecturer_id`);
     }
     if (params?.select == null || params.select.study_program_name) {
         sql = appendSelect(sql, `sp.name AS study_program_name`);
@@ -132,6 +141,9 @@ function mapArrayToSelectCoursesResult(data: any, select?: SelectCoursesSelect) 
     }
     if (select == null || select.study_program_id) {
         result.study_program_id = data[rowIndex++];
+    }
+    if (select == null || select.lecturer_id) {
+        result.lecturer_id = data[rowIndex++];
     }
     if (select == null || select.study_program_name) {
         result.study_program_name = data[rowIndex++];

@@ -97,7 +97,6 @@ model Lecturer {
 
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
-  enrollments Enrollment[]
   user        User?
 
   @@map("lecturers")
@@ -109,10 +108,11 @@ model Course {
   name           String
   credits        Int
   studyProgramId String
+  lecturerId     String
 
   studyProgram StudyProgram @relation(fields: [studyProgramId], references: [id])
+  lecturer     Lecturer     @relation(fields: [lecturerId], references: [id])
   enrollments  Enrollment[]
-  lecturers    Lecturer[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -153,14 +153,12 @@ model Enrollment {
   studentId    String
   courseId     String
   classRoomId  String
-  lecturerId   String
   scheduleId   String @unique
   semester     String
   academicYear String
 
   student   Student   @relation(fields: [studentId], references: [id])
   course    Course    @relation(fields: [courseId], references: [id])
-  lecturer  Lecturer  @relation(fields: [lecturerId], references: [id])
   schedule  Schedule  @relation(fields: [scheduleId], references: [id])
   classRoom ClassRoom @relation(fields: [classRoomId], references: [id])
   grade     Grade?

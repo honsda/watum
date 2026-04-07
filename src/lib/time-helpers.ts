@@ -13,94 +13,106 @@ dayjs.extend(localeData);
 dayjs.extend(duration);
 
 export function toUTCDate(date: Date | dayjs.Dayjs): Date {
-    return dayjs(date).utc().toDate();
+	return dayjs(date).utc().toDate();
 }
 
 export function createUTCDate(
-    year: number,
-    month: number,
-    day: number,
-    hour: number,
-    minute: number,
-    second: number = 0,
+	year: number,
+	month: number,
+	day: number,
+	hour: number,
+	minute: number,
+	second: number = 0
 ): Date {
-   const date = dayjs()
-   .year(year)
-   .month(month)
-   .date(day)
-   .hour(hour)
-   .minute(minute)
-   .second(second)
-   .millisecond(0)
-   .utc()
-   .toDate();
+	const date = dayjs()
+		.year(year)
+		.month(month)
+		.date(day)
+		.hour(hour)
+		.minute(minute)
+		.second(second)
+		.millisecond(0)
+		.utc()
+		.toDate();
 
-   return date;
+	return date;
 }
 
-export function createUTCDateFromString( dateStr: string, timeStr: string): Date {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const [hour, minute] = timeStr.split(':').map(Number);
+export function createUTCDateFromString(dateStr: string, timeStr: string): Date {
+	const [year, month, day] = dateStr.split('-').map(Number);
+	const [hour, minute] = timeStr.split(':').map(Number);
 
-    return createUTCDate(year, month - 1, day, hour, minute);
+	return createUTCDate(year, month - 1, day, hour, minute);
 }
 
-export function parseISO(isoStr: string): Date {
-    if (isoStr.includes('Z') || isoStr.includes('+') || isoStr.includes('T')) {
-        return dayjs(isoStr).utc().toDate();
-    }
-    return dayjs(isoStr).utc().toDate();
+function hasExplicitTimezone(value: string): boolean {
+	return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
+}
+
+export function parseISO(isoStr: string, sourceTimezone?: string): Date {
+	// Datetime-local values have no offset. Parse them in the browser timezone first,
+	// then convert to UTC so DB storage remains consistent.
+	if (!hasExplicitTimezone(isoStr) && sourceTimezone) {
+		const parsed = dayjs.tz(isoStr, 'YYYY-MM-DDTHH:mm', sourceTimezone);
+		if (parsed.isValid()) {
+			return parsed.utc().toDate();
+		}
+	}
+
+	return dayjs(isoStr).utc().toDate();
 }
 
 export function formatDateTime(
-    date: Date | dayjs.Dayjs,
-    format: 'full' | 'date' | 'time' = 'full',
-    timezone: string = 'Asia/Jakarta'
+	date: Date | dayjs.Dayjs,
+	format: 'full' | 'date' | 'time' = 'full',
+	timezone: string = 'Asia/Jakarta'
 ): string {
-    const dayjsDate = dayjs(date).tz(timezone);
-    
-    switch (format) {
-        case 'time':
-            return dayjsDate.format('HH:mm');
-        case 'date':
-            return dayjsDate.format('DD MMMM YYYY');
-        case 'full':
-        default:
-            return dayjsDate.format('DD MMMM YYYY HH:mm');
-    }
+	const dayjsDate = dayjs(date).tz(timezone);
+
+	switch (format) {
+		case 'time':
+			return dayjsDate.format('HH:mm');
+		case 'date':
+			return dayjsDate.format('DD MMMM YYYY');
+		case 'full':
+		default:
+			return dayjsDate.format('DD MMMM YYYY HH:mm');
+	}
 }
 export function getDuration(
-    startDate: Date | dayjs.Dayjs,
-    endDate: Date | dayjs.Dayjs,
-    format: 'full' | 'short' | 'simple' = 'full'
+	startDate: Date | dayjs.Dayjs,
+	endDate: Date | dayjs.Dayjs,
+	format: 'full' | 'short' | 'simple' = 'full'
 ): string {
-    const duration = dayjs.duration(dayjs(endDate).diff(dayjs(startDate)));
-    switch (format) {
-        case 'short':
-            return duration.format('HH:mm');
-        case 'full':
-            return duration.format('DD HH:mm');
-        case 'simple':
-            return duration.format('HH');
-    }
+	const duration = dayjs.duration(dayjs(endDate).diff(dayjs(startDate)));
+	switch (format) {
+		case 'short':
+			return duration.format('HH:mm');
+		case 'full':
+			return duration.format('DD HH:mm');
+		case 'simple':
+			return duration.format('HH');
+	}
 }
-export function getTimeComponents(date: Date | dayjs.Dayjs, timezone: string): {
-    hours: number;
-    minutes: number;
-    day: number;
-    month: number;
-    year: number;
-    dayOfWeek: number;
+export function getTimeComponents(
+	date: Date | dayjs.Dayjs,
+	timezone: string
+): {
+	hours: number;
+	minutes: number;
+	day: number;
+	month: number;
+	year: number;
+	dayOfWeek: number;
 } {
-    const dayjsDate = dayjs(date).tz(timezone);
+	const dayjsDate = dayjs(date).tz(timezone);
 
-    return {
-        hours: dayjsDate.hour(),
-        minutes: dayjsDate.minute(),
-        day: dayjsDate.date(),
-        month: dayjsDate.month() + 1,
-        year: dayjsDate.year(),
-        dayOfWeek: dayjsDate.day(),
-    };
+	return {
+		hours: dayjsDate.hour(),
+		minutes: dayjsDate.minute(),
+		day: dayjsDate.date(),
+		month: dayjsDate.month() + 1,
+		year: dayjsDate.year(),
+		dayOfWeek: dayjsDate.day()
+	};
 }
-

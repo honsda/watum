@@ -1,13 +1,5 @@
--- Database schema for Sistem Informasi Akademik "Universitas Merdeka Digital"
--- Generated from Prisma schema
--- Using MySQL with UTC timezone
-
 -- ============================================
--- ENUMS (using ENUM type)
--- ============================================
-
--- ============================================
--- FACULTIES (manual ID)
+-- FACULTIES
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS faculties (
@@ -18,7 +10,7 @@ CREATE TABLE IF NOT EXISTS faculties (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================
--- STUDY PROGRAMS (manual ID)
+-- STUDY PROGRAMS 
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS study_programs (
@@ -32,7 +24,7 @@ CREATE TABLE IF NOT EXISTS study_programs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================
--- CLASSROOMS (auto-generated CUID)
+-- CLASSROOMS 
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS class_rooms (
@@ -47,7 +39,7 @@ CREATE TABLE IF NOT EXISTS class_rooms (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================
--- STUDENTS (manual ID)
+-- STUDENTS 
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS students (
@@ -64,7 +56,7 @@ CREATE TABLE IF NOT EXISTS students (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================
--- LECTURERS (manual ID)
+-- LECTURERS 
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS lecturers (
@@ -78,7 +70,7 @@ CREATE TABLE IF NOT EXISTS lecturers (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================
--- COURSES (manual ID)
+-- COURSES 
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS courses (
@@ -86,25 +78,15 @@ CREATE TABLE IF NOT EXISTS courses (
   name VARCHAR(255) NOT NULL,
   credits INT NOT NULL,
   study_program_id VARCHAR(255) NOT NULL,
+  lecturer_id VARCHAR(255) NOT NULL,
   created_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
   updated_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  FOREIGN KEY (study_program_id) REFERENCES study_programs(id) ON DELETE RESTRICT ON UPDATE CASCADE
+  FOREIGN KEY (study_program_id) REFERENCES study_programs(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  FOREIGN KEY (lecturer_id) REFERENCES lecturers(id) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================
--- COURSE LECTURERS (Many-to-Many junction table)
--- ============================================
-
-CREATE TABLE IF NOT EXISTS _CourseToLecturer (
-  A VARCHAR(255) NOT NULL,
-  B VARCHAR(255) NOT NULL,
-  PRIMARY KEY (A, B),
-  FOREIGN KEY (A) REFERENCES courses(id) ON DELETE CASCADE ON UPDATE CASCADE,
-  FOREIGN KEY (B) REFERENCES lecturers(id) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================
--- SCHEDULES (auto-generated CUID)
+-- SCHEDULES 
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS schedules (
@@ -121,7 +103,7 @@ CREATE TABLE IF NOT EXISTS schedules (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================
--- ENROLLMENTS (auto-generated CUID)
+-- ENROLLMENTS 
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS enrollments (
@@ -129,7 +111,6 @@ CREATE TABLE IF NOT EXISTS enrollments (
   student_id VARCHAR(255) NOT NULL,
   course_id VARCHAR(255) NOT NULL,
   class_room_id VARCHAR(255) NOT NULL,
-  lecturer_id VARCHAR(255) NOT NULL,
   schedule_id VARCHAR(255) UNIQUE NOT NULL,
   semester VARCHAR(255) NOT NULL,
   academic_year VARCHAR(255) NOT NULL,
@@ -138,13 +119,12 @@ CREATE TABLE IF NOT EXISTS enrollments (
   FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE RESTRICT ON UPDATE CASCADE,
   FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE RESTRICT ON UPDATE CASCADE,
   FOREIGN KEY (class_room_id) REFERENCES class_rooms(id) ON DELETE RESTRICT ON UPDATE CASCADE,
-  FOREIGN KEY (lecturer_id) REFERENCES lecturers(id) ON DELETE RESTRICT ON UPDATE CASCADE,
   FOREIGN KEY (schedule_id) REFERENCES schedules(id) ON DELETE RESTRICT ON UPDATE CASCADE,
   UNIQUE KEY enrollments_student_id_course_id_semester_key (student_id, course_id, semester)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================
--- GRADES (auto-generated CUID)
+-- GRADES 
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS grades (
@@ -161,7 +141,7 @@ CREATE TABLE IF NOT EXISTS grades (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================
--- USERS (auto-generated CUID)
+-- USERS 
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS users (
@@ -189,10 +169,7 @@ CREATE INDEX idx_students_study_program ON students(study_program_id);
 
 -- Courses
 CREATE INDEX idx_courses_study_program ON courses(study_program_id);
-
--- Course Lecturers
-CREATE INDEX idx_course_lecturers_course ON _CourseToLecturer(A);
-CREATE INDEX idx_course_lecturers_lecturer ON _CourseToLecturer(B);
+CREATE INDEX idx_courses_lecturer ON courses(lecturer_id);
 
 -- Schedules
 CREATE INDEX idx_schedules_class_room ON schedules(class_room_id);
@@ -203,7 +180,6 @@ CREATE INDEX idx_schedules_day ON schedules(day);
 CREATE INDEX idx_enrollments_student ON enrollments(student_id);
 CREATE INDEX idx_enrollments_course ON enrollments(course_id);
 CREATE INDEX idx_enrollments_class_room ON enrollments(class_room_id);
-CREATE INDEX idx_enrollments_lecturer ON enrollments(lecturer_id);
 CREATE INDEX idx_enrollments_schedule ON enrollments(schedule_id);
 CREATE INDEX idx_enrollments_semester_year ON enrollments(semester, academic_year);
 
@@ -213,3 +189,22 @@ CREATE INDEX idx_grades_enrollment ON grades(enrollment_id);
 -- Users
 CREATE INDEX idx_users_student ON users(student_id);
 CREATE INDEX idx_users_lecturer ON users(lecturer_id);
+
+-- ============================================
+-- DUMMY ADMIN USER
+-- ============================================
+
+INSERT INTO users (id, email, password, role, student_id, lecturer_id)
+VALUES (
+  'admin-default',
+  'admin@watum.local',
+  '$argon2id$v=19$m=65536,t=3,p=4$TC2FXN7fXfwlswrRL4hTzQ$ASiXrlPTYumXqldaajKCtfKPUbuh1wmz1+f+HMwkd0M',
+  'ADMIN',
+  NULL,
+  NULL
+)
+ON DUPLICATE KEY UPDATE
+  password = VALUES(password),
+  role = 'ADMIN',
+  student_id = NULL,
+  lecturer_id = NULL;

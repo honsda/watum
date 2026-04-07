@@ -54,7 +54,7 @@ const selectFragments = {
     id: `e.id`,
     student_id: `e.student_id`,
     course_id: `e.course_id`,
-    lecturer_id: `e.lecturer_id`,
+    lecturer_id: `c.lecturer_id`,
     class_room_id: `e.class_room_id`,
     schedule_id: `e.schedule_id`,
     semester: `e.semester`,
@@ -151,7 +151,7 @@ export async function selectEnrollments(connection: Connection, params?: SelectE
         sql = appendSelect(sql, `e.course_id`);
     }
     if (params?.select == null || params.select.lecturer_id) {
-        sql = appendSelect(sql, `e.lecturer_id`);
+        sql = appendSelect(sql, `c.lecturer_id`);
     }
     if (params?.select == null || params.select.class_room_id) {
         sql = appendSelect(sql, `e.class_room_id`);
@@ -212,16 +212,20 @@ export async function selectEnrollments(connection: Connection, params?: SelectE
         sql += EOL + `INNER JOIN study_programs sp ON s.study_program_id = sp.id`;
     }
     if (params?.select == null
+        || params.select.lecturer_id
         || params.select.course_name
         || params.select.course_credits
+        || params.select.lecturer_name
+        || where.lecturer_id != null
         || where.course_name != null
-        || where.course_credits != null) {
+        || where.course_credits != null
+        || where.lecturer_name != null) {
         sql += EOL + `INNER JOIN courses c ON e.course_id = c.id`;
     }
     if (params?.select == null
         || params.select.lecturer_name
         || where.lecturer_name != null) {
-        sql += EOL + `INNER JOIN lecturers l ON e.lecturer_id = l.id`;
+        sql += EOL + `INNER JOIN lecturers l ON c.lecturer_id = l.id`;
     }
     if (params?.select == null
         || params.select.class_room_name

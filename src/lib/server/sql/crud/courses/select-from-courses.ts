@@ -9,6 +9,7 @@ export type SelectFromCoursesResult = {
     name: string;
     credits: number;
     study_program_id: string;
+    lecturer_id: string;
     created_at?: Date;
     updated_at?: Date;
 }
@@ -20,6 +21,7 @@ export async function selectFromCourses(connection: Connection, params: SelectFr
         \`name\`,
         \`credits\`,
         \`study_program_id\`,
+        \`lecturer_id\`,
         \`created_at\`,
         \`updated_at\`
     FROM courses
@@ -38,8 +40,9 @@ function mapArrayToSelectFromCoursesResult(data: any) {
         name: data[1],
         credits: data[2],
         study_program_id: data[3],
-        created_at: data[4],
-        updated_at: data[5]
+        lecturer_id: data[4],
+        created_at: data[5],
+        updated_at: data[6]
     }
     return result;
 }
