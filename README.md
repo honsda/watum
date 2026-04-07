@@ -65,3 +65,35 @@ npm run build
 You can preview the production build with `npm run preview`.
 
 > To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+
+## Deploying To Coolify
+
+This repository includes a production `Dockerfile` for Coolify deployment.
+
+Use these settings in Coolify:
+
+- Build method: `Dockerfile`
+- Port: `3000`
+- Start command: use Dockerfile default (`node build`)
+- Health check path: `/health`
+
+Optional readiness check:
+
+- Readiness path: `/ready` (returns `503` if database is unavailable)
+
+Required environment variables:
+
+```env
+NODE_ENV=production
+PORT=3000
+DB_HOST=<mysql-host>
+DB_PORT=3306
+DB_USER=<mysql-user>
+DB_PASSWORD=<mysql-password>
+DB_NAME=<mysql-database>
+```
+
+Notes:
+
+- The app runtime DB connection uses `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, and `DB_PORT`.
+- `DATABASE_URL` can still be used for Prisma CLI workflows, but runtime queries use the variables above.
