@@ -93,7 +93,24 @@ DB_PASSWORD=<mysql-password>
 DB_NAME=<mysql-database>
 ```
 
+Recommended proxy/origin environment variables for SvelteKit remote functions:
+
+```env
+# Option 1 (explicit)
+ORIGIN=https://your-domain.example.com
+
+# Option 2 (Coolify magic variable)
+# Leave ORIGIN empty and set COOLIFY_FQDN in Coolify. The container entrypoint
+# will auto-derive ORIGIN as https://<first COOLIFY_FQDN value>.
+COOLIFY_FQDN=your-domain.example.com
+
+PROTOCOL_HEADER=x-forwarded-proto
+HOST_HEADER=x-forwarded-host
+PORT_HEADER=x-forwarded-port
+```
+
 Notes:
 
 - The app runtime DB connection uses `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, and `DB_PORT`.
 - `DATABASE_URL` can still be used for Prisma CLI workflows, but runtime queries use the variables above.
+- The runtime image includes `curl` for connectivity checks in Coolify terminal.

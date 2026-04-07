@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+# Auto-derive ORIGIN in Coolify if not explicitly set.
+# COOLIFY_FQDN may contain multiple domains separated by commas.
+if [ -z "${ORIGIN:-}" ] && [ -n "${COOLIFY_FQDN:-}" ]; then
+  first_fqdn="${COOLIFY_FQDN%%,*}"
+  export ORIGIN="https://${first_fqdn}"
+fi
+
+exec node build
