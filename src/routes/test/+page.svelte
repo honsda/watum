@@ -295,35 +295,47 @@
 	}
 </script>
 
-<div class="container mx-auto p-4 max-w-4xl">
-	<h1 class="text-2xl font-bold mb-4">Remote Functions Test</h1>
+<style>
+	button,
+	select,
+	input[type='checkbox'],
+	label {
+		cursor: pointer;
+	}
+</style>
 
-	<div class="border p-3 rounded mb-4">
-		<h3 class="font-semibold">Auth Session</h3>
-		<p class="text-sm text-gray-600 mt-1">Most remote functions require a valid session. Login first to avoid Unauthorized.</p>
-		<div class="mt-2 flex flex-wrap gap-2">
-			<button class="px-3 py-1 bg-green-600 text-white rounded text-sm" onclick={() => test('getCurrentUser', () => getCurrentUser().run())} disabled={loading['getCurrentUser']}>Check Session</button>
-			<form class="flex flex-wrap gap-2" {...formBox('loginUser', loginUser)}>
-				<input class="border px-2 py-1 rounded text-sm" {...loginUser.fields.email.as('email')} placeholder="Email" required />
-				<input class="border px-2 py-1 rounded text-sm" type="password" {...loginUser.fields.password.as('text')} placeholder="Password" required />
-				<button class="px-3 py-1 bg-blue-500 text-white rounded text-sm" disabled={loginUser.pending > 0}>Login</button>
-			</form>
-			<form {...formBox('logoutUser', logoutUser)}>
-				<button class="px-3 py-1 bg-red-500 text-white rounded text-sm" disabled={logoutUser.pending > 0}>Logout</button>
-			</form>
+
+<div class="min-h-screen bg-gray-950 text-gray-100 p-4">
+	<div class="container mx-auto p-6 max-w-4xl bg-gray-900 rounded-xl shadow-2xl border border-gray-800">
+		<h1 class="text-3xl font-bold mb-6 text-white">Remote Functions Test</h1>
+
+		<div class="border border-gray-700 p-4 rounded-lg mb-6 bg-gray-800/50">
+			<h3 class="font-semibold text-lg text-gray-200">Auth Session</h3>
+			<p class="text-sm text-gray-400 mt-1">Most remote functions require a valid session. Login first to avoid Unauthorized.</p>
+			<div class="mt-4 flex flex-wrap gap-2">
+				<button class="px-4 py-2 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors" onclick={() => test('getCurrentUser', () => getCurrentUser().run())} disabled={loading['getCurrentUser']}>Check Session</button>
+				<form class="flex flex-wrap gap-2" {...formBox('loginUser', loginUser)}>
+					<input class="bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none" {...loginUser.fields.email.as('email')} placeholder="Email" required />
+					<input class="bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none" type="password" {...loginUser.fields.password.as('text')} placeholder="Password" required />
+					<button class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-sm transition-colors" disabled={loginUser.pending > 0}>Login</button>
+				</form>
+				<form {...formBox('logoutUser', logoutUser)}>
+					<button class="px-4 py-2 bg-red-700 hover:bg-red-600 text-white rounded-md text-sm transition-colors" disabled={logoutUser.pending > 0}>Logout</button>
+				</form>
+			</div>
+			{#if loginUser.result}
+				<p class="text-sm text-green-400 mt-2 font-medium">Login success.</p>
+			{/if}
+			{#if loginUser.fields.allIssues()?.length}
+				<p class="text-sm text-red-400 mt-2 font-medium">{loginUser.fields.allIssues()?.[0]?.message}</p>
+			{/if}
 		</div>
-		{#if loginUser.result}
-			<p class="text-sm text-green-700 mt-2">Login success.</p>
-		{/if}
-		{#if loginUser.fields.allIssues()?.length}
-			<p class="text-sm text-red-700 mt-2">{loginUser.fields.allIssues()?.[0]?.message}</p>
-		{/if}
-	</div>
 
-	<div class="flex gap-2 mb-6 flex-wrap">
+
+	<div class="flex gap-2 mb-8 flex-wrap">
 		{#each modules as mod (mod)}
 			<button
-				class="px-3 py-1 rounded text-sm {activeModule === mod ? 'bg-blue-500 text-white' : 'bg-gray-200'}"
+				class="px-4 py-1.5 rounded-lg text-sm font-medium transition-all {activeModule === mod ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'}"
 				onclick={() => activeModule = mod}
 			>
 				{mod}
@@ -331,363 +343,364 @@
 		{/each}
 	</div>
 
+
 	{#if activeModule === 'courses'}
 		<div class="space-y-3">
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getCourses</h3>
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm mt-2" onclick={() => test('getCourses', () => getCourses().run())} disabled={loading['getCourses']}>Test</button>
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm mt-2" onclick={() => test('getCourses', () => getCourses().run())} disabled={loading['getCourses']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">searchCourses</h3>
 				<div class="mt-2 flex flex-wrap gap-2">
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchCourseData.id} placeholder="ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchCourseData.name} placeholder="Name" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchCourseData.studyProgramId} placeholder="Study Program ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchCourseData.studyProgramName} placeholder="Study Program Name" />
-					<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={searchCourseData.minCredits} placeholder="Min" />
-					<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={searchCourseData.maxCredits} placeholder="Max" />
-					<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('searchCourses', () => searchCourses({ id: searchCourseData.id || undefined, name: searchCourseData.name || undefined, studyProgramId: searchCourseData.studyProgramId || undefined, studyProgramName: searchCourseData.studyProgramName || undefined, minCredits: searchCourseData.minCredits === '' ? undefined : Number(searchCourseData.minCredits), maxCredits: searchCourseData.maxCredits === '' ? undefined : Number(searchCourseData.maxCredits) }).run())} disabled={loading['searchCourses']}>Test</button>
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchCourseData.id} placeholder="ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchCourseData.name} placeholder="Name" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchCourseData.studyProgramId} placeholder="Study Program ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchCourseData.studyProgramName} placeholder="Study Program Name" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={searchCourseData.minCredits} placeholder="Min" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={searchCourseData.maxCredits} placeholder="Max" />
+					<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('searchCourses', () => searchCourses({ id: searchCourseData.id || undefined, name: searchCourseData.name || undefined, studyProgramId: searchCourseData.studyProgramId || undefined, studyProgramName: searchCourseData.studyProgramName || undefined, minCredits: searchCourseData.minCredits === '' ? undefined : Number(searchCourseData.minCredits), maxCredits: searchCourseData.maxCredits === '' ? undefined : Number(searchCourseData.maxCredits) }).run())} disabled={loading['searchCourses']}>Test</button>
 				</div>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getCourse</h3>
-				<input type="text" bind:value={courseId} placeholder="Course ID" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('getCourse', () => getCourse(courseId).run())} disabled={loading['getCourse']}>Test</button>
+				<input type="text" bind:value={courseId} placeholder="Course ID" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('getCourse', () => getCourse(courseId).run())} disabled={loading['getCourse']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">createCourse</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('createCourse', createCourse)}>
-								<input class="border px-2 py-1 rounded text-sm" {...createCourse.fields.id.as('text')} bind:value={createCourseData.id} placeholder="ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...createCourse.fields.name.as('text')} bind:value={createCourseData.name} placeholder="Name" required />
-								<input class="border px-2 py-1 rounded text-sm w-24" {...createCourse.fields.credits.as('number')} bind:value={createCourseData.credits} min="1" max="6" required />
-								<input class="border px-2 py-1 rounded text-sm" {...createCourse.fields.studyProgramId.as('text')} bind:value={createCourseData.studyProgramId} placeholder="Study Program ID" required />
-								<button class="px-3 py-1 bg-blue-500 text-white rounded text-sm" disabled={createCourse.pending > 0}>Submit</button>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createCourse.fields.id.as('text')} bind:value={createCourseData.id} placeholder="ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createCourse.fields.name.as('text')} bind:value={createCourseData.name} placeholder="Name" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" {...createCourse.fields.credits.as('number')} bind:value={createCourseData.credits} min="1" max="6" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createCourse.fields.studyProgramId.as('text')} bind:value={createCourseData.studyProgramId} placeholder="Study Program ID" required />
+								<button class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-sm transition-colors shadow-sm" disabled={createCourse.pending > 0}>Submit</button>
 				</form>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">updateCourse</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('updateCourse', updateCourse)}>
-								<input class="border px-2 py-1 rounded text-sm" {...updateCourse.fields.id.as('text')} bind:value={updateCourseData.id} placeholder="ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateCourse.fields.name.as('text')} bind:value={updateCourseData.name} placeholder="Name" required />
-								<input class="border px-2 py-1 rounded text-sm w-24" {...updateCourse.fields.credits.as('number')} bind:value={updateCourseData.credits} min="1" max="6" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateCourse.fields.studyProgramId.as('text')} bind:value={updateCourseData.studyProgramId} placeholder="Study Program ID" required />
-								<button class="px-3 py-1 bg-amber-500 text-white rounded text-sm" disabled={updateCourse.pending > 0}>Submit</button>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateCourse.fields.id.as('text')} bind:value={updateCourseData.id} placeholder="ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateCourse.fields.name.as('text')} bind:value={updateCourseData.name} placeholder="Name" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" {...updateCourse.fields.credits.as('number')} bind:value={updateCourseData.credits} min="1" max="6" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateCourse.fields.studyProgramId.as('text')} bind:value={updateCourseData.studyProgramId} placeholder="Study Program ID" required />
+								<button class="px-4 py-1.5 bg-amber-700 hover:bg-amber-600 text-white rounded-md text-sm transition-colors shadow-sm" disabled={updateCourse.pending > 0}>Submit</button>
 				</form>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">deleteCourse</h3>
-				<input type="text" bind:value={courseId} placeholder="Course ID to delete" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<button class="px-3 py-1 bg-red-500 text-white rounded text-sm" onclick={() => test('deleteCourse', () => deleteCourse(courseId))} disabled={loading['deleteCourse']}>Test</button>
+				<input type="text" bind:value={courseId} placeholder="Course ID to delete" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<button class="px-4 py-1.5 bg-red-700 hover:bg-red-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('deleteCourse', () => deleteCourse(courseId))} disabled={loading['deleteCourse']}>Test</button>
 			</div>
 		</div>
 	{/if}
 
 	{#if activeModule === 'classrooms'}
 		<div class="space-y-3">
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getClassRooms</h3>
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm mt-2" onclick={() => test('getClassRooms', () => getClassRooms().run())} disabled={loading['getClassRooms']}>Test</button>
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm mt-2" onclick={() => test('getClassRooms', () => getClassRooms().run())} disabled={loading['getClassRooms']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">searchClassRooms</h3>
 				<div class="mt-2 flex flex-wrap gap-2">
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchClassRoomData.id} placeholder="ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchClassRoomData.name} placeholder="Name" />
-					<select class="border px-2 py-1 rounded text-sm" bind:value={searchClassRoomData.classRoomType}>
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchClassRoomData.id} placeholder="ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchClassRoomData.name} placeholder="Name" />
+					<select class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchClassRoomData.classRoomType}>
 						{#each classRoomTypeOptions as type (type)}
 							<option value={type}>{type}</option>
 						{/each}
 					</select>
-					<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={searchClassRoomData.minCapacity} placeholder="Min" />
-					<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={searchClassRoomData.maxCapacity} placeholder="Max" />
-					<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('searchClassRooms', () => searchClassRooms({ id: searchClassRoomData.id || undefined, name: searchClassRoomData.name || undefined, classRoomType: searchClassRoomData.classRoomType as 'REGULER' | 'LAB_KOMPUTER' | 'LAB_BAHASA' | 'AUDITORIUM', minCapacity: searchClassRoomData.minCapacity === '' ? undefined : Number(searchClassRoomData.minCapacity), maxCapacity: searchClassRoomData.maxCapacity === '' ? undefined : Number(searchClassRoomData.maxCapacity) }).run())} disabled={loading['searchClassRooms']}>Test</button>
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={searchClassRoomData.minCapacity} placeholder="Min" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={searchClassRoomData.maxCapacity} placeholder="Max" />
+					<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('searchClassRooms', () => searchClassRooms({ id: searchClassRoomData.id || undefined, name: searchClassRoomData.name || undefined, classRoomType: searchClassRoomData.classRoomType as 'REGULER' | 'LAB_KOMPUTER' | 'LAB_BAHASA' | 'AUDITORIUM', minCapacity: searchClassRoomData.minCapacity === '' ? undefined : Number(searchClassRoomData.minCapacity), maxCapacity: searchClassRoomData.maxCapacity === '' ? undefined : Number(searchClassRoomData.maxCapacity) }).run())} disabled={loading['searchClassRooms']}>Test</button>
 				</div>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getClassRoom</h3>
-				<input type="text" bind:value={classRoomId} placeholder="ClassRoom ID" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('getClassRoom', () => getClassRoom(classRoomId).run())} disabled={loading['getClassRoom']}>Test</button>
+				<input type="text" bind:value={classRoomId} placeholder="ClassRoom ID" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('getClassRoom', () => getClassRoom(classRoomId).run())} disabled={loading['getClassRoom']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getClassRoomUtilization</h3>
-				<input type="text" bind:value={classRoomId} placeholder="ClassRoom ID" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<input type="text" bind:value={timezone} placeholder="Timezone (e.g. Asia/Jakarta)" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('getClassRoomUtilization', () => getClassRoomUtilization({ classRoomId, timezone }).run())} disabled={loading['getClassRoomUtilization']}>Test</button>
+				<input type="text" bind:value={classRoomId} placeholder="ClassRoom ID" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<input type="text" bind:value={timezone} placeholder="Timezone (e.g. Asia/Jakarta)" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('getClassRoomUtilization', () => getClassRoomUtilization({ classRoomId, timezone }).run())} disabled={loading['getClassRoomUtilization']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">createClassRoom</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('createClassRoom', createClassRoom)}>
-								<input class="border px-2 py-1 rounded text-sm" {...createClassRoom.fields.name.as('text')} bind:value={createClassRoomData.name} placeholder="Name" required />
-								<select class="border px-2 py-1 rounded text-sm" {...createClassRoom.fields.classRoomType.as('select')} bind:value={createClassRoomData.classRoomType}>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createClassRoom.fields.name.as('text')} bind:value={createClassRoomData.name} placeholder="Name" required />
+								<select class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createClassRoom.fields.classRoomType.as('select')} bind:value={createClassRoomData.classRoomType}>
 									{#each classRoomTypeOptions as type (type)}
 										<option value={type}>{type}</option>
 									{/each}
 								</select>
-								<input class="border px-2 py-1 rounded text-sm w-24" {...createClassRoom.fields.capacity.as('number')} bind:value={createClassRoomData.capacity} min="1" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" {...createClassRoom.fields.capacity.as('number')} bind:value={createClassRoomData.capacity} min="1" required />
 					<label class="text-sm flex items-center gap-1"><input {...createClassRoom.fields.hasProjector.as('checkbox')} /> Projector</label>
 					<label class="text-sm flex items-center gap-1"><input {...createClassRoom.fields.hasAC.as('checkbox')} /> AC</label>
-								<button class="px-3 py-1 bg-blue-500 text-white rounded text-sm" disabled={createClassRoom.pending > 0}>Submit</button>
+								<button class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-sm transition-colors shadow-sm" disabled={createClassRoom.pending > 0}>Submit</button>
 				</form>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">updateClassRoom</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('updateClassRoom', updateClassRoom)}>
-								<input class="border px-2 py-1 rounded text-sm" {...updateClassRoom.fields.id.as('text')} bind:value={updateClassRoomData.id} placeholder="ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateClassRoom.fields.name.as('text')} bind:value={updateClassRoomData.name} placeholder="Name" required />
-								<select class="border px-2 py-1 rounded text-sm" {...updateClassRoom.fields.classRoomType.as('select')} bind:value={updateClassRoomData.classRoomType}>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateClassRoom.fields.id.as('text')} bind:value={updateClassRoomData.id} placeholder="ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateClassRoom.fields.name.as('text')} bind:value={updateClassRoomData.name} placeholder="Name" required />
+								<select class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateClassRoom.fields.classRoomType.as('select')} bind:value={updateClassRoomData.classRoomType}>
 									{#each classRoomTypeOptions as type (type)}
 										<option value={type}>{type}</option>
 									{/each}
 								</select>
-								<input class="border px-2 py-1 rounded text-sm w-24" {...updateClassRoom.fields.capacity.as('number')} bind:value={updateClassRoomData.capacity} min="1" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" {...updateClassRoom.fields.capacity.as('number')} bind:value={updateClassRoomData.capacity} min="1" required />
 					<label class="text-sm flex items-center gap-1"><input {...updateClassRoom.fields.hasProjector.as('checkbox')} /> Projector</label>
 					<label class="text-sm flex items-center gap-1"><input {...updateClassRoom.fields.hasAC.as('checkbox')} /> AC</label>
-								<button class="px-3 py-1 bg-amber-500 text-white rounded text-sm" disabled={updateClassRoom.pending > 0}>Submit</button>
+								<button class="px-4 py-1.5 bg-amber-700 hover:bg-amber-600 text-white rounded-md text-sm transition-colors shadow-sm" disabled={updateClassRoom.pending > 0}>Submit</button>
 				</form>
 			</div>
-				<div class="border p-3 rounded">
+				<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 					<h3 class="font-semibold">deleteClassRoom</h3>
-					<input type="text" bind:value={classRoomId} placeholder="ClassRoom ID to delete" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-					<button class="px-3 py-1 bg-red-500 text-white rounded text-sm" onclick={() => test('deleteClassRoom', () => deleteClassRoom(classRoomId))} disabled={loading['deleteClassRoom']}>Test</button>
+					<input type="text" bind:value={classRoomId} placeholder="ClassRoom ID to delete" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+					<button class="px-4 py-1.5 bg-red-700 hover:bg-red-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('deleteClassRoom', () => deleteClassRoom(classRoomId))} disabled={loading['deleteClassRoom']}>Test</button>
 				</div>
 		</div>
 	{/if}
 
 	{#if activeModule === 'students'}
 		<div class="space-y-3">
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getStudents</h3>
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm mt-2" onclick={() => test('getStudents', () => getStudents().run())} disabled={loading['getStudents']}>Test</button>
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm mt-2" onclick={() => test('getStudents', () => getStudents().run())} disabled={loading['getStudents']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">searchStudents</h3>
 				<div class="mt-2 flex flex-wrap gap-2">
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchStudentData.id} placeholder="ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchStudentData.name} placeholder="Name" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchStudentData.email} placeholder="Email" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchStudentData.studyProgramId} placeholder="Study Program ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchStudentData.facultyId} placeholder="Faculty ID" />
-					<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={searchStudentData.minYearAdmitted} placeholder="Min" />
-					<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={searchStudentData.maxYearAdmitted} placeholder="Max" />
-					<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('searchStudents', () => searchStudents({ id: searchStudentData.id || undefined, name: searchStudentData.name || undefined, email: searchStudentData.email || undefined, studyProgramId: searchStudentData.studyProgramId || undefined, facultyId: searchStudentData.facultyId || undefined, minYearAdmitted: searchStudentData.minYearAdmitted === '' ? undefined : Number(searchStudentData.minYearAdmitted), maxYearAdmitted: searchStudentData.maxYearAdmitted === '' ? undefined : Number(searchStudentData.maxYearAdmitted) }).run())} disabled={loading['searchStudents']}>Test</button>
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchStudentData.id} placeholder="ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchStudentData.name} placeholder="Name" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchStudentData.email} placeholder="Email" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchStudentData.studyProgramId} placeholder="Study Program ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchStudentData.facultyId} placeholder="Faculty ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={searchStudentData.minYearAdmitted} placeholder="Min" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={searchStudentData.maxYearAdmitted} placeholder="Max" />
+					<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('searchStudents', () => searchStudents({ id: searchStudentData.id || undefined, name: searchStudentData.name || undefined, email: searchStudentData.email || undefined, studyProgramId: searchStudentData.studyProgramId || undefined, facultyId: searchStudentData.facultyId || undefined, minYearAdmitted: searchStudentData.minYearAdmitted === '' ? undefined : Number(searchStudentData.minYearAdmitted), maxYearAdmitted: searchStudentData.maxYearAdmitted === '' ? undefined : Number(searchStudentData.maxYearAdmitted) }).run())} disabled={loading['searchStudents']}>Test</button>
 				</div>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getStudent</h3>
-				<input type="text" bind:value={studentId} placeholder="Student ID (NRP)" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('getStudent', () => getStudent(studentId).run())} disabled={loading['getStudent']}>Test</button>
+				<input type="text" bind:value={studentId} placeholder="Student ID (NRP)" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('getStudent', () => getStudent(studentId).run())} disabled={loading['getStudent']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getStudentGPA</h3>
-				<input type="text" bind:value={studentId} placeholder="Student ID (NRP)" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('getStudentGPA', () => getStudentGPA(studentId).run())} disabled={loading['getStudentGPA']}>Test</button>
+				<input type="text" bind:value={studentId} placeholder="Student ID (NRP)" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('getStudentGPA', () => getStudentGPA(studentId).run())} disabled={loading['getStudentGPA']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">createStudent</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('createStudent', createStudent)}>
-								<input class="border px-2 py-1 rounded text-sm" {...createStudent.fields.name.as('text')} bind:value={createStudentData.name} placeholder="Name" required />
-								<input class="border px-2 py-1 rounded text-sm" {...createStudent.fields.email.as('email')} bind:value={createStudentData.email} placeholder="Email" required />
-								<input class="border px-2 py-1 rounded text-sm" {...createStudent.fields.phone.as('text')} bind:value={createStudentData.phone} placeholder="Phone" />
-								<input class="border px-2 py-1 rounded text-sm" {...createStudent.fields.address.as('text')} bind:value={createStudentData.address} placeholder="Address" />
-								<input class="border px-2 py-1 rounded text-sm w-24" {...createStudent.fields.yearAdmitted.as('number')} bind:value={createStudentData.yearAdmitted} required />
-								<input class="border px-2 py-1 rounded text-sm" {...createStudent.fields.studyProgramId.as('text')} bind:value={createStudentData.studyProgramId} placeholder="Study Program ID" required />
-								<button class="px-3 py-1 bg-blue-500 text-white rounded text-sm" disabled={createStudent.pending > 0}>Submit</button>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createStudent.fields.name.as('text')} bind:value={createStudentData.name} placeholder="Name" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createStudent.fields.email.as('email')} bind:value={createStudentData.email} placeholder="Email" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createStudent.fields.phone.as('text')} bind:value={createStudentData.phone} placeholder="Phone" />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createStudent.fields.address.as('text')} bind:value={createStudentData.address} placeholder="Address" />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" {...createStudent.fields.yearAdmitted.as('number')} bind:value={createStudentData.yearAdmitted} required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createStudent.fields.studyProgramId.as('text')} bind:value={createStudentData.studyProgramId} placeholder="Study Program ID" required />
+								<button class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-sm transition-colors shadow-sm" disabled={createStudent.pending > 0}>Submit</button>
 				</form>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">updateStudent</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('updateStudent', updateStudent)}>
-								<input class="border px-2 py-1 rounded text-sm" {...updateStudent.fields.id.as('text')} bind:value={updateStudentData.id} placeholder="NRP" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateStudent.fields.name.as('text')} bind:value={updateStudentData.name} placeholder="Name" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateStudent.fields.email.as('email')} bind:value={updateStudentData.email} placeholder="Email" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateStudent.fields.phone.as('text')} bind:value={updateStudentData.phone} placeholder="Phone" />
-								<input class="border px-2 py-1 rounded text-sm" {...updateStudent.fields.address.as('text')} bind:value={updateStudentData.address} placeholder="Address" />
-								<input class="border px-2 py-1 rounded text-sm w-24" {...updateStudent.fields.yearAdmitted.as('number')} bind:value={updateStudentData.yearAdmitted} required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateStudent.fields.studyProgramId.as('text')} bind:value={updateStudentData.studyProgramId} placeholder="Study Program ID" required />
-								<button class="px-3 py-1 bg-amber-500 text-white rounded text-sm" disabled={updateStudent.pending > 0}>Submit</button>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateStudent.fields.id.as('text')} bind:value={updateStudentData.id} placeholder="NRP" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateStudent.fields.name.as('text')} bind:value={updateStudentData.name} placeholder="Name" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateStudent.fields.email.as('email')} bind:value={updateStudentData.email} placeholder="Email" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateStudent.fields.phone.as('text')} bind:value={updateStudentData.phone} placeholder="Phone" />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateStudent.fields.address.as('text')} bind:value={updateStudentData.address} placeholder="Address" />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" {...updateStudent.fields.yearAdmitted.as('number')} bind:value={updateStudentData.yearAdmitted} required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateStudent.fields.studyProgramId.as('text')} bind:value={updateStudentData.studyProgramId} placeholder="Study Program ID" required />
+								<button class="px-4 py-1.5 bg-amber-700 hover:bg-amber-600 text-white rounded-md text-sm transition-colors shadow-sm" disabled={updateStudent.pending > 0}>Submit</button>
 				</form>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">deleteStudent</h3>
-				<input type="text" bind:value={studentId} placeholder="Student ID (NRP) to delete" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<button class="px-3 py-1 bg-red-500 text-white rounded text-sm" onclick={() => test('deleteStudent', () => deleteStudent(studentId))} disabled={loading['deleteStudent']}>Test</button>
+				<input type="text" bind:value={studentId} placeholder="Student ID (NRP) to delete" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<button class="px-4 py-1.5 bg-red-700 hover:bg-red-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('deleteStudent', () => deleteStudent(studentId))} disabled={loading['deleteStudent']}>Test</button>
 			</div>
 		</div>
 	{/if}
 
 	{#if activeModule === 'lecturers'}
 		<div class="space-y-3">
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getLecturers</h3>
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm mt-2" onclick={() => test('getLecturers', () => getLecturers().run())} disabled={loading['getLecturers']}>Test</button>
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm mt-2" onclick={() => test('getLecturers', () => getLecturers().run())} disabled={loading['getLecturers']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">searchLecturers</h3>
 				<div class="mt-2 flex flex-wrap gap-2">
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchLecturerData.id} placeholder="ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchLecturerData.name} placeholder="Name" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchLecturerData.email} placeholder="Email" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchLecturerData.phone} placeholder="Phone" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchLecturerData.address} placeholder="Address" />
-					<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={searchLecturerData.minScheduleCount} placeholder="Min" />
-					<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={searchLecturerData.maxScheduleCount} placeholder="Max" />
-					<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('searchLecturers', () => searchLecturers({ id: searchLecturerData.id || undefined, name: searchLecturerData.name || undefined, email: searchLecturerData.email || undefined, phone: searchLecturerData.phone || undefined, address: searchLecturerData.address || undefined, minScheduleCount: searchLecturerData.minScheduleCount === '' ? undefined : Number(searchLecturerData.minScheduleCount), maxScheduleCount: searchLecturerData.maxScheduleCount === '' ? undefined : Number(searchLecturerData.maxScheduleCount) }).run())} disabled={loading['searchLecturers']}>Test</button>
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchLecturerData.id} placeholder="ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchLecturerData.name} placeholder="Name" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchLecturerData.email} placeholder="Email" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchLecturerData.phone} placeholder="Phone" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchLecturerData.address} placeholder="Address" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={searchLecturerData.minScheduleCount} placeholder="Min" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={searchLecturerData.maxScheduleCount} placeholder="Max" />
+					<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('searchLecturers', () => searchLecturers({ id: searchLecturerData.id || undefined, name: searchLecturerData.name || undefined, email: searchLecturerData.email || undefined, phone: searchLecturerData.phone || undefined, address: searchLecturerData.address || undefined, minScheduleCount: searchLecturerData.minScheduleCount === '' ? undefined : Number(searchLecturerData.minScheduleCount), maxScheduleCount: searchLecturerData.maxScheduleCount === '' ? undefined : Number(searchLecturerData.maxScheduleCount) }).run())} disabled={loading['searchLecturers']}>Test</button>
 				</div>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getLecturer</h3>
-				<input type="text" bind:value={lecturerId} placeholder="Lecturer ID (NIM)" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('getLecturer', () => getLecturer(lecturerId).run())} disabled={loading['getLecturer']}>Test</button>
+				<input type="text" bind:value={lecturerId} placeholder="Lecturer ID (NIM)" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('getLecturer', () => getLecturer(lecturerId).run())} disabled={loading['getLecturer']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">createLecturer</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('createLecturer', createLecturer)}>
-								<input class="border px-2 py-1 rounded text-sm" {...createLecturer.fields.id.as('text')} bind:value={createLecturerData.id} placeholder="NIM" required />
-								<input class="border px-2 py-1 rounded text-sm" {...createLecturer.fields.name.as('text')} bind:value={createLecturerData.name} placeholder="Name" required />
-								<input class="border px-2 py-1 rounded text-sm" {...createLecturer.fields.email.as('email')} bind:value={createLecturerData.email} placeholder="Email" required />
-								<input class="border px-2 py-1 rounded text-sm" {...createLecturer.fields.phone.as('text')} bind:value={createLecturerData.phone} placeholder="Phone" />
-								<input class="border px-2 py-1 rounded text-sm" {...createLecturer.fields.address.as('text')} bind:value={createLecturerData.address} placeholder="Address" />
-								<button class="px-3 py-1 bg-blue-500 text-white rounded text-sm" disabled={createLecturer.pending > 0}>Submit</button>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createLecturer.fields.id.as('text')} bind:value={createLecturerData.id} placeholder="NIM" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createLecturer.fields.name.as('text')} bind:value={createLecturerData.name} placeholder="Name" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createLecturer.fields.email.as('email')} bind:value={createLecturerData.email} placeholder="Email" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createLecturer.fields.phone.as('text')} bind:value={createLecturerData.phone} placeholder="Phone" />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createLecturer.fields.address.as('text')} bind:value={createLecturerData.address} placeholder="Address" />
+								<button class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-sm transition-colors shadow-sm" disabled={createLecturer.pending > 0}>Submit</button>
 				</form>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">updateLecturer</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('updateLecturer', updateLecturer)}>
-								<input class="border px-2 py-1 rounded text-sm" {...updateLecturer.fields.id.as('text')} bind:value={updateLecturerData.id} placeholder="NIM" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateLecturer.fields.name.as('text')} bind:value={updateLecturerData.name} placeholder="Name" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateLecturer.fields.email.as('email')} bind:value={updateLecturerData.email} placeholder="Email" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateLecturer.fields.phone.as('text')} bind:value={updateLecturerData.phone} placeholder="Phone" />
-								<input class="border px-2 py-1 rounded text-sm" {...updateLecturer.fields.address.as('text')} bind:value={updateLecturerData.address} placeholder="Address" />
-								<button class="px-3 py-1 bg-amber-500 text-white rounded text-sm" disabled={updateLecturer.pending > 0}>Submit</button>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateLecturer.fields.id.as('text')} bind:value={updateLecturerData.id} placeholder="NIM" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateLecturer.fields.name.as('text')} bind:value={updateLecturerData.name} placeholder="Name" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateLecturer.fields.email.as('email')} bind:value={updateLecturerData.email} placeholder="Email" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateLecturer.fields.phone.as('text')} bind:value={updateLecturerData.phone} placeholder="Phone" />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateLecturer.fields.address.as('text')} bind:value={updateLecturerData.address} placeholder="Address" />
+								<button class="px-4 py-1.5 bg-amber-700 hover:bg-amber-600 text-white rounded-md text-sm transition-colors shadow-sm" disabled={updateLecturer.pending > 0}>Submit</button>
 				</form>
 			</div>
-				<div class="border p-3 rounded">
+				<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 					<h3 class="font-semibold">deleteLecturer</h3>
-					<input type="text" bind:value={lecturerId} placeholder="Lecturer ID (NIM) to delete" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-					<button class="px-3 py-1 bg-red-500 text-white rounded text-sm" onclick={() => test('deleteLecturer', () => deleteLecturer(lecturerId))} disabled={loading['deleteLecturer']}>Test</button>
+					<input type="text" bind:value={lecturerId} placeholder="Lecturer ID (NIM) to delete" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+					<button class="px-4 py-1.5 bg-red-700 hover:bg-red-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('deleteLecturer', () => deleteLecturer(lecturerId))} disabled={loading['deleteLecturer']}>Test</button>
 				</div>
 		</div>
 	{/if}
 
 	{#if activeModule === 'faculties'}
 		<div class="space-y-3">
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getFaculties</h3>
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm mt-2" onclick={() => test('getFaculties', () => getFaculties().run())} disabled={loading['getFaculties']}>Test</button>
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm mt-2" onclick={() => test('getFaculties', () => getFaculties().run())} disabled={loading['getFaculties']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">searchFaculties</h3>
 				<div class="mt-2 flex flex-wrap gap-2">
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchFacultyData.id} placeholder="ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchFacultyData.name} placeholder="Name" />
-					<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={searchFacultyData.minStudyProgramCount} placeholder="Min" />
-					<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={searchFacultyData.maxStudyProgramCount} placeholder="Max" />
-					<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('searchFaculties', () => searchFaculties({ id: searchFacultyData.id || undefined, name: searchFacultyData.name || undefined, minStudyProgramCount: searchFacultyData.minStudyProgramCount === '' ? undefined : Number(searchFacultyData.minStudyProgramCount), maxStudyProgramCount: searchFacultyData.maxStudyProgramCount === '' ? undefined : Number(searchFacultyData.maxStudyProgramCount) }).run())} disabled={loading['searchFaculties']}>Test</button>
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchFacultyData.id} placeholder="ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchFacultyData.name} placeholder="Name" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={searchFacultyData.minStudyProgramCount} placeholder="Min" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={searchFacultyData.maxStudyProgramCount} placeholder="Max" />
+					<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('searchFaculties', () => searchFaculties({ id: searchFacultyData.id || undefined, name: searchFacultyData.name || undefined, minStudyProgramCount: searchFacultyData.minStudyProgramCount === '' ? undefined : Number(searchFacultyData.minStudyProgramCount), maxStudyProgramCount: searchFacultyData.maxStudyProgramCount === '' ? undefined : Number(searchFacultyData.maxStudyProgramCount) }).run())} disabled={loading['searchFaculties']}>Test</button>
 				</div>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getFaculty</h3>
-				<input type="text" bind:value={facultyId} placeholder="Faculty ID" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('getFaculty', () => getFaculty(facultyId).run())} disabled={loading['getFaculty']}>Test</button>
+				<input type="text" bind:value={facultyId} placeholder="Faculty ID" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('getFaculty', () => getFaculty(facultyId).run())} disabled={loading['getFaculty']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">createFaculty</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('createFaculty', createFaculty)}>
-								<input class="border px-2 py-1 rounded text-sm" {...createFaculty.fields.id.as('text')} bind:value={createFacultyData.id} placeholder="ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...createFaculty.fields.name.as('text')} bind:value={createFacultyData.name} placeholder="Name" required />
-								<button class="px-3 py-1 bg-blue-500 text-white rounded text-sm" disabled={createFaculty.pending > 0}>Submit</button>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createFaculty.fields.id.as('text')} bind:value={createFacultyData.id} placeholder="ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createFaculty.fields.name.as('text')} bind:value={createFacultyData.name} placeholder="Name" required />
+								<button class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-sm transition-colors shadow-sm" disabled={createFaculty.pending > 0}>Submit</button>
 				</form>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">updateFaculty</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('updateFaculty', updateFaculty)}>
-								<input class="border px-2 py-1 rounded text-sm" {...updateFaculty.fields.id.as('text')} bind:value={updateFacultyData.id} placeholder="ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateFaculty.fields.name.as('text')} bind:value={updateFacultyData.name} placeholder="Name" required />
-								<button class="px-3 py-1 bg-amber-500 text-white rounded text-sm" disabled={updateFaculty.pending > 0}>Submit</button>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateFaculty.fields.id.as('text')} bind:value={updateFacultyData.id} placeholder="ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateFaculty.fields.name.as('text')} bind:value={updateFacultyData.name} placeholder="Name" required />
+								<button class="px-4 py-1.5 bg-amber-700 hover:bg-amber-600 text-white rounded-md text-sm transition-colors shadow-sm" disabled={updateFaculty.pending > 0}>Submit</button>
 				</form>
 			</div>
-				<div class="border p-3 rounded">
+				<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 					<h3 class="font-semibold">deleteFaculty</h3>
-					<input type="text" bind:value={facultyId} placeholder="Faculty ID to delete" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-					<button class="px-3 py-1 bg-red-500 text-white rounded text-sm" onclick={() => test('deleteFaculty', () => deleteFaculty(facultyId))} disabled={loading['deleteFaculty']}>Test</button>
+					<input type="text" bind:value={facultyId} placeholder="Faculty ID to delete" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+					<button class="px-4 py-1.5 bg-red-700 hover:bg-red-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('deleteFaculty', () => deleteFaculty(facultyId))} disabled={loading['deleteFaculty']}>Test</button>
 				</div>
 		</div>
 	{/if}
 
 	{#if activeModule === 'study-programs'}
 		<div class="space-y-3">
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getStudyPrograms</h3>
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm mt-2" onclick={() => test('getStudyPrograms', () => getStudyPrograms().run())} disabled={loading['getStudyPrograms']}>Test</button>
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm mt-2" onclick={() => test('getStudyPrograms', () => getStudyPrograms().run())} disabled={loading['getStudyPrograms']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">searchStudyPrograms</h3>
 				<div class="mt-2 flex flex-wrap gap-2">
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchStudyProgramData.id} placeholder="ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchStudyProgramData.name} placeholder="Name" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchStudyProgramData.head} placeholder="Head" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchStudyProgramData.facultyId} placeholder="Faculty ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchStudyProgramData.facultyName} placeholder="Faculty Name" />
-					<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={searchStudyProgramData.minStudentCount} placeholder="Min" />
-					<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={searchStudyProgramData.maxStudentCount} placeholder="Max" />
-					<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('searchStudyPrograms', () => searchStudyPrograms({ id: searchStudyProgramData.id || undefined, name: searchStudyProgramData.name || undefined, head: searchStudyProgramData.head || undefined, facultyId: searchStudyProgramData.facultyId || undefined, facultyName: searchStudyProgramData.facultyName || undefined, minStudentCount: searchStudyProgramData.minStudentCount === '' ? undefined : Number(searchStudyProgramData.minStudentCount), maxStudentCount: searchStudyProgramData.maxStudentCount === '' ? undefined : Number(searchStudyProgramData.maxStudentCount) }).run())} disabled={loading['searchStudyPrograms']}>Test</button>
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchStudyProgramData.id} placeholder="ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchStudyProgramData.name} placeholder="Name" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchStudyProgramData.head} placeholder="Head" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchStudyProgramData.facultyId} placeholder="Faculty ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchStudyProgramData.facultyName} placeholder="Faculty Name" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={searchStudyProgramData.minStudentCount} placeholder="Min" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={searchStudyProgramData.maxStudentCount} placeholder="Max" />
+					<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('searchStudyPrograms', () => searchStudyPrograms({ id: searchStudyProgramData.id || undefined, name: searchStudyProgramData.name || undefined, head: searchStudyProgramData.head || undefined, facultyId: searchStudyProgramData.facultyId || undefined, facultyName: searchStudyProgramData.facultyName || undefined, minStudentCount: searchStudyProgramData.minStudentCount === '' ? undefined : Number(searchStudyProgramData.minStudentCount), maxStudentCount: searchStudyProgramData.maxStudentCount === '' ? undefined : Number(searchStudyProgramData.maxStudentCount) }).run())} disabled={loading['searchStudyPrograms']}>Test</button>
 				</div>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getStudyProgram</h3>
-				<input type="text" bind:value={studyProgramId} placeholder="Study Program ID" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('getStudyProgram', () => getStudyProgram(studyProgramId).run())} disabled={loading['getStudyProgram']}>Test</button>
+				<input type="text" bind:value={studyProgramId} placeholder="Study Program ID" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('getStudyProgram', () => getStudyProgram(studyProgramId).run())} disabled={loading['getStudyProgram']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">createStudyProgram</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('createStudyProgram', createStudyProgram)}>
-								<input class="border px-2 py-1 rounded text-sm" {...createStudyProgram.fields.id.as('text')} bind:value={createStudyProgramData.id} placeholder="ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...createStudyProgram.fields.name.as('text')} bind:value={createStudyProgramData.name} placeholder="Name" required />
-								<input class="border px-2 py-1 rounded text-sm" {...createStudyProgram.fields.head.as('text')} bind:value={createStudyProgramData.head} placeholder="Head" required />
-								<input class="border px-2 py-1 rounded text-sm" {...createStudyProgram.fields.facultyId.as('text')} bind:value={createStudyProgramData.facultyId} placeholder="Faculty ID" required />
-								<button class="px-3 py-1 bg-blue-500 text-white rounded text-sm" disabled={createStudyProgram.pending > 0}>Submit</button>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createStudyProgram.fields.id.as('text')} bind:value={createStudyProgramData.id} placeholder="ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createStudyProgram.fields.name.as('text')} bind:value={createStudyProgramData.name} placeholder="Name" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createStudyProgram.fields.head.as('text')} bind:value={createStudyProgramData.head} placeholder="Head" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createStudyProgram.fields.facultyId.as('text')} bind:value={createStudyProgramData.facultyId} placeholder="Faculty ID" required />
+								<button class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-sm transition-colors shadow-sm" disabled={createStudyProgram.pending > 0}>Submit</button>
 				</form>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">updateStudyProgram</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('updateStudyProgram', updateStudyProgram)}>
-								<input class="border px-2 py-1 rounded text-sm" {...updateStudyProgram.fields.id.as('text')} bind:value={updateStudyProgramData.id} placeholder="ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateStudyProgram.fields.name.as('text')} bind:value={updateStudyProgramData.name} placeholder="Name" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateStudyProgram.fields.head.as('text')} bind:value={updateStudyProgramData.head} placeholder="Head" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateStudyProgram.fields.facultyId.as('text')} bind:value={updateStudyProgramData.facultyId} placeholder="Faculty ID" required />
-								<button class="px-3 py-1 bg-amber-500 text-white rounded text-sm" disabled={updateStudyProgram.pending > 0}>Submit</button>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateStudyProgram.fields.id.as('text')} bind:value={updateStudyProgramData.id} placeholder="ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateStudyProgram.fields.name.as('text')} bind:value={updateStudyProgramData.name} placeholder="Name" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateStudyProgram.fields.head.as('text')} bind:value={updateStudyProgramData.head} placeholder="Head" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateStudyProgram.fields.facultyId.as('text')} bind:value={updateStudyProgramData.facultyId} placeholder="Faculty ID" required />
+								<button class="px-4 py-1.5 bg-amber-700 hover:bg-amber-600 text-white rounded-md text-sm transition-colors shadow-sm" disabled={updateStudyProgram.pending > 0}>Submit</button>
 				</form>
 			</div>
-				<div class="border p-3 rounded">
+				<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 					<h3 class="font-semibold">deleteStudyProgram</h3>
-					<input type="text" bind:value={studyProgramId} placeholder="Study Program ID to delete" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-					<button class="px-3 py-1 bg-red-500 text-white rounded text-sm" onclick={() => test('deleteStudyProgram', () => deleteStudyProgram(studyProgramId))} disabled={loading['deleteStudyProgram']}>Test</button>
+					<input type="text" bind:value={studyProgramId} placeholder="Study Program ID to delete" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+					<button class="px-4 py-1.5 bg-red-700 hover:bg-red-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('deleteStudyProgram', () => deleteStudyProgram(studyProgramId))} disabled={loading['deleteStudyProgram']}>Test</button>
 				</div>
 		</div>
 	{/if}
 
 	{#if activeModule === 'enrollments'}
 		<div class="space-y-3">
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getEnrollments</h3>
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm mt-2" onclick={() => test('getEnrollments', () => getEnrollments().run())} disabled={loading['getEnrollments']}>Test</button>
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm mt-2" onclick={() => test('getEnrollments', () => getEnrollments().run())} disabled={loading['getEnrollments']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">searchEnrollments</h3>
 				<div class="mt-2 flex flex-wrap gap-2">
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchEnrollmentData.id} placeholder="ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchEnrollmentData.studentId} placeholder="Student ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchEnrollmentData.courseId} placeholder="Course ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchEnrollmentData.lecturerId} placeholder="Lecturer ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchEnrollmentData.classRoomId} placeholder="ClassRoom ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchEnrollmentData.semester} placeholder="Semester" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchEnrollmentData.academicYear} placeholder="Academic Year" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchEnrollmentData.studentName} placeholder="Student Name" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchEnrollmentData.studyProgramName} placeholder="Study Program Name" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchEnrollmentData.courseName} placeholder="Course Name" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchEnrollmentData.lecturerName} placeholder="Lecturer Name" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchEnrollmentData.classRoomName} placeholder="ClassRoom Name" />
-					<select class="border px-2 py-1 rounded text-sm" bind:value={searchEnrollmentData.scheduleDay}>
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchEnrollmentData.id} placeholder="ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchEnrollmentData.studentId} placeholder="Student ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchEnrollmentData.courseId} placeholder="Course ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchEnrollmentData.lecturerId} placeholder="Lecturer ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchEnrollmentData.classRoomId} placeholder="ClassRoom ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchEnrollmentData.semester} placeholder="Semester" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchEnrollmentData.academicYear} placeholder="Academic Year" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchEnrollmentData.studentName} placeholder="Student Name" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchEnrollmentData.studyProgramName} placeholder="Study Program Name" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchEnrollmentData.courseName} placeholder="Course Name" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchEnrollmentData.lecturerName} placeholder="Lecturer Name" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchEnrollmentData.classRoomName} placeholder="ClassRoom Name" />
+					<select class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchEnrollmentData.scheduleDay}>
 						<option value="SENIN">SENIN</option>
 						<option value="SELASA">SELASA</option>
 						<option value="RABU">RABU</option>
@@ -695,23 +708,23 @@
 						<option value="JUMAT">JUMAT</option>
 						<option value="SABTU">SABTU</option>
 					</select>
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchEnrollmentData.letterGrade} placeholder="Letter Grade" />
-					<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('searchEnrollments', () => searchEnrollments({ id: searchEnrollmentData.id || undefined, studentId: searchEnrollmentData.studentId || undefined, courseId: searchEnrollmentData.courseId || undefined, lecturerId: searchEnrollmentData.lecturerId || undefined, classRoomId: searchEnrollmentData.classRoomId || undefined, semester: searchEnrollmentData.semester || undefined, academicYear: searchEnrollmentData.academicYear || undefined, studentName: searchEnrollmentData.studentName || undefined, studyProgramName: searchEnrollmentData.studyProgramName || undefined, courseName: searchEnrollmentData.courseName || undefined, lecturerName: searchEnrollmentData.lecturerName || undefined, classRoomName: searchEnrollmentData.classRoomName || undefined, scheduleDay: searchEnrollmentData.scheduleDay as 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU' | undefined, letterGrade: searchEnrollmentData.letterGrade || undefined }).run())} disabled={loading['searchEnrollments']}>Test</button>
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchEnrollmentData.letterGrade} placeholder="Letter Grade" />
+					<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('searchEnrollments', () => searchEnrollments({ id: searchEnrollmentData.id || undefined, studentId: searchEnrollmentData.studentId || undefined, courseId: searchEnrollmentData.courseId || undefined, lecturerId: searchEnrollmentData.lecturerId || undefined, classRoomId: searchEnrollmentData.classRoomId || undefined, semester: searchEnrollmentData.semester || undefined, academicYear: searchEnrollmentData.academicYear || undefined, studentName: searchEnrollmentData.studentName || undefined, studyProgramName: searchEnrollmentData.studyProgramName || undefined, courseName: searchEnrollmentData.courseName || undefined, lecturerName: searchEnrollmentData.lecturerName || undefined, classRoomName: searchEnrollmentData.classRoomName || undefined, scheduleDay: searchEnrollmentData.scheduleDay as 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU' | undefined, letterGrade: searchEnrollmentData.letterGrade || undefined }).run())} disabled={loading['searchEnrollments']}>Test</button>
 				</div>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getEnrollment</h3>
-				<input type="text" bind:value={enrollmentId} placeholder="Enrollment ID" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('getEnrollment', () => getEnrollment(enrollmentId).run())} disabled={loading['getEnrollment']}>Test</button>
+				<input type="text" bind:value={enrollmentId} placeholder="Enrollment ID" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('getEnrollment', () => getEnrollment(enrollmentId).run())} disabled={loading['getEnrollment']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">createEnrollment</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('createEnrollment', createEnrollment)}>
-								<input class="border px-2 py-1 rounded text-sm" {...createEnrollment.fields.studentId.as('text')} bind:value={createEnrollmentData.studentId} placeholder="Student ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...createEnrollment.fields.courseId.as('text')} bind:value={createEnrollmentData.courseId} placeholder="Course ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...createEnrollment.fields.classRoomId.as('text')} bind:value={createEnrollmentData.classRoomId} placeholder="ClassRoom ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...createEnrollment.fields.lecturerId.as('text')} bind:value={createEnrollmentData.lecturerId} placeholder="Lecturer ID" required />
-								<select class="border px-2 py-1 rounded text-sm" {...createEnrollment.fields.day.as('select')} bind:value={createEnrollmentData.day}>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createEnrollment.fields.studentId.as('text')} bind:value={createEnrollmentData.studentId} placeholder="Student ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createEnrollment.fields.courseId.as('text')} bind:value={createEnrollmentData.courseId} placeholder="Course ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createEnrollment.fields.classRoomId.as('text')} bind:value={createEnrollmentData.classRoomId} placeholder="ClassRoom ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createEnrollment.fields.lecturerId.as('text')} bind:value={createEnrollmentData.lecturerId} placeholder="Lecturer ID" required />
+								<select class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createEnrollment.fields.day.as('select')} bind:value={createEnrollmentData.day}>
 						<option value="SENIN">SENIN</option>
 						<option value="SELASA">SELASA</option>
 						<option value="RABU">RABU</option>
@@ -719,22 +732,22 @@
 						<option value="JUMAT">JUMAT</option>
 						<option value="SABTU">SABTU</option>
 					</select>
-								<input class="border px-2 py-1 rounded text-sm" type="datetime-local" {...createEnrollment.fields.startTime.as('text')} bind:value={createEnrollmentData.startTime} required />
-								<input class="border px-2 py-1 rounded text-sm" type="datetime-local" {...createEnrollment.fields.endTime.as('text')} bind:value={createEnrollmentData.endTime} required />
-								<input class="border px-2 py-1 rounded text-sm" {...createEnrollment.fields.semester.as('text')} bind:value={createEnrollmentData.semester} placeholder="Semester" required />
-								<input class="border px-2 py-1 rounded text-sm" {...createEnrollment.fields.academicYear.as('text')} bind:value={createEnrollmentData.academicYear} placeholder="Academic Year" required />
-								<button class="px-3 py-1 bg-blue-500 text-white rounded text-sm" disabled={createEnrollment.pending > 0}>Submit</button>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" type="datetime-local" {...createEnrollment.fields.startTime.as('text')} bind:value={createEnrollmentData.startTime} required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" type="datetime-local" {...createEnrollment.fields.endTime.as('text')} bind:value={createEnrollmentData.endTime} required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createEnrollment.fields.semester.as('text')} bind:value={createEnrollmentData.semester} placeholder="Semester" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createEnrollment.fields.academicYear.as('text')} bind:value={createEnrollmentData.academicYear} placeholder="Academic Year" required />
+								<button class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-sm transition-colors shadow-sm" disabled={createEnrollment.pending > 0}>Submit</button>
 				</form>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">updateEnrollment</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('updateEnrollment', updateEnrollment)}>
-								<input class="border px-2 py-1 rounded text-sm" {...updateEnrollment.fields.id.as('text')} bind:value={updateEnrollmentData.id} placeholder="Enrollment ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateEnrollment.fields.studentId.as('text')} bind:value={updateEnrollmentData.studentId} placeholder="Student ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateEnrollment.fields.courseId.as('text')} bind:value={updateEnrollmentData.courseId} placeholder="Course ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateEnrollment.fields.classRoomId.as('text')} bind:value={updateEnrollmentData.classRoomId} placeholder="ClassRoom ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateEnrollment.fields.lecturerId.as('text')} bind:value={updateEnrollmentData.lecturerId} placeholder="Lecturer ID" required />
-								<select class="border px-2 py-1 rounded text-sm" {...updateEnrollment.fields.day.as('select')} bind:value={updateEnrollmentData.day}>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateEnrollment.fields.id.as('text')} bind:value={updateEnrollmentData.id} placeholder="Enrollment ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateEnrollment.fields.studentId.as('text')} bind:value={updateEnrollmentData.studentId} placeholder="Student ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateEnrollment.fields.courseId.as('text')} bind:value={updateEnrollmentData.courseId} placeholder="Course ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateEnrollment.fields.classRoomId.as('text')} bind:value={updateEnrollmentData.classRoomId} placeholder="ClassRoom ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateEnrollment.fields.lecturerId.as('text')} bind:value={updateEnrollmentData.lecturerId} placeholder="Lecturer ID" required />
+								<select class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateEnrollment.fields.day.as('select')} bind:value={updateEnrollmentData.day}>
 						<option value="SENIN">SENIN</option>
 						<option value="SELASA">SELASA</option>
 						<option value="RABU">RABU</option>
@@ -742,187 +755,192 @@
 						<option value="JUMAT">JUMAT</option>
 						<option value="SABTU">SABTU</option>
 					</select>
-								<input class="border px-2 py-1 rounded text-sm" type="datetime-local" {...updateEnrollment.fields.startTime.as('text')} bind:value={updateEnrollmentData.startTime} required />
-								<input class="border px-2 py-1 rounded text-sm" type="datetime-local" {...updateEnrollment.fields.endTime.as('text')} bind:value={updateEnrollmentData.endTime} required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateEnrollment.fields.semester.as('text')} bind:value={updateEnrollmentData.semester} placeholder="Semester" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateEnrollment.fields.academicYear.as('text')} bind:value={updateEnrollmentData.academicYear} placeholder="Academic Year" required />
-								<button class="px-3 py-1 bg-amber-500 text-white rounded text-sm" disabled={updateEnrollment.pending > 0}>Submit</button>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" type="datetime-local" {...updateEnrollment.fields.startTime.as('text')} bind:value={updateEnrollmentData.startTime} required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" type="datetime-local" {...updateEnrollment.fields.endTime.as('text')} bind:value={updateEnrollmentData.endTime} required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateEnrollment.fields.semester.as('text')} bind:value={updateEnrollmentData.semester} placeholder="Semester" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateEnrollment.fields.academicYear.as('text')} bind:value={updateEnrollmentData.academicYear} placeholder="Academic Year" required />
+								<button class="px-4 py-1.5 bg-amber-700 hover:bg-amber-600 text-white rounded-md text-sm transition-colors shadow-sm" disabled={updateEnrollment.pending > 0}>Submit</button>
 				</form>
 			</div>
-				<div class="border p-3 rounded">
+				<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 					<h3 class="font-semibold">deleteEnrollment</h3>
-					<input type="text" bind:value={enrollmentId} placeholder="Enrollment ID to delete" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-					<button class="px-3 py-1 bg-red-500 text-white rounded text-sm" onclick={() => test('deleteEnrollment', () => deleteEnrollment(enrollmentId))} disabled={loading['deleteEnrollment']}>Test</button>
+					<input type="text" bind:value={enrollmentId} placeholder="Enrollment ID to delete" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+					<button class="px-4 py-1.5 bg-red-700 hover:bg-red-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('deleteEnrollment', () => deleteEnrollment(enrollmentId))} disabled={loading['deleteEnrollment']}>Test</button>
 				</div>
 		</div>
 	{/if}
 
 	{#if activeModule === 'grades'}
 		<div class="space-y-3">
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getGrades</h3>
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm mt-2" onclick={() => test('getGrades', () => getGrades().run())} disabled={loading['getGrades']}>Test</button>
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm mt-2" onclick={() => test('getGrades', () => getGrades().run())} disabled={loading['getGrades']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">searchGrades</h3>
 				<div class="mt-2 flex flex-wrap gap-2">
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchGradeData.id} placeholder="ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchGradeData.enrollmentId} placeholder="Enrollment ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchGradeData.studentId} placeholder="Student ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchGradeData.studentName} placeholder="Student Name" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchGradeData.studentEmail} placeholder="Student Email" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchGradeData.studyProgramName} placeholder="Study Program Name" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchGradeData.courseId} placeholder="Course ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchGradeData.courseName} placeholder="Course Name" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchGradeData.lecturerId} placeholder="Lecturer ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchGradeData.letterGrade} placeholder="Letter Grade" />
-					<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={searchGradeData.minTotalScore} placeholder="Min" />
-					<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={searchGradeData.maxTotalScore} placeholder="Max" />
-					<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('searchGrades', () => searchGrades({ id: searchGradeData.id || undefined, enrollmentId: searchGradeData.enrollmentId || undefined, studentId: searchGradeData.studentId || undefined, studentName: searchGradeData.studentName || undefined, studentEmail: searchGradeData.studentEmail || undefined, studyProgramName: searchGradeData.studyProgramName || undefined, courseId: searchGradeData.courseId || undefined, courseName: searchGradeData.courseName || undefined, lecturerId: searchGradeData.lecturerId || undefined, letterGrade: searchGradeData.letterGrade || undefined, minTotalScore: searchGradeData.minTotalScore === '' ? undefined : Number(searchGradeData.minTotalScore), maxTotalScore: searchGradeData.maxTotalScore === '' ? undefined : Number(searchGradeData.maxTotalScore) }).run())} disabled={loading['searchGrades']}>Test</button>
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchGradeData.id} placeholder="ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchGradeData.enrollmentId} placeholder="Enrollment ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchGradeData.studentId} placeholder="Student ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchGradeData.studentName} placeholder="Student Name" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchGradeData.studentEmail} placeholder="Student Email" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchGradeData.studyProgramName} placeholder="Study Program Name" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchGradeData.courseId} placeholder="Course ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchGradeData.courseName} placeholder="Course Name" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchGradeData.lecturerId} placeholder="Lecturer ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchGradeData.letterGrade} placeholder="Letter Grade" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={searchGradeData.minTotalScore} placeholder="Min" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={searchGradeData.maxTotalScore} placeholder="Max" />
+					<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('searchGrades', () => searchGrades({ id: searchGradeData.id || undefined, enrollmentId: searchGradeData.enrollmentId || undefined, studentId: searchGradeData.studentId || undefined, studentName: searchGradeData.studentName || undefined, studentEmail: searchGradeData.studentEmail || undefined, studyProgramName: searchGradeData.studyProgramName || undefined, courseId: searchGradeData.courseId || undefined, courseName: searchGradeData.courseName || undefined, lecturerId: searchGradeData.lecturerId || undefined, letterGrade: searchGradeData.letterGrade || undefined, minTotalScore: searchGradeData.minTotalScore === '' ? undefined : Number(searchGradeData.minTotalScore), maxTotalScore: searchGradeData.maxTotalScore === '' ? undefined : Number(searchGradeData.maxTotalScore) }).run())} disabled={loading['searchGrades']}>Test</button>
 				</div>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getGrade</h3>
-				<input type="text" bind:value={gradeId} placeholder="Grade ID" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('getGrade', () => getGrade(gradeId).run())} disabled={loading['getGrade']}>Test</button>
+				<input type="text" bind:value={gradeId} placeholder="Grade ID" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('getGrade', () => getGrade(gradeId).run())} disabled={loading['getGrade']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getGradesByCourse</h3>
-				<input type="text" bind:value={courseId} placeholder="Course ID" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('getGradesByCourse', () => getGradesByCourse(courseId).run())} disabled={loading['getGradesByCourse']}>Test</button>
+				<input type="text" bind:value={courseId} placeholder="Course ID" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('getGradesByCourse', () => getGradesByCourse(courseId).run())} disabled={loading['getGradesByCourse']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getGradesByStudent</h3>
-				<input type="text" bind:value={studentId} placeholder="Student ID (NRP)" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('getGradesByStudent', () => getGradesByStudent(studentId).run())} disabled={loading['getGradesByStudent']}>Test</button>
+				<input type="text" bind:value={studentId} placeholder="Student ID (NRP)" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('getGradesByStudent', () => getGradesByStudent(studentId).run())} disabled={loading['getGradesByStudent']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">createGrade</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('createGrade', createGrade)}>
-								<input class="border px-2 py-1 rounded text-sm" {...createGrade.fields.enrollmentId.as('text')} bind:value={createGradeData.enrollmentId} placeholder="Enrollment ID" required />
-								<input class="border px-2 py-1 rounded text-sm w-24" {...createGrade.fields.assignmentScore.as('number')} bind:value={createGradeData.assignmentScore} min="0" max="100" required />
-								<input class="border px-2 py-1 rounded text-sm w-24" {...createGrade.fields.midtermScore.as('number')} bind:value={createGradeData.midtermScore} min="0" max="100" required />
-								<input class="border px-2 py-1 rounded text-sm w-24" {...createGrade.fields.finalScore.as('number')} bind:value={createGradeData.finalScore} min="0" max="100" required />
-								<button class="px-3 py-1 bg-blue-500 text-white rounded text-sm" disabled={createGrade.pending > 0}>Submit</button>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...createGrade.fields.enrollmentId.as('text')} bind:value={createGradeData.enrollmentId} placeholder="Enrollment ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" {...createGrade.fields.assignmentScore.as('number')} bind:value={createGradeData.assignmentScore} min="0" max="100" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" {...createGrade.fields.midtermScore.as('number')} bind:value={createGradeData.midtermScore} min="0" max="100" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" {...createGrade.fields.finalScore.as('number')} bind:value={createGradeData.finalScore} min="0" max="100" required />
+								<button class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-sm transition-colors shadow-sm" disabled={createGrade.pending > 0}>Submit</button>
 				</form>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">updateGrade</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('updateGrade', updateGrade)}>
-								<input class="border px-2 py-1 rounded text-sm" {...updateGrade.fields.id.as('text')} bind:value={updateGradeData.id} placeholder="Grade ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateGrade.fields.enrollmentId.as('text')} bind:value={updateGradeData.enrollmentId} placeholder="Enrollment ID" required />
-								<input class="border px-2 py-1 rounded text-sm w-24" {...updateGrade.fields.assignmentScore.as('number')} bind:value={updateGradeData.assignmentScore} min="0" max="100" required />
-								<input class="border px-2 py-1 rounded text-sm w-24" {...updateGrade.fields.midtermScore.as('number')} bind:value={updateGradeData.midtermScore} min="0" max="100" required />
-								<input class="border px-2 py-1 rounded text-sm w-24" {...updateGrade.fields.finalScore.as('number')} bind:value={updateGradeData.finalScore} min="0" max="100" required />
-								<button class="px-3 py-1 bg-amber-500 text-white rounded text-sm" disabled={updateGrade.pending > 0}>Submit</button>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateGrade.fields.id.as('text')} bind:value={updateGradeData.id} placeholder="Grade ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateGrade.fields.enrollmentId.as('text')} bind:value={updateGradeData.enrollmentId} placeholder="Enrollment ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" {...updateGrade.fields.assignmentScore.as('number')} bind:value={updateGradeData.assignmentScore} min="0" max="100" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" {...updateGrade.fields.midtermScore.as('number')} bind:value={updateGradeData.midtermScore} min="0" max="100" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" {...updateGrade.fields.finalScore.as('number')} bind:value={updateGradeData.finalScore} min="0" max="100" required />
+								<button class="px-4 py-1.5 bg-amber-700 hover:bg-amber-600 text-white rounded-md text-sm transition-colors shadow-sm" disabled={updateGrade.pending > 0}>Submit</button>
 				</form>
 			</div>
-				<div class="border p-3 rounded">
+				<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 					<h3 class="font-semibold">batchInputGrades</h3>
 					<div class="mt-2 flex flex-wrap gap-2">
-						<input class="border px-2 py-1 rounded text-sm" bind:value={batchGradeData.enrollmentId} placeholder="Enrollment ID" />
-						<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={batchGradeData.assignmentScore} min="0" max="100" placeholder="Assignment" />
-						<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={batchGradeData.midtermScore} min="0" max="100" placeholder="Midterm" />
-						<input class="border px-2 py-1 rounded text-sm w-24" type="number" bind:value={batchGradeData.finalScore} min="0" max="100" placeholder="Final" />
-						<button class="px-3 py-1 bg-indigo-500 text-white rounded text-sm" onclick={() => test('batchInputGrades', () => submitBatchInputGrades())} disabled={loading['batchInputGrades']}>Test</button>
+						<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={batchGradeData.enrollmentId} placeholder="Enrollment ID" />
+						<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={batchGradeData.assignmentScore} min="0" max="100" placeholder="Assignment" />
+						<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={batchGradeData.midtermScore} min="0" max="100" placeholder="Midterm" />
+						<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 w-24" type="number" bind:value={batchGradeData.finalScore} min="0" max="100" placeholder="Final" />
+						<button class="px-4 py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('batchInputGrades', () => submitBatchInputGrades())} disabled={loading['batchInputGrades']}>Test</button>
 					</div>
 				</div>
-				<div class="border p-3 rounded">
+				<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 					<h3 class="font-semibold">deleteGrade</h3>
-					<input type="text" bind:value={gradeId} placeholder="Grade ID to delete" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-					<button class="px-3 py-1 bg-red-500 text-white rounded text-sm" onclick={() => test('deleteGrade', () => deleteGrade(gradeId))} disabled={loading['deleteGrade']}>Test</button>
+					<input type="text" bind:value={gradeId} placeholder="Grade ID to delete" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+					<button class="px-4 py-1.5 bg-red-700 hover:bg-red-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('deleteGrade', () => deleteGrade(gradeId))} disabled={loading['deleteGrade']}>Test</button>
 				</div>
 		</div>
 	{/if}
 
 	{#if activeModule === 'users'}
 		<div class="space-y-3">
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getUsers</h3>
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm mt-2" onclick={() => test('getUsers', () => getUsers().run())} disabled={loading['getUsers']}>Test</button>
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm mt-2" onclick={() => test('getUsers', () => getUsers().run())} disabled={loading['getUsers']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">searchUsers</h3>
 				<div class="mt-2 flex flex-wrap gap-2">
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchUserData.id} placeholder="ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchUserData.email} placeholder="Email" />
-					<select class="border px-2 py-1 rounded text-sm" bind:value={searchUserData.role}>
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchUserData.id} placeholder="ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchUserData.email} placeholder="Email" />
+					<select class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchUserData.role}>
 						<option value="ADMIN">ADMIN</option>
 						<option value="STUDENT">STUDENT</option>
 						<option value="LECTURER">LECTURER</option>
 					</select>
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchUserData.studentId} placeholder="Student ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchUserData.studentName} placeholder="Student Name" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchUserData.lecturerId} placeholder="Lecturer ID" />
-					<input class="border px-2 py-1 rounded text-sm" bind:value={searchUserData.lecturerName} placeholder="Lecturer Name" />
-					<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('searchUsers', () => searchUsers({ id: searchUserData.id || undefined, email: searchUserData.email || undefined, role: searchUserData.role as 'ADMIN' | 'STUDENT' | 'LECTURER', studentId: searchUserData.studentId || undefined, studentName: searchUserData.studentName || undefined, lecturerId: searchUserData.lecturerId || undefined, lecturerName: searchUserData.lecturerName || undefined }).run())} disabled={loading['searchUsers']}>Test</button>
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchUserData.studentId} placeholder="Student ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchUserData.studentName} placeholder="Student Name" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchUserData.lecturerId} placeholder="Lecturer ID" />
+					<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" bind:value={searchUserData.lecturerName} placeholder="Lecturer Name" />
+					<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('searchUsers', () => searchUsers({ id: searchUserData.id || undefined, email: searchUserData.email || undefined, role: searchUserData.role as 'ADMIN' | 'STUDENT' | 'LECTURER', studentId: searchUserData.studentId || undefined, studentName: searchUserData.studentName || undefined, lecturerId: searchUserData.lecturerId || undefined, lecturerName: searchUserData.lecturerName || undefined }).run())} disabled={loading['searchUsers']}>Test</button>
 				</div>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">getUser</h3>
-				<input type="text" bind:value={userId} placeholder="User ID" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-				<button class="px-3 py-1 bg-green-500 text-white rounded text-sm" onclick={() => test('getUser', () => getUser(userId).run())} disabled={loading['getUser']}>Test</button>
+				<input type="text" bind:value={userId} placeholder="User ID" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+				<button class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('getUser', () => getUser(userId).run())} disabled={loading['getUser']}>Test</button>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">createUser</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('createUser', createUser)}>
-								<input class="border px-2 py-1 rounded text-sm" name="email" bind:value={createUserData.email} placeholder="Email" required />
-								<input class="border px-2 py-1 rounded text-sm" name="password" type="password" bind:value={createUserData.password} placeholder="Password" required />
-								<select class="border px-2 py-1 rounded text-sm" name="role" bind:value={createUserData.role}>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" name="email" bind:value={createUserData.email} placeholder="Email" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" name="password" type="password" bind:value={createUserData.password} placeholder="Password" required />
+								<select class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" name="role" bind:value={createUserData.role}>
 						<option value="ADMIN">ADMIN</option>
 						<option value="STUDENT">STUDENT</option>
 						<option value="LECTURER">LECTURER</option>
 					</select>
 					{#if createUserData.role === 'STUDENT'}
-									<input class="border px-2 py-1 rounded text-sm" name="studentId" bind:value={createUserData.studentId} placeholder="Student ID" required />
+									<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" name="studentId" bind:value={createUserData.studentId} placeholder="Student ID" required />
 					{/if}
 					{#if createUserData.role === 'LECTURER'}
-									<input class="border px-2 py-1 rounded text-sm" name="lecturerId" bind:value={createUserData.lecturerId} placeholder="Lecturer ID" required />
+									<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" name="lecturerId" bind:value={createUserData.lecturerId} placeholder="Lecturer ID" required />
 					{/if}
-								<button class="px-3 py-1 bg-blue-500 text-white rounded text-sm" disabled={createUser.pending > 0}>Submit</button>
+								<button class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-sm transition-colors shadow-sm" disabled={createUser.pending > 0}>Submit</button>
 				</form>
 			</div>
-			<div class="border p-3 rounded">
+			<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 				<h3 class="font-semibold">updateUser</h3>
 							<form class="mt-2 flex flex-wrap gap-2" {...formBox('updateUser', updateUser)}>
-								<input class="border px-2 py-1 rounded text-sm" {...updateUser.fields.id.as('text')} bind:value={updateUserData.id} placeholder="User ID" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateUser.fields.email.as('email')} bind:value={updateUserData.email} placeholder="Email" required />
-								<input class="border px-2 py-1 rounded text-sm" {...updateUser.fields.password.as('password')} bind:value={updateUserData.password} placeholder="Password" required />
-								<select class="border px-2 py-1 rounded text-sm" {...updateUser.fields.role.as('select')} bind:value={updateUserData.role}>
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateUser.fields.id.as('text')} bind:value={updateUserData.id} placeholder="User ID" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateUser.fields.email.as('email')} bind:value={updateUserData.email} placeholder="Email" required />
+								<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateUser.fields.password.as('password')} bind:value={updateUserData.password} placeholder="Password" required />
+								<select class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateUser.fields.role.as('select')} bind:value={updateUserData.role}>
 						<option value="ADMIN">ADMIN</option>
 						<option value="STUDENT">STUDENT</option>
 						<option value="LECTURER">LECTURER</option>
 					</select>
 					{#if updateUserData.role === 'STUDENT'}
-									<input class="border px-2 py-1 rounded text-sm" {...updateUser.fields.studentId.as('text')} bind:value={updateUserData.studentId} placeholder="Student ID" required />
+									<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateUser.fields.studentId.as('text')} bind:value={updateUserData.studentId} placeholder="Student ID" required />
 					{/if}
 					{#if updateUserData.role === 'LECTURER'}
-									<input class="border px-2 py-1 rounded text-sm" {...updateUser.fields.lecturerId.as('text')} bind:value={updateUserData.lecturerId} placeholder="Lecturer ID" required />
+									<input class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500" {...updateUser.fields.lecturerId.as('text')} bind:value={updateUserData.lecturerId} placeholder="Lecturer ID" required />
 					{/if}
-								<button class="px-3 py-1 bg-amber-500 text-white rounded text-sm" disabled={updateUser.pending > 0}>Submit</button>
+								<button class="px-4 py-1.5 bg-amber-700 hover:bg-amber-600 text-white rounded-md text-sm transition-colors shadow-sm" disabled={updateUser.pending > 0}>Submit</button>
 				</form>
 			</div>
-				<div class="border p-3 rounded">
+				<div class="border border-gray-700 p-4 rounded-lg bg-gray-800/40 shadow-sm">
 					<h3 class="font-semibold">deleteUser</h3>
-					<input type="text" bind:value={userId} placeholder="User ID to delete" class="border px-2 py-1 rounded text-sm mt-2 mr-2" />
-					<button class="px-3 py-1 bg-red-500 text-white rounded text-sm" onclick={() => test('deleteUser', () => deleteUser(userId))} disabled={loading['deleteUser']}>Test</button>
+					<input type="text" bind:value={userId} placeholder="User ID to delete" class="bg-gray-950 border border-gray-700 text-white px-3 py-1.5 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-500 mt-2 mr-2" />
+					<button class="px-4 py-1.5 bg-red-700 hover:bg-red-600 text-white rounded-md text-sm transition-colors shadow-sm" onclick={() => test('deleteUser', () => deleteUser(userId))} disabled={loading['deleteUser']}>Test</button>
 				</div>
 		</div>
 	{/if}
 
-	{#if Object.keys(results).length > 0}
-		<div class="mt-6 space-y-2">
-			<h2 class="font-semibold text-lg">Results</h2>
-			{#each Object.entries(results) as [name, result] (name)}
-				<div class="border p-3 rounded {result.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}">
-					<div class="font-medium">{name}</div>
-					{#if result.success}
-						<pre class="text-xs overflow-auto max-h-40 mt-1 bg-white p-2 rounded">{JSON.stringify(result.data, null, 2)}</pre>
-					{:else}
-						<p class="text-red-700 text-sm mt-1">{result.error}</p>
-					{/if}
-				</div>
-			{/each}
-		</div>
-	{/if}
+		{#if Object.keys(results).length > 0}
+			<div class="mt-10 space-y-4">
+				<h2 class="font-bold text-xl text-white">Results</h2>
+				{#each Object.entries(results) as [name, result] (name)}
+					<div class="border p-4 rounded-lg shadow-inner transition-all {result.success ? 'bg-green-950/20 border-green-900/50 text-green-100' : 'bg-red-950/20 border-red-900/50 text-red-100'}">
+						<div class="font-semibold text-sm mb-2 opacity-80 uppercase tracking-wider">{name}</div>
+						{#if result.success}
+							<pre class="text-xs overflow-auto max-h-60 mt-2 bg-gray-950 p-4 rounded-md border border-gray-800 text-gray-300 font-mono leading-relaxed">{JSON.stringify(result.data, null, 2)}</pre>
+						{:else}
+							<div class="flex items-start gap-2 text-red-400 text-sm mt-1 bg-red-900/20 p-3 rounded border border-red-800/30">
+								<span class="font-bold text-red-500">Error:</span>
+								<span>{result.error}</span>
+							</div>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</div>
 </div>
+
