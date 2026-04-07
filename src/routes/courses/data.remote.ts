@@ -24,6 +24,7 @@ const searchCoursesSchema = v.object({
 	name: v.optional(v.string()),
 	studyProgramId: v.optional(v.string()),
 	lecturerId: v.optional(v.string()),
+	lecturerName: v.optional(v.string()),
 	studyProgramName: v.optional(v.string()),
 	minCredits: v.optional(v.number()),
 	maxCredits: v.optional(v.number())
@@ -36,6 +37,7 @@ export const searchCourses = query(searchCoursesSchema, async (filters) => {
 	if (filters.name) where.push(['name', 'LIKE', filters.name]);
 	if (filters.studyProgramId) where.push(['study_program_id', '=', filters.studyProgramId]);
 	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
+	if (filters.lecturerName) where.push(['lecturer_name', 'LIKE', filters.lecturerName]);
 	if (filters.studyProgramName)
 		where.push(['study_program_name', 'LIKE', filters.studyProgramName]);
 	if (filters.minCredits != null && filters.maxCredits != null) {
