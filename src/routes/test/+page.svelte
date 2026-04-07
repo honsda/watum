@@ -112,6 +112,7 @@
 		name: '',
 		studyProgramId: '',
 		lecturerId: '',
+		lecturerName: '',
 		studyProgramName: '',
 		minCredits: '',
 		maxCredits: ''
@@ -526,6 +527,11 @@
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
+						bind:value={searchCourseData.lecturerName}
+						placeholder="Lecturer Name"
+					/>
+					<input
+						class="rounded border px-2 py-1 text-sm"
 						bind:value={searchCourseData.studyProgramName}
 						placeholder="Study Program Name"
 					/>
@@ -550,6 +556,7 @@
 									name: searchCourseData.name || undefined,
 									studyProgramId: searchCourseData.studyProgramId || undefined,
 									lecturerId: searchCourseData.lecturerId || undefined,
+									lecturerName: searchCourseData.lecturerName || undefined,
 									studyProgramName: searchCourseData.studyProgramName || undefined,
 									minCredits:
 										searchCourseData.minCredits === ''
