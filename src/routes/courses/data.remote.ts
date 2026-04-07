@@ -10,11 +10,38 @@ import {
 	updateCourse as updateCourseDb,
 	deleteCourse as deleteCourseDb
 } from '$lib/server/sql';
+import { type SelectCoursesWhere } from '$lib/server/sql';
 import { courseSchema } from '$lib/validations/course';
 
 export const getCourses = query(async () => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	return selectCourses(getPool());
+});
+
+const searchCoursesSchema = v.object({
+	id: v.optional(v.string()),
+	name: v.optional(v.string()),
+	studyProgramId: v.optional(v.string()),
+	studyProgramName: v.optional(v.string()),
+	minCredits: v.optional(v.number()),
+	maxCredits: v.optional(v.number())
+});
+
+export const searchCourses = query(searchCoursesSchema, async (filters) => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
+	const where: SelectCoursesWhere[] = [];
+	if (filters.id) where.push(['id', '=', filters.id]);
+	if (filters.name) where.push(['name', 'LIKE', filters.name]);
+	if (filters.studyProgramId) where.push(['study_program_id', '=', filters.studyProgramId]);
+	if (filters.studyProgramName) where.push(['study_program_name', 'LIKE', filters.studyProgramName]);
+	if (filters.minCredits != null && filters.maxCredits != null) {
+		where.push(['credits', 'BETWEEN', filters.minCredits, filters.maxCredits]);
+	} else if (filters.minCredits != null) {
+		where.push(['credits', '>=', filters.minCredits]);
+	} else if (filters.maxCredits != null) {
+		where.push(['credits', '<=', filters.maxCredits]);
+	}
+	return selectCourses(getPool(), { where });
 });
 
 export const getCourse = query(v.string(), async (id) => {

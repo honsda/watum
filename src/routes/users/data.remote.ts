@@ -15,6 +15,7 @@ import {
 	insertLecturer,
 	deleteUser as deleteUserDb
 } from '$lib/server/sql';
+import { type SelectUsersWhere } from '$lib/server/sql';
 import { updateUser as updateUserDb } from '$lib/server/sql';
 import { userSchema } from '$lib/validations/user';
 import { studentSchema } from '$lib/validations/student';
@@ -24,6 +25,29 @@ import { generateNRP } from '$lib/server/NRP-generator';
 export const getUsers = query(async () => {
 	await requireRole(['ADMIN']);
 	return await selectUsers(getPool());
+});
+
+const searchUsersSchema = v.object({
+	id: v.optional(v.string()),
+	email: v.optional(v.string()),
+	role: v.optional(v.picklist(['ADMIN', 'STUDENT', 'LECTURER'])),
+	studentId: v.optional(v.string()),
+	studentName: v.optional(v.string()),
+	lecturerId: v.optional(v.string()),
+	lecturerName: v.optional(v.string())
+});
+
+export const searchUsers = query(searchUsersSchema, async (filters) => {
+	await requireRole(['ADMIN']);
+	const where: SelectUsersWhere[] = [];
+	if (filters.id) where.push(['id', '=', filters.id]);
+	if (filters.email) where.push(['email', 'LIKE', filters.email]);
+	if (filters.role) where.push(['role', '=', filters.role]);
+	if (filters.studentId) where.push(['student_id', '=', filters.studentId]);
+	if (filters.studentName) where.push(['student_name', 'LIKE', filters.studentName]);
+	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
+	if (filters.lecturerName) where.push(['lecturer_name', 'LIKE', filters.lecturerName]);
+	return selectUsers(getPool(), { where });
 });
 
 export const getUser = query(v.string(), async (id) => {

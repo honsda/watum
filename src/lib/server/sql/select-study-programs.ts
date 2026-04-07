@@ -103,7 +103,7 @@ export async function selectStudyPrograms(connection: Connection, params?: Selec
     if (params?.select == null
         || params.select.faculty_name
         || where.faculty_name != null) {
-        sql += EOL + `INNER JOIN faculties f ON sp.faculty_id - f.id`;
+        sql += EOL + `INNER JOIN faculties f ON sp.faculty_id = f.id`;
     }
     sql += EOL + `WHERE 1 = 1`;
     params?.where?.forEach(condition => {

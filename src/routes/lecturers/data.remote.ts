@@ -15,11 +15,40 @@ import {
 	updateLecturer as updateLecturerDb,
 	deleteLectuer as deleteLecturerDb
 } from '$lib/server/sql';
+import { type SelectLecturersWhere } from '$lib/server/sql';
 import { lecturerSchema } from '$lib/validations/lecturer';
 
 export const getLecturers = query(async () => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	return selectLecturers(getPool());
+});
+
+const searchLecturersSchema = v.object({
+	id: v.optional(v.string()),
+	name: v.optional(v.string()),
+	email: v.optional(v.string()),
+	phone: v.optional(v.string()),
+	address: v.optional(v.string()),
+	minScheduleCount: v.optional(v.number()),
+	maxScheduleCount: v.optional(v.number())
+});
+
+export const searchLecturers = query(searchLecturersSchema, async (filters) => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
+	const where: SelectLecturersWhere[] = [];
+	if (filters.id) where.push(['id', '=', filters.id]);
+	if (filters.name) where.push(['name', 'LIKE', filters.name]);
+	if (filters.email) where.push(['email', 'LIKE', filters.email]);
+	if (filters.phone) where.push(['phone', 'LIKE', filters.phone]);
+	if (filters.address) where.push(['address', 'LIKE', filters.address]);
+	if (filters.minScheduleCount != null && filters.maxScheduleCount != null) {
+		where.push(['schedule_count', 'BETWEEN', filters.minScheduleCount, filters.maxScheduleCount]);
+	} else if (filters.minScheduleCount != null) {
+		where.push(['schedule_count', '>=', filters.minScheduleCount]);
+	} else if (filters.maxScheduleCount != null) {
+		where.push(['schedule_count', '<=', filters.maxScheduleCount]);
+	}
+	return selectLecturers(getPool(), { where });
 });
 
 export const getLecturer = query(v.string(), async (id) => {

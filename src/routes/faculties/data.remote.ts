@@ -9,11 +9,34 @@ import {
 	updateFaculty as updateFacultyDb,
 	deleteFaculty as deleteFacultyDb
 } from '$lib/server/sql';
+import { type SelectFacultiesWhere } from '$lib/server/sql';
 import { facultySchema } from '$lib/validations/faculty';
 
 export const getFaculties = query(async () => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	return selectFaculties(getPool());
+});
+
+const searchFacultiesSchema = v.object({
+	id: v.optional(v.string()),
+	name: v.optional(v.string()),
+	minStudyProgramCount: v.optional(v.number()),
+	maxStudyProgramCount: v.optional(v.number())
+});
+
+export const searchFaculties = query(searchFacultiesSchema, async (filters) => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
+	const where: SelectFacultiesWhere[] = [];
+	if (filters.id) where.push(['id', '=', filters.id]);
+	if (filters.name) where.push(['name', 'LIKE', filters.name]);
+	if (filters.minStudyProgramCount != null && filters.maxStudyProgramCount != null) {
+		where.push(['study_program_count', 'BETWEEN', filters.minStudyProgramCount, filters.maxStudyProgramCount]);
+	} else if (filters.minStudyProgramCount != null) {
+		where.push(['study_program_count', '>=', filters.minStudyProgramCount]);
+	} else if (filters.maxStudyProgramCount != null) {
+		where.push(['study_program_count', '<=', filters.maxStudyProgramCount]);
+	}
+	return selectFaculties(getPool(), { where });
 });
 
 export const getFaculty = query(v.string(), async (id) => {
