@@ -1,5 +1,5 @@
 {
-	"databaseUri": "mysql://mariadb:dharon1234@coolify.bumimas12.web.id:5432/projectbasdat?connectTimeout=30000",
+	"databaseUri": "mysql://mariadb:dharon1234@coolify.bumimas12.web.id:5432/projectbasdat2?connectTimeout=30000",
 	"sqlDir": "./src/lib/server/sql",
 	"client": "mysql2",
 	"includeCrudTables": [

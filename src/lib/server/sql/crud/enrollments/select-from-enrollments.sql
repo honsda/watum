@@ -3,7 +3,6 @@ SELECT
     `student_id`,
     `course_id`,
     `class_room_id`,
-    `lecturer_id`,
     `schedule_id`,
     `semester`,
     `academic_year`,

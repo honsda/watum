@@ -4,6 +4,7 @@ export type UpdateCourseData = {
     name: string;
     credits: number;
     study_program_id: string;
+    lecturer_id: string;
 }
 
 export type UpdateCourseParams = {
@@ -19,10 +20,11 @@ export async function updateCourse(connection: Connection, data: UpdateCourseDat
     UPDATE courses
     SET name = ?,
         credits = ?,
-        study_program_id = ?
+        study_program_id = ?,
+        lecturer_id = ?
     WHERE id = ?
     `
 
-    return connection.query(sql, [data.name, data.credits, data.study_program_id, params.id])
+    return connection.query(sql, [data.name, data.credits, data.study_program_id, data.lecturer_id, params.id])
         .then(res => res[0] as UpdateCourseResult);
 }

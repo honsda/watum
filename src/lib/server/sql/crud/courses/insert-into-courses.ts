@@ -5,6 +5,7 @@ export type InsertIntoCoursesParams = {
     name: string;
     credits: number;
     study_program_id: string;
+    lecturer_id: string;
     created_at?: Date;
     updated_at?: Date;
 }
@@ -22,6 +23,7 @@ export async function insertIntoCourses(connection: Connection, params: InsertIn
         \`name\`,
         \`credits\`,
         \`study_program_id\`,
+        \`lecturer_id\`,
         \`created_at\`,
         \`updated_at\`
     )
@@ -32,10 +34,11 @@ export async function insertIntoCourses(connection: Connection, params: InsertIn
         ?,
         ?,
         ?,
+        ?,
         ?
     )
     `
 
-    return connection.query(sql, [params.id, params.name, params.credits, params.study_program_id, params.created_at, params.updated_at])
+    return connection.query(sql, [params.id, params.name, params.credits, params.study_program_id, params.lecturer_id, params.created_at, params.updated_at])
         .then(res => res[0] as InsertIntoCoursesResult);
 }

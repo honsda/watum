@@ -63,7 +63,7 @@ const selectFragments = {
     course_id: `c.id`,
     course_name: `c.name`,
     credits: `c.credits`,
-    lecturer_id: `e.lecturer_id`,
+    lecturer_id: `c.lecturer_id`,
 } as const;
 
 const NumericOperatorList = ['=', '<>', '>', '<', '>=', '<='] as const;
@@ -178,7 +178,7 @@ export async function selectGrades(connection: Connection, params?: SelectGrades
         sql = appendSelect(sql, `c.credits`);
     }
     if (params?.select == null || params.select.lecturer_id) {
-        sql = appendSelect(sql, `e.lecturer_id`);
+        sql = appendSelect(sql, `c.lecturer_id`);
     }
     sql += EOL + `FROM grades g`;
     if (params?.select == null
@@ -213,9 +213,11 @@ export async function selectGrades(connection: Connection, params?: SelectGrades
         || params.select.course_id
         || params.select.course_name
         || params.select.credits
+        || params.select.lecturer_id
         || where.course_id != null
         || where.course_name != null
-        || where.credits != null) {
+        || where.credits != null
+        || where.lecturer_id != null) {
         sql += EOL + `INNER JOIN courses c ON e.course_id = c.id`;
     }
     if (params?.select == null

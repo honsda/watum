@@ -5,6 +5,7 @@ import { getPool } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
 import {
 	selectCourses,
+	selectLecturers,
 	selectStudyPrograms,
 	insertCourse,
 	updateCourse as updateCourseDb,
@@ -22,6 +23,7 @@ const searchCoursesSchema = v.object({
 	id: v.optional(v.string()),
 	name: v.optional(v.string()),
 	studyProgramId: v.optional(v.string()),
+	lecturerId: v.optional(v.string()),
 	studyProgramName: v.optional(v.string()),
 	minCredits: v.optional(v.number()),
 	maxCredits: v.optional(v.number())
@@ -33,7 +35,9 @@ export const searchCourses = query(searchCoursesSchema, async (filters) => {
 	if (filters.id) where.push(['id', '=', filters.id]);
 	if (filters.name) where.push(['name', 'LIKE', filters.name]);
 	if (filters.studyProgramId) where.push(['study_program_id', '=', filters.studyProgramId]);
-	if (filters.studyProgramName) where.push(['study_program_name', 'LIKE', filters.studyProgramName]);
+	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
+	if (filters.studyProgramName)
+		where.push(['study_program_name', 'LIKE', filters.studyProgramName]);
 	if (filters.minCredits != null && filters.maxCredits != null) {
 		where.push(['credits', 'BETWEEN', filters.minCredits, filters.maxCredits]);
 	} else if (filters.minCredits != null) {
@@ -63,11 +67,16 @@ export const createCourse = form(courseSchema, async (data) => {
 	if (!sp) {
 		throw error(400, 'program studi tidak ditemukan');
 	}
+	const [lecturer] = await selectLecturers(getPool(), { where: [['id', '=', data.lecturerId]] });
+	if (!lecturer) {
+		throw error(400, 'dosen tidak ditemukan');
+	}
 	await insertCourse(getPool(), {
 		id: data.id,
 		name: data.name,
 		credits: data.credits,
-		study_program_id: data.studyProgramId
+		study_program_id: data.studyProgramId,
+		lecturer_id: data.lecturerId
 	});
 	await getCourses().refresh();
 	return { success: true, id: data.id };
@@ -83,12 +92,17 @@ export const updateCourse = form(courseSchema, async (data) => {
 	if (!sp) {
 		throw error(400, 'program studi tidak ditemukan');
 	}
+	const [lecturer] = await selectLecturers(getPool(), { where: [['id', '=', data.lecturerId]] });
+	if (!lecturer) {
+		throw error(400, 'dosen tidak ditemukan');
+	}
 	await updateCourseDb(
 		getPool(),
 		{
 			name: data.name,
 			credits: data.credits,
-			study_program_id: data.studyProgramId
+			study_program_id: data.studyProgramId,
+			lecturer_id: data.lecturerId
 		},
 		{ id: data.id }
 	);

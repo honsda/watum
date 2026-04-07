@@ -9,7 +9,6 @@ export type SelectFromEnrollmentsResult = {
     student_id: string;
     course_id: string;
     class_room_id: string;
-    lecturer_id: string;
     schedule_id: string;
     semester: string;
     academic_year: string;
@@ -24,7 +23,6 @@ export async function selectFromEnrollments(connection: Connection, params: Sele
         \`student_id\`,
         \`course_id\`,
         \`class_room_id\`,
-        \`lecturer_id\`,
         \`schedule_id\`,
         \`semester\`,
         \`academic_year\`,
@@ -46,12 +44,11 @@ function mapArrayToSelectFromEnrollmentsResult(data: any) {
         student_id: data[1],
         course_id: data[2],
         class_room_id: data[3],
-        lecturer_id: data[4],
-        schedule_id: data[5],
-        semester: data[6],
-        academic_year: data[7],
-        created_at: data[8],
-        updated_at: data[9]
+        schedule_id: data[4],
+        semester: data[5],
+        academic_year: data[6],
+        created_at: data[7],
+        updated_at: data[8]
     }
     return result;
 }

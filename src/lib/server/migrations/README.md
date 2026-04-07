@@ -48,23 +48,23 @@ import fs from 'fs';
 import mysql from 'mysql2/promise';
 
 async function runMigration() {
-	const connection = await mysql.createConnection({
-		host: process.env.DB_HOST || 'localhost',
-		user: process.env.DB_USER || 'root',
-		password: process.env.DB_PASSWORD || '',
-		multipleStatements: true
-	});
+  const connection = await mysql.createConnection({
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    multipleStatements: true
+  });
 
-	// Create database if not exists
-	await connection.query(`CREATE DATABASE IF NOT EXISTS ${process.env.DB_NAME || 'akademik_db'}`);
-	await connection.changeUser({ database: process.env.DB_NAME || 'akademik_db' });
+  // Create database if not exists
+  await connection.query(`CREATE DATABASE IF NOT EXISTS ${process.env.DB_NAME || 'akademik_db'}`);
+  await connection.changeUser({ database: process.env.DB_NAME || 'akademik_db' });
 
-	// Read and execute migration
-	const sql = fs.readFileSync('./src/lib/server/migrations/001_schema.sql', 'utf8');
-	await connection.query(sql);
+  // Read and execute migration
+  const sql = fs.readFileSync('./src/lib/server/migrations/001_schema.sql', 'utf8');
+  await connection.query(sql);
 
-	console.log('Migration completed successfully');
-	await connection.end();
+  console.log('Migration completed successfully');
+  await connection.end();
 }
 
 runMigration().catch(console.error);
@@ -92,11 +92,7 @@ node run-migration.js
 - `study_programs` - Program studi
 - `students` - Mahasiswa
 - `lecturers` - Dosen
-- `courses` - Mata kuliah
-
-### Junction Tables
-
-- `_CourseToLecturer` - Relasi many-to-many Course-Lecturer
+- `courses` - Mata kuliah, termasuk dosen pengampu
 
 ### Key Features
 
@@ -119,6 +115,16 @@ CREATE DATABASE akademik_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
 Then run migration again.
+
+## Default Dummy Admin
+
+Migration `001_schema.sql` seeds a default admin account (idempotent):
+
+- Email: `admin@watum.local`
+- Password: `admin123`
+- Role: `ADMIN`
+
+You should change this password immediately in non-local environments.
 
 ## Notes
 
