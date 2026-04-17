@@ -1,4 +1,5 @@
 # watum
+
 **Watum (Website Akademik Terintegrasi untuk Mahasiswa)** is a website that integrates the KRS system with the university's class and schedule management framework, and end semester results.
 
 Database assignment for [Studycase Group 10](https://github.com/partadox/praktikum-mysql-case/blob/main/kelompok10_akademik_b.md)
@@ -9,9 +10,10 @@ Database assignment for [Studycase Group 10](https://github.com/partadox/praktik
 - Backend guide: `BACKEND_GUIDE.md`
 
 ## Group 10
-* Muhammad Abdullah
-* Dharon Yusuf
-* Hans Jovan
+
+- Muhammad Abdullah
+- Dharon Yusuf
+- Hans Jovan
 
 # sv
 
@@ -41,7 +43,6 @@ npx prisma migrate deploy
 # Open Prisma Studio (database GUI)
 npx prisma studio
 ```
-
 
 ## Developing
 
@@ -91,6 +92,9 @@ DB_PORT=3306
 DB_USER=<mysql-user>
 DB_PASSWORD=<mysql-password>
 DB_NAME=<mysql-database>
+JWT_SECRET=<long-random-secret>
+# Optional:
+# JWT_ISSUER=watum
 ```
 
 Recommended proxy/origin environment variables for SvelteKit remote functions:
@@ -112,5 +116,7 @@ PORT_HEADER=x-forwarded-port
 Notes:
 
 - The app runtime DB connection uses `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, and `DB_PORT`.
+- `JWT_SECRET` is required to sign and verify the `httpOnly` session JWT cookie.
+- `JWT_ISSUER` is optional and can be used to pin token issuer verification across environments.
 - `DATABASE_URL` can still be used for Prisma CLI workflows, but runtime queries use the variables above.
 - The runtime image includes `curl` for connectivity checks in Coolify terminal.

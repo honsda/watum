@@ -1916,10 +1916,15 @@ LEFT JOIN lecturers l ON u.lecturer_id = l.id
 ```ts
 // src/lib/server/auth.ts
 import { getRequestEvent } from '$app/server';
+import { env } from '$env/dynamic/private';
 import { error } from '@sveltejs/kit';
 import { verify } from 'argon2';
+import { SignJWT, jwtVerify } from 'jose';
 import { getPool } from '$lib/server/db';
 import { selectUsers } from '$lib/server/sql';
+
+const SESSION_COOKIE_NAME = 'session_token';
+const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
 interface User {
 	id: string;
@@ -1955,10 +1960,13 @@ function mapUser(user: SelectUserRow): User {
 
 export async function getUser(): Promise<User | null> {
 	const { cookies } = getRequestEvent();
-	const sessionId = cookies.get('session_id');
-	if (!sessionId) return null;
+	const sessionToken = cookies.get(SESSION_COOKIE_NAME);
+	if (!sessionToken) return null;
 
-	const [user] = await selectUsers(getPool(), { where: [['id', '=', sessionId]] });
+	const { payload } = await jwtVerify(sessionToken, new TextEncoder().encode(env.JWT_SECRET));
+	if (typeof payload.sub !== 'string') return null;
+
+	const [user] = await selectUsers(getPool(), { where: [['id', '=', payload.sub]] });
 	if (!user) return null;
 
 	return mapUser(user);
@@ -1984,6 +1992,24 @@ export async function login(email: string, password: string): Promise<User> {
 	if (!valid) throw error(401, 'Email atau password salah');
 
 	return mapUser(user);
+}
+
+export async function setSession(userId: string) {
+	const { cookies, url } = getRequestEvent();
+	const token = await new SignJWT({})
+		.setProtectedHeader({ alg: 'HS256' })
+		.setSubject(userId)
+		.setIssuedAt()
+		.setExpirationTime(`${SESSION_MAX_AGE}s`)
+		.sign(new TextEncoder().encode(env.JWT_SECRET));
+
+	cookies.set(SESSION_COOKIE_NAME, token, {
+		path: '/',
+		httpOnly: true,
+		sameSite: 'lax',
+		secure: url.protocol === 'https:',
+		maxAge: SESSION_MAX_AGE
+	});
 }
 ```
 
