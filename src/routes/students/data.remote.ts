@@ -13,6 +13,7 @@ import {
 	selectUsers,
 	insertStudent,
 	insertUser,
+	updateUser,
 	deleteUser,
 	updateStudent as updateStudentDb,
 	deleteStudent as deleteStudentDb
@@ -92,6 +93,8 @@ export const createStudent = form(studentSchema, async (data) => {
 	await requireRole(['ADMIN']);
 	const [existingEmail] = await selectStudents(getPool(), { where: [['email', '=', data.email]] });
 	if (existingEmail) throw error(400, 'Email sudah terdaftar');
+	const [existingUserEmail] = await selectUsers(getPool(), { where: [['email', '=', data.email]] });
+	if (existingUserEmail) throw error(400, 'Email akun sudah digunakan');
 
 	const [studyProgram] = await selectStudyPrograms(getPool(), {
 		where: [['id', '=', data.studyProgramId]]
@@ -136,21 +139,41 @@ export const updateStudent = form(
 			where: [['email', '=', updateData.email]]
 		});
 		if (existingEmail && existingEmail.id !== id) throw error(400, 'Email sudah digunakan');
+		const [existingUserEmail] = await selectUsers(getPool(), {
+			where: [['email', '=', updateData.email]]
+		});
+		if (existingUserEmail && existingUserEmail.student_id !== id)
+			throw error(400, 'Email akun sudah digunakan');
 
-		await updateStudentDb(
-			getPool(),
-			{
-				name: updateData.name,
-				email: updateData.email,
-				phone: updateData.phone ?? undefined,
-				address: updateData.address ?? undefined,
-				year_admitted: updateData.yearAdmitted,
-				study_program_id: updateData.studyProgramId
-			},
-			{ id }
-		);
+		await withTransaction(async (conn) => {
+			await updateStudentDb(
+				conn,
+				{
+					name: updateData.name,
+					email: updateData.email,
+					phone: updateData.phone ?? undefined,
+					address: updateData.address ?? undefined,
+					year_admitted: updateData.yearAdmitted,
+					study_program_id: updateData.studyProgramId
+				},
+				{ id }
+			);
+
+			const [linkedUser] = await selectUsers(conn, { where: [['student_id', '=', id]] });
+			if (linkedUser?.id) {
+				await updateUser(
+					conn,
+					{
+						email: updateData.email,
+						role: 'STUDENT',
+						student_id: id,
+						lecturer_id: null
+					},
+					{ id: linkedUser.id }
+				);
+			}
+		});
 		await getStudents().refresh();
-		await getStudent(id).refresh();
 		return { success: true };
 	}
 );

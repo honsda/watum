@@ -3,6 +3,7 @@ import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import { getPool } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
+import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
 	selectFaculties,
 	insertFaculty,
@@ -10,7 +11,7 @@ import {
 	deleteFaculty as deleteFacultyDb
 } from '$lib/server/sql';
 import { type SelectFacultiesWhere } from '$lib/server/sql';
-import { facultySchema } from '$lib/validations/faculty';
+import { facultyCreateSchema, facultySchema } from '$lib/validations/faculty';
 
 export const getFaculties = query(async () => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
@@ -30,7 +31,12 @@ export const searchFaculties = query(searchFacultiesSchema, async (filters) => {
 	if (filters.id) where.push(['id', '=', filters.id]);
 	if (filters.name) where.push(['name', 'LIKE', filters.name]);
 	if (filters.minStudyProgramCount != null && filters.maxStudyProgramCount != null) {
-		where.push(['study_program_count', 'BETWEEN', filters.minStudyProgramCount, filters.maxStudyProgramCount]);
+		where.push([
+			'study_program_count',
+			'BETWEEN',
+			filters.minStudyProgramCount,
+			filters.maxStudyProgramCount
+		]);
 	} else if (filters.minStudyProgramCount != null) {
 		where.push(['study_program_count', '>=', filters.minStudyProgramCount]);
 	} else if (filters.maxStudyProgramCount != null) {
@@ -48,15 +54,20 @@ export const getFaculty = query(v.string(), async (id) => {
 	return faculty;
 });
 
-export const createFaculty = form(facultySchema, async (data) => {
+export const createFaculty = form(facultyCreateSchema, async (data) => {
 	await requireRole(['ADMIN']);
-	const [existing] = await selectFaculties(getPool(), { where: [['id', '=', data.id]] });
-	if (existing) {
-		throw error(400, 'ID fakultas sudah digunakan');
+	const [existingName] = await selectFaculties(getPool(), { where: [['name', '=', data.name]] });
+	if (existingName) {
+		throw error(400, 'Nama fakultas sudah digunakan');
 	}
-	await insertFaculty(getPool(), data);
+	const { id } = await insertWithGeneratedId({
+		prefix: 'FK',
+		width: 2,
+		readIds: async (connection) => (await selectFaculties(connection)).map((faculty) => faculty.id),
+		insert: async (connection, id) => insertFaculty(connection, { id, name: data.name })
+	});
 	await getFaculties().refresh();
-	return { success: true, id: data.id };
+	return { success: true, id };
 });
 
 export const updateFaculty = form(facultySchema, async (data) => {

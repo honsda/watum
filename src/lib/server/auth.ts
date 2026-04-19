@@ -3,7 +3,7 @@ import { env } from '$env/dynamic/private';
 import { error } from '@sveltejs/kit';
 import { verify } from 'argon2';
 import { SignJWT, jwtVerify } from 'jose';
-import { getPool } from './db';
+import { getPool, retryRead } from './db';
 import { selectUsers } from './sql';
 
 const SESSION_COOKIE_NAME = 'session_token';
@@ -103,9 +103,11 @@ export async function getUser(): Promise<User | null> {
 		return null;
 	}
 
-	const [user] = await selectUsers(getPool(), {
-		where: [['id', '=', userId]]
-	});
+	const [user] = await retryRead(() =>
+		selectUsers(getPool(), {
+			where: [['id', '=', userId]]
+		})
+	);
 	if (!user) {
 		deleteSessionCookies();
 		return null;
@@ -146,7 +148,7 @@ export function clearSession() {
 }
 
 export async function login(email: string, password: string): Promise<User> {
-	const [user] = await selectUsers(getPool(), { where: [['email', '=', email]] });
+	const [user] = await retryRead(() => selectUsers(getPool(), { where: [['email', '=', email]] }));
 	if (!user) {
 		throw error(401, 'Email atau password salah');
 	}

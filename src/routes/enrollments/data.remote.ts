@@ -4,7 +4,7 @@ import { error, invalid } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import { getPool, withTransaction } from '$lib/server';
 import { requireRole, requireUser } from '$lib/server/auth';
-import { parseISO, formatDateTime } from '$lib/time-helpers';
+import { getTimeComponents, parseISO, formatDateTime } from '$lib/time-helpers';
 import {
 	selectClassRooms,
 	selectCourses,
@@ -19,7 +19,34 @@ import {
 	deleteEnrollment as deleteEnrollmentDb
 } from '$lib/server/sql';
 import { type SelectEnrollmentsWhere } from '$lib/server/sql';
-import { enrollmentSchema } from '$lib/validations/enrollment';
+import { days, enrollmentSchema } from '$lib/validations/enrollment';
+
+const weekdayFromIndex = ['MINGGU', ...days] as const;
+
+function validateScheduleWindow(
+	data: { day: string; startTime: string; endTime: string; timezone?: string },
+	issue: {
+		day: (message: string) => any;
+		endTime: (message: string) => any;
+	}
+) {
+	const clientTimezone = data.timezone ?? 'UTC';
+	const startDate = parseISO(data.startTime, clientTimezone);
+	const endDate = parseISO(data.endTime, clientTimezone);
+	const startDay =
+		weekdayFromIndex[getTimeComponents(startDate, clientTimezone).dayOfWeek] ?? 'MINGGU';
+	const endDay = weekdayFromIndex[getTimeComponents(endDate, clientTimezone).dayOfWeek] ?? 'MINGGU';
+
+	if (startDay !== endDay) {
+		invalid(issue.endTime('Waktu mulai dan selesai harus berada pada hari yang sama'));
+	}
+
+	if (data.day !== startDay) {
+		invalid(issue.day(`Hari jadwal harus sesuai dengan tanggal yang dipilih (${startDay})`));
+	}
+
+	return { clientTimezone, startDate, endDate };
+}
 
 export const getEnrollments = query(async () => {
 	const user = await requireUser();
@@ -95,7 +122,7 @@ export const getEnrollment = query(v.string(), async (id) => {
 });
 
 export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
-	const user = await requireRole(['ADMIN', 'STUDENT']);
+	const user = await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	if (user.role === 'STUDENT' && data.studentId !== user.studentId) {
 		throw error(403, 'Anda tidak berhak membuat KRS untuk mahasiswa lain');
 	}
@@ -112,15 +139,15 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 	if (!course.lecturer_id) {
 		invalid(issue.courseId('Mata kuliah belum memiliki dosen pengampu'));
 	}
+	if (user.role === 'LECTURER' && course.lecturer_id !== user.lecturerId) {
+		throw error(403, 'Anda hanya dapat mengelola jadwal untuk mata kuliah yang Anda ampu');
+	}
 
 	const [classRoom] = await selectClassRooms(getPool(), { where: [['id', '=', data.classRoomId]] });
 	if (!classRoom) {
 		invalid(issue.classRoomId('Ruang kelas tidak ditemukan'));
 	}
-	const clientTimezone = data.timezone ?? 'UTC';
-
-	const startDate = parseISO(data.startTime, clientTimezone);
-	const endDate = parseISO(data.endTime, clientTimezone);
+	const { clientTimezone, startDate, endDate } = validateScheduleWindow(data, issue);
 
 	if (endDate <= startDate) {
 		invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
@@ -189,10 +216,13 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 export const updateEnrollment = form(
 	v.object({ id: v.string(), ...enrollmentSchema.entries }),
 	async (data, issue) => {
-		await requireRole(['ADMIN']);
+		const user = await requireRole(['ADMIN', 'LECTURER']);
 		const [enrollment] = await selectEnrollments(getPool(), { where: [['id', '=', data.id]] });
 		if (!enrollment) {
 			throw error(404, 'Data KRS tidak ditemukan');
+		}
+		if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
+			throw error(403, 'Anda hanya dapat mengubah jadwal untuk mata kuliah yang Anda ampu');
 		}
 		if (enrollment.grade_id) {
 			throw error(400, 'Data KRS sudah memiliki nilai, tidak dapat diubah');
@@ -210,6 +240,9 @@ export const updateEnrollment = form(
 		if (!course.lecturer_id) {
 			invalid(issue.courseId('Mata kuliah belum memiliki dosen pengampu'));
 		}
+		if (user.role === 'LECTURER' && course.lecturer_id !== user.lecturerId) {
+			throw error(403, 'Anda hanya dapat memindahkan jadwal dalam mata kuliah yang Anda ampu');
+		}
 
 		const [classRoom] = await selectClassRooms(getPool(), {
 			where: [['id', '=', data.classRoomId]]
@@ -217,10 +250,7 @@ export const updateEnrollment = form(
 		if (!classRoom) {
 			invalid(issue.classRoomId('Ruang kelas tidak ditemukan'));
 		}
-		const clientTimezone = data.timezone ?? 'UTC';
-
-		const startDate = parseISO(data.startTime, clientTimezone);
-		const endDate = parseISO(data.endTime, clientTimezone);
+		const { clientTimezone, startDate, endDate } = validateScheduleWindow(data, issue);
 
 		if (endDate <= startDate) {
 			invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
@@ -286,16 +316,18 @@ export const updateEnrollment = form(
 			);
 		});
 		await getEnrollments().refresh();
-		await getEnrollment(data.id).refresh();
 		return { success: true };
 	}
 );
 
 export const deleteEnrollment = command(v.string(), async (id) => {
-	await requireRole(['ADMIN']);
+	const user = await requireRole(['ADMIN', 'LECTURER']);
 	const [enrollment] = await selectEnrollments(getPool(), { where: [['id', '=', id]] });
 	if (!enrollment) {
 		throw error(404, 'Data KRS tidak ditemukan');
+	}
+	if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
+		throw error(403, 'Anda hanya dapat menghapus jadwal untuk mata kuliah yang Anda ampu');
 	}
 	await withTransaction(async (conn) => {
 		await deleteEnrollmentDb(conn, { id });

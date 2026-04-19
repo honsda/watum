@@ -5,6 +5,7 @@ import { hash } from 'argon2';
 import { randomUUID } from 'crypto';
 import { getPool, withTransaction } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
+import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
 	selectUsers,
 	selectStudents,
@@ -17,9 +18,9 @@ import {
 } from '$lib/server/sql';
 import { type SelectUsersWhere } from '$lib/server/sql';
 import { updateUser as updateUserDb } from '$lib/server/sql';
-import { userSchema } from '$lib/validations/user';
+import { userSchema, userUpdateSchema } from '$lib/validations/user';
 import { studentSchema } from '$lib/validations/student';
-import { lecturerSchema } from '$lib/validations/lecturer';
+import { lecturerCreateSchema } from '$lib/validations/lecturer';
 import { generateNRP } from '$lib/server/NRP-generator';
 
 export const getUsers = query(async () => {
@@ -57,8 +58,7 @@ export const getUser = query(v.string(), async (id) => {
 	return user;
 });
 
-// Keep using existing schemas without introducing a new one.
-const userInputSchema = v.union([userSchema, studentSchema, lecturerSchema]);
+const userInputSchema = v.union([userSchema, studentSchema, lecturerCreateSchema]);
 
 export const createUser = form(userInputSchema, async (data) => {
 	await requireRole(['ADMIN']);
@@ -154,99 +154,117 @@ export const createUser = form(userInputSchema, async (data) => {
 		return { success: true, id, studentId: nrp };
 	}
 
-    const [existingLecturerEmail] = await selectLecturers(getPool(), { where: [['email', '=', data.email]] });
-	const [existingLecturer] = await selectLecturers(getPool(), { where: [['id', '=', data.id]] });
-    if (existingLecturerEmail && existingLecturerEmail.email === data.email) {
-        throw error(400, 'Email sudah digunakan oleh dosen');
-    }
-	if (existingLecturer) {
-		throw error(400, 'NIM dosen sudah digunakan');
+	const [existingLecturerEmail] = await selectLecturers(getPool(), {
+		where: [['email', '=', data.email]]
+	});
+	if (existingLecturerEmail && existingLecturerEmail.email === data.email) {
+		throw error(400, 'Email sudah digunakan oleh dosen');
 	}
 
 	const id = randomUUID();
-	const hashedPassword = await hash(data.id);
-	await withTransaction(async (conn) => {
-		await insertLecturer(conn, {
-			id: data.id,
-			name: data.name,
-			email: data.email,
-			phone: data.phone ?? undefined,
-			address: data.address ?? undefined
-		});
+	const { id: lecturerId } = await insertWithGeneratedId({
+		prefix: 'DSN',
+		width: 3,
+		readIds: async (connection) =>
+			(await selectLecturers(connection)).map((lecturer) => lecturer.id),
+		insert: async (connection, lecturerId) => {
+			const hashedPassword = await hash(lecturerId);
+			await insertLecturer(connection, {
+				id: lecturerId,
+				name: data.name,
+				email: data.email,
+				phone: data.phone ?? undefined,
+				address: data.address ?? undefined
+			});
 
-		await insertUser(conn, {
-			id,
-			email: data.email,
-			password: hashedPassword,
-			role: 'LECTURER',
-			student_id: undefined,
-			lecturer_id: data.id
-		});
+			return insertUser(connection, {
+				id,
+				email: data.email,
+				password: hashedPassword,
+				role: 'LECTURER',
+				student_id: undefined,
+				lecturer_id: lecturerId
+			});
+		}
 	});
 
-    
 	await getUsers().refresh();
-	return { success: true, id, lecturerId: data.id };
+	return { success: true, id, lecturerId };
 });
 
-export const updateUser = form(v.object({ id: v.string(), ...userSchema.entries }), async (data) => {
-	await requireRole(['ADMIN']);
+export const updateUser = form(
+	v.object({ id: v.string(), ...userUpdateSchema.entries }),
+	async (data) => {
+		await requireRole(['ADMIN']);
 
-	const [user] = await selectUsers(getPool(), { where: [['id', '=', data.id]] });
-	if (!user) {
-		throw error(404, 'User tidak ditemukan');
-	}
-
-	const [existingEmail] = await selectUsers(getPool(), { where: [['email', '=', data.email]] });
-	if (existingEmail && existingEmail.id !== data.id) {
-		throw error(400, 'Email sudah digunakan');
-	}
-
-	if (data.role === 'STUDENT') {
-		if (!data.studentId) {
-			throw error(400, 'NRP wajib diisi untuk Mahasiswa');
+		const [user] = await selectUsers(getPool(), { where: [['id', '=', data.id]] });
+		if (!user) {
+			throw error(404, 'User tidak ditemukan');
 		}
-		const [student] = await selectStudents(getPool(), { where: [['id', '=', data.studentId]] });
-		if (!student) {
-			throw error(400, 'Mahasiswa tidak ditemukan');
+
+		const [existingEmail] = await selectUsers(getPool(), { where: [['email', '=', data.email]] });
+		if (existingEmail && existingEmail.id !== data.id) {
+			throw error(400, 'Email sudah digunakan');
 		}
+
+		if (data.role === 'STUDENT') {
+			if (!data.studentId) {
+				throw error(400, 'NRP wajib diisi untuk Mahasiswa');
+			}
+			const [student] = await selectStudents(getPool(), { where: [['id', '=', data.studentId]] });
+			if (!student) {
+				throw error(400, 'Mahasiswa tidak ditemukan');
+			}
+			const [existingStudentUser] = await selectUsers(getPool(), {
+				where: [['student_id', '=', data.studentId]]
+			});
+			if (existingStudentUser && existingStudentUser.id !== data.id) {
+				throw error(400, 'Mahasiswa tersebut sudah memiliki akun user');
+			}
+		}
+
+		if (data.role === 'LECTURER') {
+			if (!data.lecturerId) {
+				throw error(400, 'NIM wajib diisi untuk Dosen');
+			}
+			const [lecturer] = await selectLecturers(getPool(), {
+				where: [['id', '=', data.lecturerId]]
+			});
+			if (!lecturer) {
+				throw error(400, 'Dosen tidak ditemukan');
+			}
+			const [existingLecturerUser] = await selectUsers(getPool(), {
+				where: [['lecturer_id', '=', data.lecturerId]]
+			});
+			if (existingLecturerUser && existingLecturerUser.id !== data.id) {
+				throw error(400, 'Dosen tersebut sudah memiliki akun user');
+			}
+		}
+
+		// if (user.role !== data.role) {
+		//     if (user.role === 'STUDENT' && user.student_id) {
+		//         await deleteStudent(getPool(), { id: user.student_id });
+		// }
+		//     if (user.role === 'LECTURER' && user.lecturer_id) {
+		//         await deleteLectuer(getPool(), { id: user.lecturer_id });
+		//     }
+		// }
+		await updateUserDb(
+			getPool(),
+			{
+				email: data.email,
+				password: data.password ? await hash(data.password) : undefined,
+				role: data.role,
+				student_id: data.role === 'STUDENT' ? data.studentId : null,
+				lecturer_id: data.role === 'LECTURER' ? (data.lecturerId ?? null) : null
+			},
+			{ id: data.id }
+		);
+
+		await getUsers().refresh();
+		return { success: true, id: data.id };
 	}
-
-	if (data.role === 'LECTURER') {
-		if (!data.lecturerId) {
-			throw error(400, 'NIM wajib diisi untuk Dosen');
-		}
-		const [lecturer] = await selectLecturers(getPool(), { where: [['id', '=', data.lecturerId]] });
-		if (!lecturer) {
-			throw error(400, 'Dosen tidak ditemukan');
-		}
-	}
-
-    // if (user.role !== data.role) {
-    //     if (user.role === 'STUDENT' && user.student_id) {
-    //         await deleteStudent(getPool(), { id: user.student_id });
-    // }
-    //     if (user.role === 'LECTURER' && user.lecturer_id) {
-    //         await deleteLectuer(getPool(), { id: user.lecturer_id });
-    //     }
-    // }
-	await updateUserDb(
-		getPool(),
-		{
-			email: data.email,
-			password: await hash(data.password),
-			role: data.role,
-			student_id: data.role === 'STUDENT' ? (data.studentId) : undefined,
-			lecturer_id: data.role === 'LECTURER' ? (data.lecturerId ?? undefined) : undefined
-		},
-		{ id: data.id }
-	);
-
-
-	await getUsers().refresh();
-	await getUser(data.id).refresh();
-	return { success: true, id: data.id };
-});
+);
 
 export const deleteUser = command(v.string(), async (id) => {
 	await requireRole(['ADMIN']);
