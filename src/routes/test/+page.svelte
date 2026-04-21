@@ -326,6 +326,19 @@
 		string,
 		{ action: string; method: 'POST'; [key: symbol]: (node: HTMLFormElement) => void }
 	> = {};
+	type RemoteFormLike = {
+		action: string;
+		method: 'POST';
+		result?: unknown;
+		fields?: {
+			allIssues?: () => Array<{ message?: string }> | undefined;
+		};
+		enhance: (
+			callback: (
+				opts: { submit: () => Promise<boolean> } & Record<string, unknown>
+			) => void | Promise<void>
+		) => { action: string; method: 'POST'; [key: symbol]: (node: HTMLFormElement) => void };
+	};
 
 	function setResult(name: string, result: { success: boolean; data?: unknown; error?: string }) {
 		results[name] = result;
@@ -337,35 +350,20 @@
 		}, RESULT_TTL_MS);
 	}
 
-	function formBox(
-		name: string,
-		remoteForm: {
-			action: string;
-			method: 'POST';
-			result?: unknown;
-			fields?: {
-				allIssues?: () => Array<{ message?: string }> | undefined;
-			};
-			enhance: (callback: (opts: { submit: () => Promise<void> }) => void | Promise<void>) => {
-				action: string;
-				method: 'POST';
-				[key: symbol]: (node: HTMLFormElement) => void;
-			};
-		}
-	) {
+	function formBox(name: string, remoteForm: RemoteFormLike) {
 		const cached = boxedFormCache[name];
 		if (cached) return cached;
 
-		const enhanced = remoteForm.enhance(async ({ submit }) => {
+		const enhanced = remoteForm.enhance(async ({ submit }: { submit: () => Promise<boolean> }) => {
 			loading[name] = true;
 			try {
 				await submit();
-				const issues = remoteForm.fields?.allIssues?.() ?? [];
+				const issues: Array<{ message?: string }> = remoteForm.fields?.allIssues?.() ?? [];
 				if (issues.length > 0) {
 					setResult(name, {
 						success: false,
 						error: issues
-							.map((i) => i.message)
+							.map((i: { message?: string }) => i.message)
 							.filter(Boolean)
 							.join(' | ')
 					});

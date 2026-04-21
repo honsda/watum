@@ -1,6 +1,8 @@
 declare module '@event-calendar/core' {
-	export const Calendar: any;
-	export const TimeGrid: any;
+	import type { Component } from 'svelte';
+
+	export const Calendar: Component<{ plugins?: unknown[]; options?: unknown }>;
+	export const TimeGrid: unknown;
 }
 
 declare module '@event-calendar/core/index.css';

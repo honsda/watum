@@ -26,8 +26,8 @@ const weekdayFromIndex = ['MINGGU', ...days] as const;
 function validateScheduleWindow(
 	data: { day: string; startTime: string; endTime: string; timezone?: string },
 	issue: {
-		day: (message: string) => any;
-		endTime: (message: string) => any;
+		day: (message: string) => Parameters<typeof invalid>[0];
+		endTime: (message: string) => Parameters<typeof invalid>[0];
 	}
 ) {
 	const clientTimezone = data.timezone ?? 'UTC';

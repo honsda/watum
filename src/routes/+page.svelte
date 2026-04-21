@@ -1,13 +1,17 @@
 <script lang="ts">
 	import { replaceState } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
 	import { onMount } from 'svelte';
+	import type { Component } from 'svelte';
 	import {
 		AlertCircle,
 		ArrowRightLeft,
 		BookOpen,
 		Building2,
 		CalendarDays,
+		ChevronLeft,
+		ChevronRight,
 		ClipboardList,
 		DoorClosed,
 		GraduationCap,
@@ -77,6 +81,17 @@
 	} from './enrollments/data.remote';
 	import { getGrades, createGrade, updateGrade, deleteGrade } from './grades/data.remote';
 	import { getUsers, updateUser } from './users/data.remote';
+	import type {
+		SelectClassRoomsResult,
+		SelectCoursesResult,
+		SelectEnrollmentsResult,
+		SelectFacultiesResult,
+		SelectGradesResult,
+		SelectLecturersResult,
+		SelectStudentsResult,
+		SelectStudyProgramsResult,
+		SelectUsersResult
+	} from '$lib/server/sql';
 
 	type ViewId =
 		| 'dashboard'
@@ -147,6 +162,18 @@
 		| 'enrollments'
 		| 'grades'
 		| 'users';
+	type IssueForm = {
+		fields?: {
+			allIssues?: () => Array<{ message?: string }> | undefined;
+		};
+	};
+	type EnhancedForm = IssueForm & {
+		enhance: (callback: (opts: { submit: () => Promise<boolean> }) => void | Promise<void>) => {
+			action: string;
+			method: 'POST';
+			[key: symbol]: (node: HTMLFormElement) => void;
+		};
+	};
 
 	const currentUser = getCurrentUser();
 	const timezone = 'Asia/Jakarta';
@@ -154,7 +181,15 @@
 	const DEFAULT_DAY_END = 20 * 60;
 	const RANGE_PADDING_MINUTES = 60;
 	const MIN_VISIBLE_MINUTES = 6 * 60;
-	const CALENDAR_WEEK_START = new Date(2025, 0, 6);
+	function createCalendarWeekStart() {
+		return new Date(2025, 0, 6);
+	}
+
+	function createCalendarAnchorDate(weekOffset = 0) {
+		const date = createCalendarWeekStart();
+		date.setDate(date.getDate() + weekOffset * 7);
+		return date;
+	}
 
 	const viewCatalog = {
 		dashboard: { label: 'Dashboard', icon: LayoutPanelTop },
@@ -186,7 +221,9 @@
 		} else {
 			url.searchParams.set('view', view);
 		}
-		replaceState(url, {});
+		const resolveRoute = resolve as unknown as (path: string) => string;
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		replaceState(resolveRoute(`${url.pathname}${url.search}${url.hash}`), {});
 	}
 
 	function navigationForRole(role: AppRole | undefined): ViewId[] {
@@ -324,96 +361,6 @@
 		return viewCatalog[view].label;
 	}
 
-	function pageSummary(view: ViewId, role: AppRole | undefined) {
-		if (role === 'STUDENT' && view === 'dashboard') {
-			return 'Lihat kelas berikutnya, ruang kuliah, dan nilai terbaru dari satu panel ringkas.';
-		}
-
-		if (view === 'dashboard') {
-			return role === 'ADMIN'
-				? 'Mulai dari bentrok terdekat, lalu cek ruang yang masih longgar sebelum mengubah jadwal.'
-				: 'Mulai dari kelas terdekat, lalu cek ruang pengganti jika ada bentrok.';
-		}
-
-		if (view === 'calendar') {
-			return 'Bandingkan slot per hari, pilih blok yang relevan, lalu buka penjadwalan langsung dari sini.';
-		}
-
-		if (view === 'builder') {
-			return 'Selesaikan satu jadwal sampai siap disimpan: pilih peserta, tentukan slot, pilih ruang, lalu tinjau.';
-		}
-
-		if (view === 'classrooms') {
-			return 'Tinjau kapasitas dan fasilitas ruang lebih dulu, lalu edit hanya saat data inventaris berubah.';
-		}
-
-		if (view === 'courses') {
-			return 'Tinjau beban kuliah, dosen pengampu, dan program studi sebelum mengubah katalog.';
-		}
-
-		if (view === 'students') {
-			return 'Buka identitas mahasiswa yang relevan lebih dulu agar perubahan akademik tetap punya konteks.';
-		}
-
-		if (view === 'lecturers') {
-			return 'Periksa dosen pengampu dan kontak yang terhubung sebelum memperbarui data dosen.';
-		}
-
-		if (view === 'faculties') {
-			return 'Jaga struktur fakultas tetap rapi agar program studi dan katalog lain tetap punya acuan.';
-		}
-
-		if (view === 'studyPrograms') {
-			return 'Pastikan setiap program studi terhubung ke fakultas yang tepat sebelum disimpan.';
-		}
-
-		if (view === 'enrollments') {
-			return 'Gunakan daftar kiri untuk menemukan KRS yang tepat, lalu baca jadwal, ruang, dan semester di panel detail.';
-		}
-
-		if (view === 'grades') {
-			return 'Pisahkan peninjauan hasil dari proses input agar evaluasi dan perubahan nilai tidak bercampur.';
-		}
-
-		return 'Tinjau akses login dengan konteks identitas yang jelas sebelum memperbarui peran atau kredensial.';
-	}
-
-	function workspacePanelLead(view: ViewId) {
-		if (view === 'classrooms') {
-			return 'Panel kanan menampilkan kapasitas, fasilitas, dan ringkasan jadwal ruang yang dipilih.';
-		}
-
-		if (view === 'courses') {
-			return 'Panel kanan merangkum dosen pengampu, program studi, dan beban kuliah sebelum Anda mengedit data.';
-		}
-
-		if (view === 'students') {
-			return 'Panel kanan menjaga konteks mahasiswa tetap terlihat saat data akademik diperbarui.';
-		}
-
-		if (view === 'lecturers') {
-			return 'Panel kanan menyatukan identitas dosen dan detail pengampu agar perubahan tetap terarah.';
-		}
-
-		if (view === 'faculties') {
-			return 'Panel kanan membantu Anda membaca struktur fakultas sebelum menambah atau mengubah data.';
-		}
-
-		if (view === 'studyPrograms') {
-			return 'Panel kanan menampilkan hubungan program studi dan fakultas agar struktur akademik tetap jelas.';
-		}
-
-		if (view === 'enrollments') {
-			return 'Panel kanan menampilkan ringkasan KRS dari baris yang sedang dipilih.';
-		}
-
-		if (view === 'grades') {
-			return 'Panel kanan memisahkan peninjauan hasil dari proses input agar evaluasi tetap mudah dibaca.';
-		}
-
-		return 'Panel kanan merangkum peran dan relasi identitas sebelum akses login diperbarui.';
-	}
-
 	function conflictPeerLabel(card: ScheduleCard) {
 		return `${card.course} • ${card.student} • ${card.room} • ${DAY_LABELS[card.day]} ${card.startLabel}-${card.endLabel}`;
 	}
@@ -433,24 +380,27 @@
 		activeView = 'builder';
 	}
 
+	function focusSchedule(card: ScheduleCard | null | undefined) {
+		if (!card) return;
+		selectedScheduleId = card.id;
+		selectedConflictGroupId = card.hasConflict ? (card.conflictGroupId ?? card.id) : null;
+	}
+
+	function toggleConflictGroup(groupId: string, representative: ScheduleCard) {
+		if (selectedConflictGroupId === groupId) {
+			selectedConflictGroupId = null;
+			return;
+		}
+		selectedConflictGroupId = groupId;
+		selectedScheduleId = representative.id;
+	}
+
 	const builderSteps = [
 		{ id: 'participant', label: 'Peserta', hint: 'Pilih mahasiswa dan mata kuliah.' },
 		{ id: 'time', label: 'Waktu', hint: 'Tentukan hari dan jam kuliah.' },
 		{ id: 'room', label: 'Ruang', hint: 'Pilih ruang yang tersedia.' },
 		{ id: 'review', label: 'Tinjau', hint: 'Periksa sebelum disimpan.' }
 	] as const;
-
-	function shellLead(role: AppRole | undefined) {
-		if (role === 'ADMIN') {
-			return 'Pantau bentrok, atur ruang, lalu rapikan data akademik dari satu tempat.';
-		}
-
-		if (role === 'LECTURER') {
-			return 'Buka jadwal, pilih ruang pengganti, dan cek data kuliah tanpa berpindah terlalu jauh.';
-		}
-
-		return 'Lihat jadwal, KRS, dan nilai dari panel yang ringkas untuk mahasiswa.';
-	}
 
 	function headerAction(view: ViewId, role: AppRole | undefined) {
 		if (role === 'STUDENT') {
@@ -545,8 +495,8 @@
 	}
 
 	function dateForScheduleCard(card: ScheduleCard, minutes: number) {
-		const date = new Date(CALENDAR_WEEK_START);
-		date.setDate(CALENDAR_WEEK_START.getDate() + DAY_ORDER.indexOf(card.day));
+		const date = createCalendarAnchorDate(calendarWeekOffset);
+		date.setDate(date.getDate() + DAY_ORDER.indexOf(card.day));
 		date.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
 		return date;
 	}
@@ -560,8 +510,10 @@
 			.replaceAll("'", '&#39;');
 	}
 
-	let EventCalendarComponent = $state<any>(null);
-	let calendarPlugins = $state<any[]>([]);
+	let EventCalendarComponent = $state<Component<{ plugins?: unknown[]; options?: unknown }> | null>(
+		null
+	);
+	let calendarPlugins = $state<unknown[]>([]);
 	let calendarLoadPromise = $state<Promise<void> | null>(null);
 	let theme = $state<'light' | 'dark'>('light');
 	let activeView = $state<ViewId>('dashboard');
@@ -579,15 +531,15 @@
 	let studentPickerOpen = $state(false);
 	let coursePickerOpen = $state(false);
 
-	let classrooms = $state<any[]>([]);
-	let courses = $state<any[]>([]);
-	let students = $state<any[]>([]);
-	let lecturers = $state<any[]>([]);
-	let faculties = $state<any[]>([]);
-	let studyPrograms = $state<any[]>([]);
-	let enrollments = $state<any[]>([]);
-	let grades = $state<any[]>([]);
-	let users = $state<any[]>([]);
+	let classrooms = $state<SelectClassRoomsResult[]>([]);
+	let courses = $state<SelectCoursesResult[]>([]);
+	let students = $state<SelectStudentsResult[]>([]);
+	let lecturers = $state<SelectLecturersResult[]>([]);
+	let faculties = $state<SelectFacultiesResult[]>([]);
+	let studyPrograms = $state<SelectStudyProgramsResult[]>([]);
+	let enrollments = $state<SelectEnrollmentsResult[]>([]);
+	let grades = $state<SelectGradesResult[]>([]);
+	let users = $state<SelectUsersResult[]>([]);
 
 	let roomSearch = $state('');
 	let courseSearch = $state('');
@@ -600,6 +552,8 @@
 	let userSearch = $state('');
 
 	let selectedScheduleId = $state<string | null>(null);
+	let selectedConflictGroupId = $state<string | null>(null);
+	let calendarWeekOffset = $state(0);
 	let selectedRoomId = $state<string | null>(null);
 	let selectedCourseId = $state<string | null>(null);
 	let selectedStudentId = $state<string | null>(null);
@@ -629,8 +583,9 @@
 	}
 
 	function clearCollectionIssue(key: DataCollectionKey) {
-		const { [key]: _removed, ...rest } = collectionIssues;
-		collectionIssues = rest;
+		const nextIssues = { ...collectionIssues };
+		delete nextIssues[key];
+		collectionIssues = nextIssues;
 	}
 
 	function errorMessage(error: unknown, fallback: string) {
@@ -641,7 +596,7 @@
 		);
 	}
 
-	function firstIssue(form: any) {
+	function firstIssue(form: IssueForm) {
 		return form?.fields?.allIssues?.()?.[0]?.message ?? null;
 	}
 
@@ -711,39 +666,39 @@
 		}
 	}
 
-	async function refreshClassrooms(imperative = false) {
+	async function refreshClassrooms() {
 		classrooms = await getClassRooms().run();
 	}
 
-	async function refreshCourses(imperative = false) {
+	async function refreshCourses() {
 		courses = await getCourses().run();
 	}
 
-	async function refreshStudents(imperative = false) {
+	async function refreshStudents() {
 		students = await getStudents().run();
 	}
 
-	async function refreshLecturers(imperative = false) {
+	async function refreshLecturers() {
 		lecturers = await getLecturers().run();
 	}
 
-	async function refreshFaculties(imperative = false) {
+	async function refreshFaculties() {
 		faculties = await getFaculties().run();
 	}
 
-	async function refreshStudyPrograms(imperative = false) {
+	async function refreshStudyPrograms() {
 		studyPrograms = await getStudyPrograms().run();
 	}
 
-	async function refreshEnrollments(imperative = false) {
+	async function refreshEnrollments() {
 		enrollments = await getEnrollments().run();
 	}
 
-	async function refreshGrades(imperative = false) {
+	async function refreshGrades() {
 		grades = await getGrades().run();
 	}
 
-	async function refreshUsers(imperative = false) {
+	async function refreshUsers() {
 		users = await getUsers().run();
 	}
 
@@ -803,6 +758,12 @@
 	});
 
 	$effect(() => {
+		if (!selectedConflictGroupId) return;
+		if (calendarConflictLegend.some((group) => group.id === selectedConflictGroupId)) return;
+		selectedConflictGroupId = null;
+	});
+
+	$effect(() => {
 		const userId = currentUser.current?.id ?? null;
 		if (!userId) {
 			if (browser && pendingRefreshTimer != null) {
@@ -819,6 +780,16 @@
 	});
 
 	const scheduleCards = $derived(buildScheduleCards(enrollments, timezone));
+	const calendarAnchorDate = $derived(createCalendarAnchorDate(calendarWeekOffset));
+	const calendarWeekLabel = $derived.by(() => {
+		const start = calendarAnchorDate.getTime();
+		const end = start + 5 * 24 * 60 * 60 * 1000;
+		const formatter = new Intl.DateTimeFormat('id-ID', {
+			day: 'numeric',
+			month: 'long'
+		});
+		return `${formatter.format(start)} - ${formatter.format(end)}`;
+	});
 	const calendarVisibleRange = $derived.by(() => {
 		if (!scheduleCards.length) {
 			return { start: DEFAULT_DAY_START, end: DEFAULT_DAY_END };
@@ -852,15 +823,35 @@
 			extendedProps: { card }
 		}))
 	);
+	const conflictGroupSizeById = $derived.by(() => {
+		const sizes: Record<string, number> = {};
+		for (const card of conflictCards) {
+			if (!card.conflictGroupId) continue;
+			sizes[card.conflictGroupId] = (sizes[card.conflictGroupId] ?? 0) + 1;
+		}
+		return sizes;
+	});
+	const calendarConflictLegend = $derived.by(() =>
+		conflictGroups.map((card) => ({
+			id: card.conflictGroupId ?? card.id,
+			label: `${DAY_LABELS[card.day]} ${card.startLabel}`,
+			course: card.course,
+			count: card.conflictGroupId ? (conflictGroupSizeById[card.conflictGroupId] ?? 1) : 1,
+			tone: card.conflictTone,
+			selected: selectedConflictGroupId === (card.conflictGroupId ?? card.id),
+			representative: card
+		}))
+	);
 	const effectiveSelectedScheduleId = $derived(selectedScheduleId ?? scheduleCards[0]?.id ?? null);
 	const calendarOptions = $derived.by(() => ({
 		view: 'timeGridWeek',
-		date: CALENDAR_WEEK_START,
+		date: calendarAnchorDate,
 		locale: 'id-ID',
 		firstDay: 1,
 		hiddenDays: [0],
 		height: 'auto',
 		allDaySlot: false,
+		nowIndicator: true,
 		customScrollbars: true,
 		slotDuration: '00:30:00',
 		slotLabelInterval: '01:00:00',
@@ -884,6 +875,13 @@
 			const classes = ['watum-ec-event'];
 			if (card?.hasConflict) classes.push('is-conflict');
 			if (info.event.id === effectiveSelectedScheduleId) classes.push('is-selected');
+			if (selectedConflictGroupId) {
+				if (card?.conflictGroupId === selectedConflictGroupId) {
+					classes.push('is-conflict-focus');
+				} else {
+					classes.push('is-dimmed');
+				}
+			}
 			return classes;
 		},
 		eventContent(info: { event: { extendedProps: { card?: ScheduleCard } } }) {
@@ -925,7 +923,7 @@
 		},
 		eventClick(info: { event: { extendedProps: { card?: ScheduleCard } } }) {
 			const card = info.event.extendedProps.card;
-			if (card) selectedScheduleId = card.id;
+			focusSchedule(card);
 		}
 	}));
 	const selectedSchedule = $derived(
@@ -948,11 +946,11 @@
 	const selectedUser = $derived(users.find((item) => item.id === selectedUserId) ?? null);
 	const conflictCards = $derived(scheduleCards.filter((item) => item.hasConflict));
 	const conflictGroups = $derived.by(() => {
-		const seen = new Set<string>();
+		const seen: Record<string, true> = {};
 		return conflictCards.filter((item) => {
 			const key = item.conflictGroupId ?? item.id;
-			if (seen.has(key)) return false;
-			seen.add(key);
+			if (seen[key]) return false;
+			seen[key] = true;
 			return true;
 		});
 	});
@@ -960,29 +958,26 @@
 	const conflictCount = $derived(conflictCards.length);
 	const additionalConflictCount = $derived(Math.max(conflictCount - 1, 0));
 	const conflictPeersByCardId = $derived.by(() => {
-		const groups = new Map<string, ScheduleCard[]>();
+		const groups: Record<string, ScheduleCard[]> = {};
 		for (const card of scheduleCards) {
 			if (!card.hasConflict || !card.conflictGroupId) continue;
-			const peers = groups.get(card.conflictGroupId) ?? [];
+			const peers = groups[card.conflictGroupId] ?? [];
 			peers.push(card);
-			groups.set(card.conflictGroupId, peers);
+			groups[card.conflictGroupId] = peers;
 		}
 
-		const byCardId = new Map<string, ScheduleCard[]>();
-		for (const group of groups.values()) {
+		const byCardId: Record<string, ScheduleCard[]> = {};
+		for (const group of Object.values(groups)) {
 			for (const card of group) {
-				byCardId.set(
-					card.id,
-					group.filter((peer) => peer.id !== card.id)
-				);
+				byCardId[card.id] = group.filter((peer) => peer.id !== card.id);
 			}
 		}
 
 		return byCardId;
 	});
 	const conflictSummaryByCardId = $derived.by(() => {
-		const summaries = new Map<string, string>();
-		for (const [id, peers] of conflictPeersByCardId.entries()) {
+		const summaries: Record<string, string> = {};
+		for (const [id, peers] of Object.entries(conflictPeersByCardId)) {
 			if (!peers.length) continue;
 			const listedPeers = peers.slice(0, 2).map(conflictPeerLabel);
 			const remaining = peers.length - listedPeers.length;
@@ -990,19 +985,16 @@
 				remaining > 0
 					? `${listedPeers.join('; ')}; dan ${remaining} jadwal lain`
 					: listedPeers.join('; ');
-			summaries.set(id, summary);
+			summaries[id] = summary;
 		}
 		return summaries;
 	});
 	const overlapPeersByCardId = $derived.by(() => {
-		const peers = new Map<string, ScheduleCard[]>();
+		const peers: Record<string, ScheduleCard[]> = {};
 		for (const card of scheduleCards) {
-			peers.set(
-				card.id,
-				scheduleCards
-					.filter((candidate) => schedulesOverlap(card, candidate))
-					.sort((left, right) => left.startMinutes - right.startMinutes)
-			);
+			peers[card.id] = scheduleCards
+				.filter((candidate) => schedulesOverlap(card, candidate))
+				.sort((left, right) => left.startMinutes - right.startMinutes);
 		}
 		return peers;
 	});
@@ -1196,10 +1188,10 @@
 		return canOpenBuilderStep(step) ? 'available' : 'locked';
 	}
 
-	function pickClassroom(item: any) {
+	function pickClassroom(item: SelectClassRoomsResult) {
 		pendingDelete = null;
 		stopEditing();
-		selectedRoomId = item.id;
+		selectedRoomId = item.id ?? null;
 		classroomDraft = {
 			name: item.name ?? '',
 			classRoomType: item.class_room_type ?? 'REGULER',
@@ -1209,10 +1201,10 @@
 		};
 	}
 
-	function pickCourse(item: any) {
+	function pickCourse(item: SelectCoursesResult) {
 		pendingDelete = null;
 		stopEditing();
-		selectedCourseId = item.id;
+		selectedCourseId = item.id ?? null;
 		courseDraft = {
 			id: item.id ?? '',
 			name: item.name ?? '',
@@ -1222,10 +1214,10 @@
 		};
 	}
 
-	function pickStudent(item: any) {
+	function pickStudent(item: SelectStudentsResult) {
 		pendingDelete = null;
 		stopEditing();
-		selectedStudentId = item.id;
+		selectedStudentId = item.id ?? null;
 		studentDraft = {
 			name: item.name ?? '',
 			email: item.email ?? '',
@@ -1236,10 +1228,10 @@
 		};
 	}
 
-	function pickLecturer(item: any) {
+	function pickLecturer(item: SelectLecturersResult) {
 		pendingDelete = null;
 		stopEditing();
-		selectedLecturerId = item.id;
+		selectedLecturerId = item.id ?? null;
 		lecturerDraft = {
 			id: item.id ?? '',
 			name: item.name ?? '',
@@ -1249,17 +1241,17 @@
 		};
 	}
 
-	function pickFaculty(item: any) {
+	function pickFaculty(item: SelectFacultiesResult) {
 		pendingDelete = null;
 		stopEditing();
-		selectedFacultyId = item.id;
+		selectedFacultyId = item.id ?? null;
 		facultyDraft = { id: item.id ?? '', name: item.name ?? '' };
 	}
 
-	function pickStudyProgram(item: any) {
+	function pickStudyProgram(item: SelectStudyProgramsResult) {
 		pendingDelete = null;
 		stopEditing();
-		selectedStudyProgramId = item.id;
+		selectedStudyProgramId = item.id ?? null;
 		studyProgramDraft = {
 			id: item.id ?? '',
 			name: item.name ?? '',
@@ -1268,9 +1260,9 @@
 		};
 	}
 
-	function pickEnrollment(item: any) {
+	function pickEnrollment(item: SelectEnrollmentsResult) {
 		pendingDelete = null;
-		selectedEnrollmentId = item.id;
+		selectedEnrollmentId = item.id ?? null;
 		builderStep = 'review';
 		enrollmentDraft = {
 			id: item.id ?? '',
@@ -1294,10 +1286,10 @@
 		coursePickerOpen = false;
 	}
 
-	function pickGrade(item: any) {
+	function pickGrade(item: SelectGradesResult) {
 		pendingDelete = null;
 		stopEditing();
-		selectedGradeId = item.id;
+		selectedGradeId = item.id ?? null;
 		gradeDraft = {
 			id: item.id ?? '',
 			enrollmentId: item.enrollment_id ?? '',
@@ -1307,10 +1299,10 @@
 		};
 	}
 
-	function pickUser(item: any) {
+	function pickUser(item: SelectUsersResult) {
 		pendingDelete = null;
 		stopEditing();
-		selectedUserId = item.id;
+		selectedUserId = item.id ?? null;
 		userDraft = {
 			id: item.id ?? '',
 			email: item.email ?? '',
@@ -1487,8 +1479,8 @@
 		};
 	}
 
-	function createEnhancer(form: any, onSuccess: () => Promise<void> | void) {
-		return form.enhance(async ({ submit }: { submit: () => Promise<void> }) => {
+	function createEnhancer(form: EnhancedForm, onSuccess: () => Promise<void> | void) {
+		return form.enhance(async ({ submit }: { submit: () => Promise<boolean> }) => {
 			try {
 				await submit();
 				const issue = firstIssue(form);
@@ -1504,7 +1496,7 @@
 		});
 	}
 
-	const loginEnhance = loginUser.enhance(async ({ submit }: { submit: () => Promise<void> }) => {
+	const loginEnhance = loginUser.enhance(async ({ submit }: { submit: () => Promise<boolean> }) => {
 		try {
 			await submit();
 			const issue = firstIssue(loginUser);
@@ -1520,81 +1512,83 @@
 		}
 	});
 
-	const logoutEnhance = logoutUser.enhance(async ({ submit }: { submit: () => Promise<void> }) => {
-		await submit();
-		await currentUser.refresh();
-		resetCollections();
-		setFeedback('success', 'Sesi berhasil ditutup.');
-	});
+	const logoutEnhance = logoutUser.enhance(
+		async ({ submit }: { submit: () => Promise<boolean> }) => {
+			await submit();
+			await currentUser.refresh();
+			resetCollections();
+			setFeedback('success', 'Sesi berhasil ditutup.');
+		}
+	);
 
 	const createClassRoomEnhance = createEnhancer(createClassRoom, async () => {
-		await refreshClassrooms(true);
+		await refreshClassrooms();
 		clearSelection('classrooms');
 		stopEditing('classrooms');
 		setFeedback('success', 'Ruang kelas baru berhasil ditambahkan.');
 	});
 	const updateClassRoomEnhance = createEnhancer(updateClassRoom, async () => {
-		await refreshClassrooms(true);
+		await refreshClassrooms();
 		stopEditing('classrooms');
 		setFeedback('success', 'Data ruang kelas berhasil diperbarui.');
 	});
 	const createCourseEnhance = createEnhancer(createCourse, async () => {
-		await refreshCourses(true);
+		await refreshCourses();
 		clearSelection('courses');
 		stopEditing('courses');
 		setFeedback('success', 'Mata kuliah baru berhasil ditambahkan.');
 	});
 	const updateCourseEnhance = createEnhancer(updateCourse, async () => {
-		await refreshCourses(true);
+		await refreshCourses();
 		stopEditing('courses');
 		setFeedback('success', 'Mata kuliah berhasil diperbarui.');
 	});
 	const createStudentEnhance = createEnhancer(createStudent, async () => {
-		await refreshStudents(true);
+		await refreshStudents();
 		clearSelection('students');
 		stopEditing('students');
 		setFeedback('success', 'Mahasiswa baru berhasil ditambahkan.');
 	});
 	const updateStudentEnhance = createEnhancer(updateStudent, async () => {
-		await refreshStudents(true);
+		await refreshStudents();
 		stopEditing('students');
 		setFeedback('success', 'Profil mahasiswa berhasil diperbarui.');
 	});
 	const createLecturerEnhance = createEnhancer(createLecturer, async () => {
-		await refreshLecturers(true);
+		await refreshLecturers();
 		clearSelection('lecturers');
 		stopEditing('lecturers');
 		setFeedback('success', 'Dosen baru berhasil ditambahkan.');
 	});
 	const updateLecturerEnhance = createEnhancer(updateLecturer, async () => {
-		await refreshLecturers(true);
+		await refreshLecturers();
 		stopEditing('lecturers');
 		setFeedback('success', 'Profil dosen berhasil diperbarui.');
 	});
 	const createFacultyEnhance = createEnhancer(createFaculty, async () => {
-		await refreshFaculties(true);
+		await refreshFaculties();
 		clearSelection('faculties');
 		stopEditing('faculties');
 		setFeedback('success', 'Fakultas baru berhasil ditambahkan.');
 	});
 	const updateFacultyEnhance = createEnhancer(updateFaculty, async () => {
-		await refreshFaculties(true);
+		await refreshFaculties();
 		stopEditing('faculties');
 		setFeedback('success', 'Data fakultas berhasil diperbarui.');
 	});
 	const createStudyProgramEnhance = createEnhancer(createStudyProgram, async () => {
-		await refreshStudyPrograms(true);
+		await refreshStudyPrograms();
 		clearSelection('studyPrograms');
 		stopEditing('studyPrograms');
 		setFeedback('success', 'Program studi baru berhasil ditambahkan.');
 	});
 	const updateStudyProgramEnhance = createEnhancer(updateStudyProgram, async () => {
-		await refreshStudyPrograms(true);
+		await refreshStudyPrograms();
 		stopEditing('studyPrograms');
 		setFeedback('success', 'Program studi berhasil diperbarui.');
 	});
 	const createEnrollmentEnhance = createEnhancer(createEnrollment, async () => {
-		await refreshEnrollments(true);
+		await refreshEnrollments();
 		clearSelection('builder');
 		setFeedback(
 			'success',
@@ -1602,25 +1596,25 @@
 		);
 	});
 	const updateEnrollmentEnhance = createEnhancer(updateEnrollment, async () => {
-		await refreshEnrollments(true);
+		await refreshEnrollments();
 		setFeedback(
 			'success',
 			'Jadwal diperbarui. Periksa kembali konflik dan kecocokan ruang sebelum menutup halaman.'
 		);
 	});
 	const createGradeEnhance = createEnhancer(createGrade, async () => {
-		await refreshGrades(true);
+		await refreshGrades();
 		clearSelection('grades');
 		stopEditing('grades');
 		setFeedback('success', 'Nilai baru berhasil disimpan.');
 	});
 	const updateGradeEnhance = createEnhancer(updateGrade, async () => {
-		await refreshGrades(true);
+		await refreshGrades();
 		stopEditing('grades');
 		setFeedback('success', 'Nilai berhasil diperbarui.');
 	});
 	const updateUserEnhance = createEnhancer(updateUser, async () => {
-		await refreshUsers(true);
+		await refreshUsers();
 		stopEditing('users');
 		setFeedback('success', 'Akun diperbarui. Perubahan akses akan dipakai pada sesi berikutnya.');
 	});
@@ -1630,48 +1624,48 @@
 		try {
 			if (kind === 'classroom') {
 				await deleteClassRoom(id);
-				await refreshClassrooms(true);
+				await refreshClassrooms();
 				clearSelection('classrooms');
 				stopEditing('classrooms');
 			}
 			if (kind === 'course') {
 				await deleteCourse(id);
-				await refreshCourses(true);
+				await refreshCourses();
 				clearSelection('courses');
 				stopEditing('courses');
 			}
 			if (kind === 'student') {
 				await deleteStudent(id);
-				await refreshStudents(true);
+				await refreshStudents();
 				clearSelection('students');
 				stopEditing('students');
 			}
 			if (kind === 'lecturer') {
 				await deleteLecturer(id);
-				await refreshLecturers(true);
+				await refreshLecturers();
 				clearSelection('lecturers');
 				stopEditing('lecturers');
 			}
 			if (kind === 'faculty') {
 				await deleteFaculty(id);
-				await refreshFaculties(true);
+				await refreshFaculties();
 				clearSelection('faculties');
 				stopEditing('faculties');
 			}
 			if (kind === 'studyProgram') {
 				await deleteStudyProgram(id);
-				await refreshStudyPrograms(true);
+				await refreshStudyPrograms();
 				clearSelection('studyPrograms');
 				stopEditing('studyPrograms');
 			}
 			if (kind === 'enrollment') {
 				await deleteEnrollment(id);
-				await refreshEnrollments(true);
+				await refreshEnrollments();
 				clearSelection('builder');
 			}
 			if (kind === 'grade') {
 				await deleteGrade(id);
-				await refreshGrades(true);
+				await refreshGrades();
 				clearSelection('grades');
 				stopEditing('grades');
 			}
@@ -1685,9 +1679,6 @@
 
 	const navigationGroups = $derived(
 		navigationGroupsForRole(currentUser.current?.role as AppRole | undefined)
-	);
-	const activeNavigationGroup = $derived(
-		navigationGroups.find((group) => group.views.includes(activeView)) ?? null
 	);
 	const currentHeaderAction = $derived(
 		headerAction(activeView, currentUser.current?.role as AppRole | undefined)
@@ -1736,18 +1727,24 @@
 		Boolean(collectionIssues.faculties) && !faculties.length
 	);
 	const gradeEditorBlocked = $derived(Boolean(collectionIssues.enrollments) && !enrollments.length);
-	const scheduleCardMap = $derived(new Map(scheduleCards.map((card) => [card.id, card])));
+	const scheduleCardMap = $derived.by(
+		() =>
+			Object.fromEntries(scheduleCards.map((card) => [card.id, card])) as Record<
+				string,
+				ScheduleCard
+			>
+	);
 	const selectedScheduleConflictSummary = $derived(
-		selectedSchedule ? (conflictSummaryByCardId.get(selectedSchedule.id) ?? null) : null
+		selectedSchedule ? (conflictSummaryByCardId[selectedSchedule.id] ?? null) : null
 	);
 	const selectedScheduleOverlapPeers = $derived(
-		selectedSchedule ? (overlapPeersByCardId.get(selectedSchedule.id) ?? []) : []
+		selectedSchedule ? (overlapPeersByCardId[selectedSchedule.id] ?? []) : []
 	);
 	const selectedEnrollmentScheduleCard = $derived(
-		selectedEnrollmentId ? (scheduleCardMap.get(selectedEnrollmentId) ?? null) : null
+		selectedEnrollmentId ? (scheduleCardMap[selectedEnrollmentId] ?? null) : null
 	);
 	const selectedEnrollmentConflictSummary = $derived(
-		selectedEnrollmentId ? (conflictSummaryByCardId.get(selectedEnrollmentId) ?? null) : null
+		selectedEnrollmentId ? (conflictSummaryByCardId[selectedEnrollmentId] ?? null) : null
 	);
 </script>
 
@@ -1860,7 +1857,7 @@
 					<div class="skeleton-rows">
 						<div class="skeleton skeleton-title"></div>
 						<div class="skeleton skeleton-text"></div>
-						{#each Array(5) as _, i (i)}
+						{#each Array.from({ length: 5 }, (_item, index) => index) as index (index)}
 							<div class="skeleton skeleton-row"></div>
 						{/each}
 					</div>
@@ -2029,8 +2026,71 @@
 							<div>
 								<p class="surface-kicker">Kalender</p>
 								<h2>Kalender kuliah mingguan</h2>
+								<p class="calendar-week-label">{calendarWeekLabel}</p>
+							</div>
+							<div class="calendar-toolbar">
+								<Button
+									class="ghost-button"
+									variant="ghost"
+									size="sm"
+									onclick={() => (calendarWeekOffset -= 1)}
+								>
+									<ChevronLeft size={16} />
+									<span>Minggu lalu</span>
+								</Button>
+								<Button
+									class="ghost-button"
+									variant="outline"
+									size="sm"
+									onclick={() => (calendarWeekOffset = 0)}
+								>
+									Minggu dasar
+								</Button>
+								<Button
+									class="ghost-button"
+									variant="ghost"
+									size="sm"
+									onclick={() => (calendarWeekOffset += 1)}
+								>
+									<span>Minggu depan</span>
+									<ChevronRight size={16} />
+								</Button>
 							</div>
 						</header>
+
+						{#if calendarConflictLegend.length}
+							<div class="calendar-conflict-toolbar">
+								<div class="calendar-conflict-toolbar-head">
+									<strong>{calendarConflictLegend.length} grup bentrok</strong>
+									{#if selectedConflictGroupId}
+										<Button
+											class="ghost-button"
+											variant="ghost"
+											size="sm"
+											onclick={() => (selectedConflictGroupId = null)}
+										>
+											Tampilkan semua
+										</Button>
+									{/if}
+								</div>
+								<div class="calendar-conflict-legend">
+									{#each calendarConflictLegend as group (group.id)}
+										<button
+											type="button"
+											class={`calendar-conflict-chip ${group.selected ? 'selected' : ''}`}
+											style={conflictToneVariables(group.tone)}
+											onclick={() => toggleConflictGroup(group.id, group.representative)}
+										>
+											<span class="calendar-conflict-chip-dot"></span>
+											<span class="calendar-conflict-chip-copy">
+												<strong>{group.label}</strong>
+												<small>{group.course} • {group.count} jadwal</small>
+											</span>
+										</button>
+									{/each}
+								</div>
+							</div>
+						{/if}
 
 						<div class="event-calendar-host">
 							{#if EventCalendarComponent}
@@ -2107,7 +2167,7 @@
 														class="ghost-button"
 														variant="ghost"
 														size="sm"
-														onclick={() => (selectedScheduleId = peer.id)}
+														onclick={() => focusSchedule(peer)}
 													>
 														Lihat
 													</Button>
@@ -2162,7 +2222,7 @@
 
 						<div class="list-stack">
 							{#each filteredEnrollments as item (item.id)}
-								{@const scheduleCard = scheduleCardMap.get(item.id)}
+								{@const scheduleCard = item.id ? scheduleCardMap[item.id] : null}
 								<button
 									type="button"
 									class:selected={selectedEnrollmentId === item.id}
@@ -2174,9 +2234,9 @@
 									<div>
 										<strong>{item.course_name}</strong>
 										<span>{item.student_name} • {item.class_room_name}</span>
-										{#if scheduleCard?.hasConflict && conflictSummaryByCardId.get(item.id)}
+										{#if item.id && scheduleCard?.hasConflict && conflictSummaryByCardId[item.id]}
 											<small class="list-conflict-copy">
-												Bentrok dengan {conflictSummaryByCardId.get(item.id)}
+												Bentrok dengan {conflictSummaryByCardId[item.id]}
 											</small>
 										{/if}
 									</div>
@@ -2312,7 +2372,6 @@
 													: createEnrollment.fields.studentId.as('text')}
 												bind:value={enrollmentDraft.studentId}
 											/>
-											<!-- svelte-ignore a11y_no_static_element_interactions -->
 											<div
 												class="combobox-wrap"
 												onfocusout={(e) => {
@@ -2348,7 +2407,7 @@
 																class:active={enrollmentDraft.studentId === item.id}
 																onmousedown={(e) => {
 																	e.preventDefault();
-																	enrollmentDraft.studentId = item.id;
+																	enrollmentDraft.studentId = item.id ?? '';
 																	studentPickerSearch = '';
 																	studentPickerOpen = false;
 																}}
@@ -2371,7 +2430,6 @@
 													: createEnrollment.fields.courseId.as('text')}
 												bind:value={enrollmentDraft.courseId}
 											/>
-											<!-- svelte-ignore a11y_no_static_element_interactions -->
 											<div
 												class="combobox-wrap"
 												onfocusout={(e) => {
@@ -2407,7 +2465,7 @@
 																class:active={enrollmentDraft.courseId === item.id}
 																onmousedown={(e) => {
 																	e.preventDefault();
-																	enrollmentDraft.courseId = item.id;
+																	enrollmentDraft.courseId = item.id ?? '';
 																	coursePickerSearch = '';
 																	coursePickerOpen = false;
 																}}
@@ -4447,6 +4505,106 @@
 		align-items: end;
 	}
 
+	.calendar-week-label {
+		margin: 0.28rem 0 0;
+		font-size: 0.88rem;
+		color: var(--color-muted-foreground);
+	}
+
+	.calendar-toolbar {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		gap: 0.55rem;
+	}
+
+	.calendar-conflict-toolbar {
+		display: grid;
+		gap: 0.7rem;
+		padding: 0.9rem 1rem;
+		border: 1px solid var(--color-border);
+		border-radius: 1rem;
+		background: color-mix(in oklch, var(--color-panel) 82%, var(--color-surface) 18%);
+	}
+
+	.calendar-conflict-toolbar-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+	}
+
+	.calendar-conflict-toolbar-head strong {
+		font-size: 0.94rem;
+	}
+
+	.calendar-conflict-legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.65rem;
+	}
+
+	.calendar-conflict-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.6rem 0.72rem;
+		border: 1px solid var(--conflict-border, var(--color-border));
+		border-radius: 0.95rem;
+		background: color-mix(
+			in oklch,
+			var(--conflict-surface, var(--color-surface)) 78%,
+			var(--color-panel) 22%
+		);
+		color: inherit;
+		text-align: left;
+		font: inherit;
+		cursor: pointer;
+		transition:
+			transform 140ms ease,
+			box-shadow 140ms ease,
+			border-color 140ms ease,
+			opacity 140ms ease;
+	}
+
+	.calendar-conflict-chip:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 10px 18px color-mix(in oklch, var(--color-shadow) 8%, transparent 92%);
+	}
+
+	.calendar-conflict-chip.selected {
+		border-color: var(--color-accent-strong);
+		box-shadow:
+			0 10px 20px color-mix(in oklch, var(--color-accent-strong) 12%, transparent 88%),
+			inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 34%, transparent 66%);
+	}
+
+	.calendar-conflict-chip-dot {
+		width: 0.7rem;
+		height: 0.7rem;
+		border-radius: 999px;
+		background: var(--conflict-border, var(--color-accent-strong));
+		box-shadow: 0 0 0 3px
+			color-mix(in oklch, var(--conflict-border, var(--color-accent-strong)) 18%, transparent 82%);
+		flex: 0 0 auto;
+	}
+
+	.calendar-conflict-chip-copy {
+		display: grid;
+		gap: 0.1rem;
+	}
+
+	.calendar-conflict-chip-copy strong {
+		font-size: 0.86rem;
+		line-height: 1.2;
+	}
+
+	.calendar-conflict-chip-copy small {
+		font-size: 0.75rem;
+		line-height: 1.25;
+		color: var(--color-muted-foreground);
+	}
+
 	.surface-head h2 {
 		font: 600 1.3rem/1.1 var(--font-display);
 		letter-spacing: -0.03em;
@@ -4685,6 +4843,20 @@
 		box-shadow:
 			0 12px 24px color-mix(in oklch, var(--color-accent-strong) 12%, transparent 88%),
 			inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 34%, transparent 66%);
+	}
+
+	:global(.event-calendar-host .watum-ec-event.is-dimmed) {
+		opacity: 0.32;
+		filter: saturate(0.7);
+	}
+
+	:global(.event-calendar-host .watum-ec-event.is-conflict-focus) {
+		box-shadow:
+			0 16px 28px
+				color-mix(in oklch, var(--conflict-border, var(--color-danger)) 12%, transparent 88%),
+			inset 0 0 0 2px
+				color-mix(in oklch, var(--conflict-border, var(--color-danger)) 18%, transparent 82%);
+		transform: translateY(-1px);
 	}
 
 	:global(.event-calendar-host .watum-ec-event.is-conflict) {

@@ -35,8 +35,48 @@ export type ScheduleCard = {
 	original: SelectEnrollmentsResult;
 };
 
-const CONFLICT_HUE_STEP = 137.508;
-const CONFLICT_BASE_HUE = 18;
+const CONFLICT_TONES = [
+	{
+		surface: 'oklch(0.95 0.032 18)',
+		border: 'oklch(0.8 0.092 18)',
+		ink: 'oklch(0.53 0.168 18)'
+	},
+	{
+		surface: 'oklch(0.96 0.032 72)',
+		border: 'oklch(0.83 0.11 72)',
+		ink: 'oklch(0.56 0.17 72)'
+	},
+	{
+		surface: 'oklch(0.95 0.03 145)',
+		border: 'oklch(0.8 0.1 145)',
+		ink: 'oklch(0.52 0.15 145)'
+	},
+	{
+		surface: 'oklch(0.95 0.028 205)',
+		border: 'oklch(0.79 0.095 205)',
+		ink: 'oklch(0.5 0.145 205)'
+	},
+	{
+		surface: 'oklch(0.95 0.03 255)',
+		border: 'oklch(0.79 0.1 255)',
+		ink: 'oklch(0.49 0.16 255)'
+	},
+	{
+		surface: 'oklch(0.95 0.03 300)',
+		border: 'oklch(0.8 0.105 300)',
+		ink: 'oklch(0.52 0.17 300)'
+	},
+	{
+		surface: 'oklch(0.95 0.03 340)',
+		border: 'oklch(0.81 0.105 340)',
+		ink: 'oklch(0.54 0.17 340)'
+	},
+	{
+		surface: 'oklch(0.95 0.028 32)',
+		border: 'oklch(0.81 0.1 32)',
+		ink: 'oklch(0.55 0.16 32)'
+	}
+] as const;
 
 export type RoomMetric = {
 	id: string;
@@ -176,13 +216,9 @@ export function buildScheduleCards(
 
 export function conflictToneVariables(conflictTone: number | null) {
 	if (conflictTone == null) return '';
+	const tone = CONFLICT_TONES[conflictTone % CONFLICT_TONES.length];
 
-	const hue = (CONFLICT_BASE_HUE + conflictTone * CONFLICT_HUE_STEP) % 360;
-	const surface = `oklch(0.95 0.032 ${hue.toFixed(2)})`;
-	const border = `oklch(0.8 0.092 ${hue.toFixed(2)})`;
-	const ink = `oklch(0.53 0.168 ${hue.toFixed(2)})`;
-
-	return `--conflict-surface: ${surface}; --conflict-border: ${border}; --conflict-ink: ${ink};`;
+	return `--conflict-surface: ${tone.surface}; --conflict-border: ${tone.border}; --conflict-ink: ${tone.ink};`;
 }
 
 export function groupCardsByDay(cards: ScheduleCard[]) {
@@ -272,22 +308,18 @@ export function sortRoomsForRole(metrics: RoomMetric[], role: AppRole) {
 export function occupancyCopy(role: AppRole) {
 	if (role === 'ADMIN') {
 		return {
-			title: 'Utilisasi ruang minggu ini',
-			description: 'Fokus pada kepadatan, bentrok, dan ruang yang belum dimanfaatkan optimal.'
+			title: 'Utilisasi ruang minggu ini'
 		};
 	}
 
 	if (role === 'LECTURER') {
 		return {
-			title: 'Ruang kosong yang siap dipakai',
-			description:
-				'Fokus pada ruang yang sedang tersedia dan ruang dengan peluang penjadwalan ulang.'
+			title: 'Ruang kosong yang siap dipakai'
 		};
 	}
 
 	return {
-		title: 'Ketersediaan ruang',
-		description: 'Ringkasan ruang agar mahasiswa tetap bisa memahami konteks jadwal perkuliahan.'
+		title: 'Ketersediaan ruang'
 	};
 }
 
