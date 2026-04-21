@@ -16,12 +16,14 @@
 		DoorClosed,
 		GraduationCap,
 		LayoutPanelTop,
+		Menu,
 		MoonStar,
 		Search,
 		ShieldCheck,
 		SunMedium,
 		UsersRound,
-		Waypoints
+		Waypoints,
+		X
 	} from '@lucide/svelte';
 	import { days } from '$lib/validations/enrollment';
 	import { classRoomTypes } from '$lib/validations/classroom';
@@ -416,6 +418,7 @@
 
 	function activateView(view: ViewId) {
 		activeView = view;
+		mobileRailOpen = false;
 	}
 
 	function emptyClassRoomDraft() {
@@ -554,6 +557,7 @@
 	let selectedScheduleId = $state<string | null>(null);
 	let selectedConflictGroupId = $state<string | null>(null);
 	let calendarWeekOffset = $state(0);
+	let mobileRailOpen = $state(false);
 	let selectedRoomId = $state<string | null>(null);
 	let selectedCourseId = $state<string | null>(null);
 	let selectedStudentId = $state<string | null>(null);
@@ -761,6 +765,14 @@
 		if (!selectedConflictGroupId) return;
 		if (calendarConflictLegend.some((group) => group.id === selectedConflictGroupId)) return;
 		selectedConflictGroupId = null;
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		document.body.style.overflow = mobileRailOpen ? 'hidden' : '';
+		return () => {
+			document.body.style.overflow = '';
+		};
 	});
 
 	$effect(() => {
@@ -1753,9 +1765,26 @@
 
 {#if currentUser.loading}{:else if currentUser.current}
 	<div class="app-shell">
-		<aside class="rail">
+		{#if mobileRailOpen}
+			<button
+				type="button"
+				class="rail-backdrop"
+				aria-label="Tutup menu navigasi"
+				onclick={() => (mobileRailOpen = false)}
+			></button>
+		{/if}
+
+		<aside class:open={mobileRailOpen} class="rail">
 			<div class="rail-brand">
 				<h1>Watum</h1>
+				<button
+					type="button"
+					class="rail-close"
+					aria-label="Tutup menu navigasi"
+					onclick={() => (mobileRailOpen = false)}
+				>
+					<X size={18} />
+				</button>
 			</div>
 
 			<nav class="rail-sections" aria-label="Navigasi utama">
@@ -1794,6 +1823,14 @@
 		<main class="main-shell">
 			<header class="topbar">
 				<div class="topbar-copy">
+					<button
+						type="button"
+						class="rail-toggle"
+						aria-label="Buka menu navigasi"
+						onclick={() => (mobileRailOpen = true)}
+					>
+						<Menu size={18} />
+					</button>
 					<h2>{pageHeading(activeView)}</h2>
 				</div>
 
@@ -4096,6 +4133,19 @@
 		display: grid;
 		grid-template-columns: 15.75rem minmax(0, 1fr);
 		min-height: 100vh;
+		position: relative;
+	}
+
+	.rail-backdrop,
+	.rail-toggle,
+	.rail-close {
+		display: none;
+		align-items: center;
+		justify-content: center;
+		border: 1px solid var(--color-border);
+		border-radius: 0.8rem;
+		background: var(--color-panel);
+		color: inherit;
 	}
 
 	.rail {
@@ -4125,6 +4175,8 @@
 
 	.rail-brand {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
 		gap: 0.35rem;
 	}
 
@@ -4298,6 +4350,8 @@
 	}
 
 	.topbar-copy {
+		display: flex;
+		align-items: center;
 		gap: 0.42rem;
 		max-width: 52rem;
 		min-width: 0;
@@ -5922,9 +5976,46 @@
 			grid-template-columns: 1fr;
 		}
 
+		.rail-backdrop {
+			display: block;
+			position: fixed;
+			inset: 0;
+			z-index: 30;
+			border: 0;
+			background: color-mix(in oklch, var(--color-shadow) 24%, transparent 76%);
+			backdrop-filter: blur(2px);
+		}
+
 		.rail {
-			border-right: 0;
-			border-bottom: 1px solid var(--color-border);
+			position: fixed;
+			top: 0;
+			left: 0;
+			bottom: 0;
+			z-index: 40;
+			width: min(19rem, calc(100vw - 2rem));
+			max-width: calc(100vw - 2rem);
+			border-right: 1px solid var(--color-border);
+			border-bottom: 0;
+			box-shadow: 0 24px 60px color-mix(in oklch, var(--color-shadow) 20%, transparent 80%);
+			overflow: auto;
+			transform: translateX(-110%);
+			transition: transform 180ms ease;
+		}
+
+		.rail.open {
+			transform: translateX(0);
+		}
+
+		.rail-toggle,
+		.rail-close {
+			display: inline-flex;
+			width: 2.6rem;
+			height: 2.6rem;
+			padding: 0;
+		}
+
+		.rail-close {
+			justify-self: end;
 		}
 
 		.builder-progress {
