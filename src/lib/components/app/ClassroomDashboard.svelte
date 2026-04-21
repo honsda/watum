@@ -46,10 +46,10 @@
 			<p>{copy.description}</p>
 			<p class="role-note">
 				{role === 'ADMIN'
-					? 'Urutan ruang menonjolkan ruang yang paling padat dan yang masih berpotensi bentrok.'
+					? 'Urutan ruang memprioritaskan ruang yang paling padat dan yang masih berpotensi bentrok.'
 					: role === 'LECTURER'
-						? 'Urutan ruang menonjolkan ruang kosong saat ini dan beban ruang yang lebih ringan.'
-						: 'Mahasiswa dapat membaca konteks ruang tanpa harus masuk ke tindakan administratif.'}
+						? 'Urutan ruang memprioritaskan ruang yang kosong saat ini dan ruang dengan beban lebih ringan.'
+						: 'Mahasiswa dapat melihat konteks ruang tanpa masuk ke tindakan administratif.'}
 			</p>
 		</div>
 
@@ -58,7 +58,7 @@
 				<strong>{metrics.length}</strong>
 				<span>ruang aktif</span>
 			</article>
-			<article>
+			<article class:stat-highlight={availableNow.length > 0}>
 				<strong>{availableNow.length}</strong>
 				<span>ruang kosong sekarang</span>
 			</article>
@@ -66,7 +66,7 @@
 				<strong>{averageUtilization}%</strong>
 				<span>rata-rata utilisasi</span>
 			</article>
-			<article>
+			<article class:stat-alert={conflicted.length > 0}>
 				<strong>{conflicted.length}</strong>
 				<span>ruang bentrok</span>
 			</article>
@@ -80,7 +80,7 @@
 			</div>
 			<p>
 				{metrics.length
-					? 'Pilih ruang untuk melihat fokus detail di panel kanan.'
+					? 'Pilih satu ruang untuk melihat detail di panel kanan.'
 					: 'Belum ada data ruang.'}
 			</p>
 		</header>
@@ -155,7 +155,7 @@
 		{:else}
 			<header>
 				<h3>Pilih satu ruang</h3>
-				<p>Panel ini akan menampilkan utilisasi, fasilitas, konflik, dan pemakaian berikutnya.</p>
+				<p>Panel ini menampilkan utilisasi, fasilitas, konflik, dan jadwal berikutnya.</p>
 			</header>
 		{/if}
 	</div>
@@ -347,6 +347,24 @@
 		gap: 0.28rem;
 		padding: 0.9rem 0;
 		border-top: 1px solid var(--color-border);
+	}
+
+	.summary-stats article.stat-alert {
+		border: 1px solid color-mix(in oklch, var(--color-danger) 24%, var(--color-border) 76%);
+		background: color-mix(in oklch, var(--color-surface) 84%, var(--color-danger-soft) 16%);
+	}
+
+	.summary-stats article.stat-alert strong {
+		color: var(--color-danger);
+	}
+
+	.summary-stats article.stat-highlight {
+		border: 1px solid color-mix(in oklch, var(--color-success) 22%, var(--color-border) 78%);
+		background: color-mix(in oklch, var(--color-surface) 86%, var(--color-success-soft) 14%);
+	}
+
+	.summary-stats article.stat-highlight strong {
+		color: var(--color-success);
 	}
 
 	@media (min-width: 1100px) {

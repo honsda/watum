@@ -26,6 +26,7 @@
 		beautifyRoomType,
 		buildScheduleCards,
 		conflictToneVariables,
+		DAY_ORDER,
 		DAY_LABELS,
 		formatTimeRange,
 		matchesText,
@@ -34,7 +35,6 @@
 		type ScheduleCard
 	} from '$lib/app/academic';
 	import { formatDateTimeInput, parseISO } from '$lib/time-helpers';
-	import WeeklyCalendar from '$lib/components/app/WeeklyCalendar.svelte';
 	import ClassroomDashboard from '$lib/components/app/ClassroomDashboard.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -122,12 +122,13 @@
 		failureMessage: string;
 	};
 	type NavigationGroupId =
-		| 'operations'
-		| 'academic'
-		| 'reference'
+		| 'overview'
+		| 'planning'
+		| 'records'
+		| 'people'
 		| 'access'
 		| 'schedule'
-		| 'studyReference';
+		| 'study';
 	type NavigationGroup = {
 		id: NavigationGroupId;
 		label: string;
@@ -149,6 +150,11 @@
 
 	const currentUser = getCurrentUser();
 	const timezone = 'Asia/Jakarta';
+	const DEFAULT_DAY_START = 7 * 60;
+	const DEFAULT_DAY_END = 20 * 60;
+	const RANGE_PADDING_MINUTES = 60;
+	const MIN_VISIBLE_MINUTES = 6 * 60;
+	const CALENDAR_WEEK_START = new Date(2025, 0, 6);
 
 	const viewCatalog = {
 		dashboard: { label: 'Dashboard', icon: LayoutPanelTop },
@@ -222,60 +228,37 @@
 		if (role === 'ADMIN') {
 			return [
 				{
-					id: 'operations',
-					label: 'Operasi',
-					description: 'Fokus pada bentrok, kalender, pembuat jadwal, dan kondisi ruang hari ini.',
+					id: 'overview',
+					label: 'Pantauan',
+					description: 'Pantau bentrok, kalender, dan ruang yang perlu ditangani lebih dulu.',
 					icon: LayoutPanelTop,
-					views: ['dashboard', 'calendar', 'builder', 'classrooms']
-				}
-			];
-		}
-
-		if (role === 'LECTURER') {
-			return [
+					views: ['dashboard', 'calendar']
+				},
 				{
-					id: 'operations',
-					label: 'Operasi',
-					description: 'Pantau jadwal mingguan, tangani bentrok, dan cek ruang yang siap dipakai.',
-					icon: LayoutPanelTop,
-					views: ['dashboard', 'calendar', 'builder', 'classrooms']
-				}
-			];
-		}
-
-		return [
-			{
-				id: 'schedule',
-				label: 'Jadwal saya',
-				description: 'Pantau sesi mingguan dan perubahan ruang tanpa membawa seluruh shell staf.',
-				icon: CalendarDays,
-				views: ['dashboard', 'calendar']
-			}
-		];
-	}
-
-	function secondaryGroupsForRole(role: AppRole | undefined): NavigationGroup[] {
-		if (role === 'ADMIN') {
-			return [
+					id: 'planning',
+					label: 'Penjadwalan',
+					description: 'Atur jadwal kelas dan pilih ruang pengganti dari alur kerja yang sama.',
+					icon: Waypoints,
+					views: ['builder', 'classrooms']
+				},
 				{
-					id: 'academic',
-					label: 'Akademik',
-					description:
-						'Kelola KRS, nilai, dan katalog akademik hanya saat ada perubahan yang perlu dicatat.',
+					id: 'records',
+					label: 'Perkuliahan',
+					description: 'Buka KRS, nilai, dan katalog kuliah yang aktif pada semester ini.',
 					icon: ClipboardList,
 					views: ['enrollments', 'grades', 'courses']
 				},
 				{
-					id: 'reference',
-					label: 'Referensi',
-					description: 'Perbarui identitas dan struktur akademik bila data dasar memang berubah.',
+					id: 'people',
+					label: 'Identitas',
+					description: 'Rapikan data mahasiswa, dosen, fakultas, dan program studi.',
 					icon: Building2,
 					views: ['students', 'lecturers', 'faculties', 'studyPrograms']
 				},
 				{
 					id: 'access',
-					label: 'Akses',
-					description: 'Atur akun dan peran tanpa mengganggu fokus ruang kerja utama.',
+					label: 'Akun',
+					description: 'Perbarui peran dan akses login saat relasi identitas berubah.',
 					icon: ShieldCheck,
 					views: ['users']
 				}
@@ -285,18 +268,30 @@
 		if (role === 'LECTURER') {
 			return [
 				{
-					id: 'academic',
-					label: 'Akademik',
-					description:
-						'Buka KRS, nilai, dan mata kuliah aktif ketika keputusan operasional sudah jelas.',
+					id: 'overview',
+					label: 'Pantauan',
+					description: 'Lihat kelas terdekat, cek bentrok, dan cari ruang yang siap dipakai.',
+					icon: LayoutPanelTop,
+					views: ['dashboard', 'calendar']
+				},
+				{
+					id: 'planning',
+					label: 'Penjadwalan',
+					description: 'Pindahkan jadwal dan pilih ruang dari alur yang lebih fokus.',
+					icon: Waypoints,
+					views: ['builder', 'classrooms']
+				},
+				{
+					id: 'records',
+					label: 'Perkuliahan',
+					description: 'Buka KRS, nilai, dan mata kuliah aktif saat keputusan akademik diperlukan.',
 					icon: ClipboardList,
 					views: ['enrollments', 'grades', 'courses']
 				},
 				{
-					id: 'reference',
+					id: 'people',
 					label: 'Referensi',
-					description:
-						'Lihat data mahasiswa, dosen, dan struktur akademik sebagai pendukung keputusan.',
+					description: 'Lihat mahasiswa, dosen, fakultas, dan program studi sebagai referensi.',
 					icon: Building2,
 					views: ['students', 'lecturers', 'faculties', 'studyPrograms']
 				}
@@ -305,41 +300,133 @@
 
 		return [
 			{
-				id: 'studyReference',
-				label: 'Referensi kuliah',
-				description:
-					'Buka KRS, hasil belajar, ruang, dan katalog kuliah hanya saat memang diperlukan.',
+				id: 'schedule',
+				label: 'Jadwal',
+				description: 'Lihat kelas berikutnya, perubahan ruang, dan jadwal mingguan dengan cepat.',
+				icon: CalendarDays,
+				views: ['dashboard', 'calendar']
+			},
+			{
+				id: 'study',
+				label: 'Studi',
+				description: 'Buka KRS, nilai, ruang, dan katalog kuliah tanpa panel staf yang penuh.',
 				icon: BookOpen,
-				views: ['enrollments', 'grades', 'classrooms', 'courses', 'lecturers']
+				views: ['enrollments', 'grades', 'courses', 'lecturers', 'classrooms']
 			}
 		];
 	}
 
-	function isSecondaryView(view: ViewId, role: AppRole | undefined) {
-		return secondaryGroupsForRole(role).some((group) => group.views.includes(view));
+	function pageHeading(view: ViewId) {
+		if (currentUser.current?.role === 'STUDENT' && view === 'dashboard') return 'Jadwal dan nilai';
+		if (view === 'dashboard') return 'Pantauan ruang dan jadwal';
+		if (view === 'calendar') return 'Kalender perkuliahan';
+		if (view === 'builder') return 'Penjadwalan kelas';
+		return viewCatalog[view].label;
 	}
 
-	function pageHeading(view: ViewId) {
-		if (currentUser.current?.role === 'STUDENT' && view === 'dashboard')
-			return 'Jadwal dan hasil belajar';
-		if (view === 'dashboard') return 'Keputusan operasional hari ini';
-		if (view === 'calendar') return 'Kalender perkuliahan mingguan';
-		if (view === 'builder') return 'Ruang kerja penjadwalan';
-		return viewCatalog[view].label;
+	function pageSummary(view: ViewId, role: AppRole | undefined) {
+		if (role === 'STUDENT' && view === 'dashboard') {
+			return 'Lihat kelas berikutnya, ruang kuliah, dan nilai terbaru dari satu panel ringkas.';
+		}
+
+		if (view === 'dashboard') {
+			return role === 'ADMIN'
+				? 'Mulai dari bentrok terdekat, lalu cek ruang yang masih longgar sebelum mengubah jadwal.'
+				: 'Mulai dari kelas terdekat, lalu cek ruang pengganti jika ada bentrok.';
+		}
+
+		if (view === 'calendar') {
+			return 'Bandingkan slot per hari, pilih blok yang relevan, lalu buka penjadwalan langsung dari sini.';
+		}
+
+		if (view === 'builder') {
+			return 'Selesaikan satu jadwal sampai siap disimpan: pilih peserta, tentukan slot, pilih ruang, lalu tinjau.';
+		}
+
+		if (view === 'classrooms') {
+			return 'Tinjau kapasitas dan fasilitas ruang lebih dulu, lalu edit hanya saat data inventaris berubah.';
+		}
+
+		if (view === 'courses') {
+			return 'Tinjau beban kuliah, dosen pengampu, dan program studi sebelum mengubah katalog.';
+		}
+
+		if (view === 'students') {
+			return 'Buka identitas mahasiswa yang relevan lebih dulu agar perubahan akademik tetap punya konteks.';
+		}
+
+		if (view === 'lecturers') {
+			return 'Periksa dosen pengampu dan kontak yang terhubung sebelum memperbarui data dosen.';
+		}
+
+		if (view === 'faculties') {
+			return 'Jaga struktur fakultas tetap rapi agar program studi dan katalog lain tetap punya acuan.';
+		}
+
+		if (view === 'studyPrograms') {
+			return 'Pastikan setiap program studi terhubung ke fakultas yang tepat sebelum disimpan.';
+		}
+
+		if (view === 'enrollments') {
+			return 'Gunakan daftar kiri untuk menemukan KRS yang tepat, lalu baca jadwal, ruang, dan semester di panel detail.';
+		}
+
+		if (view === 'grades') {
+			return 'Pisahkan peninjauan hasil dari proses input agar evaluasi dan perubahan nilai tidak bercampur.';
+		}
+
+		return 'Tinjau akses login dengan konteks identitas yang jelas sebelum memperbarui peran atau kredensial.';
+	}
+
+	function workspacePanelLead(view: ViewId) {
+		if (view === 'classrooms') {
+			return 'Panel kanan menampilkan kapasitas, fasilitas, dan ringkasan jadwal ruang yang dipilih.';
+		}
+
+		if (view === 'courses') {
+			return 'Panel kanan merangkum dosen pengampu, program studi, dan beban kuliah sebelum Anda mengedit data.';
+		}
+
+		if (view === 'students') {
+			return 'Panel kanan menjaga konteks mahasiswa tetap terlihat saat data akademik diperbarui.';
+		}
+
+		if (view === 'lecturers') {
+			return 'Panel kanan menyatukan identitas dosen dan detail pengampu agar perubahan tetap terarah.';
+		}
+
+		if (view === 'faculties') {
+			return 'Panel kanan membantu Anda membaca struktur fakultas sebelum menambah atau mengubah data.';
+		}
+
+		if (view === 'studyPrograms') {
+			return 'Panel kanan menampilkan hubungan program studi dan fakultas agar struktur akademik tetap jelas.';
+		}
+
+		if (view === 'enrollments') {
+			return 'Panel kanan menampilkan ringkasan KRS dari baris yang sedang dipilih.';
+		}
+
+		if (view === 'grades') {
+			return 'Panel kanan memisahkan peninjauan hasil dari proses input agar evaluasi tetap mudah dibaca.';
+		}
+
+		return 'Panel kanan merangkum peran dan relasi identitas sebelum akses login diperbarui.';
 	}
 
 	function dashboardPriorityLabel(role: AppRole | undefined) {
 		if (role === 'ADMIN')
-			return 'Tinjau bentrok, longgarkan ruang, lalu pastikan sesi terdekat siap berjalan.';
+			return 'Tinjau bentrok, rapikan alokasi ruang, lalu pastikan kelas terdekat siap berjalan.';
 		if (role === 'LECTURER')
 			return 'Pastikan kelas berikutnya aman dan ruang pengganti masih tersedia.';
 		return 'Pastikan jadwal pribadi tetap jelas dan perubahan ruang mudah ditemukan.';
 	}
 
 	function dashboardFocusLabel(role: AppRole | undefined) {
-		if (role === 'ADMIN') return 'Prioritaskan bentrok aktif dan ruang yang masih terlalu longgar.';
+		if (role === 'ADMIN')
+			return 'Fokus pada bentrok aktif dan ruang yang pemakaiannya masih rendah.';
 		if (role === 'LECTURER')
-			return 'Fokus pada ruang kosong dan sesi yang berlangsung paling dekat.';
+			return 'Fokus pada ruang kosong dan kelas yang berlangsung paling dekat.';
 		return 'Fokus pada sesi berikutnya dan ruang tempat kelas akan berlangsung.';
 	}
 
@@ -363,19 +450,34 @@
 	}
 
 	const builderSteps = [
-		{ id: 'participant', label: 'Peserta', hint: 'Tentukan pemilik kelas dan mata kuliahnya.' },
-		{ id: 'time', label: 'Waktu', hint: 'Tetapkan hari serta slot kuliah yang akan dicek.' },
-		{ id: 'room', label: 'Ruang', hint: 'Pilih ruang yang masih aman untuk slot tersebut.' },
-		{ id: 'review', label: 'Tinjau', hint: 'Pastikan semua keputusan siap disimpan.' }
+		{ id: 'participant', label: 'Peserta', hint: 'Pilih mahasiswa dan mata kuliah.' },
+		{ id: 'time', label: 'Waktu', hint: 'Tentukan hari dan jam kuliah.' },
+		{ id: 'room', label: 'Ruang', hint: 'Pilih ruang yang tersedia.' },
+		{ id: 'review', label: 'Tinjau', hint: 'Periksa sebelum disimpan.' }
 	] as const;
 
+	function shellLead(role: AppRole | undefined) {
+		if (role === 'ADMIN') {
+			return 'Pantau bentrok, atur ruang, lalu rapikan data akademik dari satu tempat.';
+		}
+
+		if (role === 'LECTURER') {
+			return 'Buka jadwal, pilih ruang pengganti, dan cek data kuliah tanpa berpindah terlalu jauh.';
+		}
+
+		return 'Lihat jadwal, KRS, dan nilai dari panel yang ringkas untuk mahasiswa.';
+	}
+
 	function headerAction(view: ViewId, role: AppRole | undefined) {
-		if (role === 'STUDENT') return null;
-		if (isSecondaryView(view, role))
-			return { label: 'Kembali ke operasi', target: 'dashboard' as ViewId };
-		if (view === 'builder') return { label: 'Kembali ke dashboard', target: 'dashboard' as ViewId };
-		if (view === 'calendar') return { label: 'Atur jadwal', target: 'builder' as ViewId };
-		return { label: 'Buka pembuat jadwal', target: 'builder' as ViewId };
+		if (role === 'STUDENT') {
+			if (view === 'dashboard') return { label: 'Buka kalender', target: 'calendar' as ViewId };
+			return null;
+		}
+
+		if (view === 'builder') return { label: 'Lihat kalender', target: 'calendar' as ViewId };
+		if (view === 'calendar') return { label: 'Buka penjadwalan', target: 'builder' as ViewId };
+		if (view === 'dashboard') return { label: 'Atur jadwal', target: 'builder' as ViewId };
+		return { label: 'Kembali ke pantauan', target: 'dashboard' as ViewId };
 	}
 
 	function activateView(view: ViewId) {
@@ -435,6 +537,48 @@
 		return { id: '', email: '', password: '', role: 'ADMIN', studentId: '', lecturerId: '' };
 	}
 
+	function roundUpHour(minutes: number) {
+		return Math.ceil(minutes / 60) * 60;
+	}
+
+	function timeString(minutes: number) {
+		const hours = Math.floor(minutes / 60);
+		const mins = minutes % 60;
+		return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:00`;
+	}
+
+	function dayKeyFromDate(date: Date): (typeof DAY_ORDER)[number] | null {
+		const map = {
+			1: 'SENIN',
+			2: 'SELASA',
+			3: 'RABU',
+			4: 'KAMIS',
+			5: 'JUMAT',
+			6: 'SABTU'
+		} as const;
+
+		return map[date.getDay() as keyof typeof map] ?? null;
+	}
+
+	function dateForScheduleCard(card: ScheduleCard, minutes: number) {
+		const date = new Date(CALENDAR_WEEK_START);
+		date.setDate(CALENDAR_WEEK_START.getDate() + DAY_ORDER.indexOf(card.day));
+		date.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+		return date;
+	}
+
+	function escapeHtml(value: string) {
+		return value
+			.replaceAll('&', '&amp;')
+			.replaceAll('<', '&lt;')
+			.replaceAll('>', '&gt;')
+			.replaceAll('"', '&quot;')
+			.replaceAll("'", '&#39;');
+	}
+
+	let EventCalendarComponent = $state<any>(null);
+	let calendarPlugins = $state<any[]>([]);
+	let calendarLoadPromise = $state<Promise<void> | null>(null);
 	let theme = $state<'light' | 'dark'>('light');
 	let activeView = $state<ViewId>('dashboard');
 	let builderStep = $state<BuilderStep>('participant');
@@ -445,6 +589,11 @@
 	let loadedForUserId = $state<string | null>(null);
 	let viewRestored = $state(!browser);
 	let collectionIssues = $state<Partial<Record<DataCollectionKey, string>>>({});
+	let pendingRefreshTimer = $state<number | null>(null);
+	let studentPickerSearch = $state('');
+	let coursePickerSearch = $state('');
+	let studentPickerOpen = $state(false);
+	let coursePickerOpen = $state(false);
 
 	let classrooms = $state<any[]>([]);
 	let courses = $state<any[]>([]);
@@ -531,6 +680,27 @@
 		viewRestored = true;
 	});
 
+	async function ensureCalendarLoaded() {
+		if (EventCalendarComponent) return;
+		if (calendarLoadPromise) {
+			await calendarLoadPromise;
+			return;
+		}
+
+		calendarLoadPromise = (async () => {
+			const mod = await import('@event-calendar/core');
+			await import('@event-calendar/core/index.css');
+			EventCalendarComponent = mod.Calendar;
+			calendarPlugins = [mod.TimeGrid];
+		})();
+
+		try {
+			await calendarLoadPromise;
+		} finally {
+			calendarLoadPromise = null;
+		}
+	}
+
 	function resetCollections() {
 		classrooms = [];
 		courses = [];
@@ -558,39 +728,39 @@
 	}
 
 	async function refreshClassrooms(imperative = false) {
-		classrooms = imperative ? await getClassRooms().run() : await getClassRooms();
+		classrooms = await getClassRooms().run();
 	}
 
 	async function refreshCourses(imperative = false) {
-		courses = imperative ? await getCourses().run() : await getCourses();
+		courses = await getCourses().run();
 	}
 
 	async function refreshStudents(imperative = false) {
-		students = imperative ? await getStudents().run() : await getStudents();
+		students = await getStudents().run();
 	}
 
 	async function refreshLecturers(imperative = false) {
-		lecturers = imperative ? await getLecturers().run() : await getLecturers();
+		lecturers = await getLecturers().run();
 	}
 
 	async function refreshFaculties(imperative = false) {
-		faculties = imperative ? await getFaculties().run() : await getFaculties();
+		faculties = await getFaculties().run();
 	}
 
 	async function refreshStudyPrograms(imperative = false) {
-		studyPrograms = imperative ? await getStudyPrograms().run() : await getStudyPrograms();
+		studyPrograms = await getStudyPrograms().run();
 	}
 
 	async function refreshEnrollments(imperative = false) {
-		enrollments = imperative ? await getEnrollments().run() : await getEnrollments();
+		enrollments = await getEnrollments().run();
 	}
 
 	async function refreshGrades(imperative = false) {
-		grades = imperative ? await getGrades().run() : await getGrades();
+		grades = await getGrades().run();
 	}
 
 	async function refreshUsers(imperative = false) {
-		users = imperative ? await getUsers().run() : await getUsers();
+		users = await getUsers().run();
 	}
 
 	async function refreshAll() {
@@ -615,6 +785,20 @@
 		appLoading = false;
 	}
 
+	function scheduleRefreshAll() {
+		if (!browser) {
+			void refreshAll();
+			return;
+		}
+		if (pendingRefreshTimer != null) {
+			window.clearTimeout(pendingRefreshTimer);
+		}
+		pendingRefreshTimer = window.setTimeout(() => {
+			pendingRefreshTimer = null;
+			void refreshAll();
+		}, 0);
+	}
+
 	$effect(() => {
 		if (currentUser.loading || !currentUser.current) return;
 		const role = currentUser.current?.role as AppRole | undefined;
@@ -630,20 +814,130 @@
 	});
 
 	$effect(() => {
+		if (!browser || activeView !== 'calendar') return;
+		void ensureCalendarLoaded();
+	});
+
+	$effect(() => {
 		const userId = currentUser.current?.id ?? null;
 		if (!userId) {
+			if (browser && pendingRefreshTimer != null) {
+				window.clearTimeout(pendingRefreshTimer);
+				pendingRefreshTimer = null;
+			}
 			loadedForUserId = null;
 			resetCollections();
 			return;
 		}
 		if (loadedForUserId === userId) return;
 		loadedForUserId = userId;
-		void refreshAll();
+		scheduleRefreshAll();
 	});
 
 	const scheduleCards = $derived(buildScheduleCards(enrollments, timezone));
+	const calendarVisibleRange = $derived.by(() => {
+		if (!scheduleCards.length) {
+			return { start: DEFAULT_DAY_START, end: DEFAULT_DAY_END };
+		}
+
+		const start = DEFAULT_DAY_START;
+		let end = roundUpHour(
+			Math.min(
+				Math.max(...scheduleCards.map((card) => card.endMinutes)) + RANGE_PADDING_MINUTES,
+				24 * 60
+			)
+		);
+
+		if (end - start < MIN_VISIBLE_MINUTES) {
+			end = Math.min(start + MIN_VISIBLE_MINUTES, 24 * 60);
+		}
+
+		return { start, end };
+	});
+	const calendarSessionCountByDay = $derived.by(() =>
+		Object.fromEntries(
+			DAY_ORDER.map((day) => [day, scheduleCards.filter((card) => card.day === day).length])
+		)
+	);
+	const calendarEvents = $derived.by(() =>
+		scheduleCards.map((card) => ({
+			id: card.id,
+			title: card.course,
+			start: dateForScheduleCard(card, card.startMinutes),
+			end: dateForScheduleCard(card, card.endMinutes),
+			extendedProps: { card }
+		}))
+	);
+	const effectiveSelectedScheduleId = $derived(selectedScheduleId ?? scheduleCards[0]?.id ?? null);
+	const calendarOptions = $derived.by(() => ({
+		view: 'timeGridWeek',
+		date: CALENDAR_WEEK_START,
+		locale: 'id-ID',
+		firstDay: 1,
+		hiddenDays: [0],
+		height: 'auto',
+		allDaySlot: false,
+		customScrollbars: true,
+		slotDuration: '00:30:00',
+		slotLabelInterval: '01:00:00',
+		slotHeight: 34,
+		slotMinTime: timeString(calendarVisibleRange.start),
+		slotMaxTime: timeString(calendarVisibleRange.end),
+		scrollTime: timeString(calendarVisibleRange.start),
+		slotEventOverlap: false,
+		columnWidth: '18rem',
+		headerToolbar: { start: '', center: '', end: '' },
+		events: calendarEvents,
+		dayHeaderFormat(date: Date) {
+			const day = dayKeyFromDate(date);
+			if (!day) return '';
+			return {
+				html: `<div class="watum-day-head"><strong>${escapeHtml(DAY_LABELS[day])}</strong><span>${calendarSessionCountByDay[day]} sesi</span></div>`
+			};
+		},
+		eventClassNames(info: { event: { id: string; extendedProps: { card?: ScheduleCard } } }) {
+			const card = info.event.extendedProps.card;
+			const classes = ['watum-ec-event'];
+			if (card?.hasConflict) classes.push('is-conflict');
+			if (info.event.id === effectiveSelectedScheduleId) classes.push('is-selected');
+			return classes;
+		},
+		eventContent(info: { event: { extendedProps: { card?: ScheduleCard } } }) {
+			const card = info.event.extendedProps.card;
+			if (!card) return undefined;
+
+			return {
+				html: `
+					<div class="watum-event-copy">
+						${card.hasConflict ? '<span class="watum-event-flag">Bentrok</span>' : ''}
+						<strong>${escapeHtml(card.course)}</strong>
+						<span>${escapeHtml(card.startLabel)} - ${escapeHtml(card.endLabel)}</span>
+						<small>${escapeHtml(card.room)} • ${escapeHtml(card.lecturer)}</small>
+					</div>
+				`
+			};
+		},
+		eventDidMount(info: { el: HTMLElement; event: { extendedProps: { card?: ScheduleCard } } }) {
+			const card = info.event.extendedProps.card;
+			if (!card) return;
+
+			const tone = conflictToneVariables(card.conflictTone);
+			if (tone) {
+				info.el.style.cssText += `;${tone}`;
+			}
+
+			info.el.setAttribute(
+				'title',
+				`${card.course} • ${card.startLabel} - ${card.endLabel} • ${card.room} • ${card.lecturer}`
+			);
+		},
+		eventClick(info: { event: { extendedProps: { card?: ScheduleCard } } }) {
+			const card = info.event.extendedProps.card;
+			if (card) selectedScheduleId = card.id;
+		}
+	}));
 	const selectedSchedule = $derived(
-		scheduleCards.find((item) => item.id === selectedScheduleId) ?? scheduleCards[0] ?? null
+		scheduleCards.find((item) => item.id === effectiveSelectedScheduleId) ?? null
 	);
 	const selectedRoom = $derived(classrooms.find((item) => item.id === selectedRoomId) ?? null);
 	const selectedCourse = $derived(courses.find((item) => item.id === selectedCourseId) ?? null);
@@ -671,8 +965,8 @@
 		});
 	});
 	const primaryConflict = $derived(conflictGroups[0] ?? null);
-	const additionalConflictCount = $derived(Math.max(conflictGroups.length - 1, 0));
-	const conflictCount = $derived(scheduleCards.filter((item) => item.hasConflict).length);
+	const conflictCount = $derived(conflictCards.length);
+	const additionalConflictCount = $derived(Math.max(conflictCount - 1, 0));
 	const conflictPeersByCardId = $derived.by(() => {
 		const groups = new Map<string, ScheduleCard[]>();
 		for (const card of scheduleCards) {
@@ -777,6 +1071,27 @@
 				matchesText(item.course_name, enrollmentSearch) ||
 				matchesText(item.class_room_name, enrollmentSearch)
 		)
+	);
+	const filteredStudentsForPicker = $derived(
+		students
+			.filter(
+				(item) =>
+					!studentPickerSearch ||
+					matchesText(item.name, studentPickerSearch) ||
+					matchesText(item.id, studentPickerSearch)
+			)
+			.slice(0, 24)
+	);
+	const filteredCoursesForPicker = $derived(
+		courses
+			.filter(
+				(item) =>
+					!coursePickerSearch ||
+					matchesText(item.name, coursePickerSearch) ||
+					matchesText(item.id, coursePickerSearch) ||
+					matchesText(item.lecturer_name, coursePickerSearch)
+			)
+			.slice(0, 24)
 	);
 	const filteredGrades = $derived(
 		grades.filter(
@@ -979,6 +1294,12 @@
 			academicYear: item.academic_year ?? '2025/2026',
 			timezone
 		};
+		const pickedStudent = students.find((s) => s.id === item.student_id);
+		const pickedCourse = courses.find((c) => c.id === item.course_id);
+		studentPickerSearch = pickedStudent ? `${pickedStudent.name} • ${pickedStudent.id}` : '';
+		coursePickerSearch = pickedCourse ? `${pickedCourse.name} • ${pickedCourse.lecturer_name}` : '';
+		studentPickerOpen = false;
+		coursePickerOpen = false;
 	}
 
 	function pickGrade(item: any) {
@@ -1038,6 +1359,10 @@
 			selectedEnrollmentId = null;
 			enrollmentDraft = emptyEnrollmentDraft();
 			builderStep = 'participant';
+			studentPickerSearch = '';
+			coursePickerSearch = '';
+			studentPickerOpen = false;
+			coursePickerOpen = false;
 		}
 		if (view === 'grades') {
 			selectedGradeId = null;
@@ -1073,10 +1398,10 @@
 				id,
 				label: selectedRoom?.name ?? 'ruang ini',
 				message:
-					'Ruang ini akan keluar dari daftar inventaris. Pastikan jadwal yang masih bergantung pada ruang ini sudah Anda tinjau.',
+					'Ruang ini akan dihapus dari inventaris. Pastikan tidak ada jadwal aktif yang masih bergantung pada ruang ini.',
 				confirmLabel: 'Ya, hapus ruang',
-				successMessage: 'Ruang berhasil dihapus dari inventaris.',
-				failureMessage: 'Ruang gagal dihapus. Periksa kembali apakah ruang masih dipakai.'
+				successMessage: 'Ruang dihapus dari inventaris.',
+				failureMessage: 'Ruang belum bisa dihapus. Periksa apakah ruang masih dipakai.'
 			};
 			return;
 		}
@@ -1086,10 +1411,10 @@
 				id,
 				label: selectedCourse?.name ?? 'mata kuliah ini',
 				message:
-					'Mata kuliah ini akan keluar dari katalog operasional. Pastikan perubahan ini tidak mengganggu penjadwalan atau KRS yang masih berjalan.',
+					'Mata kuliah ini akan dihapus dari katalog. Pastikan perubahan ini tidak mengganggu jadwal atau KRS yang masih aktif.',
 				confirmLabel: 'Ya, hapus mata kuliah',
-				successMessage: 'Mata kuliah berhasil dihapus dari katalog.',
-				failureMessage: 'Mata kuliah gagal dihapus. Tinjau lagi keterkaitan jadwal dan KRS.'
+				successMessage: 'Mata kuliah dihapus dari katalog.',
+				failureMessage: 'Mata kuliah belum bisa dihapus. Periksa jadwal dan KRS yang masih terkait.'
 			};
 			return;
 		}
@@ -1099,10 +1424,10 @@
 				id,
 				label: selectedStudent?.name ?? 'mahasiswa ini',
 				message:
-					'Data mahasiswa ini akan hilang dari operasi akademik harian. Pastikan Anda tidak sedang membutuhkan rekam identitas ini untuk proses aktif.',
+					'Data mahasiswa ini akan dihapus dari data aktif. Pastikan identitas ini tidak lagi dipakai dalam proses akademik berjalan.',
 				confirmLabel: 'Ya, hapus mahasiswa',
-				successMessage: 'Mahasiswa berhasil dihapus dari data aktif.',
-				failureMessage: 'Mahasiswa gagal dihapus. Tinjau kembali hubungan data yang masih aktif.'
+				successMessage: 'Mahasiswa dihapus dari data aktif.',
+				failureMessage: 'Mahasiswa belum bisa dihapus. Periksa data yang masih terkait.'
 			};
 			return;
 		}
@@ -1112,11 +1437,10 @@
 				id,
 				label: selectedLecturer?.name ?? 'dosen ini',
 				message:
-					'Dosen ini akan keluar dari daftar pengampu. Pastikan jadwal, mata kuliah, dan relasi akun yang terkait sudah Anda cek.',
+					'Dosen ini akan dihapus dari daftar pengampu. Pastikan jadwal, mata kuliah, dan akun terkait sudah diperiksa.',
 				confirmLabel: 'Ya, hapus dosen',
-				successMessage: 'Dosen berhasil dihapus dari daftar pengampu.',
-				failureMessage:
-					'Dosen gagal dihapus. Tinjau kembali jadwal atau relasi akun yang masih terhubung.'
+				successMessage: 'Dosen dihapus dari daftar pengampu.',
+				failureMessage: 'Dosen belum bisa dihapus. Periksa jadwal atau akun yang masih terhubung.'
 			};
 			return;
 		}
@@ -1126,11 +1450,10 @@
 				id,
 				label: selectedFaculty?.name ?? 'fakultas ini',
 				message:
-					'Fakultas ini akan keluar dari struktur akademik. Pastikan perubahan ini tidak memutus program studi yang masih dipakai.',
+					'Fakultas ini akan dihapus dari struktur akademik. Pastikan tidak ada program studi aktif yang masih bergantung padanya.',
 				confirmLabel: 'Ya, hapus fakultas',
-				successMessage: 'Fakultas berhasil dihapus dari struktur akademik.',
-				failureMessage:
-					'Fakultas gagal dihapus. Tinjau kembali struktur program studi yang terkait.'
+				successMessage: 'Fakultas dihapus dari struktur akademik.',
+				failureMessage: 'Fakultas belum bisa dihapus. Periksa program studi yang masih terkait.'
 			};
 			return;
 		}
@@ -1140,10 +1463,10 @@
 				id,
 				label: selectedStudyProgram?.name ?? 'program studi ini',
 				message:
-					'Program studi ini akan keluar dari struktur akademik. Pastikan mahasiswa atau mata kuliah terkait sudah Anda tinjau sebelum melanjutkan.',
+					'Program studi ini akan dihapus dari struktur akademik. Pastikan mahasiswa dan mata kuliah terkait sudah ditinjau.',
 				confirmLabel: 'Ya, hapus program studi',
-				successMessage: 'Program studi berhasil dihapus dari struktur akademik.',
-				failureMessage: 'Program studi gagal dihapus. Tinjau kembali data yang masih terhubung.'
+				successMessage: 'Program studi dihapus dari struktur akademik.',
+				failureMessage: 'Program studi belum bisa dihapus. Periksa data yang masih terhubung.'
 			};
 			return;
 		}
@@ -1153,10 +1476,10 @@
 				id,
 				label: selectedEnrollment?.course_name ?? 'jadwal ini',
 				message:
-					'KRS dan jadwal ini akan dihapus dari periode aktif. Pastikan perubahan ini memang final sebelum Anda mengonfirmasi.',
+					'KRS dan jadwal ini akan dihapus dari periode aktif. Lanjutkan hanya jika perubahan ini sudah final.',
 				confirmLabel: 'Ya, hapus jadwal',
-				successMessage: 'Jadwal berhasil dihapus dari periode aktif.',
-				failureMessage: 'Jadwal gagal dihapus. Tinjau kembali data KRS yang masih dipakai.'
+				successMessage: 'Jadwal dihapus dari periode aktif.',
+				failureMessage: 'Jadwal belum bisa dihapus. Periksa data KRS yang masih dipakai.'
 			};
 			return;
 		}
@@ -1165,10 +1488,10 @@
 			id,
 			label: selectedGrade?.course_name ?? 'nilai ini',
 			message:
-				'Nilai ini akan keluar dari rekap hasil. Jika masih diperlukan, Anda harus menginput ulang setelah penghapusan.',
+				'Nilai ini akan dihapus dari rekap hasil. Jika masih diperlukan, Anda perlu memasukkannya lagi setelah penghapusan.',
 			confirmLabel: 'Ya, hapus nilai',
-			successMessage: 'Nilai berhasil dihapus dari rekap hasil.',
-			failureMessage: 'Nilai gagal dihapus. Tinjau kembali apakah data masih dipakai di rekap.'
+			successMessage: 'Nilai dihapus dari rekap hasil.',
+			failureMessage: 'Nilai belum bisa dihapus. Periksa apakah data masih dipakai di rekap.'
 		};
 	}
 
@@ -1371,19 +1694,8 @@
 	const navigationGroups = $derived(
 		navigationGroupsForRole(currentUser.current?.role as AppRole | undefined)
 	);
-	const secondaryNavigationGroups = $derived(
-		secondaryGroupsForRole(currentUser.current?.role as AppRole | undefined)
-	);
-	const primaryHomeView = $derived(navigationGroups[0]?.views[0] ?? 'dashboard');
-	const supportHomeView = $derived(secondaryNavigationGroups[0]?.views[0] ?? null);
-	const secondaryActive = $derived(
-		isSecondaryView(activeView, currentUser.current?.role as AppRole | undefined)
-	);
 	const activeNavigationGroup = $derived(
 		navigationGroups.find((group) => group.views.includes(activeView)) ?? null
-	);
-	const activeSecondaryGroup = $derived(
-		secondaryNavigationGroups.find((group) => group.views.includes(activeView)) ?? null
 	);
 	const currentHeaderAction = $derived(
 		headerAction(activeView, currentUser.current?.role as AppRole | undefined)
@@ -1452,40 +1764,46 @@
 </svelte:head>
 
 {#if currentUser.loading}{:else if currentUser.current}
-	<div class={`app-shell ${currentUser.current.role === 'STUDENT' ? 'student-app-shell' : ''}`}>
-		{#if currentUser.current.role !== 'STUDENT'}
-			<aside class="rail">
-				<div class="rail-brand">
-					<h1>Operasi Akademik</h1>
-					<p class="brand-copy">
-						Ruang utama dipakai untuk bentrok, kalender, pembuat jadwal, dan kondisi ruang yang
-						perlu ditindak.
-					</p>
-				</div>
+	<div class="app-shell">
+		<aside class="rail">
+			<div class="rail-brand">
+				<h1>Watum</h1>
+			</div>
 
-				<nav class="rail-sections">
-					{#each navigationGroups as group (group.label)}
-						{@const Icon = group.icon}
-						<Button
-							class={`nav-item nav-group ${activeNavigationGroup?.id === group.id ? 'selected' : ''}`}
-							variant={activeNavigationGroup?.id === group.id ? 'default' : 'ghost'}
-							size="sm"
-							onclick={() =>
-								activateView(group.views.includes(activeView) ? activeView : group.views[0])}
-						>
-							<Icon size={18} />
-							<span class="nav-group-copy">
+			<nav class="rail-sections" aria-label="Navigasi utama">
+				{#each navigationGroups as group (group.id)}
+					{@const GroupIcon = group.icon}
+					<section class="rail-group">
+						<div class="rail-group-header">
+							<div class="rail-group-title">
+								<GroupIcon size={16} />
 								<strong>{group.label}</strong>
-							</span>
-						</Button>
-					{/each}
-				</nav>
+							</div>
+						</div>
+						<div class="rail-links">
+							{#each group.views as item (item)}
+								{@const ItemIcon = viewCatalog[item].icon}
+								<Button
+									class={`nav-item ${activeView === item ? 'selected' : ''}`}
+									variant={activeView === item ? 'default' : 'ghost'}
+									size="sm"
+									onclick={() => activateView(item)}
+								>
+									<ItemIcon size={17} />
+									<span class="nav-link-copy">
+										<strong>{viewCatalog[item].label}</strong>
+									</span>
+								</Button>
+							{/each}
+						</div>
+					</section>
+				{/each}
+			</nav>
 
-				<Separator />
-			</aside>
-		{/if}
+			<Separator />
+		</aside>
 
-		<main class={`main-shell ${currentUser.current.role === 'STUDENT' ? 'student-shell' : ''}`}>
+		<main class="main-shell">
 			<header class="topbar">
 				<div class="topbar-copy">
 					<h2>{pageHeading(activeView)}</h2>
@@ -1532,114 +1850,44 @@
 				</div>
 			</header>
 
-			{#if currentUser.current.role !== 'STUDENT' && secondaryNavigationGroups.length}
-				<nav class="section-tabs section-tabs-compact" aria-label="Area kerja">
-					<Button
-						class={`section-tab ${!secondaryActive ? 'selected' : ''}`}
-						variant={!secondaryActive ? 'default' : 'ghost'}
-						size="sm"
-						onclick={() => activateView(primaryHomeView)}
-					>
-						<span>Ruang utama</span>
-					</Button>
-					{#if supportHomeView}
-						<Button
-							class={`section-tab ${secondaryActive ? 'selected' : ''}`}
-							variant={secondaryActive ? 'default' : 'ghost'}
-							size="sm"
-							onclick={() => activateView(supportHomeView)}
-						>
-							<span>Area pendukung</span>
-						</Button>
-					{/if}
-				</nav>
-			{/if}
-
-			{#if !secondaryActive && activeNavigationGroup && activeNavigationGroup.views.length > 1}
-				<nav class="section-tabs" aria-label={`Subbagian ${activeNavigationGroup.label}`}>
-					{#each activeNavigationGroup.views as item (item)}
-						<Button
-							class={`section-tab ${activeView === item ? 'selected' : ''}`}
-							variant={activeView === item ? 'default' : 'ghost'}
-							size="sm"
-							onclick={() => activateView(item)}
-						>
-							<span>{viewCatalog[item].label}</span>
-						</Button>
-					{/each}
-				</nav>
-			{/if}
-
-			{#if secondaryActive && secondaryNavigationGroups.length && currentUser.current.role !== 'STUDENT'}
-				{#if secondaryNavigationGroups.length > 1}
-					<nav class="section-tabs section-tabs-compact" aria-label="Kelompok area pendukung">
-						{#each secondaryNavigationGroups as group (group.id)}
-							<Button
-								class={`section-tab ${activeSecondaryGroup?.id === group.id ? 'selected' : ''}`}
-								variant={activeSecondaryGroup?.id === group.id ? 'default' : 'ghost'}
-								size="sm"
-								onclick={() => activateView(group.views[0])}
-							>
-								<span>{group.label}</span>
-							</Button>
-						{/each}
-					</nav>
-				{/if}
-
-				{#if activeSecondaryGroup && activeSecondaryGroup.views.length > 1}
-					<nav class="section-tabs" aria-label={`Subbagian ${activeSecondaryGroup.label}`}>
-						{#each activeSecondaryGroup.views as item (item)}
-							<Button
-								class={`section-tab ${activeView === item ? 'selected' : ''}`}
-								variant={activeView === item ? 'default' : 'ghost'}
-								size="sm"
-								onclick={() => activateView(item)}
-							>
-								<span>{viewCatalog[item].label}</span>
-							</Button>
-						{/each}
-					</nav>
-				{/if}
-			{/if}
-
-			{#if secondaryActive && secondaryNavigationGroups.length && currentUser.current.role === 'STUDENT'}
-				<nav class="section-tabs" aria-label="Referensi mahasiswa">
-					{#each secondaryNavigationGroups[0].views as item (item)}
-						<Button
-							class={`section-tab ${activeView === item ? 'selected' : ''}`}
-							variant={activeView === item ? 'default' : 'ghost'}
-							size="sm"
-							onclick={() => activateView(item)}
-						>
-							<span>{viewCatalog[item].label}</span>
-						</Button>
-					{/each}
-				</nav>
-			{/if}
-
 			{#if feedback}
 				<div class={`feedback ${feedback.tone}`}>
 					<AlertCircle size={16} />
 					<span>{feedback.text}</span>
+					<button
+						type="button"
+						class="feedback-dismiss"
+						aria-label="Tutup notifikasi"
+						onclick={() => (feedback = null)}>×</button
+					>
 				</div>
 			{/if}
 
 			{#if appLoading}
-				<div class="loading-panel">Memuat data akademik...</div>
+				<div class="loading-panel">
+					<div class="skeleton-rows">
+						<div class="skeleton skeleton-title"></div>
+						<div class="skeleton skeleton-text"></div>
+						{#each Array(5) as _, i (i)}
+							<div class="skeleton skeleton-row"></div>
+						{/each}
+					</div>
+				</div>
 			{/if}
 
 			{#if activeViewIssues.length}
 				<section class="support-warning">
-					<p class="warning-title">Sebagian data pendukung belum tersedia</p>
+					<div class="support-warning-head">
+						<p class="warning-title">Sebagian data pendukung belum tersedia</p>
+						<Button variant="ghost" size="sm" class="ghost-button" onclick={() => void refreshAll()}
+							>Coba lagi</Button
+						>
+					</div>
 					<ul class="support-warning-list">
 						{#each activeViewIssues as issue, index (`${activeView}-${index}`)}
 							<li>{issue}</li>
 						{/each}
 					</ul>
-					<p class="detail-hint">
-						Bagian lain tetap bisa dipakai. Muat ulang halaman atau kembali nanti untuk mengambil
-						data yang belum berhasil dimuat.
-					</p>
 				</section>
 			{/if}
 
@@ -1649,15 +1897,15 @@
 						<section class="student-dashboard">
 							<article class="student-hero">
 								<div class="student-hero-copy">
-									<span>Sesi terdekat</span>
-									<strong>{nextSchedule ? nextSchedule.course : 'Belum ada sesi terjadwal'}</strong>
+									<span>Kelas berikutnya</span>
+									<strong>{nextSchedule ? nextSchedule.course : 'Belum ada kelas terjadwal'}</strong
+									>
 									<p>
 										{#if nextSchedule}
 											{DAY_LABELS[nextSchedule.day]} • {nextSchedule.startLabel} - {nextSchedule.endLabel}
 											• {nextSchedule.room}
 										{:else}
-											Kalender mingguan akan membantu Anda melihat perubahan ruang dan sesi
-											berikutnya.
+											Kalender mingguan membantu Anda melihat perubahan ruang dan kelas berikutnya.
 										{/if}
 									</p>
 								</div>
@@ -1676,7 +1924,7 @@
 							<section class="student-summary-row">
 								<div>
 									<span>KRS aktif</span>
-									<strong>{enrollments.length} sesi tercatat</strong>
+									<strong>{enrollments.length} kelas tercatat</strong>
 								</div>
 								<div>
 									<span>Nilai tersedia</span>
@@ -1690,7 +1938,7 @@
 
 							{#if studentGradeHighlights.length}
 								<section class="student-grade-list">
-									<h3>Ringkasan hasil terbaru</h3>
+									<h3>Nilai terbaru</h3>
 									<div class="student-grade-items">
 										{#each studentGradeHighlights as item (item.id)}
 											<div>
@@ -1711,11 +1959,11 @@
 							>
 								<h3 class="decision-title">
 									{#if conflictCount > 0}
-										{conflictCount} bentrok perlu keputusan cepat
+										{conflictCount} bentrok perlu ditangani
 									{:else if nextSchedule}
-										Jadwal hari ini siap dijalankan
+										Jadwal hari ini siap berjalan
 									{:else}
-										Belum ada sesi aktif yang perlu ditata
+										Belum ada kelas aktif yang perlu diatur
 									{/if}
 								</h3>
 								<p class="decision-summary">
@@ -1725,7 +1973,7 @@
 								{#if primaryConflict}
 									<section class="decision-primary">
 										<div class="decision-primary-copy">
-											<span>Bentrok paling dekat</span>
+											<span>Bentrok terdekat</span>
 											<strong>{primaryConflict.course}</strong>
 											<p>
 												{DAY_LABELS[primaryConflict.day]} • {primaryConflict.startLabel} - {primaryConflict.endLabel}
@@ -1734,14 +1982,14 @@
 										</div>
 										{#if additionalConflictCount > 0}
 											<p class="decision-secondary-count">
-												+{additionalConflictCount} bentrok lain masih menunggu keputusan
+												+{additionalConflictCount} bentrok lain masih menunggu tindak lanjut
 											</p>
 										{/if}
 									</section>
 								{:else if nextSchedule}
 									<section class="decision-primary decision-primary-steady">
 										<div class="decision-primary-copy">
-											<span>Sesi berikutnya</span>
+											<span>Kelas berikutnya</span>
 											<strong>{nextSchedule.course}</strong>
 											<p>
 												{DAY_LABELS[nextSchedule.day]} • {nextSchedule.startLabel} - {nextSchedule.endLabel}
@@ -1753,7 +2001,7 @@
 
 								<div class="decision-actions">
 									<Button class="primary-button" onclick={() => activateView('builder')}
-										>Buka pembuat jadwal</Button
+										>Buka penjadwalan</Button
 									>
 									<Button
 										class="ghost-button"
@@ -1765,16 +2013,17 @@
 
 							<aside class="decision-notes">
 								<div class="decision-note-row">
-									<span>Fokus saat ini</span>
+									<span>Fokus hari ini</span>
 									<strong>{dashboardFocusLabel(currentUser.current.role as AppRole)}</strong>
 								</div>
 								<div class="decision-note-row">
-									<span>Ruang longgar</span>
-									<strong>{underusedRooms} ruang masih bisa dipadatkan</strong>
+									<span>Ruang belum padat</span>
+									<strong>{underusedRooms} ruang masih bisa dioptimalkan</strong>
 								</div>
 								<div class="decision-note-row">
-									<span>Sesi berikutnya</span>
-									<strong>{nextSchedule ? nextSchedule.course : 'Belum ada sesi terjadwal'}</strong>
+									<span>Kelas berikutnya</span>
+									<strong>{nextSchedule ? nextSchedule.course : 'Belum ada kelas terjadwal'}</strong
+									>
 								</div>
 							</aside>
 						</section>
@@ -1793,13 +2042,22 @@
 
 			{#if activeView === 'calendar'}
 				<div class="calendar-layout">
-					<WeeklyCalendar
-						title="Kalender kuliah mingguan"
-						subtitle=""
-						cards={scheduleCards}
-						selectedId={selectedSchedule?.id ?? null}
-						onSelect={(card) => (selectedScheduleId = card.id)}
-					/>
+					<section class="calendar-surface">
+						<header class="surface-head">
+							<div>
+								<p class="surface-kicker">Kalender</p>
+								<h2>Kalender kuliah mingguan</h2>
+							</div>
+						</header>
+
+						<div class="event-calendar-host">
+							{#if EventCalendarComponent}
+								<EventCalendarComponent plugins={calendarPlugins} options={calendarOptions} />
+							{:else}
+								<div class="calendar-loading">Memuat kalender...</div>
+							{/if}
+						</div>
+					</section>
 
 					<section
 						class="detail-card"
@@ -1822,7 +2080,7 @@
 									size="sm"
 									onclick={() => openBuilderForSchedule(selectedSchedule)}
 								>
-									Buka di pembuat jadwal
+									Buka di penjadwalan
 								</Button>
 							</div>
 							<div class="detail-lines">
@@ -1849,7 +2107,7 @@
 							</div>
 							{#if selectedScheduleOverlapPeers.length}
 								<section class="calendar-overlap-panel">
-									<h4>Jadwal beririsan di slot ini</h4>
+									<h4>Jadwal lain pada slot ini</h4>
 									<div class="calendar-overlap-list">
 										{#each selectedScheduleOverlapPeers as peer (peer.id)}
 											<div
@@ -1886,7 +2144,7 @@
 								</section>
 							{/if}
 						{:else}
-							<p class="empty-copy">Pilih satu blok jadwal untuk melihat detailnya.</p>
+							<p class="empty-copy">Pilih satu blok jadwal untuk melihat detail kelas.</p>
 						{/if}
 					</section>
 				</div>
@@ -1897,18 +2155,13 @@
 					<section class="workspace-list builder-list">
 						<div class="pane-head">
 							<div>
-								<h3>{builderTaskMode ? 'Daftar terkait' : 'Jadwal berjalan'}</h3>
-								<p class="pane-copy">
-									{builderTaskMode
-										? 'Daftar ini dipakai untuk berpindah cepat ke jadwal lain tanpa keluar dari mode penjadwalan.'
-										: 'Pilih jadwal yang ingin ditinjau ulang atau mulai jadwal baru dari daftar ini.'}
-								</p>
+								<h3>{builderTaskMode ? 'Jadwal terkait' : 'Jadwal aktif'}</h3>
 							</div>
 							<Button
 								variant="ghost"
 								size="sm"
 								class="ghost-button"
-								onclick={() => clearSelection('builder')}>Jadwal baru</Button
+								onclick={() => clearSelection('builder')}>Tambah jadwal</Button
 							>
 						</div>
 
@@ -1916,10 +2169,14 @@
 							<Search size={16} />
 							<input
 								bind:value={enrollmentSearch}
-								aria-label="Cari KRS"
+								aria-label="Cari jadwal kuliah"
 								placeholder="Cari mahasiswa, mata kuliah, atau ruang"
 							/>
 						</label>
+
+						<div class="list-summary">
+							<span>{filteredEnrollments.length} jadwal ditemukan</span>
+						</div>
 
 						<div class="list-stack">
 							{#each filteredEnrollments as item (item.id)}
@@ -1958,12 +2215,7 @@
 					<section class="workspace-detail builder-detail">
 						<div class="pane-head compact">
 							<div>
-								<h3>{selectedEnrollmentId ? 'Ubah jadwal terpilih' : 'Buat jadwal baru'}</h3>
-								<p class="pane-copy">
-									{selectedEnrollmentId
-										? 'Fokuskan perubahan pada peserta, waktu, dan ruang. Daftar lain tetap tersedia, tetapi tidak lagi memimpin halaman.'
-										: 'Kerjakan penjadwalan satu keputusan pada satu waktu: pilih peserta, tetapkan slot, lalu kunci ruang.'}
-								</p>
+								<h3>{selectedEnrollmentId ? 'Edit jadwal terpilih' : 'Tambah jadwal baru'}</h3>
 								{#if selectedEnrollmentScheduleCard?.hasConflict && selectedEnrollmentConflictSummary}
 									<p
 										class="builder-conflict-copy"
@@ -2006,7 +2258,7 @@
 						{/if}
 
 						{#if currentUser.current.role !== 'STUDENT'}
-							<div class="builder-progress" aria-label="Tahapan pembuat jadwal">
+							<div class="builder-progress" aria-label="Tahapan penjadwalan">
 								{#each builderSteps as step, index (step.id)}
 									<button
 										type="button"
@@ -2052,7 +2304,7 @@
 									<div>
 										<span>Waktu</span>
 										<strong>{draftTimeSummary}</strong>
-										<p>{availableRoomOptions.length} ruang cocok untuk slot ini</p>
+										<p>{availableRoomOptions.length} ruang tersedia untuk slot ini</p>
 									</div>
 									<div>
 										<span>Ruang</span>
@@ -2063,7 +2315,7 @@
 
 								<section class:hidden-stage={builderStep !== 'participant'} class="builder-section">
 									<div class="builder-section-head">
-										<h4>Tentukan pemilik jadwal</h4>
+										<h4>Pilih peserta dan mata kuliah</h4>
 										<p class="builder-note">
 											Pilih mahasiswa dan mata kuliah dulu agar cek waktu dan ruang tetap relevan.
 										</p>
@@ -2071,38 +2323,120 @@
 									<div class="editor-grid">
 										<label>
 											<span>Mahasiswa</span>
-											<select
+											<input
+												type="hidden"
 												{...selectedEnrollmentId
-													? updateEnrollment.fields.studentId.as('select')
-													: createEnrollment.fields.studentId.as('select')}
+													? updateEnrollment.fields.studentId.as('text')
+													: createEnrollment.fields.studentId.as('text')}
 												bind:value={enrollmentDraft.studentId}
+											/>
+											<!-- svelte-ignore a11y_no_static_element_interactions -->
+											<div
+												class="combobox-wrap"
+												onfocusout={(e) => {
+													if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+														studentPickerOpen = false;
+													}
+												}}
 											>
-												<option value="">Pilih mahasiswa</option>
+												<input
+													type="text"
+													class="combobox-input"
+													placeholder="Cari mahasiswa..."
+													value={enrollmentDraft.studentId
+														? `${students.find((s) => s.id === enrollmentDraft.studentId)?.name ?? ''} • ${enrollmentDraft.studentId}`
+														: studentPickerSearch}
+													oninput={(e) => {
+														studentPickerSearch = (e.currentTarget as HTMLInputElement).value;
+														if (enrollmentDraft.studentId) enrollmentDraft.studentId = '';
+														studentPickerOpen = true;
+													}}
+													onfocus={() => (studentPickerOpen = true)}
+												/>
 												{#if collectionIssues.students && !students.length}
-													<option value="" disabled>{collectionIssues.students}</option>
+													<p class="combobox-error">{collectionIssues.students}</p>
+												{:else if studentPickerOpen && filteredStudentsForPicker.length}
+													<div class="combobox-dropdown" role="listbox">
+														{#each filteredStudentsForPicker as item (item.id)}
+															<button
+																type="button"
+																role="option"
+																aria-selected={enrollmentDraft.studentId === item.id}
+																class="combobox-option"
+																class:active={enrollmentDraft.studentId === item.id}
+																onmousedown={(e) => {
+																	e.preventDefault();
+																	enrollmentDraft.studentId = item.id;
+																	studentPickerSearch = '';
+																	studentPickerOpen = false;
+																}}
+															>
+																<strong>{item.name}</strong>
+																<span>{item.id}</span>
+															</button>
+														{/each}
+													</div>
 												{/if}
-												{#each students as item (item.id)}
-													<option value={item.id}>{item.name} • {item.id}</option>
-												{/each}
-											</select>
+											</div>
 										</label>
 
 										<label>
 											<span>Mata kuliah</span>
-											<select
+											<input
+												type="hidden"
 												{...selectedEnrollmentId
-													? updateEnrollment.fields.courseId.as('select')
-													: createEnrollment.fields.courseId.as('select')}
+													? updateEnrollment.fields.courseId.as('text')
+													: createEnrollment.fields.courseId.as('text')}
 												bind:value={enrollmentDraft.courseId}
+											/>
+											<!-- svelte-ignore a11y_no_static_element_interactions -->
+											<div
+												class="combobox-wrap"
+												onfocusout={(e) => {
+													if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+														coursePickerOpen = false;
+													}
+												}}
 											>
-												<option value="">Pilih mata kuliah</option>
+												<input
+													type="text"
+													class="combobox-input"
+													placeholder="Cari mata kuliah..."
+													value={enrollmentDraft.courseId
+														? `${courses.find((c) => c.id === enrollmentDraft.courseId)?.name ?? ''} • ${courses.find((c) => c.id === enrollmentDraft.courseId)?.lecturer_name ?? ''}`
+														: coursePickerSearch}
+													oninput={(e) => {
+														coursePickerSearch = (e.currentTarget as HTMLInputElement).value;
+														if (enrollmentDraft.courseId) enrollmentDraft.courseId = '';
+														coursePickerOpen = true;
+													}}
+													onfocus={() => (coursePickerOpen = true)}
+												/>
 												{#if collectionIssues.courses && !courses.length}
-													<option value="" disabled>{collectionIssues.courses}</option>
+													<p class="combobox-error">{collectionIssues.courses}</p>
+												{:else if coursePickerOpen && filteredCoursesForPicker.length}
+													<div class="combobox-dropdown" role="listbox">
+														{#each filteredCoursesForPicker as item (item.id)}
+															<button
+																type="button"
+																role="option"
+																aria-selected={enrollmentDraft.courseId === item.id}
+																class="combobox-option"
+																class:active={enrollmentDraft.courseId === item.id}
+																onmousedown={(e) => {
+																	e.preventDefault();
+																	enrollmentDraft.courseId = item.id;
+																	coursePickerSearch = '';
+																	coursePickerOpen = false;
+																}}
+															>
+																<strong>{item.name}</strong>
+																<span>{item.id} • {item.lecturer_name}</span>
+															</button>
+														{/each}
+													</div>
 												{/if}
-												{#each courses as item (item.id)}
-													<option value={item.id}>{item.name} • {item.lecturer_name}</option>
-												{/each}
-											</select>
+											</div>
 										</label>
 									</div>
 									<div class="builder-section-actions">
@@ -2113,14 +2447,14 @@
 											type="button"
 											class="primary-button"
 											disabled={!participantStepReady}
-											onclick={advanceBuilderStep}>Lanjut ke waktu</Button
+											onclick={advanceBuilderStep}>Lanjut ke jadwal</Button
 										>
 									</div>
 								</section>
 
 								<section class:hidden-stage={builderStep !== 'time'} class="builder-section">
 									<div class="builder-section-head">
-										<h4>Tetapkan ritme perkuliahan</h4>
+										<h4>Tentukan hari dan jam</h4>
 										<p class="builder-note">
 											Masukkan hari dan jam final. Daftar ruang akan mengikuti slot ini.
 										</p>
@@ -2184,7 +2518,7 @@
 									</div>
 									<div class="builder-section-actions split">
 										<p class="editor-note">
-											Kalau jam berubah, cek ulang pilihan ruang di langkah berikutnya.
+											Jika jam berubah, periksa lagi pilihan ruang di langkah berikutnya.
 										</p>
 										<div class="builder-inline-actions">
 											<Button
@@ -2205,9 +2539,9 @@
 
 								<section class:hidden-stage={builderStep !== 'room'} class="builder-section">
 									<div class="builder-section-head">
-										<h4>Pilih ruang yang paling aman</h4>
+										<h4>Pilih ruang yang tersedia</h4>
 										<p class="builder-note">
-											Pilih satu ruang yang masih aman untuk slot ini, lalu lanjut ke tinjau akhir.
+											Pilih satu ruang yang tersedia untuk slot ini, lalu lanjut ke langkah tinjau.
 										</p>
 									</div>
 									<div class="builder-room-stage">
@@ -2229,7 +2563,7 @@
 										</div>
 
 										<section class="support-panel builder-support">
-											<h4>{availableRoomOptions.length} ruang cocok untuk slot ini</h4>
+											<h4>{availableRoomOptions.length} ruang tersedia untuk slot ini</h4>
 											<div class="support-list">
 												{#if availableRoomOptions.length}
 													{#each availableRoomOptions.slice(0, 4) as room (room.id)}
@@ -2242,8 +2576,8 @@
 													{/each}
 												{:else}
 													<p class="empty-copy">
-														Belum ada ruang yang aman untuk slot ini. Ubah waktu atau pilih ruang
-														dengan kapasitas berbeda.
+														Belum ada ruang yang tersedia untuk slot ini. Ubah jadwal atau pilih
+														slot lain.
 													</p>
 												{/if}
 											</div>
@@ -2251,7 +2585,7 @@
 									</div>
 									<div class="builder-section-actions split">
 										<p class="editor-note">
-											Kalau daftar ruang kosong, ubah jam dulu sebelum melanjutkan.
+											Jika daftar ruang kosong, ubah jadwal lebih dulu sebelum melanjutkan.
 										</p>
 										<div class="builder-inline-actions">
 											<Button
@@ -2275,7 +2609,7 @@
 									class="builder-section builder-review"
 								>
 									<div class="builder-section-head">
-										<h4>Tinjau keputusan sebelum disimpan</h4>
+										<h4>Tinjau sebelum disimpan</h4>
 										<p class="builder-note">
 											Pastikan peserta, slot, dan ruang sudah benar sebelum disimpan.
 										</p>
@@ -2300,7 +2634,7 @@
 									</div>
 									<div class="builder-review-note">
 										<p class="editor-note">
-											Kalau masih ragu, kembali satu langkah dan koreksi waktu atau ruang sebelum
+											Jika masih ragu, kembali satu langkah lalu perbaiki waktu atau ruang sebelum
 											simpan.
 										</p>
 										<div class="builder-inline-actions">
@@ -2311,14 +2645,14 @@
 												onclick={retreatBuilderStep}>Kembali</Button
 											>
 											<Button type="submit" class="primary-button builder-submit"
-												>{selectedEnrollmentId ? 'Simpan perubahan' : 'Buat jadwal'}</Button
+												>{selectedEnrollmentId ? 'Simpan perubahan' : 'Simpan jadwal'}</Button
 											>
 										</div>
 									</div>
 								</section>
 							</form>
 						{:else}
-							<p class="empty-copy">Mahasiswa hanya memiliki akses baca untuk jadwal dan KRS.</p>
+							<p class="empty-copy">Mahasiswa hanya dapat melihat jadwal dan KRS.</p>
 						{/if}
 					</section>
 				</div>
@@ -2329,20 +2663,20 @@
 					<section class="workspace-list">
 						<div class="pane-head">
 							<div>
-								<h3>Inventaris ruang aktif</h3>
+								<h3>Daftar ruang</h3>
 							</div>
 							<Button
 								variant="ghost"
 								size="sm"
 								class="ghost-button"
-								onclick={() => beginCreate('classrooms')}>Baru</Button
+								onclick={() => beginCreate('classrooms')}>Tambah</Button
 							>
 						</div>
 						<label class="search-box"
 							><Search size={16} /><input
 								bind:value={roomSearch}
-								aria-label="Cari ruang kelas"
-								placeholder="Cari nama ruang atau tipe"
+								aria-label="Cari ruang"
+								placeholder="Cari nama ruang atau jenis ruang"
 							/></label
 						>
 						<div class="list-stack">
@@ -2366,7 +2700,7 @@
 					<section class="workspace-detail">
 						<div class="pane-head compact">
 							<div>
-								<h3>{selectedRoom ? selectedRoom.name : 'Tambah ruang baru'}</h3>
+								<h3>{selectedRoom ? selectedRoom.name : 'Tambah ruang'}</h3>
 							</div>
 							{#if currentUser.current.role === 'ADMIN'}
 								<div class="detail-actions">
@@ -2375,14 +2709,14 @@
 											variant="ghost"
 											size="sm"
 											class="ghost-button"
-											onclick={() => stopEditing('classrooms')}>Tutup editor</Button
+											onclick={() => stopEditing('classrooms')}>Tutup form</Button
 										>
 									{:else if selectedRoom}
 										<Button
 											variant="ghost"
 											size="sm"
 											class="ghost-button"
-											onclick={() => beginEdit('classrooms')}>Ubah</Button
+											onclick={() => beginEdit('classrooms')}>Edit</Button
 										>
 									{/if}
 									{#if selectedRoomId}
@@ -2433,8 +2767,7 @@
 									<div><span>AC</span><strong>{selectedRoom.has_ac ? 'Ya' : 'Tidak'}</strong></div>
 								</div>
 								<p class="detail-hint">
-									Tinjau ringkasan ruang terlebih dahulu. Buka editor hanya saat perlu mengubah
-									data.
+									Tinjau ringkasan ruang lebih dulu. Buka form edit hanya saat data perlu diubah.
 								</p>
 							</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'classrooms'}
 							<form
@@ -2500,8 +2833,8 @@
 									>{selectedRoomId ? 'Simpan perubahan' : 'Tambah ruang'}</Button
 								>
 							</form>{:else}<p class="empty-copy">
-								Pilih satu ruang untuk meninjau detail, atau mulai entri baru saat perlu menambah
-								inventaris.
+								Pilih satu ruang untuk melihat detail, atau tambahkan ruang baru saat inventaris
+								berubah.
 							</p>{/if}
 					</section>
 				</div>
@@ -2512,20 +2845,20 @@
 					<section class="workspace-list">
 						<div class="pane-head">
 							<div>
-								<h3>Katalog perkuliahan</h3>
+								<h3>Daftar mata kuliah</h3>
 							</div>
 							<Button
 								variant="ghost"
 								size="sm"
 								class="ghost-button"
-								onclick={() => beginCreate('courses')}>Baru</Button
+								onclick={() => beginCreate('courses')}>Tambah</Button
 							>
 						</div>
 						<label class="search-box"
 							><Search size={16} /><input
 								bind:value={courseSearch}
-								aria-label="Cari mata kuliah"
-								placeholder="Cari kode, nama, atau dosen"
+								aria-label="Cari data mata kuliah"
+								placeholder="Cari kode, nama, atau dosen pengampu"
 							/></label
 						>
 						<div class="list-stack">
@@ -2546,7 +2879,7 @@
 					<section class="workspace-detail">
 						<div class="pane-head compact">
 							<div>
-								<h3>{selectedCourse ? selectedCourse.name : 'Tambah mata kuliah baru'}</h3>
+								<h3>{selectedCourse ? selectedCourse.name : 'Tambah mata kuliah'}</h3>
 							</div>
 							{#if currentUser.current.role === 'ADMIN'}
 								<div class="detail-actions">
@@ -2555,14 +2888,14 @@
 											variant="ghost"
 											size="sm"
 											class="ghost-button"
-											onclick={() => stopEditing('courses')}>Tutup editor</Button
+											onclick={() => stopEditing('courses')}>Tutup form</Button
 										>
 									{:else if selectedCourse}
 										<Button
 											variant="ghost"
 											size="sm"
 											class="ghost-button"
-											onclick={() => beginEdit('courses')}>Ubah</Button
+											onclick={() => beginEdit('courses')}>Edit</Button
 										>
 									{/if}
 									{#if selectedCourseId}
@@ -2622,7 +2955,7 @@
 										{...updateCourse.fields.id.as('text')}
 										bind:value={courseDraft.id}
 									/>{:else}<p class="editor-note">
-										Kode mata kuliah dibuat otomatis saat disimpan.
+										Kode mata kuliah dibuat otomatis saat data disimpan.
 									</p>{/if}<label
 									><span>Nama mata kuliah</span><input
 										{...selectedCourseId
@@ -2668,7 +3001,7 @@
 											>{/each}</select
 									></label
 								>{#if courseEditorBlocked}<p class="editor-note">
-										Program studi dan dosen harus tersedia sebelum mata kuliah dapat disimpan.
+										Program studi dan dosen harus tersedia sebelum mata kuliah bisa disimpan.
 									</p>{/if}<Button
 									type="submit"
 									class="primary-button"
@@ -2676,8 +3009,8 @@
 									>{selectedCourseId ? 'Simpan perubahan' : 'Tambah mata kuliah'}</Button
 								>
 							</form>{:else}<p class="empty-copy">
-								Pilih satu mata kuliah untuk meninjau detail, atau buka editor saat perlu menambah
-								katalog baru.
+								Pilih satu mata kuliah untuk melihat detail, atau tambahkan mata kuliah baru saat
+								katalog berubah.
 							</p>{/if}
 					</section>
 				</div>
@@ -2694,13 +3027,13 @@
 								variant="ghost"
 								size="sm"
 								class="ghost-button"
-								onclick={() => beginCreate('students')}>Baru</Button
+								onclick={() => beginCreate('students')}>Tambah</Button
 							>
 						</div>
 						<label class="search-box"
 							><Search size={16} /><input
 								bind:value={studentSearch}
-								aria-label="Cari mahasiswa"
+								aria-label="Cari data mahasiswa"
 								placeholder="Cari NRP, nama, atau program studi"
 							/></label
 						>
@@ -2720,7 +3053,7 @@
 					<section class="workspace-detail">
 						<div class="pane-head compact">
 							<div>
-								<h3>{selectedStudent ? selectedStudent.name : 'Tambah mahasiswa baru'}</h3>
+								<h3>{selectedStudent ? selectedStudent.name : 'Tambah mahasiswa'}</h3>
 							</div>
 							{#if currentUser.current.role === 'ADMIN'}
 								<div class="detail-actions">
@@ -2729,14 +3062,14 @@
 											variant="ghost"
 											size="sm"
 											class="ghost-button"
-											onclick={() => stopEditing('students')}>Tutup editor</Button
+											onclick={() => stopEditing('students')}>Tutup form</Button
 										>
 									{:else if selectedStudent}
 										<Button
 											variant="ghost"
 											size="sm"
 											class="ghost-button"
-											onclick={() => beginEdit('students')}>Ubah</Button
+											onclick={() => beginEdit('students')}>Edit</Button
 										>
 									{/if}
 									{#if selectedStudentId}
@@ -2843,7 +3176,7 @@
 											>{/each}</select
 									></label
 								>{#if studentEditorBlocked}<p class="editor-note">
-										Program studi harus tersedia sebelum data mahasiswa dapat disimpan.
+										Program studi harus tersedia sebelum data mahasiswa bisa disimpan.
 									</p>{/if}<Button
 									type="submit"
 									class="primary-button"
@@ -2851,8 +3184,8 @@
 									>{selectedStudentId ? 'Simpan perubahan' : 'Tambah mahasiswa'}</Button
 								>
 							</form>{:else}<p class="empty-copy">
-								Pilih satu mahasiswa untuk meninjau profil, atau mulai entri baru saat perlu
-								menambah data aktif.
+								Pilih satu mahasiswa untuk melihat profil, atau tambahkan mahasiswa baru saat data
+								aktif berubah.
 							</p>{/if}
 					</section>
 				</div>
@@ -2863,20 +3196,20 @@
 					<section class="workspace-list">
 						<div class="pane-head">
 							<div>
-								<h3>Tenaga pengampu</h3>
+								<h3>Daftar dosen</h3>
 							</div>
 							{#if currentUser.current.role === 'ADMIN'}<Button
 									variant="ghost"
 									size="sm"
 									class="ghost-button"
-									onclick={() => beginCreate('lecturers')}>Baru</Button
+									onclick={() => beginCreate('lecturers')}>Tambah</Button
 								>{/if}
 						</div>
 						<label class="search-box"
 							><Search size={16} /><input
 								bind:value={lecturerSearch}
-								aria-label="Cari dosen"
-								placeholder="Cari NIM, nama, atau email"
+								aria-label="Cari data dosen"
+								placeholder="Cari ID dosen, nama, atau email"
 							/></label
 						>
 						<div class="list-stack">
@@ -2893,7 +3226,7 @@
 					<section class="workspace-detail">
 						<div class="pane-head compact">
 							<div>
-								<h3>{selectedLecturer ? selectedLecturer.name : 'Tambah dosen baru'}</h3>
+								<h3>{selectedLecturer ? selectedLecturer.name : 'Tambah dosen'}</h3>
 							</div>
 							{#if currentUser.current.role === 'ADMIN'}
 								<div class="detail-actions">
@@ -2902,14 +3235,14 @@
 											variant="ghost"
 											size="sm"
 											class="ghost-button"
-											onclick={() => stopEditing('lecturers')}>Tutup editor</Button
+											onclick={() => stopEditing('lecturers')}>Tutup form</Button
 										>
 									{:else if selectedLecturer}
 										<Button
 											variant="ghost"
 											size="sm"
 											class="ghost-button"
-											onclick={() => beginEdit('lecturers')}>Ubah</Button
+											onclick={() => beginEdit('lecturers')}>Edit</Button
 										>
 									{/if}
 									{#if selectedLecturerId}
@@ -2955,7 +3288,7 @@
 									</div>
 								</div>
 								<p class="detail-hint">
-									Mode tinjau menjaga konteks pengampu tetap ringkas sebelum Anda membuka editor.
+									Mode tinjau membantu Anda membaca konteks dosen sebelum membuka form edit.
 								</p>
 							</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'lecturers'}<form
 								class="editor-grid"
@@ -2966,7 +3299,7 @@
 										{...updateLecturer.fields.id.as('text')}
 										bind:value={lecturerDraft.id}
 									/>{:else}<p class="editor-note">
-										ID dosen dibuat otomatis saat disimpan.
+										ID dosen dibuat otomatis saat data disimpan.
 									</p>{/if}<label
 									><span>Nama</span><input
 										{...selectedLecturerId
@@ -2999,8 +3332,8 @@
 									>{selectedLecturerId ? 'Simpan perubahan' : 'Tambah dosen'}</Button
 								>
 							</form>{:else}<p class="empty-copy">
-								Pilih satu dosen untuk meninjau detail, atau mulai entri baru saat perlu menambah
-								pengampu.
+								Pilih satu dosen untuk melihat detail, atau tambahkan dosen baru saat data pengampu
+								berubah.
 							</p>{/if}
 					</section>
 				</div>
@@ -3011,19 +3344,19 @@
 					<section class="workspace-list">
 						<div class="pane-head">
 							<div>
-								<h3>Struktur fakultas</h3>
+								<h3>Daftar fakultas</h3>
 							</div>
 							<Button
 								variant="ghost"
 								size="sm"
 								class="ghost-button"
-								onclick={() => beginCreate('faculties')}>Baru</Button
+								onclick={() => beginCreate('faculties')}>Tambah</Button
 							>
 						</div>
 						<label class="search-box"
 							><Search size={16} /><input
 								bind:value={facultySearch}
-								aria-label="Cari fakultas"
+								aria-label="Cari data fakultas"
 								placeholder="Cari kode atau nama fakultas"
 							/></label
 						>
@@ -3041,7 +3374,7 @@
 					<section class="workspace-detail">
 						<div class="pane-head compact">
 							<div>
-								<h3>{selectedFaculty ? selectedFaculty.name : 'Tambah fakultas baru'}</h3>
+								<h3>{selectedFaculty ? selectedFaculty.name : 'Tambah fakultas'}</h3>
 							</div>
 							{#if currentUser.current.role === 'ADMIN'}
 								<div class="detail-actions">
@@ -3050,14 +3383,14 @@
 											variant="ghost"
 											size="sm"
 											class="ghost-button"
-											onclick={() => stopEditing('faculties')}>Tutup editor</Button
+											onclick={() => stopEditing('faculties')}>Tutup form</Button
 										>
 									{:else if selectedFaculty}
 										<Button
 											variant="ghost"
 											size="sm"
 											class="ghost-button"
-											onclick={() => beginEdit('faculties')}>Ubah</Button
+											onclick={() => beginEdit('faculties')}>Edit</Button
 										>
 									{/if}
 									{#if selectedFacultyId}
@@ -3102,8 +3435,8 @@
 									</div>
 								</div>
 								<p class="detail-hint">
-									Tinjau ringkasan struktur dulu. Buka editor hanya untuk perubahan yang memang
-									diperlukan.
+									Tinjau ringkasan struktur lebih dulu. Buka form edit hanya untuk perubahan yang
+									memang diperlukan.
 								</p>
 							</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'faculties'}<form
 								class="editor-grid"
@@ -3114,7 +3447,7 @@
 										{...updateFaculty.fields.id.as('text')}
 										bind:value={facultyDraft.id}
 									/>{:else}<p class="editor-note">
-										ID fakultas dibuat otomatis saat disimpan.
+										ID fakultas dibuat otomatis saat data disimpan.
 									</p>{/if}<label
 									><span>Nama fakultas</span><input
 										{...selectedFacultyId
@@ -3126,8 +3459,8 @@
 									>{selectedFacultyId ? 'Simpan perubahan' : 'Tambah fakultas'}</Button
 								>
 							</form>{:else}<p class="empty-copy">
-								Pilih satu fakultas untuk meninjau struktur, atau mulai entri baru saat perlu
-								menambah unit.
+								Pilih satu fakultas untuk melihat detail, atau tambahkan fakultas baru saat struktur
+								berubah.
 							</p>{/if}
 					</section>
 				</div>
@@ -3138,19 +3471,19 @@
 					<section class="workspace-list">
 						<div class="pane-head">
 							<div>
-								<h3>Peta program studi</h3>
+								<h3>Daftar program studi</h3>
 							</div>
 							<Button
 								variant="ghost"
 								size="sm"
 								class="ghost-button"
-								onclick={() => beginCreate('studyPrograms')}>Baru</Button
+								onclick={() => beginCreate('studyPrograms')}>Tambah</Button
 							>
 						</div>
 						<label class="search-box"
 							><Search size={16} /><input
 								bind:value={studyProgramSearch}
-								aria-label="Cari program studi"
+								aria-label="Cari data program studi"
 								placeholder="Cari kode, nama, atau fakultas"
 							/></label
 						>
@@ -3171,7 +3504,7 @@
 						<div class="pane-head compact">
 							<div>
 								<h3>
-									{selectedStudyProgram ? selectedStudyProgram.name : 'Tambah program studi baru'}
+									{selectedStudyProgram ? selectedStudyProgram.name : 'Tambah program studi'}
 								</h3>
 							</div>
 							{#if currentUser.current.role === 'ADMIN'}
@@ -3181,14 +3514,14 @@
 											variant="ghost"
 											size="sm"
 											class="ghost-button"
-											onclick={() => stopEditing('studyPrograms')}>Tutup editor</Button
+											onclick={() => stopEditing('studyPrograms')}>Tutup form</Button
 										>
 									{:else if selectedStudyProgram}
 										<Button
 											variant="ghost"
 											size="sm"
 											class="ghost-button"
-											onclick={() => beginEdit('studyPrograms')}>Ubah</Button
+											onclick={() => beginEdit('studyPrograms')}>Edit</Button
 										>
 									{/if}
 									{#if selectedStudyProgramId}
@@ -3248,7 +3581,7 @@
 										{...updateStudyProgram.fields.id.as('text')}
 										bind:value={studyProgramDraft.id}
 									/>{:else}<p class="editor-note">
-										ID program studi dibuat otomatis saat disimpan.
+										ID program studi dibuat otomatis saat data disimpan.
 									</p>{/if}<label
 									><span>Nama prodi</span><input
 										{...selectedStudyProgramId
@@ -3277,7 +3610,7 @@
 											>{/each}</select
 									></label
 								>{#if studyProgramEditorBlocked}<p class="editor-note">
-										Fakultas harus tersedia sebelum program studi dapat disimpan.
+										Fakultas harus tersedia sebelum program studi bisa disimpan.
 									</p>{/if}<Button
 									type="submit"
 									class="primary-button"
@@ -3285,8 +3618,8 @@
 									>{selectedStudyProgramId ? 'Simpan perubahan' : 'Tambah program studi'}</Button
 								>
 							</form>{:else}<p class="empty-copy">
-								Pilih satu program studi untuk meninjau detail, atau mulai entri baru saat perlu
-								menambah struktur akademik.
+								Pilih satu program studi untuk melihat detail, atau tambahkan program studi baru
+								saat struktur akademik berubah.
 							</p>{/if}
 					</section>
 				</div>
@@ -3297,13 +3630,13 @@
 					<section class="workspace-list">
 						<div class="pane-head">
 							<div>
-								<h3>Daftar pengambilan mata kuliah</h3>
+								<h3>KRS aktif</h3>
 							</div>
 						</div>
 						<label class="search-box"
 							><Search size={16} /><input
 								bind:value={enrollmentSearch}
-								aria-label="Cari pengambilan mata kuliah"
+								aria-label="Cari KRS aktif"
 								placeholder="Cari mahasiswa, mata kuliah, atau ruang"
 							/></label
 						>
@@ -3343,9 +3676,7 @@
 										)}</strong
 									>
 								</div>
-							</div>{:else}<p class="empty-copy">
-								Pilih satu baris untuk meninjau detail KRS.
-							</p>{/if}
+							</div>{:else}<p class="empty-copy">Pilih satu baris untuk melihat detail KRS.</p>{/if}
 					</section>
 				</div>
 			{/if}
@@ -3355,20 +3686,20 @@
 					<section class="workspace-list">
 						<div class="pane-head">
 							<div>
-								<h3>Input dan evaluasi hasil</h3>
+								<h3>Daftar nilai</h3>
 							</div>
 							{#if currentUser.current.role !== 'STUDENT'}<Button
 									variant="ghost"
 									size="sm"
 									class="ghost-button"
-									onclick={() => beginCreate('grades')}>Baru</Button
+									onclick={() => beginCreate('grades')}>Tambah</Button
 								>{/if}
 						</div>
 						<label class="search-box"
 							><Search size={16} /><input
 								bind:value={gradeSearch}
-								aria-label="Cari nilai"
-								placeholder="Cari mahasiswa, mata kuliah, atau huruf nilai"
+								aria-label="Cari data nilai"
+								placeholder="Cari mahasiswa, mata kuliah, atau nilai huruf"
 							/></label
 						>
 						<div class="list-stack">
@@ -3402,14 +3733,14 @@
 											variant="ghost"
 											size="sm"
 											class="ghost-button"
-											onclick={() => stopEditing('grades')}>Tutup editor</Button
+											onclick={() => stopEditing('grades')}>Tutup form</Button
 										>
 									{:else if selectedGrade}
 										<Button
 											variant="ghost"
 											size="sm"
 											class="ghost-button"
-											onclick={() => beginEdit('grades')}>Ubah</Button
+											onclick={() => beginEdit('grades')}>Edit</Button
 										>
 									{/if}
 									{#if selectedGradeId}
@@ -3456,7 +3787,7 @@
 									</div>
 								</div>
 								<p class="detail-hint">
-									Mode tinjau memisahkan pembacaan hasil dari proses edit nilai yang lebih sensitif.
+									Mode tinjau memisahkan peninjauan hasil dari proses edit nilai.
 								</p>
 							</div>{:else if currentUser.current.role !== 'STUDENT' && editorView === 'grades'}<form
 								class="editor-grid"
@@ -3508,7 +3839,7 @@
 										bind:value={gradeDraft.finalScore}
 									/></label
 								>{#if gradeEditorBlocked}<p class="editor-note">
-										Data KRS harus tersedia sebelum nilai dapat disimpan.
+										Data KRS harus tersedia sebelum nilai bisa disimpan.
 									</p>{/if}<Button
 									type="submit"
 									class="primary-button"
@@ -3516,8 +3847,8 @@
 									>{selectedGradeId ? 'Simpan perubahan' : 'Simpan nilai'}</Button
 								>
 							</form>{:else}<p class="empty-copy">
-								Pilih satu nilai untuk meninjau hasil, atau mulai input baru saat perlu menambah
-								evaluasi.
+								Pilih satu nilai untuk melihat hasil, atau tambahkan nilai baru saat evaluasi perlu
+								dicatat.
 							</p>{/if}
 					</section>
 				</div>
@@ -3528,13 +3859,13 @@
 					<section class="workspace-list">
 						<div class="pane-head">
 							<div>
-								<h3>Daftar akun terhubung</h3>
+								<h3>Akun pengguna</h3>
 							</div>
 						</div>
 						<label class="search-box"
 							><Search size={16} /><input
 								bind:value={userSearch}
-								aria-label="Cari akun"
+								aria-label="Cari akun pengguna"
 								placeholder="Cari email atau pemilik akun"
 							/></label
 						>
@@ -3546,7 +3877,7 @@
 									onclick={() => pickUser(item)}
 									><div>
 										<strong>{item.email}</strong><span
-											>{item.student_name ?? item.lecturer_name ?? 'Admin sistem'}</span
+											>{item.student_name ?? item.lecturer_name ?? 'Administrator sistem'}</span
 										>
 									</div>
 									<small>{item.role}</small></button
@@ -3556,7 +3887,7 @@
 					<section class="workspace-detail">
 						<div class="pane-head compact">
 							<div>
-								<h3>{selectedUser ? selectedUser.email : 'Pilih satu akun'}</h3>
+								<h3>{selectedUser ? selectedUser.email : 'Pilih akun'}</h3>
 							</div>
 							<div class="detail-actions">
 								{#if editorView === 'users'}
@@ -3564,7 +3895,7 @@
 										variant="ghost"
 										size="sm"
 										class="ghost-button"
-										onclick={() => stopEditing('users')}>Tutup editor</Button
+										onclick={() => stopEditing('users')}>Tutup form</Button
 									>
 								{:else if selectedUser}
 									<Button
@@ -3578,7 +3909,7 @@
 						</div>
 						{#if selectedUser && editorView !== 'users'}<div class="detail-stack">
 								<div class="detail-lines">
-									<div><span>Role</span><strong>{selectedUser.role}</strong></div>
+									<div><span>Peran</span><strong>{selectedUser.role}</strong></div>
 									<div>
 										<span>Mahasiswa</span><strong>{selectedUser.student_name ?? '-'}</strong>
 									</div>
@@ -3592,7 +3923,7 @@
 						{:else if selectedUser && editorView === 'users'}
 							<form class="editor-grid" {...updateUserEnhance}>
 								<p class="editor-note">
-									Perubahan akun memengaruhi akses login. Tinjau role dan relasi identitas sebelum
+									Perubahan akun memengaruhi akses login. Tinjau peran dan relasi identitas sebelum
 									menyimpan.
 								</p>
 								<input
@@ -3610,10 +3941,10 @@
 										{...updateUser.fields.password.as('password')}
 										autocomplete="new-password"
 										bind:value={userDraft.password}
-										placeholder="Biarkan kosong bila password tetap dipakai"
+										placeholder="Biarkan kosong jika password lama tetap dipakai"
 									/></label
 								><label
-									><span>Role akses</span><select
+									><span>Peran akses</span><select
 										{...updateUser.fields.role.as('select')}
 										bind:value={userDraft.role}
 										><option value="ADMIN">ADMIN</option><option value="STUDENT">STUDENT</option
@@ -3631,7 +3962,7 @@
 									/></label
 								><Button type="submit" class="primary-button">Simpan akun</Button>
 							</form>{:else}<p class="empty-copy">
-								Pilih satu akun untuk memperbarui email, role, atau relasi identitas.
+								Pilih satu akun untuk memperbarui email, peran, atau relasi identitas.
 							</p>{/if}
 					</section>
 				</div>
@@ -3644,11 +3975,10 @@
 			<Card.Header>
 				<Card.Title class="login-title">
 					<p class="kicker">Watum</p>
-					Masuk ke operasi akademik
+					Masuk ke Watum
 				</Card.Title>
 				<Card.Description class="login-description">
-					Dasbor ini dirancang untuk membaca jadwal mingguan, utilisasi ruang, dan perubahan data
-					akademik dengan ritme yang tenang.
+					Pantau jadwal, ruang, dan perubahan data akademik dari satu panel kerja yang ringkas.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content>
@@ -3694,20 +4024,17 @@
 
 	.app-shell {
 		display: grid;
-		grid-template-columns: 18rem minmax(0, 1fr);
+		grid-template-columns: 15.75rem minmax(0, 1fr);
 		min-height: 100vh;
-	}
-
-	.app-shell.student-app-shell {
-		grid-template-columns: 1fr;
 	}
 
 	.rail {
 		display: grid;
-		gap: 1rem;
-		padding: 1.25rem;
+		grid-template-rows: auto minmax(0, 1fr) auto;
+		gap: 1.15rem;
+		padding: 1.15rem 1rem;
 		border-right: 1px solid var(--color-border);
-		background: color-mix(in oklch, var(--color-panel) 88%, var(--color-surface) 12%);
+		background: color-mix(in oklch, var(--color-panel) 82%, var(--color-surface) 18%);
 		align-content: start;
 	}
 
@@ -3728,12 +4055,12 @@
 
 	.rail-brand {
 		display: grid;
-		gap: 0.45rem;
+		gap: 0.35rem;
 	}
 
 	.rail-brand h1 {
-		font-size: 1.42rem;
-		line-height: 1;
+		font-size: 1.28rem;
+		line-height: 1.04;
 	}
 
 	.brand-copy,
@@ -3761,7 +4088,10 @@
 	.topbar p,
 	.login-description,
 	.detail-card p,
-	.empty-copy {
+	.empty-copy,
+	.workspace-copy,
+	.list-summary p,
+	.workspace-summary p {
 		color: var(--color-muted-foreground);
 	}
 
@@ -3784,7 +4114,6 @@
 	.decision-lead,
 	.decision-actions,
 	.decision-notes,
-	.section-tabs,
 	.builder-progress,
 	.builder-form,
 	.builder-overview,
@@ -3797,9 +4126,33 @@
 	}
 
 	.rail-sections {
-		gap: 0.55rem;
+		gap: 0.95rem;
 		width: 100%;
 		min-width: 0;
+		overflow: auto;
+		align-content: start;
+	}
+
+	.rail-group {
+		display: grid;
+		gap: 0.55rem;
+	}
+
+	.rail-group-title {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+	}
+
+	.rail-group-title strong {
+		display: block;
+		font-size: 0.83rem;
+		line-height: 1.3;
+	}
+
+	.rail-links {
+		display: grid;
+		gap: 0.22rem;
 	}
 
 	:global(.nav-item),
@@ -3829,14 +4182,13 @@
 		white-space: normal;
 	}
 
-	.nav-group-copy {
+	.nav-link-copy {
 		display: grid;
-		gap: 0.18rem;
 		min-width: 0;
 		flex: 1 1 auto;
 	}
 
-	.nav-group-copy strong {
+	.nav-link-copy strong {
 		display: block;
 		font-size: 0.94rem;
 		line-height: 1.25;
@@ -3848,7 +4200,6 @@
 	}
 
 	:global(.nav-item:focus-visible),
-	:global(.section-tab:focus-visible),
 	.list-row:focus-visible,
 	.builder-progress-item:focus-visible {
 		outline: 2px solid color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
@@ -3863,63 +4214,30 @@
 
 	.main-shell {
 		display: grid;
-		gap: 1.15rem;
-		padding: 1.3rem;
+		gap: 1.25rem;
+		padding: 1.45rem 1.5rem;
 		align-content: start;
 		min-width: 0;
 	}
 
-	.main-shell.student-shell {
-		max-width: 72rem;
-		width: 100%;
-		margin: 0 auto;
-	}
-
-	.section-tabs {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.section-tabs-compact {
-		justify-content: start;
-	}
-
-	:global(.section-tab) {
-		justify-content: center;
-		flex: 0 0 auto;
-		border-radius: 0.7rem;
-		border: 1px solid var(--color-border);
-		background: var(--color-panel);
-		color: var(--color-foreground);
-	}
-
-	:global(.section-tab.selected) {
-		border-color: var(--color-accent-strong);
-		background: color-mix(in oklch, var(--color-surface) 62%, var(--color-accent-soft) 38%);
-		color: var(--color-foreground);
-		font-weight: 600;
-	}
-
 	.topbar {
-		display: flex;
-		justify-content: space-between;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
 		gap: 1rem;
-		align-items: start;
-		flex-wrap: wrap;
+		align-items: end;
+		padding-bottom: 0.15rem;
+		border-bottom: 1px solid color-mix(in oklch, var(--color-border) 86%, var(--color-surface) 14%);
 	}
 
 	.topbar-copy {
-		gap: 0.35rem;
-		max-width: 48rem;
+		gap: 0.42rem;
+		max-width: 52rem;
 		min-width: 0;
-		flex: 1 1 20rem;
 	}
 
 	.topbar-copy h2 {
-		font-size: 1.72rem;
-		line-height: 1;
+		font-size: 1.56rem;
+		line-height: 1.04;
 	}
 
 	.topbar-tools {
@@ -3929,7 +4247,6 @@
 		flex-wrap: wrap;
 		justify-content: end;
 		min-width: 0;
-		flex: 1 1 auto;
 	}
 
 	.detail-actions {
@@ -3989,7 +4306,7 @@
 	.user-pill {
 		display: grid;
 		gap: 0.15rem;
-		padding: 0.58rem 0.8rem;
+		padding: 0.5rem 0.72rem;
 		border: 1px solid var(--color-border);
 		background: var(--color-panel);
 		width: fit-content;
@@ -4024,6 +4341,29 @@
 	.feedback span {
 		font-size: 0.95rem;
 		line-height: 1.4;
+	}
+
+	.list-summary,
+	.workspace-summary {
+		display: grid;
+		gap: 0.28rem;
+		padding: 0.88rem 0.95rem;
+		border: 1px solid color-mix(in oklch, var(--color-border) 88%, var(--color-surface) 12%);
+		border-radius: 0.8rem;
+		background: color-mix(in oklch, var(--color-surface) 82%, var(--color-panel) 18%);
+	}
+
+	.list-summary span,
+	.workspace-summary span {
+		font-size: 0.79rem;
+		font-weight: 700;
+		letter-spacing: 0.01em;
+		color: var(--color-foreground-soft);
+	}
+
+	.workspace-summary-strong {
+		border-color: color-mix(in oklch, var(--color-accent-strong) 18%, var(--color-border) 82%);
+		background: color-mix(in oklch, var(--color-surface) 78%, var(--color-accent-soft) 22%);
 	}
 
 	.feedback.success {
@@ -4104,6 +4444,260 @@
 	.workspace-shell {
 		display: grid;
 		gap: 1rem;
+	}
+
+	.calendar-layout {
+		min-width: 0;
+	}
+
+	.calendar-layout > * {
+		min-width: 0;
+	}
+
+	.calendar-surface {
+		display: grid;
+		gap: 1rem;
+		min-width: 0;
+	}
+
+	.surface-head {
+		display: flex;
+		justify-content: space-between;
+		gap: 1rem;
+		align-items: end;
+	}
+
+	.surface-head h2 {
+		font: 600 1.3rem/1.1 var(--font-display);
+		letter-spacing: -0.03em;
+	}
+
+	.surface-head p {
+		max-width: 48ch;
+		color: var(--color-muted-foreground);
+	}
+
+	.surface-kicker {
+		margin-bottom: 0.45rem;
+		font-size: 0.75rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.14em;
+		color: color-mix(in oklch, var(--color-accent-strong) 72%, var(--color-foreground) 28%);
+	}
+
+	.event-calendar-host {
+		min-width: 0;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-xl);
+		background: var(--color-panel);
+		overflow: hidden;
+	}
+
+	.calendar-loading {
+		padding: 1.2rem;
+		color: var(--color-muted-foreground);
+	}
+
+	:global(.event-calendar-host .ec) {
+		--ec-border-color: color-mix(in oklch, var(--color-border) 92%, var(--color-surface) 8%);
+		--ec-day-bg-color: var(--color-panel);
+		--ec-bg-color: var(--color-panel);
+		--ec-body-bg-color: color-mix(in oklch, var(--color-panel) 95%, var(--color-surface) 5%);
+		--watum-grid-major: color-mix(in oklch, var(--color-border) 88%, var(--color-foreground) 12%);
+		--watum-grid-minor: color-mix(in oklch, var(--color-border) 94%, var(--color-panel) 6%);
+		--watum-grid-vertical: color-mix(
+			in oklch,
+			var(--color-border) 84%,
+			var(--color-foreground) 16%
+		);
+		--ec-button-bg-color: var(--color-panel);
+		--ec-button-border-color: var(--color-border);
+		--ec-button-text-color: var(--color-foreground);
+		--ec-button-active-bg-color: var(--color-accent-strong);
+		--ec-button-active-border-color: var(--color-accent-strong);
+		--ec-button-active-text-color: var(--color-accent-contrast);
+		--ec-event-bg-color: var(--color-surface);
+		--ec-event-border-color: color-mix(in oklch, var(--color-border) 88%, var(--color-surface) 12%);
+		--ec-event-text-color: var(--color-foreground);
+		--ec-now-indicator-color: var(--color-accent-strong);
+		--ec-scrollbar-thumb-color: var(--color-border);
+		--ec-scrollbar-track-color: transparent;
+		color: var(--color-foreground);
+		font-family: var(--font-sans);
+	}
+
+	:global(.dark .event-calendar-host .ec) {
+		--ec-body-bg-color: color-mix(in oklch, var(--color-panel) 92%, var(--color-surface) 8%);
+		--watum-grid-major: color-mix(in oklch, var(--color-border) 76%, var(--color-foreground) 24%);
+		--watum-grid-minor: color-mix(in oklch, var(--color-border) 88%, var(--color-panel) 12%);
+		--watum-grid-vertical: color-mix(
+			in oklch,
+			var(--color-border) 74%,
+			var(--color-foreground) 26%
+		);
+	}
+
+	:global(.event-calendar-host .ec-toolbar) {
+		display: none;
+	}
+
+	:global(.event-calendar-host .ec-header) {
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	:global(.event-calendar-host .ec-day-head) {
+		padding: 0.95rem 1rem;
+		background: color-mix(in oklch, var(--color-panel) 82%, var(--color-surface) 18%);
+	}
+
+	:global(.event-calendar-host .watum-day-head) {
+		display: grid;
+		gap: 0.22rem;
+		text-align: left;
+	}
+
+	:global(.event-calendar-host .watum-day-head strong) {
+		font-size: 0.92rem;
+	}
+
+	:global(.event-calendar-host .watum-day-head span) {
+		color: var(--color-muted-foreground);
+		font-size: 0.84rem;
+	}
+
+	:global(.event-calendar-host .ec-time) {
+		font-size: 0.82rem;
+		color: var(--color-muted-foreground);
+	}
+
+	:global(.event-calendar-host .ec-scrollgrid) {
+		border: 0;
+	}
+
+	:global(.event-calendar-host .ec-time-grid .ec-header .ec-day-head) {
+		box-shadow: inset -1px 0 0 var(--watum-grid-vertical);
+	}
+
+	:global(.event-calendar-host .ec-time-grid .ec-body .ec-day) {
+		background-image:
+			linear-gradient(to top, var(--ec-day-bg-color) 1px, transparent 1px),
+			linear-gradient(to top, var(--watum-grid-major) 1px, transparent 1px),
+			linear-gradient(to right, var(--watum-grid-vertical) 1px, transparent 1px),
+			linear-gradient(to top, var(--watum-grid-minor) 1px, transparent 1px);
+		background-size:
+			100% 100%,
+			100% calc(var(--ec-slot-height) * var(--ec-slot-label-periodicity)),
+			100% 100%,
+			100% var(--ec-slot-height);
+		box-shadow: inset -1px 0 0 var(--watum-grid-vertical);
+	}
+
+	:global(.event-calendar-host .ec-time-grid .ec-body .ec-sidebar) {
+		background-image:
+			linear-gradient(
+				var(--ec-direction, to left),
+				transparent 0.375rem,
+				var(--ec-bg-color) 0.375rem
+			),
+			linear-gradient(to top, var(--ec-bg-color) 1px, transparent 1px),
+			linear-gradient(to top, var(--watum-grid-major) 1px, transparent 1px),
+			linear-gradient(to right, var(--ec-bg-color) 1px, transparent 1px),
+			linear-gradient(to top, var(--watum-grid-minor) 1px, transparent 1px);
+		background-size:
+			100% 100%,
+			100% 100%,
+			100% calc(var(--ec-slot-height) * var(--ec-slot-label-periodicity)),
+			2px 100%,
+			100% var(--ec-slot-height);
+	}
+
+	:global(.event-calendar-host .ec-time-grid .ec-events) {
+		padding-inline: 0.45rem;
+	}
+
+	:global(.event-calendar-host .watum-ec-event) {
+		border-radius: 0.95rem;
+		border: 1px solid color-mix(in oklch, var(--color-border) 88%, var(--color-surface) 12%);
+		background: var(--color-surface);
+		box-shadow: none;
+	}
+
+	:global(.event-calendar-host .watum-ec-event.is-selected) {
+		border-color: var(--color-accent-strong);
+		background: color-mix(in oklch, var(--color-surface) 72%, var(--color-accent-soft) 28%);
+		box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 30%, transparent 70%);
+	}
+
+	:global(.event-calendar-host .watum-ec-event.is-conflict) {
+		border-color: var(--conflict-border, var(--color-danger));
+		background: color-mix(
+			in oklch,
+			var(--conflict-surface, var(--color-danger-soft)) 92%,
+			var(--color-panel) 8%
+		);
+	}
+
+	:global(.event-calendar-host .watum-ec-event.is-conflict.is-selected) {
+		border-color: var(--color-accent-strong);
+	}
+
+	:global(.event-calendar-host .watum-event-copy) {
+		display: grid;
+		gap: 0.28rem;
+		padding: 0.12rem;
+		min-width: 0;
+	}
+
+	:global(.event-calendar-host .watum-event-copy strong) {
+		font-size: 0.9rem;
+		line-height: 1.2;
+		overflow-wrap: anywhere;
+		word-break: break-word;
+	}
+
+	:global(.event-calendar-host .watum-event-copy span) {
+		font-size: 0.78rem;
+		color: var(--color-muted-foreground);
+	}
+
+	:global(.event-calendar-host .watum-event-copy small) {
+		font-size: 0.77rem;
+		line-height: 1.3;
+		color: var(--color-foreground-soft);
+	}
+
+	:global(.event-calendar-host .watum-ec-event.is-conflict .watum-event-copy strong) {
+		color: var(--conflict-ink, var(--color-danger));
+	}
+
+	:global(.event-calendar-host .watum-ec-event.is-conflict .watum-event-copy span),
+	:global(.event-calendar-host .watum-ec-event.is-conflict .watum-event-copy small) {
+		color: color-mix(
+			in oklch,
+			var(--conflict-ink, var(--color-danger)) 74%,
+			var(--color-foreground) 26%
+		);
+	}
+
+	:global(.event-calendar-host .watum-event-flag) {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: fit-content;
+		padding: 0.18rem 0.45rem;
+		border-radius: 0.5rem;
+		border: 1px solid
+			color-mix(in oklch, var(--conflict-border, var(--color-danger)) 72%, transparent 28%);
+		background: color-mix(
+			in oklch,
+			var(--conflict-surface, var(--color-danger-soft)) 82%,
+			var(--color-panel) 18%
+		);
+		color: var(--conflict-ink, var(--color-danger));
+		font-size: 0.72rem;
+		font-weight: 700;
+		line-height: 1;
 	}
 
 	.student-dashboard,
@@ -4489,19 +5083,21 @@
 	}
 
 	.workspace-shell {
-		grid-template-columns: minmax(0, 0.84fr) minmax(0, 1.16fr);
+		grid-template-columns: minmax(18rem, 0.78fr) minmax(0, 1.22fr);
 		align-items: stretch;
 	}
 
 	.builder-shell {
-		grid-template-columns: minmax(20rem, 0.9fr) minmax(0, 1.1fr);
-		height: calc(100svh - 18rem);
-		min-height: calc(100svh - 18rem);
+		grid-template-columns: minmax(18rem, 0.72fr) minmax(0, 1.28fr);
+		height: auto;
+		min-height: 0;
 		align-items: stretch;
 	}
 
 	.workspace-list,
 	.workspace-detail {
+		display: grid;
+		gap: 0.9rem;
 		align-content: start;
 		min-height: 0;
 	}
@@ -4523,7 +5119,7 @@
 
 	.builder-list {
 		display: grid;
-		grid-template-rows: auto auto minmax(0, 1fr);
+		grid-template-rows: auto auto auto minmax(0, 1fr);
 		gap: 0.8rem;
 		min-height: 0;
 	}
@@ -4551,16 +5147,14 @@
 	}
 
 	.builder-progress {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: flex-start;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
 		gap: 0.65rem;
 	}
 
 	.builder-progress-item {
-		display: flex;
-		align-items: flex-start;
-		flex: 0 1 auto;
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		align-items: start;
 		gap: 0.7rem;
 		padding: 0.85rem 0.9rem;
 		border: 1px solid var(--color-border);
@@ -4568,8 +5162,7 @@
 		background: var(--color-panel);
 		text-align: left;
 		color: inherit;
-		width: fit-content;
-		max-width: min(100%, 18rem);
+		width: 100%;
 	}
 
 	.builder-progress-item:disabled {
@@ -4610,7 +5203,7 @@
 
 	.builder-progress-copy {
 		display: grid;
-		gap: 0.12rem;
+		gap: 0.18rem;
 		min-width: 0;
 	}
 
@@ -4620,22 +5213,8 @@
 	}
 
 	.builder-progress-copy span {
-		width: 0;
-		max-width: 0;
-		max-height: 0;
-		overflow: hidden;
-		opacity: 0;
-		transition:
-			max-width 180ms ease,
-			max-height 180ms ease,
-			opacity 180ms ease;
-	}
-
-	.builder-progress-item.active .builder-progress-copy span {
-		width: auto;
-		max-width: 14rem;
-		max-height: 6rem;
-		opacity: 1;
+		font-size: 0.82rem;
+		line-height: 1.36;
 	}
 
 	.builder-form {
@@ -4644,22 +5223,20 @@
 
 	.builder-overview,
 	.builder-snapshot {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: flex-start;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
 		gap: 0.75rem;
 	}
 
 	.builder-snapshot div {
 		display: grid;
-		flex: 0 1 auto;
 		gap: 0.24rem;
 		padding: 0.88rem 0.95rem;
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
 		border-radius: 0.8rem;
-		width: fit-content;
-		max-width: min(100%, 24rem);
+		width: 100%;
+		max-width: none;
 	}
 
 	.builder-snapshot span {
@@ -4695,11 +5272,11 @@
 	}
 
 	.builder-section:nth-of-type(2) {
-		border-color: color-mix(in oklch, var(--color-danger) 16%, var(--color-border) 84%);
+		border-color: color-mix(in oklch, var(--color-accent-strong) 14%, var(--color-border) 86%);
 	}
 
 	.builder-section:nth-of-type(3) {
-		border-color: color-mix(in oklch, var(--color-success) 18%, var(--color-border) 82%);
+		border-color: color-mix(in oklch, var(--color-accent-strong) 12%, var(--color-border) 88%);
 	}
 
 	.builder-section-head {
@@ -4819,10 +5396,10 @@
 	}
 
 	.list-row {
-		display: flex;
-		justify-content: space-between;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
 		gap: 0.8rem;
-		align-items: center;
+		align-items: start;
 		padding: 0.85rem 0.95rem;
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
@@ -4875,22 +5452,21 @@
 	}
 
 	.detail-lines {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: flex-start;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+		align-items: stretch;
 		margin-bottom: 0.9rem;
 	}
 
 	.detail-lines div,
 	.support-list div {
 		display: grid;
-		flex: 0 1 auto;
 		gap: 0.22rem;
 		padding: 0.82rem;
 		border-radius: 0.8rem;
 		background: var(--color-surface);
-		width: fit-content;
-		max-width: min(100%, 24rem);
+		width: 100%;
+		max-width: none;
 	}
 
 	.editor-grid {
@@ -4946,6 +5522,14 @@
 	}
 
 	@media (max-width: 1080px) {
+		:global(.event-calendar-host .ec) {
+			--ec-slot-height: 30px;
+		}
+
+		:global(.event-calendar-host .ec-time-grid .ec-events) {
+			padding-inline: 0.25rem;
+		}
+
 		.app-shell {
 			grid-template-columns: 1fr;
 		}
@@ -4955,7 +5539,6 @@
 			border-bottom: 1px solid var(--color-border);
 		}
 
-		.rail-sections,
 		.builder-progress {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
@@ -5013,7 +5596,6 @@
 		.builder-snapshot,
 		.editor-grid,
 		.detail-lines,
-		.builder-overview,
 		.decision-actions {
 			grid-template-columns: 1fr;
 		}
@@ -5051,5 +5633,159 @@
 			max-height: 18rem;
 			overflow: auto;
 		}
+	}
+
+	/* --- Shimmer skeleton --- */
+	@keyframes shimmer {
+		from {
+			background-position: -200% 0;
+		}
+		to {
+			background-position: 200% 0;
+		}
+	}
+
+	.skeleton {
+		border-radius: 0.5rem;
+		background: linear-gradient(
+			90deg,
+			var(--color-surface) 0%,
+			color-mix(in oklch, var(--color-surface) 68%, var(--color-border) 32%) 50%,
+			var(--color-surface) 100%
+		);
+		background-size: 200% 100%;
+		animation: shimmer 1.6s ease-in-out infinite;
+	}
+
+	.skeleton-rows {
+		display: grid;
+		gap: 0.75rem;
+	}
+
+	.skeleton-title {
+		height: 1.3rem;
+		width: 38%;
+	}
+
+	.skeleton-text {
+		height: 0.8rem;
+		width: 60%;
+	}
+
+	.skeleton-row {
+		height: 3.1rem;
+		width: 100%;
+	}
+
+	/* --- Searchable combobox --- */
+	.combobox-wrap {
+		position: relative;
+	}
+
+	.combobox-input {
+		width: 100%;
+		padding: 0.72rem 0.85rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.8rem;
+		background: var(--color-surface);
+		color: inherit;
+		font: inherit;
+	}
+
+	.combobox-input:focus {
+		outline: 2px solid color-mix(in oklch, var(--color-accent-strong) 32%, transparent 68%);
+		outline-offset: 1px;
+		border-color: color-mix(in oklch, var(--color-accent-strong) 38%, var(--color-border) 62%);
+	}
+
+	.combobox-dropdown {
+		position: absolute;
+		z-index: 20;
+		top: calc(100% + 0.35rem);
+		left: 0;
+		right: 0;
+		max-height: 15rem;
+		overflow-y: auto;
+		border: 1px solid var(--color-border);
+		border-radius: 0.8rem;
+		background: var(--color-panel);
+		box-shadow: 0 8px 24px color-mix(in oklch, var(--color-shadow) 18%, transparent 82%);
+		display: grid;
+		gap: 0.1rem;
+		padding: 0.35rem;
+	}
+
+	.combobox-option {
+		display: grid;
+		gap: 0.12rem;
+		padding: 0.6rem 0.75rem;
+		border-radius: 0.55rem;
+		border: 1px solid transparent;
+		text-align: left;
+		background: transparent;
+		color: inherit;
+		cursor: pointer;
+		font: inherit;
+	}
+
+	.combobox-option:hover,
+	.combobox-option.active {
+		background: color-mix(in oklch, var(--color-surface) 76%, var(--color-accent-soft) 24%);
+		border-color: color-mix(in oklch, var(--color-accent-strong) 14%, var(--color-border) 86%);
+	}
+
+	.combobox-option strong {
+		font-size: 0.9rem;
+		line-height: 1.25;
+	}
+
+	.combobox-option span {
+		font-size: 0.8rem;
+		color: var(--color-muted-foreground);
+	}
+
+	.combobox-error {
+		margin: 0.35rem 0 0;
+		font-size: 0.86rem;
+		color: var(--color-danger);
+	}
+
+	/* --- Feedback dismiss --- */
+	.feedback {
+		align-items: center;
+	}
+
+	.feedback-dismiss {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		margin-left: auto;
+		flex: 0 0 auto;
+		width: 1.55rem;
+		height: 1.55rem;
+		border: 0;
+		border-radius: 0.35rem;
+		background: transparent;
+		color: inherit;
+		font-size: 1.05rem;
+		line-height: 1;
+		cursor: pointer;
+		opacity: 0.55;
+		transition:
+			opacity 120ms ease,
+			background 120ms ease;
+	}
+
+	.feedback-dismiss:hover {
+		opacity: 1;
+		background: color-mix(in oklch, var(--color-foreground) 8%, transparent 92%);
+	}
+
+	/* --- Support warning retry head --- */
+	.support-warning-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
 	}
 </style>

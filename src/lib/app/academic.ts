@@ -77,7 +77,9 @@ export function buildScheduleCards(
 	enrollments: SelectEnrollmentsResult[],
 	timezone: string
 ): ScheduleCard[] {
-	const cards = enrollments
+	const safeEnrollments = Array.isArray(enrollments) ? enrollments : [];
+
+	const cards = safeEnrollments
 		.filter(
 			(
 				item
