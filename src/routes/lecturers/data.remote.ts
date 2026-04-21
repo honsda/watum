@@ -5,6 +5,7 @@ import { hash } from 'argon2';
 import { randomUUID } from 'crypto';
 import { getPool, withTransaction } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
+import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
 	selectLecturers,
 	selectUsers,
@@ -15,7 +16,7 @@ import {
 	deleteLectuer as deleteLecturerDb
 } from '$lib/server/sql';
 import { type SelectLecturersWhere } from '$lib/server/sql';
-import { lecturerSchema } from '$lib/validations/lecturer';
+import { lecturerCreateSchema, lecturerSchema } from '$lib/validations/lecturer';
 
 export const getLecturers = query(async () => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
@@ -59,38 +60,40 @@ export const getLecturer = query(v.string(), async (id) => {
 	return lecturer;
 });
 
-export const createLecturer = form(lecturerSchema, async (data) => {
+export const createLecturer = form(lecturerCreateSchema, async (data) => {
 	await requireRole(['ADMIN']);
-	const [existing] = await selectLecturers(getPool(), { where: [['id', '=', data.id]] });
-	if (existing) {
-		throw error(400, 'ID dosen sudah digunakan');
-	}
 	const [existingEmail] = await selectLecturers(getPool(), { where: [['email', '=', data.email]] });
 	if (existingEmail) {
 		throw error(400, 'Email sudah digunakan');
 	}
-	const hashedPassword = await hash(data.id);
-	await withTransaction(async (conn) => {
-		await insertLecturer(conn, {
-			id: data.id,
-			name: data.name,
-			email: data.email,
-			phone: data.phone!,
-			address: data.address!
-		});
+	const { id: lecturerId } = await insertWithGeneratedId({
+		prefix: 'DSN',
+		width: 3,
+		readIds: async (connection) =>
+			(await selectLecturers(connection)).map((lecturer) => lecturer.id),
+		insert: async (connection, lecturerId) => {
+			const hashedPassword = await hash(lecturerId);
+			await insertLecturer(connection, {
+				id: lecturerId,
+				name: data.name,
+				email: data.email,
+				phone: data.phone!,
+				address: data.address!
+			});
 
-		await insertUser(conn, {
-			id: randomUUID(),
-			email: data.email,
-			password: hashedPassword,
-			role: 'LECTURER',
-			student_id: undefined,
-			lecturer_id: data.id
-		});
+			return insertUser(connection, {
+				id: randomUUID(),
+				email: data.email,
+				password: hashedPassword,
+				role: 'LECTURER',
+				student_id: undefined,
+				lecturer_id: lecturerId
+			});
+		}
 	});
 
 	await getLecturers().refresh();
-	return { success: true, id: data.id };
+	return { success: true, id: lecturerId };
 });
 
 export const updateLecturer = form(lecturerSchema, async (data) => {
@@ -119,7 +122,6 @@ export const updateLecturer = form(lecturerSchema, async (data) => {
 		{ id: data.id }
 	);
 	await getLecturers().refresh();
-	await getLecturer(data.id).refresh();
 	return { success: true, id: data.id };
 });
 

@@ -3,6 +3,7 @@ import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import { getPool } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
+import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
 	selectStudyPrograms,
 	selectFaculties,
@@ -11,7 +12,7 @@ import {
 	deleteStudyProgram as deleteStudyProgramDb
 } from '$lib/server/sql';
 import { type SelectStudyProgramsWhere } from '$lib/server/sql';
-import { studyProgramSchema } from '$lib/validations/study-program';
+import { studyProgramCreateSchema, studyProgramSchema } from '$lib/validations/study-program';
 
 export const getStudyPrograms = query(async () => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
@@ -55,25 +56,33 @@ export const getStudyProgram = query(v.string(), async (id) => {
 	return sp;
 });
 
-export const createStudyProgram = form(studyProgramSchema, async (data) => {
+export const createStudyProgram = form(studyProgramCreateSchema, async (data) => {
 	await requireRole(['ADMIN']);
-	const [existing] = await selectStudyPrograms(getPool(), { where: [['id', '=', data.id]] });
-	if (existing) {
-		throw error(400, 'ID program studi sudah digunakan');
+	const [existingName] = await selectStudyPrograms(getPool(), {
+		where: [['name', '=', data.name]]
+	});
+	if (existingName) {
+		throw error(400, 'Nama program studi sudah digunakan');
 	}
 	const [faculty] = await selectFaculties(getPool(), { where: [['id', '=', data.facultyId]] });
 	if (!faculty) {
 		throw error(400, 'fakultas tidak ditemukan');
 	}
-
-	await insertStudyProgram(getPool(), {
-		id: data.id,
-		name: data.name,
-		head: data.head,
-		faculty_id: data.facultyId
+	const { id } = await insertWithGeneratedId({
+		prefix: 'PR',
+		width: 2,
+		readIds: async (connection) =>
+			(await selectStudyPrograms(connection)).map((studyProgram) => studyProgram.id),
+		insert: async (connection, id) =>
+			insertStudyProgram(connection, {
+				id,
+				name: data.name,
+				head: data.head,
+				faculty_id: data.facultyId
+			})
 	});
 	await getStudyPrograms().refresh();
-	return { success: true, id: data.id };
+	return { success: true, id };
 });
 
 export const updateStudyProgram = form(studyProgramSchema, async (data) => {
@@ -92,7 +101,6 @@ export const updateStudyProgram = form(studyProgramSchema, async (data) => {
 		{ id: data.id }
 	);
 	await getStudyPrograms().refresh();
-	await getStudyProgram(data.id).refresh();
 	return { success: true, id: data.id };
 });
 

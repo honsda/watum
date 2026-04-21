@@ -79,6 +79,14 @@ export function formatDateTime(
 			return dayjsDate.format('DD MMMM YYYY HH:mm');
 	}
 }
+
+export function formatDateTimeInput(
+	date: Date | dayjs.Dayjs,
+	timezone: string = 'Asia/Jakarta'
+): string {
+	return dayjs(date).tz(timezone).format('YYYY-MM-DDTHH:mm');
+}
+
 export function getDuration(
 	startDate: Date | dayjs.Dayjs,
 	endDate: Date | dayjs.Dayjs,

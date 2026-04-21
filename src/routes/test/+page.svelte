@@ -169,7 +169,7 @@
 		courseName: '',
 		lecturerName: '',
 		classRoomName: '',
-		scheduleDay: 'SENIN',
+		scheduleDay: '',
 		letterGrade: ''
 	});
 	let searchGradeData = $state({
@@ -261,7 +261,7 @@
 		courseId: '',
 		classRoomId: '',
 		timezone: 'UTC',
-		day: 'SENIN',
+		day: 'KAMIS',
 		startTime: '2026-01-01T07:00',
 		endTime: '2026-01-01T09:00',
 		semester: 'GANJIL',
@@ -273,7 +273,7 @@
 		courseId: '',
 		classRoomId: '',
 		timezone: 'UTC',
-		day: 'SENIN',
+		day: 'KAMIS',
 		startTime: '2026-01-01T07:00',
 		endTime: '2026-01-01T09:00',
 		semester: 'GANJIL',
@@ -326,6 +326,19 @@
 		string,
 		{ action: string; method: 'POST'; [key: symbol]: (node: HTMLFormElement) => void }
 	> = {};
+	type RemoteFormLike = {
+		action: string;
+		method: 'POST';
+		result?: unknown;
+		fields?: {
+			allIssues?: () => Array<{ message?: string }> | undefined;
+		};
+		enhance: (
+			callback: (
+				opts: { submit: () => Promise<boolean> } & Record<string, unknown>
+			) => void | Promise<void>
+		) => { action: string; method: 'POST'; [key: symbol]: (node: HTMLFormElement) => void };
+	};
 
 	function setResult(name: string, result: { success: boolean; data?: unknown; error?: string }) {
 		results[name] = result;
@@ -337,35 +350,20 @@
 		}, RESULT_TTL_MS);
 	}
 
-	function formBox(
-		name: string,
-		remoteForm: {
-			action: string;
-			method: 'POST';
-			result?: unknown;
-			fields?: {
-				allIssues?: () => Array<{ message?: string }> | undefined;
-			};
-			enhance: (callback: (opts: { submit: () => Promise<void> }) => void | Promise<void>) => {
-				action: string;
-				method: 'POST';
-				[key: symbol]: (node: HTMLFormElement) => void;
-			};
-		}
-	) {
+	function formBox(name: string, remoteForm: RemoteFormLike) {
 		const cached = boxedFormCache[name];
 		if (cached) return cached;
 
-		const enhanced = remoteForm.enhance(async ({ submit }) => {
+		const enhanced = remoteForm.enhance(async ({ submit }: { submit: () => Promise<boolean> }) => {
 			loading[name] = true;
 			try {
 				await submit();
-				const issues = remoteForm.fields?.allIssues?.() ?? [];
+				const issues: Array<{ message?: string }> = remoteForm.fields?.allIssues?.() ?? [];
 				if (issues.length > 0) {
 					setResult(name, {
 						success: false,
 						error: issues
-							.map((i) => i.message)
+							.map((i: { message?: string }) => i.message)
 							.filter(Boolean)
 							.join(' | ')
 					});
@@ -449,13 +447,14 @@
 				<input
 					class="rounded border px-2 py-1 text-sm"
 					{...loginUser.fields.email.as('email')}
+					autocomplete="username"
 					placeholder="Email"
 					required
 				/>
 				<input
 					class="rounded border px-2 py-1 text-sm"
-					type="password"
-					{...loginUser.fields.password.as('text')}
+					{...loginUser.fields.password.as('password')}
+					autocomplete="current-password"
 					placeholder="Password"
 					required
 				/>
@@ -588,13 +587,6 @@
 			<div class="rounded border p-3">
 				<h3 class="font-semibold">createCourse</h3>
 				<form class="mt-2 flex flex-wrap gap-2" {...formBox('createCourse', createCourse)}>
-					<input
-						class="rounded border px-2 py-1 text-sm"
-						{...createCourse.fields.id.as('text')}
-						bind:value={createCourseData.id}
-						placeholder="ID"
-						required
-					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createCourse.fields.name.as('text')}
@@ -1209,13 +1201,6 @@
 				<form class="mt-2 flex flex-wrap gap-2" {...formBox('createLecturer', createLecturer)}>
 					<input
 						class="rounded border px-2 py-1 text-sm"
-						{...createLecturer.fields.id.as('text')}
-						bind:value={createLecturerData.id}
-						placeholder="NIM"
-						required
-					/>
-					<input
-						class="rounded border px-2 py-1 text-sm"
 						{...createLecturer.fields.name.as('text')}
 						bind:value={createLecturerData.name}
 						placeholder="Name"
@@ -1379,13 +1364,6 @@
 				<form class="mt-2 flex flex-wrap gap-2" {...formBox('createFaculty', createFaculty)}>
 					<input
 						class="rounded border px-2 py-1 text-sm"
-						{...createFaculty.fields.id.as('text')}
-						bind:value={createFacultyData.id}
-						placeholder="ID"
-						required
-					/>
-					<input
-						class="rounded border px-2 py-1 text-sm"
 						{...createFaculty.fields.name.as('text')}
 						bind:value={createFacultyData.name}
 						placeholder="Name"
@@ -1530,13 +1508,6 @@
 					class="mt-2 flex flex-wrap gap-2"
 					{...formBox('createStudyProgram', createStudyProgram)}
 				>
-					<input
-						class="rounded border px-2 py-1 text-sm"
-						{...createStudyProgram.fields.id.as('text')}
-						bind:value={createStudyProgramData.id}
-						placeholder="ID"
-						required
-					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createStudyProgram.fields.name.as('text')}
@@ -1693,6 +1664,7 @@
 						class="rounded border px-2 py-1 text-sm"
 						bind:value={searchEnrollmentData.scheduleDay}
 					>
+						<option value="">Semua hari</option>
 						<option value="SENIN">SENIN</option>
 						<option value="SELASA">SELASA</option>
 						<option value="RABU">RABU</option>
@@ -1721,7 +1693,7 @@
 									courseName: searchEnrollmentData.courseName || undefined,
 									lecturerName: searchEnrollmentData.lecturerName || undefined,
 									classRoomName: searchEnrollmentData.classRoomName || undefined,
-									scheduleDay: searchEnrollmentData.scheduleDay as
+									scheduleDay: (searchEnrollmentData.scheduleDay || undefined) as
 										| 'SENIN'
 										| 'SELASA'
 										| 'RABU'
@@ -2361,9 +2333,9 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateUser.fields.password.as('password')}
+						autocomplete="new-password"
 						bind:value={updateUserData.password}
-						placeholder="Password"
-						required
+						placeholder="Leave blank to keep existing"
 					/>
 					<select
 						class="rounded border px-2 py-1 text-sm"

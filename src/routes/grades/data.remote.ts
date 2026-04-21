@@ -55,7 +55,8 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 	if (filters.studentId) where.push(['student_id', '=', filters.studentId]);
 	if (filters.studentName) where.push(['student_name', 'LIKE', filters.studentName]);
 	if (filters.studentEmail) where.push(['student_email', 'LIKE', filters.studentEmail]);
-	if (filters.studyProgramName) where.push(['study_program_name', 'LIKE', filters.studyProgramName]);
+	if (filters.studyProgramName)
+		where.push(['study_program_name', 'LIKE', filters.studyProgramName]);
 	if (filters.courseId) where.push(['course_id', '=', filters.courseId]);
 	if (filters.courseName) where.push(['course_name', 'LIKE', filters.courseName]);
 	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
@@ -172,7 +173,6 @@ export const updateGrade = form(
 			{ id }
 		);
 		await getGrades().refresh();
-		await getGrade(id).refresh();
 		return { success: true };
 	}
 );

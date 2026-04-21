@@ -1,8 +1,15 @@
 import { getRequestEvent } from '$app/server';
+import { env } from '$env/dynamic/private';
 import { error } from '@sveltejs/kit';
 import { verify } from 'argon2';
-import { getPool } from './db';
+import { SignJWT, jwtVerify } from 'jose';
+import { getPool, retryRead } from './db';
 import { selectUsers } from './sql';
+
+const SESSION_COOKIE_NAME = 'session_token';
+const LEGACY_SESSION_COOKIE_NAME = 'session_id';
+const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
+const textEncoder = new TextEncoder();
 
 interface User {
 	id: string;
@@ -28,17 +35,81 @@ function mapUser(user: SelectUserRow): User {
 	};
 }
 
+function getJwtSecret() {
+	if (!env.JWT_SECRET) {
+		throw new Error('JWT_SECRET is not configured');
+	}
+
+	return textEncoder.encode(env.JWT_SECRET);
+}
+
+function getJwtIssuer() {
+	return env.JWT_ISSUER || undefined;
+}
+
+function getBaseSessionCookieOptions(url: URL) {
+	return {
+		path: '/',
+		httpOnly: true,
+		sameSite: 'lax' as const,
+		secure: url.protocol === 'https:'
+	};
+}
+
+async function signSessionToken(userId: string) {
+	let jwt = new SignJWT({})
+		.setProtectedHeader({ alg: 'HS256' })
+		.setSubject(userId)
+		.setIssuedAt()
+		.setExpirationTime(`${SESSION_MAX_AGE}s`);
+
+	const issuer = getJwtIssuer();
+	if (issuer) {
+		jwt = jwt.setIssuer(issuer);
+	}
+
+	return jwt.sign(getJwtSecret());
+}
+
+async function verifySessionToken(token: string) {
+	try {
+		const issuer = getJwtIssuer();
+		const { payload } = await jwtVerify(token, getJwtSecret(), issuer ? { issuer } : undefined);
+
+		return typeof payload.sub === 'string' && payload.sub.length > 0 ? payload.sub : null;
+	} catch {
+		return null;
+	}
+}
+
+function deleteSessionCookies() {
+	const { cookies, url } = getRequestEvent();
+	const options = getBaseSessionCookieOptions(url);
+
+	cookies.delete(SESSION_COOKIE_NAME, options);
+	cookies.delete(LEGACY_SESSION_COOKIE_NAME, options);
+}
+
 export async function getUser(): Promise<User | null> {
 	const { cookies } = getRequestEvent();
-	const sessionId = cookies.get('session_id');
-	if (!sessionId) {
+	const sessionToken = cookies.get(SESSION_COOKIE_NAME);
+	if (!sessionToken) {
 		return null;
 	}
 
-	const [user] = await selectUsers(getPool(), {
-		where: [['id', '=', sessionId]]
-	});
+	const userId = await verifySessionToken(sessionToken);
+	if (!userId) {
+		deleteSessionCookies();
+		return null;
+	}
+
+	const [user] = await retryRead(() =>
+		selectUsers(getPool(), {
+			where: [['id', '=', userId]]
+		})
+	);
 	if (!user) {
+		deleteSessionCookies();
 		return null;
 	}
 
@@ -61,29 +132,23 @@ export async function requireRole(roles: Array<User['role']>): Promise<User> {
 	return user;
 }
 
-export function setSession(userId: string) {
+export async function setSession(userId: string) {
 	const { cookies, url } = getRequestEvent();
-	cookies.set('session_id', userId, {
-		path: '/',
-		httpOnly: true,
-		sameSite: 'lax',
-		secure: url.protocol === 'https:',
-		maxAge: 60 * 60 * 24 * 7
+	const sessionToken = await signSessionToken(userId);
+
+	cookies.set(SESSION_COOKIE_NAME, sessionToken, {
+		...getBaseSessionCookieOptions(url),
+		maxAge: SESSION_MAX_AGE
 	});
+	cookies.delete(LEGACY_SESSION_COOKIE_NAME, getBaseSessionCookieOptions(url));
 }
 
 export function clearSession() {
-	const { cookies, url } = getRequestEvent();
-	cookies.delete('session_id', {
-		path: '/',
-		httpOnly: true,
-		sameSite: 'lax',
-		secure: url.protocol === 'https:'
-	});
+	deleteSessionCookies();
 }
 
-export async function login( email: string, password: string): Promise<User> {
-	const [user] = await selectUsers(getPool(), { where: [['email', '=', email]]})
+export async function login(email: string, password: string): Promise<User> {
+	const [user] = await retryRead(() => selectUsers(getPool(), { where: [['email', '=', email]] }));
 	if (!user) {
 		throw error(401, 'Email atau password salah');
 	}

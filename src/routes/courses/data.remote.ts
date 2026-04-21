@@ -3,6 +3,7 @@ import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import { getPool } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
+import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
 	selectCourses,
 	selectLecturers,
@@ -12,7 +13,7 @@ import {
 	deleteCourse as deleteCourseDb
 } from '$lib/server/sql';
 import { type SelectCoursesWhere } from '$lib/server/sql';
-import { courseSchema } from '$lib/validations/course';
+import { courseCreateSchema, courseSchema } from '$lib/validations/course';
 
 export const getCourses = query(async () => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
@@ -59,12 +60,8 @@ export const getCourse = query(v.string(), async (id) => {
 	return course;
 });
 
-export const createCourse = form(courseSchema, async (data) => {
+export const createCourse = form(courseCreateSchema, async (data) => {
 	await requireRole(['ADMIN']);
-	const [existing] = await selectCourses(getPool(), { where: [['id', '=', data.id]] });
-	if (existing) {
-		throw error(400, 'ID mata kuliah sudah digunakan');
-	}
 	const [sp] = await selectStudyPrograms(getPool(), { where: [['id', '=', data.studyProgramId]] });
 	if (!sp) {
 		throw error(400, 'program studi tidak ditemukan');
@@ -73,15 +70,21 @@ export const createCourse = form(courseSchema, async (data) => {
 	if (!lecturer) {
 		throw error(400, 'dosen tidak ditemukan');
 	}
-	await insertCourse(getPool(), {
-		id: data.id,
-		name: data.name,
-		credits: data.credits,
-		study_program_id: data.studyProgramId,
-		lecturer_id: data.lecturerId
+	const { id } = await insertWithGeneratedId({
+		prefix: 'MK',
+		width: 3,
+		readIds: async (connection) => (await selectCourses(connection)).map((course) => course.id),
+		insert: async (connection, id) =>
+			insertCourse(connection, {
+				id,
+				name: data.name,
+				credits: data.credits,
+				study_program_id: data.studyProgramId,
+				lecturer_id: data.lecturerId
+			})
 	});
 	await getCourses().refresh();
-	return { success: true, id: data.id };
+	return { success: true, id };
 });
 
 export const updateCourse = form(courseSchema, async (data) => {

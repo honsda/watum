@@ -14,7 +14,7 @@ export const getCurrentUser = query(async () => {
 
 export const loginUser = form(loginSchema, async (data) => {
 	const user = await login(data.email, data.password);
-	setSession(user.id);
+	await setSession(user.id);
 	return {
 		success: true,
 		user

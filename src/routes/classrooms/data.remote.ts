@@ -125,7 +125,6 @@ export const updateClassRoom = form(
 			{ id }
 		);
 		await getClassRooms().refresh();
-		await getClassRoom(id).refresh();
 		return { success: true };
 	}
 );
