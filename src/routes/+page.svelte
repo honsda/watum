@@ -921,6 +921,14 @@
 			const card = info.event.extendedProps.card;
 			if (!card) return;
 
+			const positionMatch = info.el
+				.getAttribute('style')
+				?.match(
+					/inset-inline-start:\s*calc\(\(100% - var\(--ec-event-col-gap\)\) \/ (\d+) \* (\d+)\)/
+				);
+			const laneIndex = positionMatch ? Number(positionMatch[2]) + 1 : 1;
+			info.el.dataset.lane = String(laneIndex);
+
 			const tone = conflictToneVariables(card.conflictTone);
 			if (tone) {
 				info.el.style.cssText += `;${tone}`;
@@ -4562,6 +4570,34 @@
 		color: var(--color-muted-foreground);
 	}
 
+	:global(.event-calendar-host .ec-time-grid .ec-header .ec-sidebar),
+	:global(.event-calendar-host .ec-time-grid .ec-body .ec-sidebar) {
+		inline-size: 3.9rem;
+		width: 3.9rem;
+		flex: 0 0 3.9rem;
+	}
+
+	:global(.event-calendar-host .ec-time-grid .ec-body .ec-sidebar .ec-slot) {
+		position: relative;
+	}
+
+	:global(.event-calendar-host .ec-time-grid .ec-body .ec-sidebar .ec-slot time) {
+		position: absolute;
+		top: 0;
+		right: 0.1rem;
+		transform: translateY(-50%);
+		display: inline-flex;
+		align-items: center;
+		justify-content: flex-end;
+		padding-inline: 0.12rem 0.04rem;
+		font-size: 0.78rem;
+		line-height: 1;
+		font-variant-numeric: tabular-nums;
+		background: var(--ec-bg-color);
+		color: var(--color-foreground-soft);
+		z-index: 2;
+	}
+
 	:global(.event-calendar-host .ec-scrollgrid) {
 		border: 0;
 	}
@@ -4597,8 +4633,8 @@
 			),
 			repeating-linear-gradient(
 				to top,
-				var(--watum-grid-major) 0 1px,
-				transparent 1px,
+				var(--watum-grid-major) 0 2px,
+				transparent 2px,
 				transparent calc(var(--ec-slot-height) * var(--ec-slot-label-periodicity))
 			);
 		background-size:
@@ -4625,8 +4661,8 @@
 			),
 			repeating-linear-gradient(
 				to top,
-				var(--watum-grid-major) 0 1px,
-				transparent 1px,
+				var(--watum-grid-major) 0 2px,
+				transparent 2px,
 				transparent calc(var(--ec-slot-height) * var(--ec-slot-label-periodicity))
 			);
 		background-size:
@@ -4640,7 +4676,7 @@
 	}
 
 	:global(.event-calendar-host .ec-time-grid .ec-body .ec-slot:not(.ec-hidden):nth-child(odd)) {
-		box-shadow: inset 0 -1px 0 var(--watum-grid-major);
+		box-shadow: inset 0 -2px 0 var(--watum-grid-major);
 	}
 
 	:global(.event-calendar-host .ec-time-grid .ec-events) {
@@ -4648,16 +4684,35 @@
 	}
 
 	:global(.event-calendar-host .watum-ec-event) {
+		position: relative;
+		overflow: hidden;
+		isolation: isolate;
 		border-radius: 0.95rem;
 		border: 1px solid color-mix(in oklch, var(--color-border) 88%, var(--color-surface) 12%);
-		background: var(--color-surface);
-		box-shadow: none;
+		background: var(--watum-event-surface, var(--color-surface));
+		box-shadow:
+			0 6px 16px color-mix(in oklch, var(--color-shadow) 8%, transparent 92%),
+			inset 0 0 0 1px color-mix(in oklch, var(--color-foreground) 4%, transparent 96%);
+	}
+
+	:global(.event-calendar-host .watum-ec-event::before) {
+		content: '';
+		position: absolute;
+		inset: 0 0 auto;
+		height: 0.24rem;
+		background: var(
+			--watum-lane-accent,
+			color-mix(in oklch, var(--color-accent-strong) 78%, var(--color-panel) 22%)
+		);
+		opacity: 0.95;
 	}
 
 	:global(.event-calendar-host .watum-ec-event.is-selected) {
 		border-color: var(--color-accent-strong);
 		background: color-mix(in oklch, var(--color-surface) 72%, var(--color-accent-soft) 28%);
-		box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 30%, transparent 70%);
+		box-shadow:
+			0 12px 24px color-mix(in oklch, var(--color-accent-strong) 12%, transparent 88%),
+			inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 34%, transparent 66%);
 	}
 
 	:global(.event-calendar-host .watum-ec-event.is-conflict) {
@@ -4673,28 +4728,60 @@
 		border-color: var(--color-accent-strong);
 	}
 
+	:global(.event-calendar-host .watum-ec-event[data-lane='1']) {
+		--watum-lane-accent: color-mix(
+			in oklch,
+			var(--color-accent-strong) 82%,
+			var(--color-panel) 18%
+		);
+		--watum-event-surface: color-mix(
+			in oklch,
+			var(--color-surface) 84%,
+			var(--color-accent-soft) 16%
+		);
+	}
+
+	:global(.event-calendar-host .watum-ec-event[data-lane='2']) {
+		--watum-lane-accent: color-mix(in oklch, var(--color-success) 78%, var(--color-panel) 22%);
+		--watum-event-surface: color-mix(
+			in oklch,
+			var(--color-surface) 84%,
+			var(--color-success-soft) 16%
+		);
+	}
+
+	:global(.event-calendar-host .watum-ec-event[data-lane='3']) {
+		--watum-lane-accent: oklch(0.68 0.13 62);
+		--watum-event-surface: color-mix(in oklch, var(--color-surface) 86%, oklch(0.93 0.03 62) 14%);
+	}
+
+	:global(.event-calendar-host .watum-ec-event[data-lane='4']) {
+		--watum-lane-accent: oklch(0.66 0.12 220);
+		--watum-event-surface: color-mix(in oklch, var(--color-surface) 86%, oklch(0.9 0.028 220) 14%);
+	}
+
 	:global(.event-calendar-host .watum-event-copy) {
 		display: grid;
-		gap: 0.28rem;
-		padding: 0.12rem;
+		gap: 0.3rem;
+		padding: 0.22rem 0.18rem 0.12rem;
 		min-width: 0;
 	}
 
 	:global(.event-calendar-host .watum-event-copy strong) {
-		font-size: 0.9rem;
-		line-height: 1.2;
+		font-size: 0.88rem;
+		line-height: 1.18;
 		overflow-wrap: anywhere;
 		word-break: break-word;
 	}
 
 	:global(.event-calendar-host .watum-event-copy span) {
-		font-size: 0.78rem;
+		font-size: 0.76rem;
 		color: var(--color-muted-foreground);
 	}
 
 	:global(.event-calendar-host .watum-event-copy small) {
-		font-size: 0.77rem;
-		line-height: 1.3;
+		font-size: 0.75rem;
+		line-height: 1.25;
 		color: var(--color-foreground-soft);
 	}
 
