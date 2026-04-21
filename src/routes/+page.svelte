@@ -2119,7 +2119,7 @@
 									<div class="calendar-overlap-list">
 										{#each selectedScheduleOverlapPeers as peer (peer.id)}
 											<div
-												class={`calendar-overlap-item ${peer.hasConflict ? 'conflict' : ''}`}
+												class={`calendar-overlap-item ${peer.hasConflict ? 'conflict' : ''} ${selectedScheduleId === peer.id ? 'selected' : ''}`}
 												style={conflictToneVariables(peer.conflictTone ?? null)}
 											>
 												<div class="calendar-overlap-copy">
@@ -4726,6 +4726,14 @@
 
 	:global(.event-calendar-host .watum-ec-event.is-conflict.is-selected) {
 		border-color: var(--color-accent-strong);
+		background: color-mix(
+			in oklch,
+			var(--conflict-surface, var(--color-danger-soft)) 70%,
+			var(--color-accent-soft) 30%
+		);
+		box-shadow:
+			0 14px 28px color-mix(in oklch, var(--color-danger) 12%, transparent 88%),
+			inset 0 0 0 2px color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
 	}
 
 	:global(.event-calendar-host .watum-ec-event[data-lane='1']) {
@@ -5148,6 +5156,22 @@
 		background: color-mix(in oklch, var(--conflict-surface) 82%, var(--color-panel) 18%);
 	}
 
+	.calendar-overlap-item.selected {
+		border-color: var(--color-accent-strong);
+		background: color-mix(in oklch, var(--color-surface) 74%, var(--color-accent-soft) 26%);
+		box-shadow:
+			0 12px 24px color-mix(in oklch, var(--color-accent-strong) 10%, transparent 90%),
+			inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 38%, transparent 62%);
+	}
+
+	.calendar-overlap-item.conflict.selected {
+		border-color: var(--color-accent-strong);
+		background: color-mix(in oklch, var(--conflict-surface) 68%, var(--color-accent-soft) 32%);
+		box-shadow:
+			0 12px 24px color-mix(in oklch, var(--color-danger) 12%, transparent 88%),
+			inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
+	}
+
 	.calendar-overlap-copy {
 		display: grid;
 		gap: 0.2rem;
@@ -5290,6 +5314,10 @@
 	.builder-progress-item.active {
 		border-color: var(--color-accent-strong);
 		background: color-mix(in oklch, var(--color-surface) 74%, var(--color-accent-soft) 26%);
+		box-shadow:
+			0 10px 24px color-mix(in oklch, var(--color-accent-strong) 10%, transparent 90%),
+			inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 34%, transparent 66%);
+		transform: translateY(-1px);
 	}
 
 	.builder-progress-item.complete {
@@ -5317,6 +5345,14 @@
 	.builder-progress-item.complete .builder-progress-index {
 		background: var(--color-accent-strong);
 		color: var(--color-accent-contrast);
+	}
+
+	.builder-progress-item.active .builder-progress-copy strong {
+		color: var(--color-accent-strong);
+	}
+
+	.builder-progress-item.active .builder-progress-copy span {
+		color: color-mix(in oklch, var(--color-accent-strong) 70%, var(--color-foreground) 30%);
 	}
 
 	.builder-progress-copy {
