@@ -5294,6 +5294,7 @@
 	}
 
 	.builder-progress-item {
+		position: relative;
 		display: grid;
 		grid-template-columns: auto minmax(0, 1fr);
 		align-items: start;
@@ -5318,6 +5319,8 @@
 			0 10px 24px color-mix(in oklch, var(--color-accent-strong) 10%, transparent 90%),
 			inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 34%, transparent 66%);
 		transform: translateY(-1px);
+		outline: 2px solid color-mix(in oklch, var(--color-accent-strong) 22%, transparent 78%);
+		outline-offset: 1px;
 	}
 
 	.builder-progress-item.complete {
@@ -5353,6 +5356,18 @@
 
 	.builder-progress-item.active .builder-progress-copy span {
 		color: color-mix(in oklch, var(--color-accent-strong) 70%, var(--color-foreground) 30%);
+	}
+
+	.builder-progress-item.active::after {
+		content: '';
+		position: absolute;
+		left: 0.85rem;
+		right: 0.85rem;
+		bottom: 0.45rem;
+		height: 0.22rem;
+		border-radius: 999px;
+		background: var(--color-accent-strong);
+		opacity: 0.92;
 	}
 
 	.builder-progress-copy {
@@ -5580,13 +5595,17 @@
 
 	.list-row.selected {
 		border-color: var(--color-accent-strong);
-		background: color-mix(in oklch, var(--color-surface) 72%, var(--color-accent-soft) 28%);
-		box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 28%, transparent 72%);
+		box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
 	}
 
 	.list-row.conflict {
 		background: var(--conflict-surface);
 		border-color: var(--conflict-border);
+	}
+
+	.list-row.conflict.selected {
+		border-color: var(--color-accent-strong);
+		box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
 	}
 
 	.list-row.conflict strong {
