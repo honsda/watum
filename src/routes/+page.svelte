@@ -5572,7 +5572,7 @@
 
 	.list-row.conflict.selected {
 		border-color: var(--color-accent-strong);
-		box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
+		box-shadow: inset 0 0 0 3px color-mix(in oklch, var(--color-accent-strong) 48%, transparent 52%);
 	}
 
 	.list-row.conflict strong {
@@ -5581,10 +5581,6 @@
 
 	.list-row.conflict .list-conflict-copy {
 		color: var(--conflict-ink);
-	}
-
-	.list-row.conflict.selected {
-		box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--conflict-border) 24%, transparent 76%);
 	}
 
 	.list-row:hover {
