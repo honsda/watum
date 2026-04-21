@@ -23,6 +23,5 @@ export const loginUser = form(loginSchema, async (data) => {
 
 export const logoutUser = form(v.object({}), async () => {
 	clearSession();
-	await getCurrentUser().refresh();
 	return { success: true };
 });
