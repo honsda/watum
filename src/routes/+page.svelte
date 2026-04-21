@@ -1863,7 +1863,7 @@
 				</div>
 			{/if}
 
-			{#if activeViewIssues.length}
+			{#if !appLoading && activeViewIssues.length}
 				<section class="support-warning">
 					<div class="support-warning-head">
 						<p class="warning-title">Sebagian data pendukung belum tersedia</p>
@@ -1879,2132 +1879,2163 @@
 				</section>
 			{/if}
 
-			{#if activeView === 'dashboard'}
-				<div class="dashboard-stack">
-					{#if currentUser.current.role === 'STUDENT'}
-						<section class="student-dashboard">
-							<article class="student-hero">
-								<div class="student-hero-copy">
-									<span>Kelas berikutnya</span>
-									<strong>{nextSchedule ? nextSchedule.course : 'Belum ada kelas terjadwal'}</strong
-									>
-									{#if nextSchedule}
-										<p>
-											{DAY_LABELS[nextSchedule.day]} • {nextSchedule.startLabel} - {nextSchedule.endLabel}
-											• {nextSchedule.room}
-										</p>
-									{/if}
-								</div>
-								<div class="decision-actions student-actions">
-									<Button class="primary-button" onclick={() => activateView('calendar')}
-										>Lihat kalender</Button
-									>
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										onclick={() => activateView('grades')}>Lihat nilai</Button
-									>
-								</div>
-							</article>
-
-							<section class="student-summary-row">
-								<div>
-									<span>KRS aktif</span>
-									<strong>{enrollments.length} kelas tercatat</strong>
-								</div>
-								<div>
-									<span>Nilai tersedia</span>
-									<strong>{grades.length} hasil sudah masuk</strong>
-								</div>
-								<div>
-									<span>Ruang yang dipakai</span>
-									<strong>{nextSchedule ? nextSchedule.room : 'Belum ditentukan'}</strong>
-								</div>
-							</section>
-
-							{#if studentGradeHighlights.length}
-								<section class="student-grade-list">
-									<h3>Nilai terbaru</h3>
-									<div class="student-grade-items">
-										{#each studentGradeHighlights as item (item.id)}
-											<div>
-												<span>{item.course_name}</span>
-												<strong>{item.letter_grade ?? '-'}</strong>
-											</div>
-										{/each}
-									</div>
-								</section>
-							{/if}
-						</section>
-					{:else}
-						<section class="decision-board">
-							<article
-								class="decision-lead"
-								class:decision-alert={conflictCount > 0}
-								class:decision-steady={conflictCount === 0}
-							>
-								<h3 class="decision-title">
-									{#if conflictCount > 0}
-										{conflictCount} bentrok perlu ditangani
-									{:else if nextSchedule}
-										Jadwal hari ini siap berjalan
-									{:else}
-										Belum ada kelas aktif yang perlu diatur
-									{/if}
-								</h3>
-								{#if primaryConflict}
-									<section class="decision-primary">
-										<div class="decision-primary-copy">
-											<span>Bentrok terdekat</span>
-											<strong>{primaryConflict.course}</strong>
-											<p>
-												{DAY_LABELS[primaryConflict.day]} • {primaryConflict.startLabel} - {primaryConflict.endLabel}
-												• {primaryConflict.room}
-											</p>
-										</div>
-										{#if additionalConflictCount > 0}
-											<p class="decision-secondary-count">
-												+{additionalConflictCount} bentrok lain masih menunggu tindak lanjut
-											</p>
-										{/if}
-									</section>
-								{:else if nextSchedule}
-									<section class="decision-primary decision-primary-steady">
-										<div class="decision-primary-copy">
-											<span>Kelas berikutnya</span>
-											<strong>{nextSchedule.course}</strong>
+			{#if !appLoading}
+				{#if activeView === 'dashboard'}
+					<div class="dashboard-stack">
+						{#if currentUser.current.role === 'STUDENT'}
+							<section class="student-dashboard">
+								<article class="student-hero">
+									<div class="student-hero-copy">
+										<span>Kelas berikutnya</span>
+										<strong
+											>{nextSchedule ? nextSchedule.course : 'Belum ada kelas terjadwal'}</strong
+										>
+										{#if nextSchedule}
 											<p>
 												{DAY_LABELS[nextSchedule.day]} • {nextSchedule.startLabel} - {nextSchedule.endLabel}
 												• {nextSchedule.room}
 											</p>
+										{/if}
+									</div>
+									<div class="decision-actions student-actions">
+										<Button class="primary-button" onclick={() => activateView('calendar')}
+											>Lihat kalender</Button
+										>
+										<Button
+											class="ghost-button"
+											variant="ghost"
+											onclick={() => activateView('grades')}>Lihat nilai</Button
+										>
+									</div>
+								</article>
+
+								<section class="student-summary-row">
+									<div>
+										<span>KRS aktif</span>
+										<strong>{enrollments.length} kelas tercatat</strong>
+									</div>
+									<div>
+										<span>Nilai tersedia</span>
+										<strong>{grades.length} hasil sudah masuk</strong>
+									</div>
+									<div>
+										<span>Ruang yang dipakai</span>
+										<strong>{nextSchedule ? nextSchedule.room : 'Belum ditentukan'}</strong>
+									</div>
+								</section>
+
+								{#if studentGradeHighlights.length}
+									<section class="student-grade-list">
+										<h3>Nilai terbaru</h3>
+										<div class="student-grade-items">
+											{#each studentGradeHighlights as item (item.id)}
+												<div>
+													<span>{item.course_name}</span>
+													<strong>{item.letter_grade ?? '-'}</strong>
+												</div>
+											{/each}
 										</div>
 									</section>
 								{/if}
+							</section>
+						{:else}
+							<section class="decision-board">
+								<article
+									class="decision-lead"
+									class:decision-alert={conflictCount > 0}
+									class:decision-steady={conflictCount === 0}
+								>
+									<h3 class="decision-title">
+										{#if conflictCount > 0}
+											{conflictCount} bentrok perlu ditangani
+										{:else if nextSchedule}
+											Jadwal hari ini siap berjalan
+										{:else}
+											Belum ada kelas aktif yang perlu diatur
+										{/if}
+									</h3>
+									{#if primaryConflict}
+										<section class="decision-primary">
+											<div class="decision-primary-copy">
+												<span>Bentrok terdekat</span>
+												<strong>{primaryConflict.course}</strong>
+												<p>
+													{DAY_LABELS[primaryConflict.day]} • {primaryConflict.startLabel} - {primaryConflict.endLabel}
+													• {primaryConflict.room}
+												</p>
+											</div>
+											{#if additionalConflictCount > 0}
+												<p class="decision-secondary-count">
+													+{additionalConflictCount} bentrok lain masih menunggu tindak lanjut
+												</p>
+											{/if}
+										</section>
+									{:else if nextSchedule}
+										<section class="decision-primary decision-primary-steady">
+											<div class="decision-primary-copy">
+												<span>Kelas berikutnya</span>
+												<strong>{nextSchedule.course}</strong>
+												<p>
+													{DAY_LABELS[nextSchedule.day]} • {nextSchedule.startLabel} - {nextSchedule.endLabel}
+													• {nextSchedule.room}
+												</p>
+											</div>
+										</section>
+									{/if}
 
-								<div class="decision-actions">
-									<Button class="primary-button" onclick={() => activateView('builder')}
-										>Buka penjadwalan</Button
-									>
+									<div class="decision-actions">
+										<Button class="primary-button" onclick={() => activateView('builder')}
+											>Buka penjadwalan</Button
+										>
+										<Button
+											class="ghost-button"
+											variant="ghost"
+											onclick={() => activateView('calendar')}>Lihat kalender</Button
+										>
+									</div>
+								</article>
+
+								<aside class="decision-notes">
+									<div class="decision-note-row">
+										<span>Ruang belum padat</span>
+										<strong>{underusedRooms} ruang masih bisa dioptimalkan</strong>
+									</div>
+									<div class="decision-note-row">
+										<span>Kelas berikutnya</span>
+										<strong
+											>{nextSchedule ? nextSchedule.course : 'Belum ada kelas terjadwal'}</strong
+										>
+									</div>
+								</aside>
+							</section>
+
+							<ClassroomDashboard
+								role={currentUser.current.role as AppRole}
+								{classrooms}
+								cards={scheduleCards}
+								{timezone}
+								{selectedRoomId}
+								onPickRoom={(id) => (selectedRoomId = id)}
+							/>
+						{/if}
+					</div>
+				{/if}
+
+				{#if activeView === 'calendar'}
+					<div class="calendar-layout">
+						<section class="calendar-surface">
+							<header class="surface-head">
+								<div>
+									<p class="surface-kicker">Kalender</p>
+									<h2>Kalender kuliah mingguan</h2>
+									<p class="calendar-week-label">{calendarWeekLabel}</p>
+								</div>
+								<div class="calendar-toolbar">
 									<Button
 										class="ghost-button"
 										variant="ghost"
-										onclick={() => activateView('calendar')}>Lihat kalender</Button
+										size="sm"
+										onclick={() => (calendarWeekOffset -= 1)}
 									>
+										<ChevronLeft size={16} />
+										<span>Minggu lalu</span>
+									</Button>
+									<Button
+										class="ghost-button"
+										variant="outline"
+										size="sm"
+										onclick={() => (calendarWeekOffset = 0)}
+									>
+										Minggu dasar
+									</Button>
+									<Button
+										class="ghost-button"
+										variant="ghost"
+										size="sm"
+										onclick={() => (calendarWeekOffset += 1)}
+									>
+										<span>Minggu depan</span>
+										<ChevronRight size={16} />
+									</Button>
 								</div>
-							</article>
+							</header>
 
-							<aside class="decision-notes">
-								<div class="decision-note-row">
-									<span>Ruang belum padat</span>
-									<strong>{underusedRooms} ruang masih bisa dioptimalkan</strong>
+							{#if calendarConflictLegend.length}
+								<div class="calendar-conflict-toolbar">
+									<div class="calendar-conflict-toolbar-head">
+										<strong>{calendarConflictLegend.length} grup bentrok</strong>
+										{#if selectedConflictGroupId}
+											<Button
+												class="ghost-button"
+												variant="ghost"
+												size="sm"
+												onclick={() => (selectedConflictGroupId = null)}
+											>
+												Tampilkan semua
+											</Button>
+										{/if}
+									</div>
+									<div class="calendar-conflict-legend">
+										{#each calendarConflictLegend as group (group.id)}
+											<button
+												type="button"
+												class={`calendar-conflict-chip ${group.selected ? 'selected' : ''}`}
+												style={conflictToneVariables(group.tone)}
+												onclick={() => toggleConflictGroup(group.id, group.representative)}
+											>
+												<span class="calendar-conflict-chip-dot"></span>
+												<span class="calendar-conflict-chip-copy">
+													<strong>{group.label}</strong>
+													<small>{group.course} • {group.count} jadwal</small>
+												</span>
+											</button>
+										{/each}
+									</div>
 								</div>
-								<div class="decision-note-row">
-									<span>Kelas berikutnya</span>
-									<strong>{nextSchedule ? nextSchedule.course : 'Belum ada kelas terjadwal'}</strong
-									>
-								</div>
-							</aside>
+							{/if}
+
+							<div class="event-calendar-host">
+								{#if EventCalendarComponent}
+									<EventCalendarComponent plugins={calendarPlugins} options={calendarOptions} />
+								{:else}
+									<div class="calendar-loading">Memuat kalender...</div>
+								{/if}
+							</div>
 						</section>
 
-						<ClassroomDashboard
-							role={currentUser.current.role as AppRole}
-							{classrooms}
-							cards={scheduleCards}
-							{timezone}
-							{selectedRoomId}
-							onPickRoom={(id) => (selectedRoomId = id)}
-						/>
-					{/if}
-				</div>
-			{/if}
+						<section
+							class="detail-card"
+							class:calendar-conflict={selectedSchedule?.hasConflict}
+							style={conflictToneVariables(selectedSchedule?.conflictTone ?? null)}
+						>
+							{#if selectedSchedule}
+								<div class="pane-head compact">
+									<div>
+										<h3>{selectedSchedule.course}</h3>
+										{#if selectedSchedule.hasConflict && selectedScheduleConflictSummary}
+											<p class="calendar-conflict-copy">
+												Bentrok dengan {selectedScheduleConflictSummary}
+											</p>
+										{/if}
+									</div>
+									<Button
+										class="ghost-button"
+										variant="ghost"
+										size="sm"
+										onclick={() => openBuilderForSchedule(selectedSchedule)}
+									>
+										Buka di penjadwalan
+									</Button>
+								</div>
+								<div class="detail-lines">
+									<div><span>Hari</span><strong>{DAY_LABELS[selectedSchedule.day]}</strong></div>
+									<div>
+										<span>Jam</span><strong
+											>{selectedSchedule.startLabel} - {selectedSchedule.endLabel}</strong
+										>
+									</div>
+									<div><span>Ruang</span><strong>{selectedSchedule.room}</strong></div>
+									<div><span>Dosen</span><strong>{selectedSchedule.lecturer}</strong></div>
+									<div>
+										<span>Semester</span><strong
+											>{selectedSchedule.semester} • {selectedSchedule.academicYear}</strong
+										>
+									</div>
+									<div>
+										<span>Status</span><strong
+											class:selected-danger={selectedSchedule.hasConflict}
+											class:selected-safe={!selectedSchedule.hasConflict}
+											>{selectedSchedule.hasConflict ? 'Bentrok' : 'Aman'}</strong
+										>
+									</div>
+								</div>
+								{#if selectedScheduleOverlapPeers.length}
+									<section class="calendar-overlap-panel">
+										<h4>Jadwal lain pada slot ini</h4>
+										<div class="calendar-overlap-list">
+											{#each selectedScheduleOverlapPeers as peer (peer.id)}
+												<div
+													class={`calendar-overlap-item ${peer.hasConflict ? 'conflict' : ''} ${selectedScheduleId === peer.id ? 'selected' : ''}`}
+													style={conflictToneVariables(peer.conflictTone ?? null)}
+												>
+													<div class="calendar-overlap-copy">
+														<strong>{peer.course}</strong>
+														<span>{peer.student} • {peer.room}</span>
+														<small
+															>{DAY_LABELS[peer.day]} • {peer.startLabel} - {peer.endLabel}</small
+														>
+													</div>
+													<div class="calendar-overlap-actions">
+														<Button
+															class="ghost-button"
+															variant="ghost"
+															size="sm"
+															onclick={() => focusSchedule(peer)}
+														>
+															Lihat
+														</Button>
+														<Button
+															class="ghost-button"
+															variant="ghost"
+															size="sm"
+															onclick={() => openBuilderForSchedule(peer)}
+														>
+															Atur
+														</Button>
+													</div>
+												</div>
+											{/each}
+										</div>
+									</section>
+								{/if}
+							{:else}
+								<p class="empty-copy">Pilih satu blok jadwal untuk melihat detail kelas.</p>
+							{/if}
+						</section>
+					</div>
+				{/if}
 
-			{#if activeView === 'calendar'}
-				<div class="calendar-layout">
-					<section class="calendar-surface">
-						<header class="surface-head">
-							<div>
-								<p class="surface-kicker">Kalender</p>
-								<h2>Kalender kuliah mingguan</h2>
-								<p class="calendar-week-label">{calendarWeekLabel}</p>
-							</div>
-							<div class="calendar-toolbar">
+				{#if activeView === 'builder'}
+					<div class="workspace-shell builder-shell">
+						<section class="workspace-list builder-list">
+							<div class="pane-head">
+								<div>
+									<h3>{builderTaskMode ? 'Jadwal terkait' : 'Jadwal aktif'}</h3>
+								</div>
 								<Button
-									class="ghost-button"
 									variant="ghost"
 									size="sm"
-									onclick={() => (calendarWeekOffset -= 1)}
-								>
-									<ChevronLeft size={16} />
-									<span>Minggu lalu</span>
-								</Button>
-								<Button
 									class="ghost-button"
-									variant="outline"
-									size="sm"
-									onclick={() => (calendarWeekOffset = 0)}
+									onclick={() => clearSelection('builder')}>Tambah jadwal</Button
 								>
-									Minggu dasar
-								</Button>
-								<Button
-									class="ghost-button"
-									variant="ghost"
-									size="sm"
-									onclick={() => (calendarWeekOffset += 1)}
-								>
-									<span>Minggu depan</span>
-									<ChevronRight size={16} />
-								</Button>
 							</div>
-						</header>
 
-						{#if calendarConflictLegend.length}
-							<div class="calendar-conflict-toolbar">
-								<div class="calendar-conflict-toolbar-head">
-									<strong>{calendarConflictLegend.length} grup bentrok</strong>
-									{#if selectedConflictGroupId}
+							<label class="search-box">
+								<Search size={16} />
+								<input
+									bind:value={enrollmentSearch}
+									aria-label="Cari jadwal kuliah"
+									placeholder="Cari mahasiswa, mata kuliah, atau ruang"
+								/>
+							</label>
+
+							<div class="list-summary">
+								<span>{filteredEnrollments.length} jadwal ditemukan</span>
+							</div>
+
+							<div class="list-stack">
+								{#each filteredEnrollments as item (item.id)}
+									{@const scheduleCard = item.id ? scheduleCardMap[item.id] : null}
+									<button
+										type="button"
+										class:selected={selectedEnrollmentId === item.id}
+										class:conflict={Boolean(scheduleCard?.hasConflict)}
+										class="list-row"
+										style={conflictToneVariables(scheduleCard?.conflictTone ?? null)}
+										onclick={() => pickEnrollment(item)}
+									>
+										<div>
+											<strong>{item.course_name}</strong>
+											<span>{item.student_name} • {item.class_room_name}</span>
+											{#if item.id && scheduleCard?.hasConflict && conflictSummaryByCardId[item.id]}
+												<small class="list-conflict-copy">
+													Bentrok dengan {conflictSummaryByCardId[item.id]}
+												</small>
+											{/if}
+										</div>
+										<small
+											>{item.schedule_day
+												? DAY_LABELS[item.schedule_day as keyof typeof DAY_LABELS]
+												: '-'} • {formatTimeRange(
+												item.schedule_start_time,
+												item.schedule_end_time,
+												timezone
+											)}</small
+										>
+									</button>
+								{/each}
+							</div>
+						</section>
+
+						<section class="workspace-detail builder-detail">
+							<div class="pane-head compact">
+								<div>
+									<h3>{selectedEnrollmentId ? 'Edit jadwal terpilih' : 'Tambah jadwal baru'}</h3>
+									{#if selectedEnrollmentScheduleCard?.hasConflict && selectedEnrollmentConflictSummary}
+										<p
+											class="builder-conflict-copy"
+											style={conflictToneVariables(selectedEnrollmentScheduleCard.conflictTone)}
+										>
+											Bentrok dengan {selectedEnrollmentConflictSummary}
+										</p>
+									{/if}
+								</div>
+								{#if selectedEnrollmentId}
+									<Button
+										variant="destructive"
+										size="sm"
+										class="danger-button"
+										onclick={() => requestDelete('enrollment', selectedEnrollmentId!)}>Hapus</Button
+									>
+								{/if}
+							</div>
+
+							{#if pendingDelete?.kind === 'enrollment' && pendingDelete.id === selectedEnrollmentId}
+								<section class="warning-panel">
+									<p class="warning-title">Hapus {pendingDelete.label}?</p>
+									<p>{pendingDelete.message}</p>
+									<div class="warning-actions">
+										<Button
+											class="danger-button"
+											variant="destructive"
+											size="sm"
+											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+											>{pendingDelete.confirmLabel}</Button
+										>
 										<Button
 											class="ghost-button"
 											variant="ghost"
 											size="sm"
-											onclick={() => (selectedConflictGroupId = null)}
+											onclick={() => (pendingDelete = null)}>Batal</Button
 										>
-											Tampilkan semua
-										</Button>
-									{/if}
-								</div>
-								<div class="calendar-conflict-legend">
-									{#each calendarConflictLegend as group (group.id)}
+									</div>
+								</section>
+							{/if}
+
+							{#if currentUser.current.role !== 'STUDENT'}
+								<div class="builder-progress" aria-label="Tahapan penjadwalan">
+									{#each builderSteps as step, index (step.id)}
 										<button
 											type="button"
-											class={`calendar-conflict-chip ${group.selected ? 'selected' : ''}`}
-											style={conflictToneVariables(group.tone)}
-											onclick={() => toggleConflictGroup(group.id, group.representative)}
+											class={`builder-progress-item ${stepState(step.id)}`}
+											onclick={() => setBuilderStep(step.id)}
+											disabled={!canOpenBuilderStep(step.id)}
 										>
-											<span class="calendar-conflict-chip-dot"></span>
-											<span class="calendar-conflict-chip-copy">
-												<strong>{group.label}</strong>
-												<small>{group.course} • {group.count} jadwal</small>
+											<span class="builder-progress-index">{index + 1}</span>
+											<span class="builder-progress-copy">
+												<strong>{step.label}</strong>
+												<span>{step.hint}</span>
 											</span>
 										</button>
 									{/each}
 								</div>
-							</div>
-						{/if}
 
-						<div class="event-calendar-host">
-							{#if EventCalendarComponent}
-								<EventCalendarComponent plugins={calendarPlugins} options={calendarOptions} />
-							{:else}
-								<div class="calendar-loading">Memuat kalender...</div>
-							{/if}
-						</div>
-					</section>
-
-					<section
-						class="detail-card"
-						class:calendar-conflict={selectedSchedule?.hasConflict}
-						style={conflictToneVariables(selectedSchedule?.conflictTone ?? null)}
-					>
-						{#if selectedSchedule}
-							<div class="pane-head compact">
-								<div>
-									<h3>{selectedSchedule.course}</h3>
-									{#if selectedSchedule.hasConflict && selectedScheduleConflictSummary}
-										<p class="calendar-conflict-copy">
-											Bentrok dengan {selectedScheduleConflictSummary}
-										</p>
-									{/if}
-								</div>
-								<Button
-									class="ghost-button"
-									variant="ghost"
-									size="sm"
-									onclick={() => openBuilderForSchedule(selectedSchedule)}
+								<form
+									class="builder-form"
+									{...selectedEnrollmentId ? updateEnrollmentEnhance : createEnrollmentEnhance}
 								>
-									Buka di penjadwalan
-								</Button>
-							</div>
-							<div class="detail-lines">
-								<div><span>Hari</span><strong>{DAY_LABELS[selectedSchedule.day]}</strong></div>
-								<div>
-									<span>Jam</span><strong
-										>{selectedSchedule.startLabel} - {selectedSchedule.endLabel}</strong
-									>
-								</div>
-								<div><span>Ruang</span><strong>{selectedSchedule.room}</strong></div>
-								<div><span>Dosen</span><strong>{selectedSchedule.lecturer}</strong></div>
-								<div>
-									<span>Semester</span><strong
-										>{selectedSchedule.semester} • {selectedSchedule.academicYear}</strong
-									>
-								</div>
-								<div>
-									<span>Status</span><strong
-										class:selected-danger={selectedSchedule.hasConflict}
-										class:selected-safe={!selectedSchedule.hasConflict}
-										>{selectedSchedule.hasConflict ? 'Bentrok' : 'Aman'}</strong
-									>
-								</div>
-							</div>
-							{#if selectedScheduleOverlapPeers.length}
-								<section class="calendar-overlap-panel">
-									<h4>Jadwal lain pada slot ini</h4>
-									<div class="calendar-overlap-list">
-										{#each selectedScheduleOverlapPeers as peer (peer.id)}
-											<div
-												class={`calendar-overlap-item ${peer.hasConflict ? 'conflict' : ''} ${selectedScheduleId === peer.id ? 'selected' : ''}`}
-												style={conflictToneVariables(peer.conflictTone ?? null)}
-											>
-												<div class="calendar-overlap-copy">
-													<strong>{peer.course}</strong>
-													<span>{peer.student} • {peer.room}</span>
-													<small>{DAY_LABELS[peer.day]} • {peer.startLabel} - {peer.endLabel}</small
-													>
-												</div>
-												<div class="calendar-overlap-actions">
-													<Button
-														class="ghost-button"
-														variant="ghost"
-														size="sm"
-														onclick={() => focusSchedule(peer)}
-													>
-														Lihat
-													</Button>
-													<Button
-														class="ghost-button"
-														variant="ghost"
-														size="sm"
-														onclick={() => openBuilderForSchedule(peer)}
-													>
-														Atur
-													</Button>
-												</div>
-											</div>
-										{/each}
-									</div>
-								</section>
-							{/if}
-						{:else}
-							<p class="empty-copy">Pilih satu blok jadwal untuk melihat detail kelas.</p>
-						{/if}
-					</section>
-				</div>
-			{/if}
-
-			{#if activeView === 'builder'}
-				<div class="workspace-shell builder-shell">
-					<section class="workspace-list builder-list">
-						<div class="pane-head">
-							<div>
-								<h3>{builderTaskMode ? 'Jadwal terkait' : 'Jadwal aktif'}</h3>
-							</div>
-							<Button
-								variant="ghost"
-								size="sm"
-								class="ghost-button"
-								onclick={() => clearSelection('builder')}>Tambah jadwal</Button
-							>
-						</div>
-
-						<label class="search-box">
-							<Search size={16} />
-							<input
-								bind:value={enrollmentSearch}
-								aria-label="Cari jadwal kuliah"
-								placeholder="Cari mahasiswa, mata kuliah, atau ruang"
-							/>
-						</label>
-
-						<div class="list-summary">
-							<span>{filteredEnrollments.length} jadwal ditemukan</span>
-						</div>
-
-						<div class="list-stack">
-							{#each filteredEnrollments as item (item.id)}
-								{@const scheduleCard = item.id ? scheduleCardMap[item.id] : null}
-								<button
-									type="button"
-									class:selected={selectedEnrollmentId === item.id}
-									class:conflict={Boolean(scheduleCard?.hasConflict)}
-									class="list-row"
-									style={conflictToneVariables(scheduleCard?.conflictTone ?? null)}
-									onclick={() => pickEnrollment(item)}
-								>
-									<div>
-										<strong>{item.course_name}</strong>
-										<span>{item.student_name} • {item.class_room_name}</span>
-										{#if item.id && scheduleCard?.hasConflict && conflictSummaryByCardId[item.id]}
-											<small class="list-conflict-copy">
-												Bentrok dengan {conflictSummaryByCardId[item.id]}
-											</small>
-										{/if}
-									</div>
-									<small
-										>{item.schedule_day
-											? DAY_LABELS[item.schedule_day as keyof typeof DAY_LABELS]
-											: '-'} • {formatTimeRange(
-											item.schedule_start_time,
-											item.schedule_end_time,
-											timezone
-										)}</small
-									>
-								</button>
-							{/each}
-						</div>
-					</section>
-
-					<section class="workspace-detail builder-detail">
-						<div class="pane-head compact">
-							<div>
-								<h3>{selectedEnrollmentId ? 'Edit jadwal terpilih' : 'Tambah jadwal baru'}</h3>
-								{#if selectedEnrollmentScheduleCard?.hasConflict && selectedEnrollmentConflictSummary}
-									<p
-										class="builder-conflict-copy"
-										style={conflictToneVariables(selectedEnrollmentScheduleCard.conflictTone)}
-									>
-										Bentrok dengan {selectedEnrollmentConflictSummary}
-									</p>
-								{/if}
-							</div>
-							{#if selectedEnrollmentId}
-								<Button
-									variant="destructive"
-									size="sm"
-									class="danger-button"
-									onclick={() => requestDelete('enrollment', selectedEnrollmentId!)}>Hapus</Button
-								>
-							{/if}
-						</div>
-
-						{#if pendingDelete?.kind === 'enrollment' && pendingDelete.id === selectedEnrollmentId}
-							<section class="warning-panel">
-								<p class="warning-title">Hapus {pendingDelete.label}?</p>
-								<p>{pendingDelete.message}</p>
-								<div class="warning-actions">
-									<Button
-										class="danger-button"
-										variant="destructive"
-										size="sm"
-										onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-										>{pendingDelete.confirmLabel}</Button
-									>
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										size="sm"
-										onclick={() => (pendingDelete = null)}>Batal</Button
-									>
-								</div>
-							</section>
-						{/if}
-
-						{#if currentUser.current.role !== 'STUDENT'}
-							<div class="builder-progress" aria-label="Tahapan penjadwalan">
-								{#each builderSteps as step, index (step.id)}
-									<button
-										type="button"
-										class={`builder-progress-item ${stepState(step.id)}`}
-										onclick={() => setBuilderStep(step.id)}
-										disabled={!canOpenBuilderStep(step.id)}
-									>
-										<span class="builder-progress-index">{index + 1}</span>
-										<span class="builder-progress-copy">
-											<strong>{step.label}</strong>
-											<span>{step.hint}</span>
-										</span>
-									</button>
-								{/each}
-							</div>
-
-							<form
-								class="builder-form"
-								{...selectedEnrollmentId ? updateEnrollmentEnhance : createEnrollmentEnhance}
-							>
-								<input
-									type="hidden"
-									{...selectedEnrollmentId
-										? updateEnrollment.fields.timezone.as('text')
-										: createEnrollment.fields.timezone.as('text')}
-									bind:value={enrollmentDraft.timezone}
-								/>
-
-								{#if selectedEnrollmentId}
 									<input
 										type="hidden"
-										{...updateEnrollment.fields.id.as('text')}
-										bind:value={enrollmentDraft.id}
+										{...selectedEnrollmentId
+											? updateEnrollment.fields.timezone.as('text')
+											: createEnrollment.fields.timezone.as('text')}
+										bind:value={enrollmentDraft.timezone}
 									/>
-								{/if}
 
-								<section class="builder-snapshot">
-									<div>
-										<span>Peserta</span>
-										<strong>{selectedDraftStudent}</strong>
-										<p>{selectedDraftCourse}</p>
-									</div>
-									<div>
-										<span>Waktu</span>
-										<strong>{draftTimeSummary}</strong>
-										<p>{availableRoomOptions.length} ruang tersedia untuk slot ini</p>
-									</div>
-									<div>
-										<span>Ruang</span>
-										<strong>{selectedDraftRoom}</strong>
-										<p>{conflictCount} bentrok masih tercatat di kalender aktif</p>
-									</div>
-								</section>
+									{#if selectedEnrollmentId}
+										<input
+											type="hidden"
+											{...updateEnrollment.fields.id.as('text')}
+											bind:value={enrollmentDraft.id}
+										/>
+									{/if}
 
-								<section class:hidden-stage={builderStep !== 'participant'} class="builder-section">
-									<div class="builder-section-head">
-										<h4>Pilih peserta dan mata kuliah</h4>
-										<p class="builder-note">
-											Pilih mahasiswa dan mata kuliah dulu agar cek waktu dan ruang tetap relevan.
-										</p>
-									</div>
-									<div class="editor-grid">
-										<label>
-											<span>Mahasiswa</span>
-											<input
-												type="hidden"
-												{...selectedEnrollmentId
-													? updateEnrollment.fields.studentId.as('text')
-													: createEnrollment.fields.studentId.as('text')}
-												bind:value={enrollmentDraft.studentId}
-											/>
-											<div
-												class="combobox-wrap"
-												onfocusout={(e) => {
-													if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-														studentPickerOpen = false;
-													}
-												}}
-											>
-												<input
-													type="text"
-													class="combobox-input"
-													placeholder="Cari mahasiswa..."
-													value={enrollmentDraft.studentId
-														? `${students.find((s) => s.id === enrollmentDraft.studentId)?.name ?? ''} • ${enrollmentDraft.studentId}`
-														: studentPickerSearch}
-													oninput={(e) => {
-														studentPickerSearch = (e.currentTarget as HTMLInputElement).value;
-														if (enrollmentDraft.studentId) enrollmentDraft.studentId = '';
-														studentPickerOpen = true;
-													}}
-													onfocus={() => (studentPickerOpen = true)}
-												/>
-												{#if collectionIssues.students && !students.length}
-													<p class="combobox-error">{collectionIssues.students}</p>
-												{:else if studentPickerOpen && filteredStudentsForPicker.length}
-													<div class="combobox-dropdown" role="listbox">
-														{#each filteredStudentsForPicker as item (item.id)}
-															<button
-																type="button"
-																role="option"
-																aria-selected={enrollmentDraft.studentId === item.id}
-																class="combobox-option"
-																class:active={enrollmentDraft.studentId === item.id}
-																onmousedown={(e) => {
-																	e.preventDefault();
-																	enrollmentDraft.studentId = item.id ?? '';
-																	studentPickerSearch = '';
-																	studentPickerOpen = false;
-																}}
-															>
-																<strong>{item.name}</strong>
-																<span>{item.id}</span>
-															</button>
-														{/each}
-													</div>
-												{/if}
-											</div>
-										</label>
-
-										<label>
-											<span>Mata kuliah</span>
-											<input
-												type="hidden"
-												{...selectedEnrollmentId
-													? updateEnrollment.fields.courseId.as('text')
-													: createEnrollment.fields.courseId.as('text')}
-												bind:value={enrollmentDraft.courseId}
-											/>
-											<div
-												class="combobox-wrap"
-												onfocusout={(e) => {
-													if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-														coursePickerOpen = false;
-													}
-												}}
-											>
-												<input
-													type="text"
-													class="combobox-input"
-													placeholder="Cari mata kuliah..."
-													value={enrollmentDraft.courseId
-														? `${courses.find((c) => c.id === enrollmentDraft.courseId)?.name ?? ''} • ${courses.find((c) => c.id === enrollmentDraft.courseId)?.lecturer_name ?? ''}`
-														: coursePickerSearch}
-													oninput={(e) => {
-														coursePickerSearch = (e.currentTarget as HTMLInputElement).value;
-														if (enrollmentDraft.courseId) enrollmentDraft.courseId = '';
-														coursePickerOpen = true;
-													}}
-													onfocus={() => (coursePickerOpen = true)}
-												/>
-												{#if collectionIssues.courses && !courses.length}
-													<p class="combobox-error">{collectionIssues.courses}</p>
-												{:else if coursePickerOpen && filteredCoursesForPicker.length}
-													<div class="combobox-dropdown" role="listbox">
-														{#each filteredCoursesForPicker as item (item.id)}
-															<button
-																type="button"
-																role="option"
-																aria-selected={enrollmentDraft.courseId === item.id}
-																class="combobox-option"
-																class:active={enrollmentDraft.courseId === item.id}
-																onmousedown={(e) => {
-																	e.preventDefault();
-																	enrollmentDraft.courseId = item.id ?? '';
-																	coursePickerSearch = '';
-																	coursePickerOpen = false;
-																}}
-															>
-																<strong>{item.name}</strong>
-																<span>{item.id} • {item.lecturer_name}</span>
-															</button>
-														{/each}
-													</div>
-												{/if}
-											</div>
-										</label>
-									</div>
-									<div class="builder-section-actions">
-										<p class="editor-note">
-											Langkah berikutnya akan menampilkan slot dan ruang yang masih bisa dipakai.
-										</p>
-										<Button
-											type="button"
-											class="primary-button"
-											disabled={!participantStepReady}
-											onclick={advanceBuilderStep}>Lanjut ke jadwal</Button
-										>
-									</div>
-								</section>
-
-								<section class:hidden-stage={builderStep !== 'time'} class="builder-section">
-									<div class="builder-section-head">
-										<h4>Tentukan hari dan jam</h4>
-										<p class="builder-note">
-											Masukkan hari dan jam final. Daftar ruang akan mengikuti slot ini.
-										</p>
-									</div>
-									<div class="editor-grid">
-										<label>
-											<span>Hari</span>
-											<select
-												{...selectedEnrollmentId
-													? updateEnrollment.fields.day.as('select')
-													: createEnrollment.fields.day.as('select')}
-												bind:value={enrollmentDraft.day}
-											>
-												{#each days as day (day)}
-													<option value={day}>{DAY_LABELS[day]}</option>
-												{/each}
-											</select>
-										</label>
-
-										<label>
-											<span>Mulai</span>
-											<input
-												type="datetime-local"
-												{...selectedEnrollmentId
-													? updateEnrollment.fields.startTime.as('text')
-													: createEnrollment.fields.startTime.as('text')}
-												bind:value={enrollmentDraft.startTime}
-											/>
-										</label>
-
-										<label>
-											<span>Selesai</span>
-											<input
-												type="datetime-local"
-												{...selectedEnrollmentId
-													? updateEnrollment.fields.endTime.as('text')
-													: createEnrollment.fields.endTime.as('text')}
-												bind:value={enrollmentDraft.endTime}
-											/>
-										</label>
-
-										<label>
-											<span>Semester</span>
-											<input
-												{...selectedEnrollmentId
-													? updateEnrollment.fields.semester.as('text')
-													: createEnrollment.fields.semester.as('text')}
-												bind:value={enrollmentDraft.semester}
-											/>
-										</label>
-
-										<label>
-											<span>Tahun akademik</span>
-											<input
-												{...selectedEnrollmentId
-													? updateEnrollment.fields.academicYear.as('text')
-													: createEnrollment.fields.academicYear.as('text')}
-												bind:value={enrollmentDraft.academicYear}
-											/>
-										</label>
-									</div>
-									<div class="builder-section-actions split">
-										<p class="editor-note">
-											Jika jam berubah, periksa lagi pilihan ruang di langkah berikutnya.
-										</p>
-										<div class="builder-inline-actions">
-											<Button
-												type="button"
-												variant="ghost"
-												class="ghost-button"
-												onclick={retreatBuilderStep}>Kembali</Button
-											>
-											<Button
-												type="button"
-												class="primary-button"
-												disabled={!timeStepReady}
-												onclick={advanceBuilderStep}>Lanjut ke ruang</Button
-											>
-										</div>
-									</div>
-								</section>
-
-								<section class:hidden-stage={builderStep !== 'room'} class="builder-section">
-									<div class="builder-section-head">
-										<h4>Pilih ruang yang tersedia</h4>
-										<p class="builder-note">
-											Pilih satu ruang yang tersedia untuk slot ini, lalu lanjut ke langkah tinjau.
-										</p>
-									</div>
-									<div class="builder-room-stage">
-										<div class="editor-grid builder-room-grid">
-											<label>
-												<span>Ruang</span>
-												<select
-													{...selectedEnrollmentId
-														? updateEnrollment.fields.classRoomId.as('select')
-														: createEnrollment.fields.classRoomId.as('select')}
-													bind:value={enrollmentDraft.classRoomId}
-												>
-													<option value="">Pilih ruang</option>
-													{#each availableRoomOptions as room (room.id)}
-														<option value={room.id}>{room.name} • {room.capacity}</option>
-													{/each}
-												</select>
-											</label>
-										</div>
-
-										<section class="support-panel builder-support">
-											<h4>{availableRoomOptions.length} ruang tersedia untuk slot ini</h4>
-											<div class="support-list">
-												{#if availableRoomOptions.length}
-													{#each availableRoomOptions.slice(0, 4) as room (room.id)}
-														<div>
-															<strong>{room.name}</strong>
-															<span
-																>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span
-															>
-														</div>
-													{/each}
-												{:else}
-													<p class="empty-copy">
-														Belum ada ruang yang tersedia untuk slot ini. Ubah jadwal atau pilih
-														slot lain.
-													</p>
-												{/if}
-											</div>
-										</section>
-									</div>
-									<div class="builder-section-actions split">
-										<p class="editor-note">
-											Jika daftar ruang kosong, ubah jadwal lebih dulu sebelum melanjutkan.
-										</p>
-										<div class="builder-inline-actions">
-											<Button
-												type="button"
-												variant="ghost"
-												class="ghost-button"
-												onclick={retreatBuilderStep}>Kembali</Button
-											>
-											<Button
-												type="button"
-												class="primary-button"
-												disabled={!roomStepReady}
-												onclick={advanceBuilderStep}>Tinjau sebelum simpan</Button
-											>
-										</div>
-									</div>
-								</section>
-
-								<section
-									class:hidden-stage={builderStep !== 'review'}
-									class="builder-section builder-review"
-								>
-									<div class="builder-section-head">
-										<h4>Tinjau sebelum disimpan</h4>
-										<p class="builder-note">
-											Pastikan peserta, slot, dan ruang sudah benar sebelum disimpan.
-										</p>
-									</div>
-									<div class="detail-lines builder-review-grid">
+									<section class="builder-snapshot">
 										<div>
-											<span>Mahasiswa</span>
+											<span>Peserta</span>
 											<strong>{selectedDraftStudent}</strong>
+											<p>{selectedDraftCourse}</p>
 										</div>
 										<div>
-											<span>Mata kuliah</span>
-											<strong>{selectedDraftCourse}</strong>
-										</div>
-										<div>
-											<span>Slot kuliah</span>
+											<span>Waktu</span>
 											<strong>{draftTimeSummary}</strong>
+											<p>{availableRoomOptions.length} ruang tersedia untuk slot ini</p>
 										</div>
 										<div>
 											<span>Ruang</span>
 											<strong>{selectedDraftRoom}</strong>
+											<p>{conflictCount} bentrok masih tercatat di kalender aktif</p>
 										</div>
-									</div>
-									<div class="builder-review-note">
-										<p class="editor-note">
-											Jika masih ragu, kembali satu langkah lalu perbaiki waktu atau ruang sebelum
-											simpan.
-										</p>
-										<div class="builder-inline-actions">
+									</section>
+
+									<section
+										class:hidden-stage={builderStep !== 'participant'}
+										class="builder-section"
+									>
+										<div class="builder-section-head">
+											<h4>Pilih peserta dan mata kuliah</h4>
+											<p class="builder-note">
+												Pilih mahasiswa dan mata kuliah dulu agar cek waktu dan ruang tetap relevan.
+											</p>
+										</div>
+										<div class="editor-grid">
+											<label>
+												<span>Mahasiswa</span>
+												<input
+													type="hidden"
+													{...selectedEnrollmentId
+														? updateEnrollment.fields.studentId.as('text')
+														: createEnrollment.fields.studentId.as('text')}
+													bind:value={enrollmentDraft.studentId}
+												/>
+												<div
+													class="combobox-wrap"
+													onfocusout={(e) => {
+														if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+															studentPickerOpen = false;
+														}
+													}}
+												>
+													<input
+														type="text"
+														class="combobox-input"
+														placeholder="Cari mahasiswa..."
+														value={enrollmentDraft.studentId
+															? `${students.find((s) => s.id === enrollmentDraft.studentId)?.name ?? ''} • ${enrollmentDraft.studentId}`
+															: studentPickerSearch}
+														oninput={(e) => {
+															studentPickerSearch = (e.currentTarget as HTMLInputElement).value;
+															if (enrollmentDraft.studentId) enrollmentDraft.studentId = '';
+															studentPickerOpen = true;
+														}}
+														onfocus={() => (studentPickerOpen = true)}
+													/>
+													{#if collectionIssues.students && !students.length}
+														<p class="combobox-error">{collectionIssues.students}</p>
+													{:else if studentPickerOpen && filteredStudentsForPicker.length}
+														<div class="combobox-dropdown" role="listbox">
+															{#each filteredStudentsForPicker as item (item.id)}
+																<button
+																	type="button"
+																	role="option"
+																	aria-selected={enrollmentDraft.studentId === item.id}
+																	class="combobox-option"
+																	class:active={enrollmentDraft.studentId === item.id}
+																	onmousedown={(e) => {
+																		e.preventDefault();
+																		enrollmentDraft.studentId = item.id ?? '';
+																		studentPickerSearch = '';
+																		studentPickerOpen = false;
+																	}}
+																>
+																	<strong>{item.name}</strong>
+																	<span>{item.id}</span>
+																</button>
+															{/each}
+														</div>
+													{/if}
+												</div>
+											</label>
+
+											<label>
+												<span>Mata kuliah</span>
+												<input
+													type="hidden"
+													{...selectedEnrollmentId
+														? updateEnrollment.fields.courseId.as('text')
+														: createEnrollment.fields.courseId.as('text')}
+													bind:value={enrollmentDraft.courseId}
+												/>
+												<div
+													class="combobox-wrap"
+													onfocusout={(e) => {
+														if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+															coursePickerOpen = false;
+														}
+													}}
+												>
+													<input
+														type="text"
+														class="combobox-input"
+														placeholder="Cari mata kuliah..."
+														value={enrollmentDraft.courseId
+															? `${courses.find((c) => c.id === enrollmentDraft.courseId)?.name ?? ''} • ${courses.find((c) => c.id === enrollmentDraft.courseId)?.lecturer_name ?? ''}`
+															: coursePickerSearch}
+														oninput={(e) => {
+															coursePickerSearch = (e.currentTarget as HTMLInputElement).value;
+															if (enrollmentDraft.courseId) enrollmentDraft.courseId = '';
+															coursePickerOpen = true;
+														}}
+														onfocus={() => (coursePickerOpen = true)}
+													/>
+													{#if collectionIssues.courses && !courses.length}
+														<p class="combobox-error">{collectionIssues.courses}</p>
+													{:else if coursePickerOpen && filteredCoursesForPicker.length}
+														<div class="combobox-dropdown" role="listbox">
+															{#each filteredCoursesForPicker as item (item.id)}
+																<button
+																	type="button"
+																	role="option"
+																	aria-selected={enrollmentDraft.courseId === item.id}
+																	class="combobox-option"
+																	class:active={enrollmentDraft.courseId === item.id}
+																	onmousedown={(e) => {
+																		e.preventDefault();
+																		enrollmentDraft.courseId = item.id ?? '';
+																		coursePickerSearch = '';
+																		coursePickerOpen = false;
+																	}}
+																>
+																	<strong>{item.name}</strong>
+																	<span>{item.id} • {item.lecturer_name}</span>
+																</button>
+															{/each}
+														</div>
+													{/if}
+												</div>
+											</label>
+										</div>
+										<div class="builder-section-actions">
+											<p class="editor-note">
+												Langkah berikutnya akan menampilkan slot dan ruang yang masih bisa dipakai.
+											</p>
 											<Button
 												type="button"
-												variant="ghost"
-												class="ghost-button"
-												onclick={retreatBuilderStep}>Kembali</Button
+												class="primary-button"
+												disabled={!participantStepReady}
+												onclick={advanceBuilderStep}>Lanjut ke jadwal</Button
 											>
-											<Button type="submit" class="primary-button builder-submit"
-												>{selectedEnrollmentId ? 'Simpan perubahan' : 'Simpan jadwal'}</Button
+										</div>
+									</section>
+
+									<section class:hidden-stage={builderStep !== 'time'} class="builder-section">
+										<div class="builder-section-head">
+											<h4>Tentukan hari dan jam</h4>
+											<p class="builder-note">
+												Masukkan hari dan jam final. Daftar ruang akan mengikuti slot ini.
+											</p>
+										</div>
+										<div class="editor-grid">
+											<label>
+												<span>Hari</span>
+												<select
+													{...selectedEnrollmentId
+														? updateEnrollment.fields.day.as('select')
+														: createEnrollment.fields.day.as('select')}
+													bind:value={enrollmentDraft.day}
+												>
+													{#each days as day (day)}
+														<option value={day}>{DAY_LABELS[day]}</option>
+													{/each}
+												</select>
+											</label>
+
+											<label>
+												<span>Mulai</span>
+												<input
+													type="datetime-local"
+													{...selectedEnrollmentId
+														? updateEnrollment.fields.startTime.as('text')
+														: createEnrollment.fields.startTime.as('text')}
+													bind:value={enrollmentDraft.startTime}
+												/>
+											</label>
+
+											<label>
+												<span>Selesai</span>
+												<input
+													type="datetime-local"
+													{...selectedEnrollmentId
+														? updateEnrollment.fields.endTime.as('text')
+														: createEnrollment.fields.endTime.as('text')}
+													bind:value={enrollmentDraft.endTime}
+												/>
+											</label>
+
+											<label>
+												<span>Semester</span>
+												<input
+													{...selectedEnrollmentId
+														? updateEnrollment.fields.semester.as('text')
+														: createEnrollment.fields.semester.as('text')}
+													bind:value={enrollmentDraft.semester}
+												/>
+											</label>
+
+											<label>
+												<span>Tahun akademik</span>
+												<input
+													{...selectedEnrollmentId
+														? updateEnrollment.fields.academicYear.as('text')
+														: createEnrollment.fields.academicYear.as('text')}
+													bind:value={enrollmentDraft.academicYear}
+												/>
+											</label>
+										</div>
+										<div class="builder-section-actions split">
+											<p class="editor-note">
+												Jika jam berubah, periksa lagi pilihan ruang di langkah berikutnya.
+											</p>
+											<div class="builder-inline-actions">
+												<Button
+													type="button"
+													variant="ghost"
+													class="ghost-button"
+													onclick={retreatBuilderStep}>Kembali</Button
+												>
+												<Button
+													type="button"
+													class="primary-button"
+													disabled={!timeStepReady}
+													onclick={advanceBuilderStep}>Lanjut ke ruang</Button
+												>
+											</div>
+										</div>
+									</section>
+
+									<section class:hidden-stage={builderStep !== 'room'} class="builder-section">
+										<div class="builder-section-head">
+											<h4>Pilih ruang yang tersedia</h4>
+											<p class="builder-note">
+												Pilih satu ruang yang tersedia untuk slot ini, lalu lanjut ke langkah
+												tinjau.
+											</p>
+										</div>
+										<div class="builder-room-stage">
+											<div class="editor-grid builder-room-grid">
+												<label>
+													<span>Ruang</span>
+													<select
+														{...selectedEnrollmentId
+															? updateEnrollment.fields.classRoomId.as('select')
+															: createEnrollment.fields.classRoomId.as('select')}
+														bind:value={enrollmentDraft.classRoomId}
+													>
+														<option value="">Pilih ruang</option>
+														{#each availableRoomOptions as room (room.id)}
+															<option value={room.id}>{room.name} • {room.capacity}</option>
+														{/each}
+													</select>
+												</label>
+											</div>
+
+											<section class="support-panel builder-support">
+												<h4>{availableRoomOptions.length} ruang tersedia untuk slot ini</h4>
+												<div class="support-list">
+													{#if availableRoomOptions.length}
+														{#each availableRoomOptions.slice(0, 4) as room (room.id)}
+															<div>
+																<strong>{room.name}</strong>
+																<span
+																	>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span
+																>
+															</div>
+														{/each}
+													{:else}
+														<p class="empty-copy">
+															Belum ada ruang yang tersedia untuk slot ini. Ubah jadwal atau pilih
+															slot lain.
+														</p>
+													{/if}
+												</div>
+											</section>
+										</div>
+										<div class="builder-section-actions split">
+											<p class="editor-note">
+												Jika daftar ruang kosong, ubah jadwal lebih dulu sebelum melanjutkan.
+											</p>
+											<div class="builder-inline-actions">
+												<Button
+													type="button"
+													variant="ghost"
+													class="ghost-button"
+													onclick={retreatBuilderStep}>Kembali</Button
+												>
+												<Button
+													type="button"
+													class="primary-button"
+													disabled={!roomStepReady}
+													onclick={advanceBuilderStep}>Tinjau sebelum simpan</Button
+												>
+											</div>
+										</div>
+									</section>
+
+									<section
+										class:hidden-stage={builderStep !== 'review'}
+										class="builder-section builder-review"
+									>
+										<div class="builder-section-head">
+											<h4>Tinjau sebelum disimpan</h4>
+											<p class="builder-note">
+												Pastikan peserta, slot, dan ruang sudah benar sebelum disimpan.
+											</p>
+										</div>
+										<div class="detail-lines builder-review-grid">
+											<div>
+												<span>Mahasiswa</span>
+												<strong>{selectedDraftStudent}</strong>
+											</div>
+											<div>
+												<span>Mata kuliah</span>
+												<strong>{selectedDraftCourse}</strong>
+											</div>
+											<div>
+												<span>Slot kuliah</span>
+												<strong>{draftTimeSummary}</strong>
+											</div>
+											<div>
+												<span>Ruang</span>
+												<strong>{selectedDraftRoom}</strong>
+											</div>
+										</div>
+										<div class="builder-review-note">
+											<p class="editor-note">
+												Jika masih ragu, kembali satu langkah lalu perbaiki waktu atau ruang sebelum
+												simpan.
+											</p>
+											<div class="builder-inline-actions">
+												<Button
+													type="button"
+													variant="ghost"
+													class="ghost-button"
+													onclick={retreatBuilderStep}>Kembali</Button
+												>
+												<Button type="submit" class="primary-button builder-submit"
+													>{selectedEnrollmentId ? 'Simpan perubahan' : 'Simpan jadwal'}</Button
+												>
+											</div>
+										</div>
+									</section>
+								</form>
+							{:else}
+								<p class="empty-copy">Mahasiswa hanya dapat melihat jadwal dan KRS.</p>
+							{/if}
+						</section>
+					</div>
+				{/if}
+
+				{#if activeView === 'classrooms'}
+					<div class="workspace-shell">
+						<section class="workspace-list">
+							<div class="pane-head">
+								<div>
+									<h3>Daftar ruang</h3>
+								</div>
+								<Button
+									variant="ghost"
+									size="sm"
+									class="ghost-button"
+									onclick={() => beginCreate('classrooms')}>Tambah</Button
+								>
+							</div>
+							<label class="search-box"
+								><Search size={16} /><input
+									bind:value={roomSearch}
+									aria-label="Cari ruang"
+									placeholder="Cari nama ruang atau jenis ruang"
+								/></label
+							>
+							<div class="list-stack">
+								{#each filteredClassrooms as item (item.id)}
+									<button
+										type="button"
+										class:selected={selectedRoomId === item.id}
+										class="list-row"
+										onclick={() => pickClassroom(item)}
+									>
+										<div>
+											<strong>{item.name}</strong><span
+												>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
+											>
+										</div>
+										<small>{item.schedule_count ?? 0} jadwal</small>
+									</button>
+								{/each}
+							</div>
+						</section>
+						<section class="workspace-detail">
+							<div class="pane-head compact">
+								<div>
+									<h3>{selectedRoom ? selectedRoom.name : 'Tambah ruang'}</h3>
+								</div>
+								{#if currentUser.current.role === 'ADMIN'}
+									<div class="detail-actions">
+										{#if editorView === 'classrooms'}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="ghost-button"
+												onclick={() => stopEditing('classrooms')}>Tutup form</Button
+											>
+										{:else if selectedRoom}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="ghost-button"
+												onclick={() => beginEdit('classrooms')}>Edit</Button
+											>
+										{/if}
+										{#if selectedRoomId}
+											<Button
+												variant="destructive"
+												size="sm"
+												class="danger-button"
+												onclick={() => requestDelete('classroom', selectedRoomId!)}>Hapus</Button
+											>
+										{/if}
+									</div>
+								{/if}
+							</div>
+							{#if pendingDelete?.kind === 'classroom' && pendingDelete.id === selectedRoomId}
+								<section class="warning-panel">
+									<p class="warning-title">Hapus {pendingDelete.label}?</p>
+									<p>{pendingDelete.message}</p>
+									<div class="warning-actions">
+										<Button
+											class="danger-button"
+											variant="destructive"
+											size="sm"
+											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+											>{pendingDelete.confirmLabel}</Button
+										>
+										<Button
+											class="ghost-button"
+											variant="ghost"
+											size="sm"
+											onclick={() => (pendingDelete = null)}>Batal</Button
+										>
+									</div>
+								</section>
+							{/if}
+							{#if selectedRoom && editorView !== 'classrooms'}<div class="detail-stack">
+									<div class="detail-lines">
+										<div>
+											<span>Tipe</span><strong
+												>{beautifyRoomType(selectedRoom.class_room_type)}</strong
+											>
+										</div>
+										<div><span>Kapasitas</span><strong>{selectedRoom.capacity}</strong></div>
+										<div>
+											<span>Projector</span><strong
+												>{selectedRoom.has_projector ? 'Ya' : 'Tidak'}</strong
+											>
+										</div>
+										<div>
+											<span>AC</span><strong>{selectedRoom.has_ac ? 'Ya' : 'Tidak'}</strong>
+										</div>
+									</div>
+									<p class="detail-hint">
+										Tinjau ringkasan ruang lebih dulu. Buka form edit hanya saat data perlu diubah.
+									</p>
+								</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'classrooms'}
+								<form
+									class="editor-grid"
+									{...selectedRoomId ? updateClassRoomEnhance : createClassRoomEnhance}
+								>
+									{#if selectedRoomId}<input
+											type="hidden"
+											{...updateClassRoom.fields.id.as('text')}
+											bind:value={selectedRoomId}
+										/>{/if}
+									<label
+										><span>Nama ruang</span><input
+											{...selectedRoomId
+												? updateClassRoom.fields.name.as('text')
+												: createClassRoom.fields.name.as('text')}
+											bind:value={classroomDraft.name}
+										/></label
+									>
+									<label
+										><span>Tipe ruang</span><select
+											{...selectedRoomId
+												? updateClassRoom.fields.classRoomType.as('select')
+												: createClassRoom.fields.classRoomType.as('select')}
+											bind:value={classroomDraft.classRoomType}
+											>{#each classRoomTypes as type (type)}<option value={type}
+													>{beautifyRoomType(type)}</option
+												>{/each}</select
+										></label
+									>
+									<label
+										><span>Kapasitas</span><input
+											min="1"
+											{...selectedRoomId
+												? updateClassRoom.fields.capacity.as('number')
+												: createClassRoom.fields.capacity.as('number')}
+											bind:value={classroomDraft.capacity}
+										/></label
+									>
+									<label class="check-row"
+										><input
+											{...selectedRoomId
+												? updateClassRoom.fields.hasProjector.as('checkbox')
+												: createClassRoom.fields.hasProjector.as('checkbox')}
+											checked={classroomDraft.hasProjector}
+											onchange={(event) =>
+												(classroomDraft.hasProjector = (
+													event.currentTarget as HTMLInputElement
+												).checked)}
+										/><span>Proyektor tersedia</span></label
+									>
+									<label class="check-row"
+										><input
+											{...selectedRoomId
+												? updateClassRoom.fields.hasAC.as('checkbox')
+												: createClassRoom.fields.hasAC.as('checkbox')}
+											checked={classroomDraft.hasAC}
+											onchange={(event) =>
+												(classroomDraft.hasAC = (event.currentTarget as HTMLInputElement).checked)}
+										/><span>AC tersedia</span></label
+									>
+									<Button type="submit" class="primary-button"
+										>{selectedRoomId ? 'Simpan perubahan' : 'Tambah ruang'}</Button
+									>
+								</form>{:else}<p class="empty-copy">
+									Pilih satu ruang untuk melihat detail, atau tambahkan ruang baru saat inventaris
+									berubah.
+								</p>{/if}
+						</section>
+					</div>
+				{/if}
+
+				{#if activeView === 'courses'}
+					<div class="workspace-shell">
+						<section class="workspace-list">
+							<div class="pane-head">
+								<div>
+									<h3>Daftar mata kuliah</h3>
+								</div>
+								<Button
+									variant="ghost"
+									size="sm"
+									class="ghost-button"
+									onclick={() => beginCreate('courses')}>Tambah</Button
+								>
+							</div>
+							<label class="search-box"
+								><Search size={16} /><input
+									bind:value={courseSearch}
+									aria-label="Cari data mata kuliah"
+									placeholder="Cari kode, nama, atau dosen pengampu"
+								/></label
+							>
+							<div class="list-stack">
+								{#each filteredCourses as item (item.id)}<button
+										type="button"
+										class:selected={selectedCourseId === item.id}
+										class="list-row"
+										onclick={() => pickCourse(item)}
+										><div>
+											<strong>{item.id} • {item.name}</strong><span
+												>{item.study_program_name} • {item.lecturer_name}</span
+											>
+										</div>
+										<small>{item.credits} SKS</small></button
+									>{/each}
+							</div>
+						</section>
+						<section class="workspace-detail">
+							<div class="pane-head compact">
+								<div>
+									<h3>{selectedCourse ? selectedCourse.name : 'Tambah mata kuliah'}</h3>
+								</div>
+								{#if currentUser.current.role === 'ADMIN'}
+									<div class="detail-actions">
+										{#if editorView === 'courses'}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="ghost-button"
+												onclick={() => stopEditing('courses')}>Tutup form</Button
+											>
+										{:else if selectedCourse}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="ghost-button"
+												onclick={() => beginEdit('courses')}>Edit</Button
+											>
+										{/if}
+										{#if selectedCourseId}
+											<Button
+												variant="destructive"
+												size="sm"
+												class="danger-button"
+												onclick={() => requestDelete('course', selectedCourseId!)}>Hapus</Button
+											>
+										{/if}
+									</div>
+								{/if}
+							</div>
+							{#if pendingDelete?.kind === 'course' && pendingDelete.id === selectedCourseId}
+								<section class="warning-panel">
+									<p class="warning-title">Hapus {pendingDelete.label}?</p>
+									<p>{pendingDelete.message}</p>
+									<div class="warning-actions">
+										<Button
+											class="danger-button"
+											variant="destructive"
+											size="sm"
+											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+											>{pendingDelete.confirmLabel}</Button
+										>
+										<Button
+											class="ghost-button"
+											variant="ghost"
+											size="sm"
+											onclick={() => (pendingDelete = null)}>Batal</Button
+										>
+									</div>
+								</section>
+							{/if}
+							{#if selectedCourse && editorView !== 'courses'}<div class="detail-stack">
+									<div class="detail-lines">
+										<div><span>Kode</span><strong>{selectedCourse.id}</strong></div>
+										<div>
+											<span>Program studi</span><strong>{selectedCourse.study_program_name}</strong>
+										</div>
+										<div><span>Dosen</span><strong>{selectedCourse.lecturer_name}</strong></div>
+										<div><span>Beban</span><strong>{selectedCourse.credits} SKS</strong></div>
+										<div>
+											<span>Peserta</span><strong>{selectedCourse.enrollment_count ?? 0}</strong>
+										</div>
+									</div>
+									<p class="detail-hint">
+										Gunakan mode tinjau untuk membaca beban kuliah dan relasi dosen sebelum membuka
+										editor.
+									</p>
+								</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'courses'}<form
+									class="editor-grid"
+									{...selectedCourseId ? updateCourseEnhance : createCourseEnhance}
+								>
+									{#if selectedCourseId}<input
+											type="hidden"
+											{...updateCourse.fields.id.as('text')}
+											bind:value={courseDraft.id}
+										/>{:else}<p class="editor-note">
+											Kode mata kuliah dibuat otomatis saat data disimpan.
+										</p>{/if}<label
+										><span>Nama mata kuliah</span><input
+											{...selectedCourseId
+												? updateCourse.fields.name.as('text')
+												: createCourse.fields.name.as('text')}
+											bind:value={courseDraft.name}
+										/></label
+									><label
+										><span>SKS</span><input
+											min="1"
+											max="6"
+											{...selectedCourseId
+												? updateCourse.fields.credits.as('number')
+												: createCourse.fields.credits.as('number')}
+											bind:value={courseDraft.credits}
+										/></label
+									><label
+										><span>Program studi</span><select
+											{...selectedCourseId
+												? updateCourse.fields.studyProgramId.as('select')
+												: createCourse.fields.studyProgramId.as('select')}
+											bind:value={courseDraft.studyProgramId}
+											><option value="">Pilih program studi</option
+											>{#if collectionIssues.studyPrograms && !studyPrograms.length}<option
+													value=""
+													disabled>{collectionIssues.studyPrograms}</option
+												>{/if}
+											>{#each studyPrograms as item (item.id)}<option value={item.id}
+													>{item.name}</option
+												>{/each}</select
+										></label
+									><label
+										><span>Dosen pengampu</span><select
+											{...selectedCourseId
+												? updateCourse.fields.lecturerId.as('select')
+												: createCourse.fields.lecturerId.as('select')}
+											bind:value={courseDraft.lecturerId}
+											><option value="">Pilih dosen</option
+											>{#if collectionIssues.lecturers && !lecturers.length}<option
+													value=""
+													disabled>{collectionIssues.lecturers}</option
+												>{/if}{#each lecturers as item (item.id)}<option value={item.id}
+													>{item.name}</option
+												>{/each}</select
+										></label
+									>{#if courseEditorBlocked}<p class="editor-note">
+											Program studi dan dosen harus tersedia sebelum mata kuliah bisa disimpan.
+										</p>{/if}<Button
+										type="submit"
+										class="primary-button"
+										disabled={courseEditorBlocked}
+										>{selectedCourseId ? 'Simpan perubahan' : 'Tambah mata kuliah'}</Button
+									>
+								</form>{:else}<p class="empty-copy">
+									Pilih satu mata kuliah untuk melihat detail, atau tambahkan mata kuliah baru saat
+									katalog berubah.
+								</p>{/if}
+						</section>
+					</div>
+				{/if}
+
+				{#if activeView === 'students' && currentUser.current.role !== 'STUDENT'}
+					<div class="workspace-shell">
+						<section class="workspace-list">
+							<div class="pane-head">
+								<div>
+									<h3>Daftar mahasiswa aktif</h3>
+								</div>
+								<Button
+									variant="ghost"
+									size="sm"
+									class="ghost-button"
+									onclick={() => beginCreate('students')}>Tambah</Button
+								>
+							</div>
+							<label class="search-box"
+								><Search size={16} /><input
+									bind:value={studentSearch}
+									aria-label="Cari data mahasiswa"
+									placeholder="Cari NRP, nama, atau program studi"
+								/></label
+							>
+							<div class="list-stack">
+								{#each filteredStudents as item (item.id)}<button
+										type="button"
+										class:selected={selectedStudentId === item.id}
+										class="list-row"
+										onclick={() => pickStudent(item)}
+										><div>
+											<strong>{item.name}</strong><span>{item.id} • {item.study_program_name}</span>
+										</div>
+										<small>{item.enrollment_count ?? 0} KRS</small></button
+									>{/each}
+							</div>
+						</section>
+						<section class="workspace-detail">
+							<div class="pane-head compact">
+								<div>
+									<h3>{selectedStudent ? selectedStudent.name : 'Tambah mahasiswa'}</h3>
+								</div>
+								{#if currentUser.current.role === 'ADMIN'}
+									<div class="detail-actions">
+										{#if editorView === 'students'}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="ghost-button"
+												onclick={() => stopEditing('students')}>Tutup form</Button
+											>
+										{:else if selectedStudent}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="ghost-button"
+												onclick={() => beginEdit('students')}>Edit</Button
+											>
+										{/if}
+										{#if selectedStudentId}
+											<Button
+												variant="destructive"
+												size="sm"
+												class="danger-button"
+												onclick={() => requestDelete('student', selectedStudentId!)}>Hapus</Button
+											>
+										{/if}
+									</div>
+								{/if}
+							</div>
+							{#if pendingDelete?.kind === 'student' && pendingDelete.id === selectedStudentId}
+								<section class="warning-panel">
+									<p class="warning-title">Hapus {pendingDelete.label}?</p>
+									<p>{pendingDelete.message}</p>
+									<div class="warning-actions">
+										<Button
+											class="danger-button"
+											variant="destructive"
+											size="sm"
+											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+											>{pendingDelete.confirmLabel}</Button
+										>
+										<Button
+											class="ghost-button"
+											variant="ghost"
+											size="sm"
+											onclick={() => (pendingDelete = null)}>Batal</Button
+										>
+									</div>
+								</section>
+							{/if}
+							{#if selectedStudent && editorView !== 'students'}<div class="detail-stack">
+									<div class="detail-lines">
+										<div><span>Email</span><strong>{selectedStudent.email}</strong></div>
+										<div>
+											<span>Program studi</span><strong>{selectedStudent.study_program_name}</strong
+											>
+										</div>
+										<div><span>Fakultas</span><strong>{selectedStudent.faculty_name}</strong></div>
+										<div><span>Angkatan</span><strong>{selectedStudent.year_admitted}</strong></div>
+									</div>
+									<p class="detail-hint">
+										Tinjau identitas mahasiswa lebih dulu agar perubahan data tidak bercampur dengan
+										proses baca cepat.
+									</p>
+								</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'students'}<form
+									class="editor-grid"
+									{...selectedStudentId ? updateStudentEnhance : createStudentEnhance}
+								>
+									{#if selectedStudentId}<input
+											type="hidden"
+											{...updateStudent.fields.id.as('text')}
+											bind:value={selectedStudentId}
+										/>{/if}<label
+										><span>Nama</span><input
+											{...selectedStudentId
+												? updateStudent.fields.name.as('text')
+												: createStudent.fields.name.as('text')}
+											bind:value={studentDraft.name}
+										/></label
+									><label
+										><span>Email</span><input
+											{...selectedStudentId
+												? updateStudent.fields.email.as('email')
+												: createStudent.fields.email.as('email')}
+											bind:value={studentDraft.email}
+										/></label
+									><label
+										><span>Telepon</span><input
+											{...selectedStudentId
+												? updateStudent.fields.phone.as('text')
+												: createStudent.fields.phone.as('text')}
+											bind:value={studentDraft.phone}
+										/></label
+									><label
+										><span>Alamat</span><input
+											{...selectedStudentId
+												? updateStudent.fields.address.as('text')
+												: createStudent.fields.address.as('text')}
+											bind:value={studentDraft.address}
+										/></label
+									><label
+										><span>Angkatan</span><input
+											{...selectedStudentId
+												? updateStudent.fields.yearAdmitted.as('number')
+												: createStudent.fields.yearAdmitted.as('number')}
+											bind:value={studentDraft.yearAdmitted}
+										/></label
+									><label
+										><span>Program studi</span><select
+											{...selectedStudentId
+												? updateStudent.fields.studyProgramId.as('select')
+												: createStudent.fields.studyProgramId.as('select')}
+											bind:value={studentDraft.studyProgramId}
+											><option value="">Pilih program studi</option
+											>{#if collectionIssues.studyPrograms && !studyPrograms.length}<option
+													value=""
+													disabled>{collectionIssues.studyPrograms}</option
+												>{/if}
+											>{#each studyPrograms as item (item.id)}<option value={item.id}
+													>{item.name}</option
+												>{/each}</select
+										></label
+									>{#if studentEditorBlocked}<p class="editor-note">
+											Program studi harus tersedia sebelum data mahasiswa bisa disimpan.
+										</p>{/if}<Button
+										type="submit"
+										class="primary-button"
+										disabled={studentEditorBlocked}
+										>{selectedStudentId ? 'Simpan perubahan' : 'Tambah mahasiswa'}</Button
+									>
+								</form>{:else}<p class="empty-copy">
+									Pilih satu mahasiswa untuk melihat profil, atau tambahkan mahasiswa baru saat data
+									aktif berubah.
+								</p>{/if}
+						</section>
+					</div>
+				{/if}
+
+				{#if activeView === 'lecturers'}
+					<div class="workspace-shell">
+						<section class="workspace-list">
+							<div class="pane-head">
+								<div>
+									<h3>Daftar dosen</h3>
+								</div>
+								{#if currentUser.current.role === 'ADMIN'}<Button
+										variant="ghost"
+										size="sm"
+										class="ghost-button"
+										onclick={() => beginCreate('lecturers')}>Tambah</Button
+									>{/if}
+							</div>
+							<label class="search-box"
+								><Search size={16} /><input
+									bind:value={lecturerSearch}
+									aria-label="Cari data dosen"
+									placeholder="Cari ID dosen, nama, atau email"
+								/></label
+							>
+							<div class="list-stack">
+								{#each filteredLecturers as item (item.id)}<button
+										type="button"
+										class:selected={selectedLecturerId === item.id}
+										class="list-row"
+										onclick={() => pickLecturer(item)}
+										><div><strong>{item.name}</strong><span>{item.id} • {item.email}</span></div>
+										<small>{item.schedule_count ?? 0} jadwal</small></button
+									>{/each}
+							</div>
+						</section>
+						<section class="workspace-detail">
+							<div class="pane-head compact">
+								<div>
+									<h3>{selectedLecturer ? selectedLecturer.name : 'Tambah dosen'}</h3>
+								</div>
+								{#if currentUser.current.role === 'ADMIN'}
+									<div class="detail-actions">
+										{#if editorView === 'lecturers'}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="ghost-button"
+												onclick={() => stopEditing('lecturers')}>Tutup form</Button
+											>
+										{:else if selectedLecturer}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="ghost-button"
+												onclick={() => beginEdit('lecturers')}>Edit</Button
+											>
+										{/if}
+										{#if selectedLecturerId}
+											<Button
+												variant="destructive"
+												size="sm"
+												class="danger-button"
+												onclick={() => requestDelete('lecturer', selectedLecturerId!)}>Hapus</Button
+											>
+										{/if}
+									</div>
+								{/if}
+							</div>
+							{#if pendingDelete?.kind === 'lecturer' && pendingDelete.id === selectedLecturerId}
+								<section class="warning-panel">
+									<p class="warning-title">Hapus {pendingDelete.label}?</p>
+									<p>{pendingDelete.message}</p>
+									<div class="warning-actions">
+										<Button
+											class="danger-button"
+											variant="destructive"
+											size="sm"
+											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+											>{pendingDelete.confirmLabel}</Button
+										>
+										<Button
+											class="ghost-button"
+											variant="ghost"
+											size="sm"
+											onclick={() => (pendingDelete = null)}>Batal</Button
+										>
+									</div>
+								</section>
+							{/if}
+							{#if selectedLecturer && editorView !== 'lecturers'}<div class="detail-stack">
+									<div class="detail-lines">
+										<div><span>ID dosen</span><strong>{selectedLecturer.id}</strong></div>
+										<div><span>Email</span><strong>{selectedLecturer.email}</strong></div>
+										<div><span>Telepon</span><strong>{selectedLecturer.phone || '-'}</strong></div>
+										<div><span>Alamat</span><strong>{selectedLecturer.address || '-'}</strong></div>
+										<div>
+											<span>Jadwal aktif</span><strong
+												>{selectedLecturer.schedule_count ?? 0}</strong
 											>
 										</div>
 									</div>
-								</section>
-							</form>
-						{:else}
-							<p class="empty-copy">Mahasiswa hanya dapat melihat jadwal dan KRS.</p>
-						{/if}
-					</section>
-				</div>
-			{/if}
+									<p class="detail-hint">
+										Mode tinjau membantu Anda membaca konteks dosen sebelum membuka form edit.
+									</p>
+								</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'lecturers'}<form
+									class="editor-grid"
+									{...selectedLecturerId ? updateLecturerEnhance : createLecturerEnhance}
+								>
+									{#if selectedLecturerId}<input
+											type="hidden"
+											{...updateLecturer.fields.id.as('text')}
+											bind:value={lecturerDraft.id}
+										/>{:else}<p class="editor-note">
+											ID dosen dibuat otomatis saat data disimpan.
+										</p>{/if}<label
+										><span>Nama</span><input
+											{...selectedLecturerId
+												? updateLecturer.fields.name.as('text')
+												: createLecturer.fields.name.as('text')}
+											bind:value={lecturerDraft.name}
+										/></label
+									><label
+										><span>Email</span><input
+											{...selectedLecturerId
+												? updateLecturer.fields.email.as('email')
+												: createLecturer.fields.email.as('email')}
+											bind:value={lecturerDraft.email}
+										/></label
+									><label
+										><span>Telepon</span><input
+											{...selectedLecturerId
+												? updateLecturer.fields.phone.as('text')
+												: createLecturer.fields.phone.as('text')}
+											bind:value={lecturerDraft.phone}
+										/></label
+									><label
+										><span>Alamat</span><input
+											{...selectedLecturerId
+												? updateLecturer.fields.address.as('text')
+												: createLecturer.fields.address.as('text')}
+											bind:value={lecturerDraft.address}
+										/></label
+									><Button type="submit" class="primary-button"
+										>{selectedLecturerId ? 'Simpan perubahan' : 'Tambah dosen'}</Button
+									>
+								</form>{:else}<p class="empty-copy">
+									Pilih satu dosen untuk melihat detail, atau tambahkan dosen baru saat data
+									pengampu berubah.
+								</p>{/if}
+						</section>
+					</div>
+				{/if}
 
-			{#if activeView === 'classrooms'}
-				<div class="workspace-shell">
-					<section class="workspace-list">
-						<div class="pane-head">
-							<div>
-								<h3>Daftar ruang</h3>
-							</div>
-							<Button
-								variant="ghost"
-								size="sm"
-								class="ghost-button"
-								onclick={() => beginCreate('classrooms')}>Tambah</Button
-							>
-						</div>
-						<label class="search-box"
-							><Search size={16} /><input
-								bind:value={roomSearch}
-								aria-label="Cari ruang"
-								placeholder="Cari nama ruang atau jenis ruang"
-							/></label
-						>
-						<div class="list-stack">
-							{#each filteredClassrooms as item (item.id)}
-								<button
-									type="button"
-									class:selected={selectedRoomId === item.id}
-									class="list-row"
-									onclick={() => pickClassroom(item)}
-								>
-									<div>
-										<strong>{item.name}</strong><span
-											>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
-										>
-									</div>
-									<small>{item.schedule_count ?? 0} jadwal</small>
-								</button>
-							{/each}
-						</div>
-					</section>
-					<section class="workspace-detail">
-						<div class="pane-head compact">
-							<div>
-								<h3>{selectedRoom ? selectedRoom.name : 'Tambah ruang'}</h3>
-							</div>
-							{#if currentUser.current.role === 'ADMIN'}
-								<div class="detail-actions">
-									{#if editorView === 'classrooms'}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => stopEditing('classrooms')}>Tutup form</Button
-										>
-									{:else if selectedRoom}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => beginEdit('classrooms')}>Edit</Button
-										>
-									{/if}
-									{#if selectedRoomId}
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => requestDelete('classroom', selectedRoomId!)}>Hapus</Button
-										>
-									{/if}
-								</div>
-							{/if}
-						</div>
-						{#if pendingDelete?.kind === 'classroom' && pendingDelete.id === selectedRoomId}
-							<section class="warning-panel">
-								<p class="warning-title">Hapus {pendingDelete.label}?</p>
-								<p>{pendingDelete.message}</p>
-								<div class="warning-actions">
-									<Button
-										class="danger-button"
-										variant="destructive"
-										size="sm"
-										onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-										>{pendingDelete.confirmLabel}</Button
-									>
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										size="sm"
-										onclick={() => (pendingDelete = null)}>Batal</Button
-									>
-								</div>
-							</section>
-						{/if}
-						{#if selectedRoom && editorView !== 'classrooms'}<div class="detail-stack">
-								<div class="detail-lines">
-									<div>
-										<span>Tipe</span><strong
-											>{beautifyRoomType(selectedRoom.class_room_type)}</strong
-										>
-									</div>
-									<div><span>Kapasitas</span><strong>{selectedRoom.capacity}</strong></div>
-									<div>
-										<span>Projector</span><strong
-											>{selectedRoom.has_projector ? 'Ya' : 'Tidak'}</strong
-										>
-									</div>
-									<div><span>AC</span><strong>{selectedRoom.has_ac ? 'Ya' : 'Tidak'}</strong></div>
-								</div>
-								<p class="detail-hint">
-									Tinjau ringkasan ruang lebih dulu. Buka form edit hanya saat data perlu diubah.
-								</p>
-							</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'classrooms'}
-							<form
-								class="editor-grid"
-								{...selectedRoomId ? updateClassRoomEnhance : createClassRoomEnhance}
-							>
-								{#if selectedRoomId}<input
-										type="hidden"
-										{...updateClassRoom.fields.id.as('text')}
-										bind:value={selectedRoomId}
-									/>{/if}
-								<label
-									><span>Nama ruang</span><input
-										{...selectedRoomId
-											? updateClassRoom.fields.name.as('text')
-											: createClassRoom.fields.name.as('text')}
-										bind:value={classroomDraft.name}
-									/></label
-								>
-								<label
-									><span>Tipe ruang</span><select
-										{...selectedRoomId
-											? updateClassRoom.fields.classRoomType.as('select')
-											: createClassRoom.fields.classRoomType.as('select')}
-										bind:value={classroomDraft.classRoomType}
-										>{#each classRoomTypes as type (type)}<option value={type}
-												>{beautifyRoomType(type)}</option
-											>{/each}</select
-									></label
-								>
-								<label
-									><span>Kapasitas</span><input
-										min="1"
-										{...selectedRoomId
-											? updateClassRoom.fields.capacity.as('number')
-											: createClassRoom.fields.capacity.as('number')}
-										bind:value={classroomDraft.capacity}
-									/></label
-								>
-								<label class="check-row"
-									><input
-										{...selectedRoomId
-											? updateClassRoom.fields.hasProjector.as('checkbox')
-											: createClassRoom.fields.hasProjector.as('checkbox')}
-										checked={classroomDraft.hasProjector}
-										onchange={(event) =>
-											(classroomDraft.hasProjector = (
-												event.currentTarget as HTMLInputElement
-											).checked)}
-									/><span>Proyektor tersedia</span></label
-								>
-								<label class="check-row"
-									><input
-										{...selectedRoomId
-											? updateClassRoom.fields.hasAC.as('checkbox')
-											: createClassRoom.fields.hasAC.as('checkbox')}
-										checked={classroomDraft.hasAC}
-										onchange={(event) =>
-											(classroomDraft.hasAC = (event.currentTarget as HTMLInputElement).checked)}
-									/><span>AC tersedia</span></label
-								>
-								<Button type="submit" class="primary-button"
-									>{selectedRoomId ? 'Simpan perubahan' : 'Tambah ruang'}</Button
-								>
-							</form>{:else}<p class="empty-copy">
-								Pilih satu ruang untuk melihat detail, atau tambahkan ruang baru saat inventaris
-								berubah.
-							</p>{/if}
-					</section>
-				</div>
-			{/if}
-
-			{#if activeView === 'courses'}
-				<div class="workspace-shell">
-					<section class="workspace-list">
-						<div class="pane-head">
-							<div>
-								<h3>Daftar mata kuliah</h3>
-							</div>
-							<Button
-								variant="ghost"
-								size="sm"
-								class="ghost-button"
-								onclick={() => beginCreate('courses')}>Tambah</Button
-							>
-						</div>
-						<label class="search-box"
-							><Search size={16} /><input
-								bind:value={courseSearch}
-								aria-label="Cari data mata kuliah"
-								placeholder="Cari kode, nama, atau dosen pengampu"
-							/></label
-						>
-						<div class="list-stack">
-							{#each filteredCourses as item (item.id)}<button
-									type="button"
-									class:selected={selectedCourseId === item.id}
-									class="list-row"
-									onclick={() => pickCourse(item)}
-									><div>
-										<strong>{item.id} • {item.name}</strong><span
-											>{item.study_program_name} • {item.lecturer_name}</span
-										>
-									</div>
-									<small>{item.credits} SKS</small></button
-								>{/each}
-						</div>
-					</section>
-					<section class="workspace-detail">
-						<div class="pane-head compact">
-							<div>
-								<h3>{selectedCourse ? selectedCourse.name : 'Tambah mata kuliah'}</h3>
-							</div>
-							{#if currentUser.current.role === 'ADMIN'}
-								<div class="detail-actions">
-									{#if editorView === 'courses'}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => stopEditing('courses')}>Tutup form</Button
-										>
-									{:else if selectedCourse}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => beginEdit('courses')}>Edit</Button
-										>
-									{/if}
-									{#if selectedCourseId}
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => requestDelete('course', selectedCourseId!)}>Hapus</Button
-										>
-									{/if}
-								</div>
-							{/if}
-						</div>
-						{#if pendingDelete?.kind === 'course' && pendingDelete.id === selectedCourseId}
-							<section class="warning-panel">
-								<p class="warning-title">Hapus {pendingDelete.label}?</p>
-								<p>{pendingDelete.message}</p>
-								<div class="warning-actions">
-									<Button
-										class="danger-button"
-										variant="destructive"
-										size="sm"
-										onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-										>{pendingDelete.confirmLabel}</Button
-									>
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										size="sm"
-										onclick={() => (pendingDelete = null)}>Batal</Button
-									>
-								</div>
-							</section>
-						{/if}
-						{#if selectedCourse && editorView !== 'courses'}<div class="detail-stack">
-								<div class="detail-lines">
-									<div><span>Kode</span><strong>{selectedCourse.id}</strong></div>
-									<div>
-										<span>Program studi</span><strong>{selectedCourse.study_program_name}</strong>
-									</div>
-									<div><span>Dosen</span><strong>{selectedCourse.lecturer_name}</strong></div>
-									<div><span>Beban</span><strong>{selectedCourse.credits} SKS</strong></div>
-									<div>
-										<span>Peserta</span><strong>{selectedCourse.enrollment_count ?? 0}</strong>
-									</div>
-								</div>
-								<p class="detail-hint">
-									Gunakan mode tinjau untuk membaca beban kuliah dan relasi dosen sebelum membuka
-									editor.
-								</p>
-							</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'courses'}<form
-								class="editor-grid"
-								{...selectedCourseId ? updateCourseEnhance : createCourseEnhance}
-							>
-								{#if selectedCourseId}<input
-										type="hidden"
-										{...updateCourse.fields.id.as('text')}
-										bind:value={courseDraft.id}
-									/>{:else}<p class="editor-note">
-										Kode mata kuliah dibuat otomatis saat data disimpan.
-									</p>{/if}<label
-									><span>Nama mata kuliah</span><input
-										{...selectedCourseId
-											? updateCourse.fields.name.as('text')
-											: createCourse.fields.name.as('text')}
-										bind:value={courseDraft.name}
-									/></label
-								><label
-									><span>SKS</span><input
-										min="1"
-										max="6"
-										{...selectedCourseId
-											? updateCourse.fields.credits.as('number')
-											: createCourse.fields.credits.as('number')}
-										bind:value={courseDraft.credits}
-									/></label
-								><label
-									><span>Program studi</span><select
-										{...selectedCourseId
-											? updateCourse.fields.studyProgramId.as('select')
-											: createCourse.fields.studyProgramId.as('select')}
-										bind:value={courseDraft.studyProgramId}
-										><option value="">Pilih program studi</option
-										>{#if collectionIssues.studyPrograms && !studyPrograms.length}<option
-												value=""
-												disabled>{collectionIssues.studyPrograms}</option
-											>{/if}
-										>{#each studyPrograms as item (item.id)}<option value={item.id}
-												>{item.name}</option
-											>{/each}</select
-									></label
-								><label
-									><span>Dosen pengampu</span><select
-										{...selectedCourseId
-											? updateCourse.fields.lecturerId.as('select')
-											: createCourse.fields.lecturerId.as('select')}
-										bind:value={courseDraft.lecturerId}
-										><option value="">Pilih dosen</option
-										>{#if collectionIssues.lecturers && !lecturers.length}<option value="" disabled
-												>{collectionIssues.lecturers}</option
-											>{/if}{#each lecturers as item (item.id)}<option value={item.id}
-												>{item.name}</option
-											>{/each}</select
-									></label
-								>{#if courseEditorBlocked}<p class="editor-note">
-										Program studi dan dosen harus tersedia sebelum mata kuliah bisa disimpan.
-									</p>{/if}<Button
-									type="submit"
-									class="primary-button"
-									disabled={courseEditorBlocked}
-									>{selectedCourseId ? 'Simpan perubahan' : 'Tambah mata kuliah'}</Button
-								>
-							</form>{:else}<p class="empty-copy">
-								Pilih satu mata kuliah untuk melihat detail, atau tambahkan mata kuliah baru saat
-								katalog berubah.
-							</p>{/if}
-					</section>
-				</div>
-			{/if}
-
-			{#if activeView === 'students' && currentUser.current.role !== 'STUDENT'}
-				<div class="workspace-shell">
-					<section class="workspace-list">
-						<div class="pane-head">
-							<div>
-								<h3>Daftar mahasiswa aktif</h3>
-							</div>
-							<Button
-								variant="ghost"
-								size="sm"
-								class="ghost-button"
-								onclick={() => beginCreate('students')}>Tambah</Button
-							>
-						</div>
-						<label class="search-box"
-							><Search size={16} /><input
-								bind:value={studentSearch}
-								aria-label="Cari data mahasiswa"
-								placeholder="Cari NRP, nama, atau program studi"
-							/></label
-						>
-						<div class="list-stack">
-							{#each filteredStudents as item (item.id)}<button
-									type="button"
-									class:selected={selectedStudentId === item.id}
-									class="list-row"
-									onclick={() => pickStudent(item)}
-									><div>
-										<strong>{item.name}</strong><span>{item.id} • {item.study_program_name}</span>
-									</div>
-									<small>{item.enrollment_count ?? 0} KRS</small></button
-								>{/each}
-						</div>
-					</section>
-					<section class="workspace-detail">
-						<div class="pane-head compact">
-							<div>
-								<h3>{selectedStudent ? selectedStudent.name : 'Tambah mahasiswa'}</h3>
-							</div>
-							{#if currentUser.current.role === 'ADMIN'}
-								<div class="detail-actions">
-									{#if editorView === 'students'}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => stopEditing('students')}>Tutup form</Button
-										>
-									{:else if selectedStudent}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => beginEdit('students')}>Edit</Button
-										>
-									{/if}
-									{#if selectedStudentId}
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => requestDelete('student', selectedStudentId!)}>Hapus</Button
-										>
-									{/if}
-								</div>
-							{/if}
-						</div>
-						{#if pendingDelete?.kind === 'student' && pendingDelete.id === selectedStudentId}
-							<section class="warning-panel">
-								<p class="warning-title">Hapus {pendingDelete.label}?</p>
-								<p>{pendingDelete.message}</p>
-								<div class="warning-actions">
-									<Button
-										class="danger-button"
-										variant="destructive"
-										size="sm"
-										onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-										>{pendingDelete.confirmLabel}</Button
-									>
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										size="sm"
-										onclick={() => (pendingDelete = null)}>Batal</Button
-									>
-								</div>
-							</section>
-						{/if}
-						{#if selectedStudent && editorView !== 'students'}<div class="detail-stack">
-								<div class="detail-lines">
-									<div><span>Email</span><strong>{selectedStudent.email}</strong></div>
-									<div>
-										<span>Program studi</span><strong>{selectedStudent.study_program_name}</strong>
-									</div>
-									<div><span>Fakultas</span><strong>{selectedStudent.faculty_name}</strong></div>
-									<div><span>Angkatan</span><strong>{selectedStudent.year_admitted}</strong></div>
-								</div>
-								<p class="detail-hint">
-									Tinjau identitas mahasiswa lebih dulu agar perubahan data tidak bercampur dengan
-									proses baca cepat.
-								</p>
-							</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'students'}<form
-								class="editor-grid"
-								{...selectedStudentId ? updateStudentEnhance : createStudentEnhance}
-							>
-								{#if selectedStudentId}<input
-										type="hidden"
-										{...updateStudent.fields.id.as('text')}
-										bind:value={selectedStudentId}
-									/>{/if}<label
-									><span>Nama</span><input
-										{...selectedStudentId
-											? updateStudent.fields.name.as('text')
-											: createStudent.fields.name.as('text')}
-										bind:value={studentDraft.name}
-									/></label
-								><label
-									><span>Email</span><input
-										{...selectedStudentId
-											? updateStudent.fields.email.as('email')
-											: createStudent.fields.email.as('email')}
-										bind:value={studentDraft.email}
-									/></label
-								><label
-									><span>Telepon</span><input
-										{...selectedStudentId
-											? updateStudent.fields.phone.as('text')
-											: createStudent.fields.phone.as('text')}
-										bind:value={studentDraft.phone}
-									/></label
-								><label
-									><span>Alamat</span><input
-										{...selectedStudentId
-											? updateStudent.fields.address.as('text')
-											: createStudent.fields.address.as('text')}
-										bind:value={studentDraft.address}
-									/></label
-								><label
-									><span>Angkatan</span><input
-										{...selectedStudentId
-											? updateStudent.fields.yearAdmitted.as('number')
-											: createStudent.fields.yearAdmitted.as('number')}
-										bind:value={studentDraft.yearAdmitted}
-									/></label
-								><label
-									><span>Program studi</span><select
-										{...selectedStudentId
-											? updateStudent.fields.studyProgramId.as('select')
-											: createStudent.fields.studyProgramId.as('select')}
-										bind:value={studentDraft.studyProgramId}
-										><option value="">Pilih program studi</option
-										>{#if collectionIssues.studyPrograms && !studyPrograms.length}<option
-												value=""
-												disabled>{collectionIssues.studyPrograms}</option
-											>{/if}
-										>{#each studyPrograms as item (item.id)}<option value={item.id}
-												>{item.name}</option
-											>{/each}</select
-									></label
-								>{#if studentEditorBlocked}<p class="editor-note">
-										Program studi harus tersedia sebelum data mahasiswa bisa disimpan.
-									</p>{/if}<Button
-									type="submit"
-									class="primary-button"
-									disabled={studentEditorBlocked}
-									>{selectedStudentId ? 'Simpan perubahan' : 'Tambah mahasiswa'}</Button
-								>
-							</form>{:else}<p class="empty-copy">
-								Pilih satu mahasiswa untuk melihat profil, atau tambahkan mahasiswa baru saat data
-								aktif berubah.
-							</p>{/if}
-					</section>
-				</div>
-			{/if}
-
-			{#if activeView === 'lecturers'}
-				<div class="workspace-shell">
-					<section class="workspace-list">
-						<div class="pane-head">
-							<div>
-								<h3>Daftar dosen</h3>
-							</div>
-							{#if currentUser.current.role === 'ADMIN'}<Button
-									variant="ghost"
-									size="sm"
-									class="ghost-button"
-									onclick={() => beginCreate('lecturers')}>Tambah</Button
-								>{/if}
-						</div>
-						<label class="search-box"
-							><Search size={16} /><input
-								bind:value={lecturerSearch}
-								aria-label="Cari data dosen"
-								placeholder="Cari ID dosen, nama, atau email"
-							/></label
-						>
-						<div class="list-stack">
-							{#each filteredLecturers as item (item.id)}<button
-									type="button"
-									class:selected={selectedLecturerId === item.id}
-									class="list-row"
-									onclick={() => pickLecturer(item)}
-									><div><strong>{item.name}</strong><span>{item.id} • {item.email}</span></div>
-									<small>{item.schedule_count ?? 0} jadwal</small></button
-								>{/each}
-						</div>
-					</section>
-					<section class="workspace-detail">
-						<div class="pane-head compact">
-							<div>
-								<h3>{selectedLecturer ? selectedLecturer.name : 'Tambah dosen'}</h3>
-							</div>
-							{#if currentUser.current.role === 'ADMIN'}
-								<div class="detail-actions">
-									{#if editorView === 'lecturers'}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => stopEditing('lecturers')}>Tutup form</Button
-										>
-									{:else if selectedLecturer}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => beginEdit('lecturers')}>Edit</Button
-										>
-									{/if}
-									{#if selectedLecturerId}
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => requestDelete('lecturer', selectedLecturerId!)}>Hapus</Button
-										>
-									{/if}
-								</div>
-							{/if}
-						</div>
-						{#if pendingDelete?.kind === 'lecturer' && pendingDelete.id === selectedLecturerId}
-							<section class="warning-panel">
-								<p class="warning-title">Hapus {pendingDelete.label}?</p>
-								<p>{pendingDelete.message}</p>
-								<div class="warning-actions">
-									<Button
-										class="danger-button"
-										variant="destructive"
-										size="sm"
-										onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-										>{pendingDelete.confirmLabel}</Button
-									>
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										size="sm"
-										onclick={() => (pendingDelete = null)}>Batal</Button
-									>
-								</div>
-							</section>
-						{/if}
-						{#if selectedLecturer && editorView !== 'lecturers'}<div class="detail-stack">
-								<div class="detail-lines">
-									<div><span>ID dosen</span><strong>{selectedLecturer.id}</strong></div>
-									<div><span>Email</span><strong>{selectedLecturer.email}</strong></div>
-									<div><span>Telepon</span><strong>{selectedLecturer.phone || '-'}</strong></div>
-									<div><span>Alamat</span><strong>{selectedLecturer.address || '-'}</strong></div>
-									<div>
-										<span>Jadwal aktif</span><strong>{selectedLecturer.schedule_count ?? 0}</strong>
-									</div>
-								</div>
-								<p class="detail-hint">
-									Mode tinjau membantu Anda membaca konteks dosen sebelum membuka form edit.
-								</p>
-							</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'lecturers'}<form
-								class="editor-grid"
-								{...selectedLecturerId ? updateLecturerEnhance : createLecturerEnhance}
-							>
-								{#if selectedLecturerId}<input
-										type="hidden"
-										{...updateLecturer.fields.id.as('text')}
-										bind:value={lecturerDraft.id}
-									/>{:else}<p class="editor-note">
-										ID dosen dibuat otomatis saat data disimpan.
-									</p>{/if}<label
-									><span>Nama</span><input
-										{...selectedLecturerId
-											? updateLecturer.fields.name.as('text')
-											: createLecturer.fields.name.as('text')}
-										bind:value={lecturerDraft.name}
-									/></label
-								><label
-									><span>Email</span><input
-										{...selectedLecturerId
-											? updateLecturer.fields.email.as('email')
-											: createLecturer.fields.email.as('email')}
-										bind:value={lecturerDraft.email}
-									/></label
-								><label
-									><span>Telepon</span><input
-										{...selectedLecturerId
-											? updateLecturer.fields.phone.as('text')
-											: createLecturer.fields.phone.as('text')}
-										bind:value={lecturerDraft.phone}
-									/></label
-								><label
-									><span>Alamat</span><input
-										{...selectedLecturerId
-											? updateLecturer.fields.address.as('text')
-											: createLecturer.fields.address.as('text')}
-										bind:value={lecturerDraft.address}
-									/></label
-								><Button type="submit" class="primary-button"
-									>{selectedLecturerId ? 'Simpan perubahan' : 'Tambah dosen'}</Button
-								>
-							</form>{:else}<p class="empty-copy">
-								Pilih satu dosen untuk melihat detail, atau tambahkan dosen baru saat data pengampu
-								berubah.
-							</p>{/if}
-					</section>
-				</div>
-			{/if}
-
-			{#if activeView === 'faculties'}
-				<div class="workspace-shell">
-					<section class="workspace-list">
-						<div class="pane-head">
-							<div>
-								<h3>Daftar fakultas</h3>
-							</div>
-							<Button
-								variant="ghost"
-								size="sm"
-								class="ghost-button"
-								onclick={() => beginCreate('faculties')}>Tambah</Button
-							>
-						</div>
-						<label class="search-box"
-							><Search size={16} /><input
-								bind:value={facultySearch}
-								aria-label="Cari data fakultas"
-								placeholder="Cari kode atau nama fakultas"
-							/></label
-						>
-						<div class="list-stack">
-							{#each filteredFaculties as item (item.id)}<button
-									type="button"
-									class:selected={selectedFacultyId === item.id}
-									class="list-row"
-									onclick={() => pickFaculty(item)}
-									><div><strong>{item.name}</strong><span>{item.id}</span></div>
-									<small>{item.study_program_count ?? 0} prodi</small></button
-								>{/each}
-						</div>
-					</section>
-					<section class="workspace-detail">
-						<div class="pane-head compact">
-							<div>
-								<h3>{selectedFaculty ? selectedFaculty.name : 'Tambah fakultas'}</h3>
-							</div>
-							{#if currentUser.current.role === 'ADMIN'}
-								<div class="detail-actions">
-									{#if editorView === 'faculties'}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => stopEditing('faculties')}>Tutup form</Button
-										>
-									{:else if selectedFaculty}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => beginEdit('faculties')}>Edit</Button
-										>
-									{/if}
-									{#if selectedFacultyId}
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => requestDelete('faculty', selectedFacultyId!)}>Hapus</Button
-										>
-									{/if}
-								</div>
-							{/if}
-						</div>
-						{#if pendingDelete?.kind === 'faculty' && pendingDelete.id === selectedFacultyId}
-							<section class="warning-panel">
-								<p class="warning-title">Hapus {pendingDelete.label}?</p>
-								<p>{pendingDelete.message}</p>
-								<div class="warning-actions">
-									<Button
-										class="danger-button"
-										variant="destructive"
-										size="sm"
-										onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-										>{pendingDelete.confirmLabel}</Button
-									>
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										size="sm"
-										onclick={() => (pendingDelete = null)}>Batal</Button
-									>
-								</div>
-							</section>
-						{/if}
-						{#if selectedFaculty && editorView !== 'faculties'}<div class="detail-stack">
-								<div class="detail-lines">
-									<div><span>Kode</span><strong>{selectedFaculty.id}</strong></div>
-									<div>
-										<span>Program studi</span><strong
-											>{selectedFaculty.study_program_count ?? 0}</strong
-										>
-									</div>
-								</div>
-								<p class="detail-hint">
-									Tinjau ringkasan struktur lebih dulu. Buka form edit hanya untuk perubahan yang
-									memang diperlukan.
-								</p>
-							</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'faculties'}<form
-								class="editor-grid"
-								{...selectedFacultyId ? updateFacultyEnhance : createFacultyEnhance}
-							>
-								{#if selectedFacultyId}<input
-										type="hidden"
-										{...updateFaculty.fields.id.as('text')}
-										bind:value={facultyDraft.id}
-									/>{:else}<p class="editor-note">
-										ID fakultas dibuat otomatis saat data disimpan.
-									</p>{/if}<label
-									><span>Nama fakultas</span><input
-										{...selectedFacultyId
-											? updateFaculty.fields.name.as('text')
-											: createFaculty.fields.name.as('text')}
-										bind:value={facultyDraft.name}
-									/></label
-								><Button type="submit" class="primary-button"
-									>{selectedFacultyId ? 'Simpan perubahan' : 'Tambah fakultas'}</Button
-								>
-							</form>{:else}<p class="empty-copy">
-								Pilih satu fakultas untuk melihat detail, atau tambahkan fakultas baru saat struktur
-								berubah.
-							</p>{/if}
-					</section>
-				</div>
-			{/if}
-
-			{#if activeView === 'studyPrograms'}
-				<div class="workspace-shell">
-					<section class="workspace-list">
-						<div class="pane-head">
-							<div>
-								<h3>Daftar program studi</h3>
-							</div>
-							<Button
-								variant="ghost"
-								size="sm"
-								class="ghost-button"
-								onclick={() => beginCreate('studyPrograms')}>Tambah</Button
-							>
-						</div>
-						<label class="search-box"
-							><Search size={16} /><input
-								bind:value={studyProgramSearch}
-								aria-label="Cari data program studi"
-								placeholder="Cari kode, nama, atau fakultas"
-							/></label
-						>
-						<div class="list-stack">
-							{#each filteredStudyPrograms as item (item.id)}<button
-									type="button"
-									class:selected={selectedStudyProgramId === item.id}
-									class="list-row"
-									onclick={() => pickStudyProgram(item)}
-									><div>
-										<strong>{item.name}</strong><span>{item.id} • {item.faculty_name}</span>
-									</div>
-									<small>{item.student_count ?? 0} mahasiswa</small></button
-								>{/each}
-						</div>
-					</section>
-					<section class="workspace-detail">
-						<div class="pane-head compact">
-							<div>
-								<h3>
-									{selectedStudyProgram ? selectedStudyProgram.name : 'Tambah program studi'}
-								</h3>
-							</div>
-							{#if currentUser.current.role === 'ADMIN'}
-								<div class="detail-actions">
-									{#if editorView === 'studyPrograms'}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => stopEditing('studyPrograms')}>Tutup form</Button
-										>
-									{:else if selectedStudyProgram}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => beginEdit('studyPrograms')}>Edit</Button
-										>
-									{/if}
-									{#if selectedStudyProgramId}
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => requestDelete('studyProgram', selectedStudyProgramId!)}
-											>Hapus</Button
-										>
-									{/if}
-								</div>
-							{/if}
-						</div>
-						{#if pendingDelete?.kind === 'studyProgram' && pendingDelete.id === selectedStudyProgramId}
-							<section class="warning-panel">
-								<p class="warning-title">Hapus {pendingDelete.label}?</p>
-								<p>{pendingDelete.message}</p>
-								<div class="warning-actions">
-									<Button
-										class="danger-button"
-										variant="destructive"
-										size="sm"
-										onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-										>{pendingDelete.confirmLabel}</Button
-									>
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										size="sm"
-										onclick={() => (pendingDelete = null)}>Batal</Button
-									>
-								</div>
-							</section>
-						{/if}
-						{#if selectedStudyProgram && editorView !== 'studyPrograms'}<div class="detail-stack">
-								<div class="detail-lines">
-									<div><span>ID prodi</span><strong>{selectedStudyProgram.id}</strong></div>
-									<div><span>Ketua program</span><strong>{selectedStudyProgram.head}</strong></div>
-									<div>
-										<span>Fakultas</span><strong>{selectedStudyProgram.faculty_name}</strong>
-									</div>
-									<div>
-										<span>Mahasiswa</span><strong>{selectedStudyProgram.student_count ?? 0}</strong>
-									</div>
-								</div>
-								<p class="detail-hint">
-									Gunakan mode tinjau agar struktur prodi tetap mudah dibaca sebelum proses edit
-									dimulai.
-								</p>
-							</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'studyPrograms'}<form
-								class="editor-grid"
-								{...selectedStudyProgramId ? updateStudyProgramEnhance : createStudyProgramEnhance}
-							>
-								{#if selectedStudyProgramId}<input
-										type="hidden"
-										{...updateStudyProgram.fields.id.as('text')}
-										bind:value={studyProgramDraft.id}
-									/>{:else}<p class="editor-note">
-										ID program studi dibuat otomatis saat data disimpan.
-									</p>{/if}<label
-									><span>Nama prodi</span><input
-										{...selectedStudyProgramId
-											? updateStudyProgram.fields.name.as('text')
-											: createStudyProgram.fields.name.as('text')}
-										bind:value={studyProgramDraft.name}
-									/></label
-								><label
-									><span>Ketua prodi</span><input
-										{...selectedStudyProgramId
-											? updateStudyProgram.fields.head.as('text')
-											: createStudyProgram.fields.head.as('text')}
-										bind:value={studyProgramDraft.head}
-									/></label
-								><label
-									><span>Fakultas</span><select
-										{...selectedStudyProgramId
-											? updateStudyProgram.fields.facultyId.as('select')
-											: createStudyProgram.fields.facultyId.as('select')}
-										bind:value={studyProgramDraft.facultyId}
-										><option value="">Pilih fakultas</option
-										>{#if collectionIssues.faculties && !faculties.length}<option value="" disabled
-												>{collectionIssues.faculties}</option
-											>{/if}
-										>{#each faculties as item (item.id)}<option value={item.id}>{item.name}</option
-											>{/each}</select
-									></label
-								>{#if studyProgramEditorBlocked}<p class="editor-note">
-										Fakultas harus tersedia sebelum program studi bisa disimpan.
-									</p>{/if}<Button
-									type="submit"
-									class="primary-button"
-									disabled={studyProgramEditorBlocked}
-									>{selectedStudyProgramId ? 'Simpan perubahan' : 'Tambah program studi'}</Button
-								>
-							</form>{:else}<p class="empty-copy">
-								Pilih satu program studi untuk melihat detail, atau tambahkan program studi baru
-								saat struktur akademik berubah.
-							</p>{/if}
-					</section>
-				</div>
-			{/if}
-
-			{#if activeView === 'enrollments'}
-				<div class="workspace-shell">
-					<section class="workspace-list">
-						<div class="pane-head">
-							<div>
-								<h3>KRS aktif</h3>
-							</div>
-						</div>
-						<label class="search-box"
-							><Search size={16} /><input
-								bind:value={enrollmentSearch}
-								aria-label="Cari KRS aktif"
-								placeholder="Cari mahasiswa, mata kuliah, atau ruang"
-							/></label
-						>
-						<div class="list-stack">
-							{#each filteredEnrollments as item (item.id)}<button
-									type="button"
-									class:selected={selectedEnrollmentId === item.id}
-									class="list-row"
-									onclick={() => pickEnrollment(item)}
-									><div>
-										<strong>{item.student_name}</strong><span
-											>{item.course_name} • {item.class_room_name}</span
-										>
-									</div>
-									<small>{item.semester} • {item.academic_year}</small></button
-								>{/each}
-						</div>
-					</section>
-					<section class="workspace-detail">
-						<div class="pane-head compact">
-							<div>
-								<h3>{selectedEnrollment ? selectedEnrollment.course_name : 'Pilih satu KRS'}</h3>
-							</div>
-						</div>
-						{#if selectedEnrollment}<div class="detail-lines">
-								<div><span>Mahasiswa</span><strong>{selectedEnrollment.student_name}</strong></div>
-								<div><span>Mata kuliah</span><strong>{selectedEnrollment.course_name}</strong></div>
-								<div><span>Ruang</span><strong>{selectedEnrollment.class_room_name}</strong></div>
+				{#if activeView === 'faculties'}
+					<div class="workspace-shell">
+						<section class="workspace-list">
+							<div class="pane-head">
 								<div>
-									<span>Jadwal</span><strong
-										>{selectedEnrollment.schedule_day
-											? DAY_LABELS[selectedEnrollment.schedule_day as keyof typeof DAY_LABELS]
-											: '-'} • {formatTimeRange(
-											selectedEnrollment.schedule_start_time,
-											selectedEnrollment.schedule_end_time,
-											timezone
-										)}</strong
-									>
+									<h3>Daftar fakultas</h3>
 								</div>
-							</div>{:else}<p class="empty-copy">Pilih satu baris untuk melihat detail KRS.</p>{/if}
-					</section>
-				</div>
-			{/if}
-
-			{#if activeView === 'grades'}
-				<div class="workspace-shell">
-					<section class="workspace-list">
-						<div class="pane-head">
-							<div>
-								<h3>Daftar nilai</h3>
-							</div>
-							{#if currentUser.current.role !== 'STUDENT'}<Button
+								<Button
 									variant="ghost"
 									size="sm"
 									class="ghost-button"
-									onclick={() => beginCreate('grades')}>Tambah</Button
-								>{/if}
-						</div>
-						<label class="search-box"
-							><Search size={16} /><input
-								bind:value={gradeSearch}
-								aria-label="Cari data nilai"
-								placeholder="Cari mahasiswa, mata kuliah, atau nilai huruf"
-							/></label
-						>
-						<div class="list-stack">
-							{#each filteredGrades as item (item.id)}<button
-									type="button"
-									class:selected={selectedGradeId === item.id}
-									class="list-row"
-									onclick={() => pickGrade(item)}
-									><div>
-										<strong>{item.student_name}</strong><span
-											>{item.course_name} • {item.letter_grade}</span
-										>
-									</div>
-									<small>{item.total_score ?? '-'} poin</small></button
-								>{/each}
-						</div>
-					</section>
-					<section class="workspace-detail">
-						<div class="pane-head compact">
-							<div>
-								<h3>
-									{selectedGrade
-										? `${selectedGrade.student_name} • ${selectedGrade.course_name}`
-										: 'Input nilai baru'}
-								</h3>
-							</div>
-							{#if currentUser.current.role !== 'STUDENT'}
-								<div class="detail-actions">
-									{#if editorView === 'grades'}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => stopEditing('grades')}>Tutup form</Button
-										>
-									{:else if selectedGrade}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => beginEdit('grades')}>Edit</Button
-										>
-									{/if}
-									{#if selectedGradeId}
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => requestDelete('grade', selectedGradeId!)}>Hapus</Button
-										>
-									{/if}
-								</div>
-							{/if}
-						</div>
-						{#if pendingDelete?.kind === 'grade' && pendingDelete.id === selectedGradeId}
-							<section class="warning-panel">
-								<p class="warning-title">Hapus {pendingDelete.label}?</p>
-								<p>{pendingDelete.message}</p>
-								<div class="warning-actions">
-									<Button
-										class="danger-button"
-										variant="destructive"
-										size="sm"
-										onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-										>{pendingDelete.confirmLabel}</Button
-									>
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										size="sm"
-										onclick={() => (pendingDelete = null)}>Batal</Button
-									>
-								</div>
-							</section>
-						{/if}
-						{#if selectedGrade && editorView !== 'grades'}<div class="detail-stack">
-								<div class="detail-lines">
-									<div><span>Total</span><strong>{selectedGrade.total_score}</strong></div>
-									<div><span>Huruf</span><strong>{selectedGrade.letter_grade}</strong></div>
-									<div><span>Tugas</span><strong>{selectedGrade.assignment_score}</strong></div>
-									<div>
-										<span>UTS/UAS</span><strong
-											>{selectedGrade.midterm_score} / {selectedGrade.final_score}</strong
-										>
-									</div>
-								</div>
-								<p class="detail-hint">
-									Mode tinjau memisahkan peninjauan hasil dari proses edit nilai.
-								</p>
-							</div>{:else if currentUser.current.role !== 'STUDENT' && editorView === 'grades'}<form
-								class="editor-grid"
-								{...selectedGradeId ? updateGradeEnhance : createGradeEnhance}
-							>
-								{#if selectedGradeId}<input
-										type="hidden"
-										{...updateGrade.fields.id.as('text')}
-										bind:value={gradeDraft.id}
-									/>{/if}<label
-									><span>KRS</span><select
-										{...selectedGradeId
-											? updateGrade.fields.enrollmentId.as('select')
-											: createGrade.fields.enrollmentId.as('select')}
-										bind:value={gradeDraft.enrollmentId}
-										><option value="">Pilih KRS</option
-										>{#if collectionIssues.enrollments && !enrollments.length}<option
-												value=""
-												disabled>{collectionIssues.enrollments}</option
-											>{/if}{#each enrollments as item (item.id)}<option value={item.id}
-												>{item.student_name} • {item.course_name}</option
-											>{/each}</select
-									></label
-								><label
-									><span>Tugas</span><input
-										min="0"
-										max="100"
-										{...selectedGradeId
-											? updateGrade.fields.assignmentScore.as('number')
-											: createGrade.fields.assignmentScore.as('number')}
-										bind:value={gradeDraft.assignmentScore}
-									/></label
-								><label
-									><span>UTS</span><input
-										min="0"
-										max="100"
-										{...selectedGradeId
-											? updateGrade.fields.midtermScore.as('number')
-											: createGrade.fields.midtermScore.as('number')}
-										bind:value={gradeDraft.midtermScore}
-									/></label
-								><label
-									><span>UAS</span><input
-										min="0"
-										max="100"
-										{...selectedGradeId
-											? updateGrade.fields.finalScore.as('number')
-											: createGrade.fields.finalScore.as('number')}
-										bind:value={gradeDraft.finalScore}
-									/></label
-								>{#if gradeEditorBlocked}<p class="editor-note">
-										Data KRS harus tersedia sebelum nilai bisa disimpan.
-									</p>{/if}<Button
-									type="submit"
-									class="primary-button"
-									disabled={gradeEditorBlocked}
-									>{selectedGradeId ? 'Simpan perubahan' : 'Simpan nilai'}</Button
+									onclick={() => beginCreate('faculties')}>Tambah</Button
 								>
-							</form>{:else}<p class="empty-copy">
-								Pilih satu nilai untuk melihat hasil, atau tambahkan nilai baru saat evaluasi perlu
-								dicatat.
-							</p>{/if}
-					</section>
-				</div>
-			{/if}
-
-			{#if activeView === 'users' && currentUser.current.role === 'ADMIN'}
-				<div class="workspace-shell">
-					<section class="workspace-list">
-						<div class="pane-head">
-							<div>
-								<h3>Akun pengguna</h3>
 							</div>
-						</div>
-						<label class="search-box"
-							><Search size={16} /><input
-								bind:value={userSearch}
-								aria-label="Cari akun pengguna"
-								placeholder="Cari email atau pemilik akun"
-							/></label
-						>
-						<div class="list-stack">
-							{#each filteredUsers as item (item.id)}<button
-									type="button"
-									class:selected={selectedUserId === item.id}
-									class="list-row"
-									onclick={() => pickUser(item)}
-									><div>
-										<strong>{item.email}</strong><span
-											>{item.student_name ?? item.lecturer_name ?? 'Administrator sistem'}</span
-										>
+							<label class="search-box"
+								><Search size={16} /><input
+									bind:value={facultySearch}
+									aria-label="Cari data fakultas"
+									placeholder="Cari kode atau nama fakultas"
+								/></label
+							>
+							<div class="list-stack">
+								{#each filteredFaculties as item (item.id)}<button
+										type="button"
+										class:selected={selectedFacultyId === item.id}
+										class="list-row"
+										onclick={() => pickFaculty(item)}
+										><div><strong>{item.name}</strong><span>{item.id}</span></div>
+										<small>{item.study_program_count ?? 0} prodi</small></button
+									>{/each}
+							</div>
+						</section>
+						<section class="workspace-detail">
+							<div class="pane-head compact">
+								<div>
+									<h3>{selectedFaculty ? selectedFaculty.name : 'Tambah fakultas'}</h3>
+								</div>
+								{#if currentUser.current.role === 'ADMIN'}
+									<div class="detail-actions">
+										{#if editorView === 'faculties'}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="ghost-button"
+												onclick={() => stopEditing('faculties')}>Tutup form</Button
+											>
+										{:else if selectedFaculty}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="ghost-button"
+												onclick={() => beginEdit('faculties')}>Edit</Button
+											>
+										{/if}
+										{#if selectedFacultyId}
+											<Button
+												variant="destructive"
+												size="sm"
+												class="danger-button"
+												onclick={() => requestDelete('faculty', selectedFacultyId!)}>Hapus</Button
+											>
+										{/if}
 									</div>
-									<small>{item.role}</small></button
-								>{/each}
-						</div>
-					</section>
-					<section class="workspace-detail">
-						<div class="pane-head compact">
-							<div>
-								<h3>{selectedUser ? selectedUser.email : 'Pilih akun'}</h3>
-							</div>
-							<div class="detail-actions">
-								{#if editorView === 'users'}
-									<Button
-										variant="ghost"
-										size="sm"
-										class="ghost-button"
-										onclick={() => stopEditing('users')}>Tutup form</Button
-									>
-								{:else if selectedUser}
-									<Button
-										variant="ghost"
-										size="sm"
-										class="ghost-button"
-										onclick={() => beginEdit('users')}>Ubah akun</Button
-									>
 								{/if}
 							</div>
-						</div>
-						{#if selectedUser && editorView !== 'users'}<div class="detail-stack">
-								<div class="detail-lines">
-									<div><span>Peran</span><strong>{selectedUser.role}</strong></div>
-									<div>
-										<span>Mahasiswa</span><strong>{selectedUser.student_name ?? '-'}</strong>
+							{#if pendingDelete?.kind === 'faculty' && pendingDelete.id === selectedFacultyId}
+								<section class="warning-panel">
+									<p class="warning-title">Hapus {pendingDelete.label}?</p>
+									<p>{pendingDelete.message}</p>
+									<div class="warning-actions">
+										<Button
+											class="danger-button"
+											variant="destructive"
+											size="sm"
+											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+											>{pendingDelete.confirmLabel}</Button
+										>
+										<Button
+											class="ghost-button"
+											variant="ghost"
+											size="sm"
+											onclick={() => (pendingDelete = null)}>Batal</Button
+										>
 									</div>
-									<div><span>Dosen</span><strong>{selectedUser.lecturer_name ?? '-'}</strong></div>
+								</section>
+							{/if}
+							{#if selectedFaculty && editorView !== 'faculties'}<div class="detail-stack">
+									<div class="detail-lines">
+										<div><span>Kode</span><strong>{selectedFaculty.id}</strong></div>
+										<div>
+											<span>Program studi</span><strong
+												>{selectedFaculty.study_program_count ?? 0}</strong
+											>
+										</div>
+									</div>
+									<p class="detail-hint">
+										Tinjau ringkasan struktur lebih dulu. Buka form edit hanya untuk perubahan yang
+										memang diperlukan.
+									</p>
+								</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'faculties'}<form
+									class="editor-grid"
+									{...selectedFacultyId ? updateFacultyEnhance : createFacultyEnhance}
+								>
+									{#if selectedFacultyId}<input
+											type="hidden"
+											{...updateFaculty.fields.id.as('text')}
+											bind:value={facultyDraft.id}
+										/>{:else}<p class="editor-note">
+											ID fakultas dibuat otomatis saat data disimpan.
+										</p>{/if}<label
+										><span>Nama fakultas</span><input
+											{...selectedFacultyId
+												? updateFaculty.fields.name.as('text')
+												: createFaculty.fields.name.as('text')}
+											bind:value={facultyDraft.name}
+										/></label
+									><Button type="submit" class="primary-button"
+										>{selectedFacultyId ? 'Simpan perubahan' : 'Tambah fakultas'}</Button
+									>
+								</form>{:else}<p class="empty-copy">
+									Pilih satu fakultas untuk melihat detail, atau tambahkan fakultas baru saat
+									struktur berubah.
+								</p>{/if}
+						</section>
+					</div>
+				{/if}
+
+				{#if activeView === 'studyPrograms'}
+					<div class="workspace-shell">
+						<section class="workspace-list">
+							<div class="pane-head">
+								<div>
+									<h3>Daftar program studi</h3>
 								</div>
-								<p class="detail-hint">
-									Tinjau relasi akun lebih dahulu agar perubahan akses dilakukan dengan konteks yang
-									jelas.
-								</p>
+								<Button
+									variant="ghost"
+									size="sm"
+									class="ghost-button"
+									onclick={() => beginCreate('studyPrograms')}>Tambah</Button
+								>
 							</div>
-						{:else if selectedUser && editorView === 'users'}
-							<form class="editor-grid" {...updateUserEnhance}>
-								<p class="editor-note">
-									Perubahan akun memengaruhi akses login. Tinjau peran dan relasi identitas sebelum
-									menyimpan.
-								</p>
-								<input
-									type="hidden"
-									{...updateUser.fields.id.as('text')}
-									bind:value={userDraft.id}
-								/><label
-									><span>Email</span><input
-										{...updateUser.fields.email.as('email')}
-										autocomplete="email"
-										bind:value={userDraft.email}
-									/></label
-								><label
-									><span>Password baru</span><input
-										{...updateUser.fields.password.as('password')}
-										autocomplete="new-password"
-										bind:value={userDraft.password}
-										placeholder="Biarkan kosong jika password lama tetap dipakai"
-									/></label
-								><label
-									><span>Peran akses</span><select
-										{...updateUser.fields.role.as('select')}
-										bind:value={userDraft.role}
-										><option value="ADMIN">ADMIN</option><option value="STUDENT">STUDENT</option
-										><option value="LECTURER">LECTURER</option></select
-									></label
-								><label
-									><span>ID mahasiswa terkait</span><input
-										{...updateUser.fields.studentId.as('text')}
-										bind:value={userDraft.studentId}
-									/></label
-								><label
-									><span>ID dosen terkait</span><input
-										{...updateUser.fields.lecturerId.as('text')}
-										bind:value={userDraft.lecturerId}
-									/></label
-								><Button type="submit" class="primary-button">Simpan akun</Button>
-							</form>{:else}<p class="empty-copy">
-								Pilih satu akun untuk memperbarui email, peran, atau relasi identitas.
-							</p>{/if}
-					</section>
-				</div>
+							<label class="search-box"
+								><Search size={16} /><input
+									bind:value={studyProgramSearch}
+									aria-label="Cari data program studi"
+									placeholder="Cari kode, nama, atau fakultas"
+								/></label
+							>
+							<div class="list-stack">
+								{#each filteredStudyPrograms as item (item.id)}<button
+										type="button"
+										class:selected={selectedStudyProgramId === item.id}
+										class="list-row"
+										onclick={() => pickStudyProgram(item)}
+										><div>
+											<strong>{item.name}</strong><span>{item.id} • {item.faculty_name}</span>
+										</div>
+										<small>{item.student_count ?? 0} mahasiswa</small></button
+									>{/each}
+							</div>
+						</section>
+						<section class="workspace-detail">
+							<div class="pane-head compact">
+								<div>
+									<h3>
+										{selectedStudyProgram ? selectedStudyProgram.name : 'Tambah program studi'}
+									</h3>
+								</div>
+								{#if currentUser.current.role === 'ADMIN'}
+									<div class="detail-actions">
+										{#if editorView === 'studyPrograms'}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="ghost-button"
+												onclick={() => stopEditing('studyPrograms')}>Tutup form</Button
+											>
+										{:else if selectedStudyProgram}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="ghost-button"
+												onclick={() => beginEdit('studyPrograms')}>Edit</Button
+											>
+										{/if}
+										{#if selectedStudyProgramId}
+											<Button
+												variant="destructive"
+												size="sm"
+												class="danger-button"
+												onclick={() => requestDelete('studyProgram', selectedStudyProgramId!)}
+												>Hapus</Button
+											>
+										{/if}
+									</div>
+								{/if}
+							</div>
+							{#if pendingDelete?.kind === 'studyProgram' && pendingDelete.id === selectedStudyProgramId}
+								<section class="warning-panel">
+									<p class="warning-title">Hapus {pendingDelete.label}?</p>
+									<p>{pendingDelete.message}</p>
+									<div class="warning-actions">
+										<Button
+											class="danger-button"
+											variant="destructive"
+											size="sm"
+											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+											>{pendingDelete.confirmLabel}</Button
+										>
+										<Button
+											class="ghost-button"
+											variant="ghost"
+											size="sm"
+											onclick={() => (pendingDelete = null)}>Batal</Button
+										>
+									</div>
+								</section>
+							{/if}
+							{#if selectedStudyProgram && editorView !== 'studyPrograms'}<div class="detail-stack">
+									<div class="detail-lines">
+										<div><span>ID prodi</span><strong>{selectedStudyProgram.id}</strong></div>
+										<div>
+											<span>Ketua program</span><strong>{selectedStudyProgram.head}</strong>
+										</div>
+										<div>
+											<span>Fakultas</span><strong>{selectedStudyProgram.faculty_name}</strong>
+										</div>
+										<div>
+											<span>Mahasiswa</span><strong
+												>{selectedStudyProgram.student_count ?? 0}</strong
+											>
+										</div>
+									</div>
+									<p class="detail-hint">
+										Gunakan mode tinjau agar struktur prodi tetap mudah dibaca sebelum proses edit
+										dimulai.
+									</p>
+								</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'studyPrograms'}<form
+									class="editor-grid"
+									{...selectedStudyProgramId
+										? updateStudyProgramEnhance
+										: createStudyProgramEnhance}
+								>
+									{#if selectedStudyProgramId}<input
+											type="hidden"
+											{...updateStudyProgram.fields.id.as('text')}
+											bind:value={studyProgramDraft.id}
+										/>{:else}<p class="editor-note">
+											ID program studi dibuat otomatis saat data disimpan.
+										</p>{/if}<label
+										><span>Nama prodi</span><input
+											{...selectedStudyProgramId
+												? updateStudyProgram.fields.name.as('text')
+												: createStudyProgram.fields.name.as('text')}
+											bind:value={studyProgramDraft.name}
+										/></label
+									><label
+										><span>Ketua prodi</span><input
+											{...selectedStudyProgramId
+												? updateStudyProgram.fields.head.as('text')
+												: createStudyProgram.fields.head.as('text')}
+											bind:value={studyProgramDraft.head}
+										/></label
+									><label
+										><span>Fakultas</span><select
+											{...selectedStudyProgramId
+												? updateStudyProgram.fields.facultyId.as('select')
+												: createStudyProgram.fields.facultyId.as('select')}
+											bind:value={studyProgramDraft.facultyId}
+											><option value="">Pilih fakultas</option
+											>{#if collectionIssues.faculties && !faculties.length}<option
+													value=""
+													disabled>{collectionIssues.faculties}</option
+												>{/if}
+											>{#each faculties as item (item.id)}<option value={item.id}
+													>{item.name}</option
+												>{/each}</select
+										></label
+									>{#if studyProgramEditorBlocked}<p class="editor-note">
+											Fakultas harus tersedia sebelum program studi bisa disimpan.
+										</p>{/if}<Button
+										type="submit"
+										class="primary-button"
+										disabled={studyProgramEditorBlocked}
+										>{selectedStudyProgramId ? 'Simpan perubahan' : 'Tambah program studi'}</Button
+									>
+								</form>{:else}<p class="empty-copy">
+									Pilih satu program studi untuk melihat detail, atau tambahkan program studi baru
+									saat struktur akademik berubah.
+								</p>{/if}
+						</section>
+					</div>
+				{/if}
+
+				{#if activeView === 'enrollments'}
+					<div class="workspace-shell">
+						<section class="workspace-list">
+							<div class="pane-head">
+								<div>
+									<h3>KRS aktif</h3>
+								</div>
+							</div>
+							<label class="search-box"
+								><Search size={16} /><input
+									bind:value={enrollmentSearch}
+									aria-label="Cari KRS aktif"
+									placeholder="Cari mahasiswa, mata kuliah, atau ruang"
+								/></label
+							>
+							<div class="list-stack">
+								{#each filteredEnrollments as item (item.id)}<button
+										type="button"
+										class:selected={selectedEnrollmentId === item.id}
+										class="list-row"
+										onclick={() => pickEnrollment(item)}
+										><div>
+											<strong>{item.student_name}</strong><span
+												>{item.course_name} • {item.class_room_name}</span
+											>
+										</div>
+										<small>{item.semester} • {item.academic_year}</small></button
+									>{/each}
+							</div>
+						</section>
+						<section class="workspace-detail">
+							<div class="pane-head compact">
+								<div>
+									<h3>{selectedEnrollment ? selectedEnrollment.course_name : 'Pilih satu KRS'}</h3>
+								</div>
+							</div>
+							{#if selectedEnrollment}<div class="detail-lines">
+									<div>
+										<span>Mahasiswa</span><strong>{selectedEnrollment.student_name}</strong>
+									</div>
+									<div>
+										<span>Mata kuliah</span><strong>{selectedEnrollment.course_name}</strong>
+									</div>
+									<div><span>Ruang</span><strong>{selectedEnrollment.class_room_name}</strong></div>
+									<div>
+										<span>Jadwal</span><strong
+											>{selectedEnrollment.schedule_day
+												? DAY_LABELS[selectedEnrollment.schedule_day as keyof typeof DAY_LABELS]
+												: '-'} • {formatTimeRange(
+												selectedEnrollment.schedule_start_time,
+												selectedEnrollment.schedule_end_time,
+												timezone
+											)}</strong
+										>
+									</div>
+								</div>{:else}<p class="empty-copy">
+									Pilih satu baris untuk melihat detail KRS.
+								</p>{/if}
+						</section>
+					</div>
+				{/if}
+
+				{#if activeView === 'grades'}
+					<div class="workspace-shell">
+						<section class="workspace-list">
+							<div class="pane-head">
+								<div>
+									<h3>Daftar nilai</h3>
+								</div>
+								{#if currentUser.current.role !== 'STUDENT'}<Button
+										variant="ghost"
+										size="sm"
+										class="ghost-button"
+										onclick={() => beginCreate('grades')}>Tambah</Button
+									>{/if}
+							</div>
+							<label class="search-box"
+								><Search size={16} /><input
+									bind:value={gradeSearch}
+									aria-label="Cari data nilai"
+									placeholder="Cari mahasiswa, mata kuliah, atau nilai huruf"
+								/></label
+							>
+							<div class="list-stack">
+								{#each filteredGrades as item (item.id)}<button
+										type="button"
+										class:selected={selectedGradeId === item.id}
+										class="list-row"
+										onclick={() => pickGrade(item)}
+										><div>
+											<strong>{item.student_name}</strong><span
+												>{item.course_name} • {item.letter_grade}</span
+											>
+										</div>
+										<small>{item.total_score ?? '-'} poin</small></button
+									>{/each}
+							</div>
+						</section>
+						<section class="workspace-detail">
+							<div class="pane-head compact">
+								<div>
+									<h3>
+										{selectedGrade
+											? `${selectedGrade.student_name} • ${selectedGrade.course_name}`
+											: 'Input nilai baru'}
+									</h3>
+								</div>
+								{#if currentUser.current.role !== 'STUDENT'}
+									<div class="detail-actions">
+										{#if editorView === 'grades'}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="ghost-button"
+												onclick={() => stopEditing('grades')}>Tutup form</Button
+											>
+										{:else if selectedGrade}
+											<Button
+												variant="ghost"
+												size="sm"
+												class="ghost-button"
+												onclick={() => beginEdit('grades')}>Edit</Button
+											>
+										{/if}
+										{#if selectedGradeId}
+											<Button
+												variant="destructive"
+												size="sm"
+												class="danger-button"
+												onclick={() => requestDelete('grade', selectedGradeId!)}>Hapus</Button
+											>
+										{/if}
+									</div>
+								{/if}
+							</div>
+							{#if pendingDelete?.kind === 'grade' && pendingDelete.id === selectedGradeId}
+								<section class="warning-panel">
+									<p class="warning-title">Hapus {pendingDelete.label}?</p>
+									<p>{pendingDelete.message}</p>
+									<div class="warning-actions">
+										<Button
+											class="danger-button"
+											variant="destructive"
+											size="sm"
+											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+											>{pendingDelete.confirmLabel}</Button
+										>
+										<Button
+											class="ghost-button"
+											variant="ghost"
+											size="sm"
+											onclick={() => (pendingDelete = null)}>Batal</Button
+										>
+									</div>
+								</section>
+							{/if}
+							{#if selectedGrade && editorView !== 'grades'}<div class="detail-stack">
+									<div class="detail-lines">
+										<div><span>Total</span><strong>{selectedGrade.total_score}</strong></div>
+										<div><span>Huruf</span><strong>{selectedGrade.letter_grade}</strong></div>
+										<div><span>Tugas</span><strong>{selectedGrade.assignment_score}</strong></div>
+										<div>
+											<span>UTS/UAS</span><strong
+												>{selectedGrade.midterm_score} / {selectedGrade.final_score}</strong
+											>
+										</div>
+									</div>
+									<p class="detail-hint">
+										Mode tinjau memisahkan peninjauan hasil dari proses edit nilai.
+									</p>
+								</div>{:else if currentUser.current.role !== 'STUDENT' && editorView === 'grades'}<form
+									class="editor-grid"
+									{...selectedGradeId ? updateGradeEnhance : createGradeEnhance}
+								>
+									{#if selectedGradeId}<input
+											type="hidden"
+											{...updateGrade.fields.id.as('text')}
+											bind:value={gradeDraft.id}
+										/>{/if}<label
+										><span>KRS</span><select
+											{...selectedGradeId
+												? updateGrade.fields.enrollmentId.as('select')
+												: createGrade.fields.enrollmentId.as('select')}
+											bind:value={gradeDraft.enrollmentId}
+											><option value="">Pilih KRS</option
+											>{#if collectionIssues.enrollments && !enrollments.length}<option
+													value=""
+													disabled>{collectionIssues.enrollments}</option
+												>{/if}{#each enrollments as item (item.id)}<option value={item.id}
+													>{item.student_name} • {item.course_name}</option
+												>{/each}</select
+										></label
+									><label
+										><span>Tugas</span><input
+											min="0"
+											max="100"
+											{...selectedGradeId
+												? updateGrade.fields.assignmentScore.as('number')
+												: createGrade.fields.assignmentScore.as('number')}
+											bind:value={gradeDraft.assignmentScore}
+										/></label
+									><label
+										><span>UTS</span><input
+											min="0"
+											max="100"
+											{...selectedGradeId
+												? updateGrade.fields.midtermScore.as('number')
+												: createGrade.fields.midtermScore.as('number')}
+											bind:value={gradeDraft.midtermScore}
+										/></label
+									><label
+										><span>UAS</span><input
+											min="0"
+											max="100"
+											{...selectedGradeId
+												? updateGrade.fields.finalScore.as('number')
+												: createGrade.fields.finalScore.as('number')}
+											bind:value={gradeDraft.finalScore}
+										/></label
+									>{#if gradeEditorBlocked}<p class="editor-note">
+											Data KRS harus tersedia sebelum nilai bisa disimpan.
+										</p>{/if}<Button
+										type="submit"
+										class="primary-button"
+										disabled={gradeEditorBlocked}
+										>{selectedGradeId ? 'Simpan perubahan' : 'Simpan nilai'}</Button
+									>
+								</form>{:else}<p class="empty-copy">
+									Pilih satu nilai untuk melihat hasil, atau tambahkan nilai baru saat evaluasi
+									perlu dicatat.
+								</p>{/if}
+						</section>
+					</div>
+				{/if}
+
+				{#if activeView === 'users' && currentUser.current.role === 'ADMIN'}
+					<div class="workspace-shell">
+						<section class="workspace-list">
+							<div class="pane-head">
+								<div>
+									<h3>Akun pengguna</h3>
+								</div>
+							</div>
+							<label class="search-box"
+								><Search size={16} /><input
+									bind:value={userSearch}
+									aria-label="Cari akun pengguna"
+									placeholder="Cari email atau pemilik akun"
+								/></label
+							>
+							<div class="list-stack">
+								{#each filteredUsers as item (item.id)}<button
+										type="button"
+										class:selected={selectedUserId === item.id}
+										class="list-row"
+										onclick={() => pickUser(item)}
+										><div>
+											<strong>{item.email}</strong><span
+												>{item.student_name ?? item.lecturer_name ?? 'Administrator sistem'}</span
+											>
+										</div>
+										<small>{item.role}</small></button
+									>{/each}
+							</div>
+						</section>
+						<section class="workspace-detail">
+							<div class="pane-head compact">
+								<div>
+									<h3>{selectedUser ? selectedUser.email : 'Pilih akun'}</h3>
+								</div>
+								<div class="detail-actions">
+									{#if editorView === 'users'}
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => stopEditing('users')}>Tutup form</Button
+										>
+									{:else if selectedUser}
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => beginEdit('users')}>Ubah akun</Button
+										>
+									{/if}
+								</div>
+							</div>
+							{#if selectedUser && editorView !== 'users'}<div class="detail-stack">
+									<div class="detail-lines">
+										<div><span>Peran</span><strong>{selectedUser.role}</strong></div>
+										<div>
+											<span>Mahasiswa</span><strong>{selectedUser.student_name ?? '-'}</strong>
+										</div>
+										<div>
+											<span>Dosen</span><strong>{selectedUser.lecturer_name ?? '-'}</strong>
+										</div>
+									</div>
+									<p class="detail-hint">
+										Tinjau relasi akun lebih dahulu agar perubahan akses dilakukan dengan konteks
+										yang jelas.
+									</p>
+								</div>
+							{:else if selectedUser && editorView === 'users'}
+								<form class="editor-grid" {...updateUserEnhance}>
+									<p class="editor-note">
+										Perubahan akun memengaruhi akses login. Tinjau peran dan relasi identitas
+										sebelum menyimpan.
+									</p>
+									<input
+										type="hidden"
+										{...updateUser.fields.id.as('text')}
+										bind:value={userDraft.id}
+									/><label
+										><span>Email</span><input
+											{...updateUser.fields.email.as('email')}
+											autocomplete="email"
+											bind:value={userDraft.email}
+										/></label
+									><label
+										><span>Password baru</span><input
+											{...updateUser.fields.password.as('password')}
+											autocomplete="new-password"
+											bind:value={userDraft.password}
+											placeholder="Biarkan kosong jika password lama tetap dipakai"
+										/></label
+									><label
+										><span>Peran akses</span><select
+											{...updateUser.fields.role.as('select')}
+											bind:value={userDraft.role}
+											><option value="ADMIN">ADMIN</option><option value="STUDENT">STUDENT</option
+											><option value="LECTURER">LECTURER</option></select
+										></label
+									><label
+										><span>ID mahasiswa terkait</span><input
+											{...updateUser.fields.studentId.as('text')}
+											bind:value={userDraft.studentId}
+										/></label
+									><label
+										><span>ID dosen terkait</span><input
+											{...updateUser.fields.lecturerId.as('text')}
+											bind:value={userDraft.lecturerId}
+										/></label
+									><Button type="submit" class="primary-button">Simpan akun</Button>
+								</form>{:else}<p class="empty-copy">
+									Pilih satu akun untuk memperbarui email, peran, atau relasi identitas.
+								</p>{/if}
+						</section>
+					</div>
+				{/if}
 			{/if}
 		</main>
 	</div>
@@ -4480,7 +4511,7 @@
 	.loading-panel {
 		display: grid;
 		align-content: start;
-		min-height: clamp(28rem, 64vh, 42rem);
+		min-height: clamp(42rem, 88vh, 58rem);
 	}
 
 	.dashboard-stack,
