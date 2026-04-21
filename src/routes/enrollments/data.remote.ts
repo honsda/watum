@@ -127,12 +127,16 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 		throw error(403, 'Anda tidak berhak membuat KRS untuk mahasiswa lain');
 	}
 
-	const [student] = await selectStudents(getPool(), { where: [['id', '=', data.studentId]] });
+	const [[student], [course], [classRoom]] = await Promise.all([
+		selectStudents(getPool(), { where: [['id', '=', data.studentId]] }),
+		selectCourses(getPool(), { where: [['id', '=', data.courseId]] }),
+		selectClassRooms(getPool(), { where: [['id', '=', data.classRoomId]] })
+	]);
+
 	if (!student) {
 		invalid(issue.studentId('Mahasiswa tidak ditemukan'));
 	}
 
-	const [course] = await selectCourses(getPool(), { where: [['id', '=', data.courseId]] });
 	if (!course) {
 		invalid(issue.courseId('Mata kuliah tidak ditemukan'));
 	}
@@ -143,7 +147,6 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 		throw error(403, 'Anda hanya dapat mengelola jadwal untuk mata kuliah yang Anda ampu');
 	}
 
-	const [classRoom] = await selectClassRooms(getPool(), { where: [['id', '=', data.classRoomId]] });
 	if (!classRoom) {
 		invalid(issue.classRoomId('Ruang kelas tidak ditemukan'));
 	}
@@ -153,12 +156,22 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 		invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
 	}
 
-	const existingSchedules = await selectSchedules(getPool(), {
-		where: [
-			['class_room_id', '=', data.classRoomId],
-			['day', '=', data.day]
-		]
-	});
+	const [existingSchedules, [existing]] = await Promise.all([
+		selectSchedules(getPool(), {
+			where: [
+				['class_room_id', '=', data.classRoomId],
+				['day', '=', data.day]
+			]
+		}),
+		selectEnrollments(getPool(), {
+			where: [
+				['student_id', '=', data.studentId],
+				['course_id', '=', data.courseId],
+				['semester', '=', data.semester]
+			]
+		})
+	]);
+
 	const hasConflict = existingSchedules.find((s) => {
 		if (!s.start_time || !s.end_time) return false;
 		const s1 = new Date(s.start_time).getTime();
@@ -175,13 +188,6 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 		);
 	}
 
-	const [existing] = await selectEnrollments(getPool(), {
-		where: [
-			['student_id', '=', data.studentId],
-			['course_id', '=', data.courseId],
-			['semester', '=', data.semester]
-		]
-	});
 	if (existing) {
 		invalid(issue.courseId('Mahasiswa sudah terdaftar di mata kuliah ini pada semester yang sama'));
 	}
