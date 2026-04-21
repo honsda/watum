@@ -4342,6 +4342,7 @@
 
 	.user-pill {
 		display: grid;
+		align-content: center;
 		gap: 0.15rem;
 		padding: 0.5rem 0.72rem;
 		border: 1px solid var(--color-border);
@@ -4474,6 +4475,12 @@
 	.support-panel,
 	.login-panel {
 		padding: 1.1rem;
+	}
+
+	.loading-panel {
+		display: grid;
+		align-content: start;
+		min-height: clamp(28rem, 64vh, 42rem);
 	}
 
 	.dashboard-stack,
@@ -5150,6 +5157,49 @@
 	.builder-overview strong {
 		font-size: 0.98rem;
 		line-height: 1.3;
+	}
+
+	@media (min-width: 721px) {
+		.topbar {
+			min-height: 4.35rem;
+		}
+
+		.topbar-tools {
+			min-height: 2.9rem;
+			align-content: start;
+		}
+
+		.decision-lead,
+		.decision-notes {
+			min-height: 15rem;
+		}
+
+		.decision-primary {
+			min-height: 5.9rem;
+			align-content: start;
+		}
+
+		.decision-actions {
+			min-height: 3.2rem;
+			align-content: start;
+		}
+	}
+
+	@media (min-width: 960px) {
+		.topbar-tools {
+			flex-wrap: nowrap;
+		}
+
+		.topbar-tools :global(button),
+		.topbar-tools .user-pill {
+			white-space: nowrap;
+			min-height: 2.85rem;
+		}
+
+		:global(.theme-switch) {
+			min-width: 7.8rem;
+			justify-content: center;
+		}
 	}
 
 	.builder-overview div {
