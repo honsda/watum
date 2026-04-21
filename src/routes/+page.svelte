@@ -860,7 +860,6 @@
 		slotMaxTime: timeString(calendarVisibleRange.end),
 		scrollTime: timeString(calendarVisibleRange.start),
 		slotEventOverlap: false,
-		columnWidth: '18rem',
 		headerToolbar: { start: '', center: '', end: '' },
 		events: calendarEvents,
 		dayHeaderFormat(date: Date) {

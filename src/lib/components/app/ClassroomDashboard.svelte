@@ -182,6 +182,7 @@
 	.overview-panel {
 		display: grid;
 		gap: 1rem;
+		min-height: 11.5rem;
 	}
 
 	.overview-copy {
@@ -194,6 +195,7 @@
 		grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
 		gap: 0.8rem;
 		margin-top: 1rem;
+		min-height: 7.6rem;
 	}
 
 	.summary-stats article,
@@ -226,8 +228,14 @@
 	.room-list {
 		display: grid;
 		gap: 0.6rem;
+		min-height: 24rem;
 		max-height: 24rem;
 		overflow-y: auto;
+	}
+
+	.table-panel,
+	.detail-panel {
+		min-height: 27.5rem;
 	}
 
 	.room-row {
