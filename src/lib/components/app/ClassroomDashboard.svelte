@@ -43,14 +43,6 @@
 	<header class="overview-panel">
 		<div class="overview-copy">
 			<h2>{copy.title}</h2>
-			<p>{copy.description}</p>
-			<p class="role-note">
-				{role === 'ADMIN'
-					? 'Urutan ruang memprioritaskan ruang yang paling padat dan yang masih berpotensi bentrok.'
-					: role === 'LECTURER'
-						? 'Urutan ruang memprioritaskan ruang yang kosong saat ini dan ruang dengan beban lebih ringan.'
-						: 'Mahasiswa dapat melihat konteks ruang tanpa masuk ke tindakan administratif.'}
-			</p>
 		</div>
 
 		<div class="summary-stats">
@@ -78,11 +70,6 @@
 			<div>
 				<h3>Ringkasan utilisasi mingguan</h3>
 			</div>
-			<p>
-				{metrics.length
-					? 'Pilih satu ruang untuk melihat detail di panel kanan.'
-					: 'Belum ada data ruang.'}
-			</p>
 		</header>
 
 		<div class="room-list" role="list">
@@ -155,7 +142,6 @@
 		{:else}
 			<header>
 				<h3>Pilih satu ruang</h3>
-				<p>Panel ini menampilkan utilisasi, fasilitas, konflik, dan jadwal berikutnya.</p>
 			</header>
 		{/if}
 	</div>
@@ -188,10 +174,7 @@
 		letter-spacing: -0.03em;
 	}
 
-	.overview-panel p,
-	.table-panel p,
-	.detail-panel p,
-	.table-panel header p {
+	.detail-panel p {
 		max-width: 58ch;
 		color: var(--color-muted-foreground);
 	}
@@ -204,10 +187,6 @@
 	.overview-copy {
 		display: grid;
 		gap: 0.45rem;
-	}
-
-	.role-note {
-		margin: 0;
 	}
 
 	.summary-stats {

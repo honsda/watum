@@ -414,22 +414,6 @@
 		return 'Panel kanan merangkum peran dan relasi identitas sebelum akses login diperbarui.';
 	}
 
-	function dashboardPriorityLabel(role: AppRole | undefined) {
-		if (role === 'ADMIN')
-			return 'Tinjau bentrok, rapikan alokasi ruang, lalu pastikan kelas terdekat siap berjalan.';
-		if (role === 'LECTURER')
-			return 'Pastikan kelas berikutnya aman dan ruang pengganti masih tersedia.';
-		return 'Pastikan jadwal pribadi tetap jelas dan perubahan ruang mudah ditemukan.';
-	}
-
-	function dashboardFocusLabel(role: AppRole | undefined) {
-		if (role === 'ADMIN')
-			return 'Fokus pada bentrok aktif dan ruang yang pemakaiannya masih rendah.';
-		if (role === 'LECTURER')
-			return 'Fokus pada ruang kosong dan kelas yang berlangsung paling dekat.';
-		return 'Fokus pada sesi berikutnya dan ruang tempat kelas akan berlangsung.';
-	}
-
 	function conflictPeerLabel(card: ScheduleCard) {
 		return `${card.course} • ${card.student} • ${card.room} • ${DAY_LABELS[card.day]} ${card.startLabel}-${card.endLabel}`;
 	}
@@ -1908,14 +1892,12 @@
 									<span>Kelas berikutnya</span>
 									<strong>{nextSchedule ? nextSchedule.course : 'Belum ada kelas terjadwal'}</strong
 									>
-									<p>
-										{#if nextSchedule}
+									{#if nextSchedule}
+										<p>
 											{DAY_LABELS[nextSchedule.day]} • {nextSchedule.startLabel} - {nextSchedule.endLabel}
 											• {nextSchedule.room}
-										{:else}
-											Kalender mingguan membantu Anda melihat perubahan ruang dan kelas berikutnya.
-										{/if}
-									</p>
+										</p>
+									{/if}
 								</div>
 								<div class="decision-actions student-actions">
 									<Button class="primary-button" onclick={() => activateView('calendar')}
@@ -1974,10 +1956,6 @@
 										Belum ada kelas aktif yang perlu diatur
 									{/if}
 								</h3>
-								<p class="decision-summary">
-									{dashboardPriorityLabel(currentUser.current.role as AppRole)}
-								</p>
-
 								{#if primaryConflict}
 									<section class="decision-primary">
 										<div class="decision-primary-copy">
@@ -2020,10 +1998,6 @@
 							</article>
 
 							<aside class="decision-notes">
-								<div class="decision-note-row">
-									<span>Fokus hari ini</span>
-									<strong>{dashboardFocusLabel(currentUser.current.role as AppRole)}</strong>
-								</div>
 								<div class="decision-note-row">
 									<span>Ruang belum padat</span>
 									<strong>{underusedRooms} ruang masih bisa dioptimalkan</strong>
@@ -4073,7 +4047,6 @@
 
 	.brand-copy,
 	.pane-copy,
-	.decision-summary,
 	.list-conflict-copy,
 	.builder-progress-copy span,
 	.builder-overview p,
@@ -4083,7 +4056,6 @@
 
 	.brand-copy,
 	.pane-copy,
-	.decision-summary,
 	.decision-notes p,
 	.list-conflict-copy,
 	.builder-overview p,
@@ -4940,11 +4912,6 @@
 		font: 600 1.62rem/1.02 var(--font-display);
 		letter-spacing: -0.04em;
 		max-width: 16ch;
-	}
-
-	.decision-summary {
-		margin: 0;
-		max-width: 58ch;
 	}
 
 	.decision-primary {
