@@ -4500,17 +4500,12 @@
 	}
 
 	:global(.event-calendar-host .ec) {
-		--ec-border-color: color-mix(in oklch, var(--color-border) 92%, var(--color-surface) 8%);
+		--ec-border-color: color-mix(in oklch, var(--color-border) 74%, var(--color-foreground) 26%);
 		--ec-day-bg-color: var(--color-panel);
 		--ec-bg-color: var(--color-panel);
 		--ec-body-bg-color: color-mix(in oklch, var(--color-panel) 95%, var(--color-surface) 5%);
-		--watum-grid-major: color-mix(in oklch, var(--color-border) 88%, var(--color-foreground) 12%);
-		--watum-grid-minor: color-mix(in oklch, var(--color-border) 94%, var(--color-panel) 6%);
-		--watum-grid-vertical: color-mix(
-			in oklch,
-			var(--color-border) 84%,
-			var(--color-foreground) 16%
-		);
+		--watum-grid-minor: rgba(56, 64, 81, 0.22);
+		--watum-grid-major: rgba(37, 45, 61, 0.34);
 		--ec-button-bg-color: var(--color-panel);
 		--ec-button-border-color: var(--color-border);
 		--ec-button-text-color: var(--color-foreground);
@@ -4529,13 +4524,9 @@
 
 	:global(.dark .event-calendar-host .ec) {
 		--ec-body-bg-color: color-mix(in oklch, var(--color-panel) 92%, var(--color-surface) 8%);
-		--watum-grid-major: color-mix(in oklch, var(--color-border) 76%, var(--color-foreground) 24%);
-		--watum-grid-minor: color-mix(in oklch, var(--color-border) 88%, var(--color-panel) 12%);
-		--watum-grid-vertical: color-mix(
-			in oklch,
-			var(--color-border) 74%,
-			var(--color-foreground) 26%
-		);
+		--ec-border-color: color-mix(in oklch, var(--color-border) 62%, var(--color-foreground) 38%);
+		--watum-grid-minor: rgba(197, 205, 218, 0.32);
+		--watum-grid-major: rgba(214, 221, 233, 0.46);
 	}
 
 	:global(.event-calendar-host .ec-toolbar) {
@@ -4575,41 +4566,81 @@
 		border: 0;
 	}
 
-	:global(.event-calendar-host .ec-time-grid .ec-header .ec-day-head) {
-		box-shadow: inset -1px 0 0 var(--watum-grid-vertical);
+	:global(.event-calendar-host .ec-time-grid .ec-header .ec-day-head),
+	:global(.event-calendar-host .ec-time-grid .ec-body .ec-day) {
+		position: relative;
 	}
 
-	:global(.event-calendar-host .ec-time-grid .ec-body .ec-day) {
+	:global(.event-calendar-host .ec-time-grid .ec-header .ec-day-head::after),
+	:global(.event-calendar-host .ec-time-grid .ec-body .ec-day::after) {
+		content: '';
+		position: absolute;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		width: 1px;
+		pointer-events: none;
+		background: var(--watum-grid-major);
+	}
+
+	:global(.event-calendar-host .ec-time-grid .ec-body .ec-day::before) {
+		content: '';
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
 		background-image:
-			linear-gradient(to top, var(--ec-day-bg-color) 1px, transparent 1px),
-			linear-gradient(to top, var(--watum-grid-major) 1px, transparent 1px),
-			linear-gradient(to right, var(--watum-grid-vertical) 1px, transparent 1px),
-			linear-gradient(to top, var(--watum-grid-minor) 1px, transparent 1px);
+			repeating-linear-gradient(
+				to top,
+				var(--watum-grid-minor) 0 1px,
+				transparent 1px,
+				transparent var(--ec-slot-height)
+			),
+			repeating-linear-gradient(
+				to top,
+				var(--watum-grid-major) 0 1px,
+				transparent 1px,
+				transparent calc(var(--ec-slot-height) * var(--ec-slot-label-periodicity))
+			);
 		background-size:
-			100% 100%,
-			100% calc(var(--ec-slot-height) * var(--ec-slot-label-periodicity)),
-			100% 100%,
-			100% var(--ec-slot-height);
-		box-shadow: inset -1px 0 0 var(--watum-grid-vertical);
+			100% var(--ec-slot-height),
+			100% calc(var(--ec-slot-height) * var(--ec-slot-label-periodicity));
+		background-repeat: repeat;
 	}
 
 	:global(.event-calendar-host .ec-time-grid .ec-body .ec-sidebar) {
+		position: relative;
+	}
+
+	:global(.event-calendar-host .ec-time-grid .ec-body .ec-sidebar::before) {
+		content: '';
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
 		background-image:
-			linear-gradient(
-				var(--ec-direction, to left),
-				transparent 0.375rem,
-				var(--ec-bg-color) 0.375rem
+			repeating-linear-gradient(
+				to top,
+				var(--watum-grid-minor) 0 1px,
+				transparent 1px,
+				transparent var(--ec-slot-height)
 			),
-			linear-gradient(to top, var(--ec-bg-color) 1px, transparent 1px),
-			linear-gradient(to top, var(--watum-grid-major) 1px, transparent 1px),
-			linear-gradient(to right, var(--ec-bg-color) 1px, transparent 1px),
-			linear-gradient(to top, var(--watum-grid-minor) 1px, transparent 1px);
+			repeating-linear-gradient(
+				to top,
+				var(--watum-grid-major) 0 1px,
+				transparent 1px,
+				transparent calc(var(--ec-slot-height) * var(--ec-slot-label-periodicity))
+			);
 		background-size:
-			100% 100%,
-			100% 100%,
-			100% calc(var(--ec-slot-height) * var(--ec-slot-label-periodicity)),
-			2px 100%,
-			100% var(--ec-slot-height);
+			100% var(--ec-slot-height),
+			100% calc(var(--ec-slot-height) * var(--ec-slot-label-periodicity));
+		background-repeat: repeat;
+	}
+
+	:global(.event-calendar-host .ec-time-grid .ec-body .ec-slot) {
+		box-shadow: inset 0 -1px 0 var(--watum-grid-minor);
+	}
+
+	:global(.event-calendar-host .ec-time-grid .ec-body .ec-slot:not(.ec-hidden):nth-child(odd)) {
+		box-shadow: inset 0 -1px 0 var(--watum-grid-major);
 	}
 
 	:global(.event-calendar-host .ec-time-grid .ec-events) {
