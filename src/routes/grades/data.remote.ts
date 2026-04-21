@@ -100,9 +100,16 @@ export const getGradesByStudent = query(v.string(), async (studentId) => {
 export const createGrade = form(gradeSchema, async (data, issue) => {
 	const user = await requireRole(['LECTURER', 'ADMIN']);
 
-	const [enrollment] = await selectEnrollments(getPool(), {
-		where: [['id', '=', data.enrollmentId]]
-	});
+	const [[enrollment], [existing]] = await Promise.all([
+		selectEnrollments(getPool(), {
+			where: [['id', '=', data.enrollmentId]]
+		}),
+		selectGrades(getPool(), {
+			where: [['enrollment_id', '=', data.enrollmentId]]
+		})
+	]);
+
+	
 	if (!enrollment) {
 		throw error(404, 'Data KRS tidak ditemukan');
 	}
@@ -111,9 +118,7 @@ export const createGrade = form(gradeSchema, async (data, issue) => {
 		throw error(403, 'Anda tidak berhak menginput nilai untuk mata kuliah ini');
 	}
 
-	const [existing] = await selectGrades(getPool(), {
-		where: [['enrollment_id', '=', data.enrollmentId]]
-	});
+	
 	if (existing) invalid(issue.enrollmentId('Nilai untuk KRS ini sudah ada'));
 
 	const { total, letter } = calculateGrade(

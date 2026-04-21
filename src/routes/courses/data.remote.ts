@@ -62,11 +62,15 @@ export const getCourse = query(v.string(), async (id) => {
 
 export const createCourse = form(courseCreateSchema, async (data) => {
 	await requireRole(['ADMIN']);
-	const [sp] = await selectStudyPrograms(getPool(), { where: [['id', '=', data.studyProgramId]] });
+
+	const [[sp], [lecturer]] = await Promise.all([
+		selectStudyPrograms(getPool(), { where: [['id', '=', data.studyProgramId]] }),
+		selectLecturers(getPool(), { where: [['id', '=', data.lecturerId]] })
+	]);
+
 	if (!sp) {
 		throw error(400, 'program studi tidak ditemukan');
 	}
-	const [lecturer] = await selectLecturers(getPool(), { where: [['id', '=', data.lecturerId]] });
 	if (!lecturer) {
 		throw error(400, 'dosen tidak ditemukan');
 	}
@@ -93,11 +97,14 @@ export const updateCourse = form(courseSchema, async (data) => {
 	if (!existing) {
 		throw error(404, 'mata kuliah tidak ditemukan');
 	}
-	const [sp] = await selectStudyPrograms(getPool(), { where: [['id', '=', data.studyProgramId]] });
+	const [[sp], [lecturer]] = await Promise.all([
+		selectStudyPrograms(getPool(), { where: [['id', '=', data.studyProgramId]] }),
+		selectLecturers(getPool(), { where: [['id', '=', data.lecturerId]] })
+	]);
 	if (!sp) {
 		throw error(400, 'program studi tidak ditemukan');
 	}
-	const [lecturer] = await selectLecturers(getPool(), { where: [['id', '=', data.lecturerId]] });
+
 	if (!lecturer) {
 		throw error(400, 'dosen tidak ditemukan');
 	}
