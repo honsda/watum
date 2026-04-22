@@ -13,7 +13,8 @@ const REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 const ACCESS_CONTEXT_BINDING_CLAIM = 'ctx';
 const PASSWORD_VERSION_CLAIM = 'pwdv';
 const REFRESH_TOKEN_COOKIE_NAME = 'refresh_token';
-const SECURE_REFRESH_TOKEN_COOKIE_NAME = `__Host-${REFRESH_TOKEN_COOKIE_NAME}`;
+const SECURE_REFRESH_TOKEN_COOKIE_NAME = `__Secure-${REFRESH_TOKEN_COOKIE_NAME}`;
+const LEGACY_HOST_REFRESH_TOKEN_COOKIE_NAME = `__Host-${REFRESH_TOKEN_COOKIE_NAME}`;
 const REFRESH_TOKEN_COOKIE_PATH = '/auth';
 const LEGACY_SESSION_COOKIE_NAMES = [
 	'session_token',
@@ -113,7 +114,14 @@ function getPreferredRefreshTokenCookieName(url: URL) {
 
 function getRefreshTokenCookieNames(url: URL) {
 	const preferred = getPreferredRefreshTokenCookieName(url);
-	return [...new Set([preferred, REFRESH_TOKEN_COOKIE_NAME, SECURE_REFRESH_TOKEN_COOKIE_NAME])];
+	return [
+		...new Set([
+			preferred,
+			REFRESH_TOKEN_COOKIE_NAME,
+			SECURE_REFRESH_TOKEN_COOKIE_NAME,
+			LEGACY_HOST_REFRESH_TOKEN_COOKIE_NAME
+		])
+	];
 }
 
 function getRefreshTokenCookieOptions(url: URL) {
