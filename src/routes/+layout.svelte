@@ -1,5 +1,6 @@
 <script lang="ts">
 	import './layout.css';
+	import '$lib/client/auth';
 	import favicon from '$lib/assets/favicon.svg';
 	import soraLatin from '@fontsource-variable/sora/files/sora-latin-wght-normal.woff2';
 	import publicSansLatin from '@fontsource-variable/public-sans/files/public-sans-latin-wght-normal.woff2';

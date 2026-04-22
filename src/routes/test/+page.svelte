@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { clearAccessToken, ensureAccessToken, setAccessToken } from '$lib/client/auth';
 	import {
 		getCourses,
 		getCourse,
@@ -284,6 +285,7 @@
 		const resolvedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 		createEnrollmentData.timezone = resolvedTimezone;
 		updateEnrollmentData.timezone = resolvedTimezone;
+		void ensureAccessToken();
 	});
 
 	let createGradeData = $state({
@@ -368,6 +370,14 @@
 							.join(' | ')
 					});
 					return;
+				}
+				if (name === 'loginUser') {
+					setAccessToken(
+						(remoteForm.result as { accessToken?: string } | undefined)?.accessToken ?? null
+					);
+				}
+				if (name === 'logoutUser') {
+					clearAccessToken();
 				}
 				setResult(name, { success: true, data: remoteForm.result });
 			} catch (e: unknown) {

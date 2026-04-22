@@ -5,6 +5,7 @@ This directory contains SQL migration files for the academic system database.
 ## Files
 
 - `001_schema.sql` - Initial schema based on Prisma schema
+- `002_refresh_tokens.sql` - Adds stateful refresh token storage
 
 ## How to Run Migrations
 
@@ -20,8 +21,9 @@ CREATE DATABASE akademik_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 # Exit MySQL
 exit
 
-# Run migration
+# Run migrations in order
 mysql -u root -p akademik_db < src/lib/server/migrations/001_schema.sql
+mysql -u root -p akademik_db < src/lib/server/migrations/002_refresh_tokens.sql
 ```
 
 ### Option 2: Using Environment Variables
@@ -34,8 +36,9 @@ export DB_PASSWORD=your_password
 export DB_NAME=akademik_db
 export DB_PORT=3306
 
-# Run migration
+# Run migrations in order
 mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME < src/lib/server/migrations/001_schema.sql
+mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME < src/lib/server/migrations/002_refresh_tokens.sql
 ```
 
 ### Option 3: Using Node.js Script
@@ -48,23 +51,27 @@ import fs from 'fs';
 import mysql from 'mysql2/promise';
 
 async function runMigration() {
-  const connection = await mysql.createConnection({
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    multipleStatements: true
-  });
+	const connection = await mysql.createConnection({
+		host: process.env.DB_HOST || 'localhost',
+		user: process.env.DB_USER || 'root',
+		password: process.env.DB_PASSWORD || '',
+		multipleStatements: true
+	});
 
-  // Create database if not exists
-  await connection.query(`CREATE DATABASE IF NOT EXISTS ${process.env.DB_NAME || 'akademik_db'}`);
-  await connection.changeUser({ database: process.env.DB_NAME || 'akademik_db' });
+	// Create database if not exists
+	await connection.query(`CREATE DATABASE IF NOT EXISTS ${process.env.DB_NAME || 'akademik_db'}`);
+	await connection.changeUser({ database: process.env.DB_NAME || 'akademik_db' });
 
-  // Read and execute migration
-  const sql = fs.readFileSync('./src/lib/server/migrations/001_schema.sql', 'utf8');
-  await connection.query(sql);
+	for (const file of [
+		'./src/lib/server/migrations/001_schema.sql',
+		'./src/lib/server/migrations/002_refresh_tokens.sql'
+	]) {
+		const sql = fs.readFileSync(file, 'utf8');
+		await connection.query(sql);
+	}
 
-  console.log('Migration completed successfully');
-  await connection.end();
+	console.log('Migration completed successfully');
+	await connection.end();
 }
 
 runMigration().catch(console.error);

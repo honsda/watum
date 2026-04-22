@@ -4,6 +4,7 @@
 	import { browser } from '$app/environment';
 	import { onMount } from 'svelte';
 	import type { Component } from 'svelte';
+	import { clearAccessToken, ensureAccessToken, setAccessToken } from '$lib/client/auth';
 	import {
 		AlertCircle,
 		ArrowRightLeft,
@@ -621,6 +622,10 @@
 			activeView = requestedView;
 		}
 		viewRestored = true;
+		void (async () => {
+			await ensureAccessToken();
+			await currentUser.refresh();
+		})();
 	});
 
 	async function ensureCalendarLoaded() {
@@ -1515,6 +1520,8 @@
 				setFeedback('danger', issue);
 				return;
 			}
+			const accessToken = (loginUser.result as { accessToken?: string } | undefined)?.accessToken;
+			setAccessToken(accessToken ?? null);
 			await currentUser.refresh();
 			setFeedback('success', 'Sesi berhasil dibuka.');
 		} catch (error) {
@@ -1526,6 +1533,7 @@
 	const logoutEnhance = logoutUser.enhance(
 		async ({ submit }: { submit: () => Promise<boolean> }) => {
 			await submit();
+			clearAccessToken();
 			await currentUser.refresh();
 			resetCollections();
 			setFeedback('success', 'Sesi berhasil ditutup.');
