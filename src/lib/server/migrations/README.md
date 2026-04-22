@@ -6,6 +6,7 @@ This directory contains SQL migration files for the academic system database.
 
 - `001_schema.sql` - Initial schema based on Prisma schema
 - `002_refresh_tokens.sql` - Adds stateful refresh token storage
+- `003_refresh_tokens_user_context_index.sql` - Speeds up login-time refresh token cleanup
 
 ## How to Run Migrations
 
@@ -24,6 +25,7 @@ exit
 # Run migrations in order
 mysql -u root -p akademik_db < src/lib/server/migrations/001_schema.sql
 mysql -u root -p akademik_db < src/lib/server/migrations/002_refresh_tokens.sql
+mysql -u root -p akademik_db < src/lib/server/migrations/003_refresh_tokens_user_context_index.sql
 ```
 
 ### Option 2: Using Environment Variables
@@ -39,6 +41,7 @@ export DB_PORT=3306
 # Run migrations in order
 mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME < src/lib/server/migrations/001_schema.sql
 mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME < src/lib/server/migrations/002_refresh_tokens.sql
+mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME < src/lib/server/migrations/003_refresh_tokens_user_context_index.sql
 ```
 
 ### Option 3: Using Node.js Script
@@ -64,7 +67,8 @@ async function runMigration() {
 
 	for (const file of [
 		'./src/lib/server/migrations/001_schema.sql',
-		'./src/lib/server/migrations/002_refresh_tokens.sql'
+		'./src/lib/server/migrations/002_refresh_tokens.sql',
+		'./src/lib/server/migrations/003_refresh_tokens_user_context_index.sql'
 	]) {
 		const sql = fs.readFileSync(file, 'utf8');
 		await connection.query(sql);

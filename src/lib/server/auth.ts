@@ -47,6 +47,11 @@ interface RefreshTokenRow extends RowDataPacket {
 	expires_at: Date | string;
 }
 
+interface AuthenticatedLoginResult {
+	user: User;
+	passwordHash: string;
+}
+
 type SelectUserRow = Awaited<ReturnType<typeof selectUsers>>[number];
 
 function mapUser(user: SelectUserRow): User {
@@ -277,16 +282,6 @@ async function selectUserById(
 	return user ?? null;
 }
 
-async function selectUserCredentials(userId: string) {
-	const [user] = await retryRead(() =>
-		selectUsers(getPool(), {
-			select: { id: true, password: true },
-			where: [['id', '=', userId]]
-		})
-	);
-	return user ?? null;
-}
-
 export async function getUser(): Promise<User | null> {
 	const accessToken = getAccessTokenFromRequest();
 	if (!accessToken) {
@@ -330,12 +325,10 @@ export async function requireRole(roles: Array<User['role']>): Promise<User> {
 	return user;
 }
 
-export async function setSession(userId: string): Promise<{ accessToken: string }> {
-	const user = await selectUserCredentials(userId);
-	if (!user?.password) {
-		throw new Error('Failed to create session');
-	}
-
+export async function setSession(
+	userId: string,
+	passwordHash: string
+): Promise<{ accessToken: string }> {
 	const refreshToken = createOpaqueToken();
 	const refreshTokenHash = hashRefreshToken(refreshToken);
 	const contextBinding = getRequestContextBinding();
@@ -352,7 +345,7 @@ export async function setSession(userId: string): Promise<{ accessToken: string 
 	setRefreshTokenCookie(refreshToken);
 
 	return {
-		accessToken: await signAccessToken(userId, user.password)
+		accessToken: await signAccessToken(userId, passwordHash)
 	};
 }
 
@@ -442,14 +435,17 @@ export async function revokeRefreshTokensForUser(userId: string) {
 	await getPool().query<ResultSetHeader>('DELETE FROM refresh_tokens WHERE user_id = ?', [userId]);
 }
 
-export async function login(email: string, password: string): Promise<User> {
+export async function login(email: string, password: string): Promise<AuthenticatedLoginResult> {
 	const [user] = await retryRead(() => selectUsers(getPool(), { where: [['email', '=', email]] }));
-	if (!user) {
+	if (!user?.password) {
 		throw error(401, 'Email atau password salah');
 	}
-	const valid = await verify(user.password!, password);
+	const valid = await verify(user.password, password);
 	if (!valid) {
 		throw error(401, 'Email atau password salah');
 	}
-	return mapUser(user);
+	return {
+		user: mapUser(user),
+		passwordHash: user.password
+	};
 }
