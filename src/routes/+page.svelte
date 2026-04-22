@@ -184,6 +184,7 @@
 	const DEFAULT_DAY_END = 20 * 60;
 	const RANGE_PADDING_MINUTES = 60;
 	const MIN_VISIBLE_MINUTES = 6 * 60;
+	const CALENDAR_MAX_VISIBLE_SCHEDULES = 60;
 	function createCalendarWeekStart() {
 		return new Date(2025, 0, 6);
 	}
@@ -195,9 +196,9 @@
 	}
 
 	const viewCatalog = {
-		dashboard: { label: 'Dashboard', icon: LayoutPanelTop },
+		dashboard: { label: 'Ringkasan', icon: LayoutPanelTop },
 		calendar: { label: 'Kalender Mingguan', icon: CalendarDays },
-		builder: { label: 'Pembuat Jadwal', icon: Waypoints },
+		builder: { label: 'Penjadwalan', icon: Waypoints },
 		classrooms: { label: 'Ruang Kelas', icon: DoorClosed },
 		courses: { label: 'Mata Kuliah', icon: BookOpen },
 		students: { label: 'Mahasiswa', icon: GraduationCap },
@@ -269,15 +270,15 @@
 			return [
 				{
 					id: 'overview',
-					label: 'Pantauan',
-					description: 'Pantau bentrok, kalender, dan ruang yang perlu ditangani lebih dulu.',
+					label: 'Ringkasan',
+					description: 'Lihat bentrok, kalender, dan ruang yang perlu ditata.',
 					icon: LayoutPanelTop,
 					views: ['dashboard', 'calendar']
 				},
 				{
 					id: 'planning',
 					label: 'Penjadwalan',
-					description: 'Atur jadwal kelas dan pilih ruang pengganti dari alur kerja yang sama.',
+					description: 'Atur jadwal kelas dan pilih ruang pengganti dari satu halaman.',
 					icon: Waypoints,
 					views: ['builder', 'classrooms']
 				},
@@ -309,15 +310,15 @@
 			return [
 				{
 					id: 'overview',
-					label: 'Pantauan',
-					description: 'Lihat kelas terdekat, cek bentrok, dan cari ruang yang siap dipakai.',
+					label: 'Ringkasan',
+					description: 'Lihat kelas terdekat, bentrok, dan ruang yang masih tersedia.',
 					icon: LayoutPanelTop,
 					views: ['dashboard', 'calendar']
 				},
 				{
 					id: 'planning',
 					label: 'Penjadwalan',
-					description: 'Pindahkan jadwal dan pilih ruang dari alur yang lebih fokus.',
+					description: 'Pindahkan jadwal dan pilih ruang dari halaman penjadwalan.',
 					icon: Waypoints,
 					views: ['builder', 'classrooms']
 				},
@@ -342,14 +343,14 @@
 			{
 				id: 'schedule',
 				label: 'Jadwal',
-				description: 'Lihat kelas berikutnya, perubahan ruang, dan jadwal mingguan dengan cepat.',
+				description: 'Lihat kelas berikutnya, perubahan ruang, dan jadwal mingguan.',
 				icon: CalendarDays,
 				views: ['dashboard', 'calendar']
 			},
 			{
 				id: 'study',
 				label: 'Studi',
-				description: 'Buka KRS, nilai, ruang, dan katalog kuliah tanpa panel staf yang penuh.',
+				description: 'Buka KRS, nilai, ruang, dan daftar mata kuliah.',
 				icon: BookOpen,
 				views: ['enrollments', 'grades', 'courses', 'lecturers', 'classrooms']
 			}
@@ -358,7 +359,7 @@
 
 	function pageHeading(view: ViewId) {
 		if (currentUser.current?.role === 'STUDENT' && view === 'dashboard') return 'Jadwal dan nilai';
-		if (view === 'dashboard') return 'Pantauan ruang dan jadwal';
+		if (view === 'dashboard') return 'Ringkasan jadwal';
 		if (view === 'calendar') return 'Kalender perkuliahan';
 		if (view === 'builder') return 'Penjadwalan kelas';
 		return viewCatalog[view].label;
@@ -366,6 +367,32 @@
 
 	function conflictPeerLabel(card: ScheduleCard) {
 		return `${card.course} • ${card.student} • ${card.room} • ${DAY_LABELS[card.day]} ${card.startLabel}-${card.endLabel}`;
+	}
+
+	function summarizeDistinctValues(values: Array<string | null | undefined>, maxVisible = 2) {
+		const uniqueValues = Array.from(
+			new Set(
+				values
+					.map((value) => value?.trim())
+					.filter((value): value is string => Boolean(value && value.length))
+			)
+		);
+
+		if (!uniqueValues.length) return '-';
+		if (uniqueValues.length <= maxVisible) return uniqueValues.join(', ');
+
+		return `${uniqueValues.slice(0, maxVisible).join(', ')} +${uniqueValues.length - maxVisible} lain`;
+	}
+
+	function conflictGroupMetaCopy(
+		details: {
+			count: number;
+			lecturers: string;
+			rooms: string;
+		} | null
+	) {
+		if (!details) return null;
+		return `${details.count} jadwal • Ruang: ${details.rooms} • Dosen: ${details.lecturers}`;
 	}
 
 	function schedulesOverlap(left: ScheduleCard, right: ScheduleCard) {
@@ -379,8 +406,16 @@
 
 	function openBuilderForSchedule(card: ScheduleCard | null | undefined) {
 		if (!card) return;
+		selectedScheduleId = card.id;
+		selectedConflictGroupId = card.hasConflict ? (card.conflictGroupId ?? card.id) : null;
 		pickEnrollment(card.original);
 		activeView = 'builder';
+	}
+
+	function openCalendarForSchedule(card: ScheduleCard | null | undefined) {
+		if (!card) return;
+		focusSchedule(card);
+		activeView = 'calendar';
 	}
 
 	function focusSchedule(card: ScheduleCard | null | undefined) {
@@ -414,7 +449,7 @@
 		if (view === 'builder') return { label: 'Lihat kalender', target: 'calendar' as ViewId };
 		if (view === 'calendar') return { label: 'Buka penjadwalan', target: 'builder' as ViewId };
 		if (view === 'dashboard') return { label: 'Atur jadwal', target: 'builder' as ViewId };
-		return { label: 'Kembali ke pantauan', target: 'dashboard' as ViewId };
+		return { label: 'Kembali ke ringkasan', target: 'dashboard' as ViewId };
 	}
 
 	function activateView(view: ViewId) {
@@ -552,6 +587,13 @@
 	let facultySearch = $state('');
 	let studyProgramSearch = $state('');
 	let enrollmentSearch = $state('');
+	let scheduleCourseFilter = $state('');
+	let scheduleRoomFilter = $state('');
+	let scheduleLecturerFilter = $state('');
+	let scheduleDayFilter = $state('');
+	let scheduleSemesterFilter = $state('');
+	let scheduleAcademicYearFilter = $state('');
+	let builderConflictOnly = $state(false);
 	let gradeSearch = $state('');
 	let userSearch = $state('');
 
@@ -599,6 +641,45 @@
 			(error as Error)?.message ||
 			fallback
 		);
+	}
+
+	function scheduleFiltersMatch(item: SelectEnrollmentsResult) {
+		if (scheduleCourseFilter && item.course_id !== scheduleCourseFilter) return false;
+		if (scheduleRoomFilter && item.class_room_id !== scheduleRoomFilter) return false;
+		if (scheduleLecturerFilter && item.lecturer_id !== scheduleLecturerFilter) return false;
+		if (scheduleDayFilter && item.schedule_day !== scheduleDayFilter) return false;
+		if (scheduleSemesterFilter && item.semester !== scheduleSemesterFilter) return false;
+		if (scheduleAcademicYearFilter && item.academic_year !== scheduleAcademicYearFilter)
+			return false;
+		return true;
+	}
+
+	function scheduleSearchMatches(item: SelectEnrollmentsResult) {
+		if (!enrollmentSearch) return true;
+		const dayLabel = item.schedule_day
+			? DAY_LABELS[item.schedule_day as keyof typeof DAY_LABELS]
+			: '';
+
+		return (
+			matchesText(item.student_name, enrollmentSearch) ||
+			matchesText(item.course_name, enrollmentSearch) ||
+			matchesText(item.class_room_name, enrollmentSearch) ||
+			matchesText(item.lecturer_name, enrollmentSearch) ||
+			matchesText(dayLabel, enrollmentSearch) ||
+			matchesText(item.semester, enrollmentSearch) ||
+			matchesText(item.academic_year, enrollmentSearch)
+		);
+	}
+
+	function resetScheduleFilters() {
+		enrollmentSearch = '';
+		scheduleCourseFilter = '';
+		scheduleRoomFilter = '';
+		scheduleLecturerFilter = '';
+		scheduleDayFilter = '';
+		scheduleSemesterFilter = '';
+		scheduleAcademicYearFilter = '';
+		selectedConflictGroupId = null;
 	}
 
 	function firstIssue(form: IssueForm) {
@@ -797,6 +878,11 @@
 	});
 
 	const scheduleCards = $derived(buildScheduleCards(enrollments, timezone));
+	const filteredScheduleCards = $derived(
+		scheduleCards.filter(
+			(card) => scheduleFiltersMatch(card.original) && scheduleSearchMatches(card.original)
+		)
+	);
 	const calendarAnchorDate = $derived(createCalendarAnchorDate(calendarWeekOffset));
 	const calendarWeekLabel = $derived.by(() => {
 		const start = calendarAnchorDate.getTime();
@@ -808,14 +894,14 @@
 		return `${formatter.format(start)} - ${formatter.format(end)}`;
 	});
 	const calendarVisibleRange = $derived.by(() => {
-		if (!scheduleCards.length) {
+		if (!filteredScheduleCards.length) {
 			return { start: DEFAULT_DAY_START, end: DEFAULT_DAY_END };
 		}
 
 		const start = DEFAULT_DAY_START;
 		let end = roundUpHour(
 			Math.min(
-				Math.max(...scheduleCards.map((card) => card.endMinutes)) + RANGE_PADDING_MINUTES,
+				Math.max(...filteredScheduleCards.map((card) => card.endMinutes)) + RANGE_PADDING_MINUTES,
 				24 * 60
 			)
 		);
@@ -828,11 +914,11 @@
 	});
 	const calendarSessionCountByDay = $derived.by(() =>
 		Object.fromEntries(
-			DAY_ORDER.map((day) => [day, scheduleCards.filter((card) => card.day === day).length])
+			DAY_ORDER.map((day) => [day, filteredScheduleCards.filter((card) => card.day === day).length])
 		)
 	);
 	const calendarEvents = $derived.by(() =>
-		scheduleCards.map((card) => ({
+		filteredScheduleCards.map((card) => ({
 			id: card.id,
 			title: card.course,
 			start: dateForScheduleCard(card, card.startMinutes),
@@ -840,26 +926,48 @@
 			extendedProps: { card }
 		}))
 	);
+	const filteredConflictCards = $derived(filteredScheduleCards.filter((item) => item.hasConflict));
+	const filteredConflictGroups = $derived.by(() => {
+		const seen: Record<string, true> = {};
+		return filteredConflictCards.filter((item) => {
+			const key = item.conflictGroupId ?? item.id;
+			if (seen[key]) return false;
+			seen[key] = true;
+			return true;
+		});
+	});
 	const conflictGroupSizeById = $derived.by(() => {
 		const sizes: Record<string, number> = {};
-		for (const card of conflictCards) {
+		for (const card of filteredConflictCards) {
 			if (!card.conflictGroupId) continue;
 			sizes[card.conflictGroupId] = (sizes[card.conflictGroupId] ?? 0) + 1;
 		}
 		return sizes;
 	});
 	const calendarConflictLegend = $derived.by(() =>
-		conflictGroups.map((card) => ({
+		filteredConflictGroups.map((card) => ({
 			id: card.conflictGroupId ?? card.id,
 			label: `${DAY_LABELS[card.day]} ${card.startLabel}`,
 			course: card.course,
+			details: card.conflictGroupId
+				? (conflictGroupDetailsById[card.conflictGroupId] ?? null)
+				: null,
 			count: card.conflictGroupId ? (conflictGroupSizeById[card.conflictGroupId] ?? 1) : 1,
 			tone: card.conflictTone,
 			selected: selectedConflictGroupId === (card.conflictGroupId ?? card.id),
 			representative: card
 		}))
 	);
-	const effectiveSelectedScheduleId = $derived(selectedScheduleId ?? scheduleCards[0]?.id ?? null);
+	const effectiveSelectedScheduleId = $derived.by(() => {
+		if (
+			selectedScheduleId &&
+			filteredScheduleCards.some((item) => item.id === selectedScheduleId)
+		) {
+			return selectedScheduleId;
+		}
+
+		return filteredScheduleCards[0]?.id ?? null;
+	});
 	const calendarOptions = $derived.by(() => ({
 		view: 'timeGridWeek',
 		date: calendarAnchorDate,
@@ -943,8 +1051,15 @@
 		}
 	}));
 	const selectedSchedule = $derived(
-		scheduleCards.find((item) => item.id === effectiveSelectedScheduleId) ?? null
+		filteredScheduleCards.find((item) => item.id === effectiveSelectedScheduleId) ?? null
 	);
+	const calendarDetailSchedule = $derived.by(() => {
+		if (calendarCanRender) {
+			return selectedSchedule;
+		}
+
+		return selectedConflictGroupId && selectedSchedule?.hasConflict ? selectedSchedule : null;
+	});
 	const selectedRoom = $derived(classrooms.find((item) => item.id === selectedRoomId) ?? null);
 	const selectedCourse = $derived(courses.find((item) => item.id === selectedCourseId) ?? null);
 	const selectedStudent = $derived(students.find((item) => item.id === selectedStudentId) ?? null);
@@ -961,6 +1076,41 @@
 	const selectedGrade = $derived(grades.find((item) => item.id === selectedGradeId) ?? null);
 	const selectedUser = $derived(users.find((item) => item.id === selectedUserId) ?? null);
 	const conflictCards = $derived(scheduleCards.filter((item) => item.hasConflict));
+	const conflictGroupCardsById = $derived.by(() => {
+		const groups: Record<string, ScheduleCard[]> = {};
+		for (const card of scheduleCards) {
+			if (!card.hasConflict || !card.conflictGroupId) continue;
+			const peers = groups[card.conflictGroupId] ?? [];
+			peers.push(card);
+			groups[card.conflictGroupId] = peers;
+		}
+
+		return groups;
+	});
+	const conflictGroupDetailsById = $derived.by(() => {
+		const details: Record<
+			string,
+			{
+				count: number;
+				courses: string;
+				lecturers: string;
+				rooms: string;
+				students: string;
+			}
+		> = {};
+
+		for (const [groupId, groupCards] of Object.entries(conflictGroupCardsById)) {
+			details[groupId] = {
+				count: groupCards.length,
+				courses: summarizeDistinctValues(groupCards.map((card) => card.course)),
+				lecturers: summarizeDistinctValues(groupCards.map((card) => card.lecturer)),
+				rooms: summarizeDistinctValues(groupCards.map((card) => card.room)),
+				students: summarizeDistinctValues(groupCards.map((card) => card.student))
+			};
+		}
+
+		return details;
+	});
 	const conflictGroups = $derived.by(() => {
 		const seen: Record<string, true> = {};
 		return conflictCards.filter((item) => {
@@ -974,16 +1124,8 @@
 	const conflictCount = $derived(conflictCards.length);
 	const additionalConflictCount = $derived(Math.max(conflictCount - 1, 0));
 	const conflictPeersByCardId = $derived.by(() => {
-		const groups: Record<string, ScheduleCard[]> = {};
-		for (const card of scheduleCards) {
-			if (!card.hasConflict || !card.conflictGroupId) continue;
-			const peers = groups[card.conflictGroupId] ?? [];
-			peers.push(card);
-			groups[card.conflictGroupId] = peers;
-		}
-
 		const byCardId: Record<string, ScheduleCard[]> = {};
-		for (const group of Object.values(groups)) {
+		for (const group of Object.values(conflictGroupCardsById)) {
 			for (const card of group) {
 				byCardId[card.id] = group.filter((peer) => peer.id !== card.id);
 			}
@@ -995,6 +1137,14 @@
 		const summaries: Record<string, string> = {};
 		for (const [id, peers] of Object.entries(conflictPeersByCardId)) {
 			if (!peers.length) continue;
+			const card = scheduleCards.find((item) => item.id === id);
+			const details = card?.conflictGroupId ? conflictGroupDetailsById[card.conflictGroupId] : null;
+			if (details) {
+				summaries[id] =
+					`${details.count} jadwal • ruang: ${details.rooms} • dosen: ${details.lecturers}`;
+				continue;
+			}
+
 			const listedPeers = peers.slice(0, 2).map(conflictPeerLabel);
 			const remaining = peers.length - listedPeers.length;
 			const summary =
@@ -1005,6 +1155,23 @@
 		}
 		return summaries;
 	});
+	const builderConflictCards = $derived.by(() =>
+		conflictGroups.map((card) => {
+			const groupId = card.conflictGroupId ?? card.id;
+			return {
+				id: groupId,
+				label: `${DAY_LABELS[card.day]} ${card.startLabel}`,
+				representative: card,
+				details: card.conflictGroupId
+					? (conflictGroupDetailsById[card.conflictGroupId] ?? null)
+					: null,
+				count: card.conflictGroupId
+					? (conflictGroupCardsById[card.conflictGroupId]?.length ?? 1)
+					: 1,
+				selected: selectedConflictGroupId === groupId
+			};
+		})
+	);
 	const overlapPeersByCardId = $derived.by(() => {
 		const peers: Record<string, ScheduleCard[]> = {};
 		for (const card of scheduleCards) {
@@ -1065,12 +1232,41 @@
 		)
 	);
 	const filteredEnrollments = $derived(
-		enrollments.filter(
-			(item) =>
-				matchesText(item.student_name, enrollmentSearch) ||
-				matchesText(item.course_name, enrollmentSearch) ||
-				matchesText(item.class_room_name, enrollmentSearch)
+		enrollments.filter((item) => scheduleFiltersMatch(item) && scheduleSearchMatches(item))
+	);
+	const filteredBuilderEnrollments = $derived(
+		filteredEnrollments.filter((item) => {
+			if (!builderConflictOnly) return true;
+			return Boolean(item.id && scheduleCardMap[item.id]?.hasConflict);
+		})
+	);
+	const scheduleSemesterOptions = $derived.by(() =>
+		Array.from(new Set(enrollments.map((item) => item.semester).filter(Boolean) as string[])).sort(
+			(left, right) => left.localeCompare(right)
 		)
+	);
+	const scheduleAcademicYearOptions = $derived.by(() =>
+		Array.from(
+			new Set(enrollments.map((item) => item.academic_year).filter(Boolean) as string[])
+		).sort((left, right) => right.localeCompare(left))
+	);
+	const scheduleActiveFilterCount = $derived(
+		[
+			enrollmentSearch,
+			scheduleCourseFilter,
+			scheduleRoomFilter,
+			scheduleLecturerFilter,
+			scheduleDayFilter,
+			scheduleSemesterFilter,
+			scheduleAcademicYearFilter
+		].filter(Boolean).length
+	);
+	const calendarNeedsFilters = $derived(scheduleActiveFilterCount === 0);
+	const calendarHasTooMuchData = $derived(
+		scheduleActiveFilterCount > 0 && filteredScheduleCards.length > CALENDAR_MAX_VISIBLE_SCHEDULES
+	);
+	const calendarCanRender = $derived(
+		!calendarNeedsFilters && !calendarHasTooMuchData && filteredScheduleCards.length > 0
 	);
 	const filteredStudentsForPicker = $derived(
 		students
@@ -1526,7 +1722,7 @@
 			setFeedback('success', 'Sesi berhasil dibuka.');
 		} catch (error) {
 			const message = (error as { body?: { message?: string }; message?: string })?.body?.message;
-			setFeedback('danger', message || 'Login gagal.');
+			setFeedback('danger', message || 'Masuk gagal.');
 		}
 	});
 
@@ -1756,6 +1952,14 @@
 	const selectedScheduleConflictSummary = $derived(
 		selectedSchedule ? (conflictSummaryByCardId[selectedSchedule.id] ?? null) : null
 	);
+	const selectedScheduleConflictGroup = $derived(
+		selectedSchedule?.conflictGroupId
+			? (conflictGroupDetailsById[selectedSchedule.conflictGroupId] ?? null)
+			: null
+	);
+	const selectedScheduleConflictPeers = $derived(
+		selectedSchedule ? (conflictPeersByCardId[selectedSchedule.id] ?? []) : []
+	);
 	const selectedScheduleOverlapPeers = $derived(
 		selectedSchedule ? (overlapPeersByCardId[selectedSchedule.id] ?? []) : []
 	);
@@ -1764,6 +1968,11 @@
 	);
 	const selectedEnrollmentConflictSummary = $derived(
 		selectedEnrollmentId ? (conflictSummaryByCardId[selectedEnrollmentId] ?? null) : null
+	);
+	const selectedEnrollmentConflictGroup = $derived(
+		selectedEnrollmentScheduleCard?.conflictGroupId
+			? (conflictGroupDetailsById[selectedEnrollmentScheduleCard.conflictGroupId] ?? null)
+			: null
 	);
 </script>
 
@@ -2006,14 +2215,38 @@
 												<strong>{primaryConflict.course}</strong>
 												<p>
 													{DAY_LABELS[primaryConflict.day]} • {primaryConflict.startLabel} - {primaryConflict.endLabel}
-													• {primaryConflict.room}
 												</p>
+												{#if primaryConflict.conflictGroupId && conflictGroupDetailsById[primaryConflict.conflictGroupId]}
+													<p>
+														{conflictGroupMetaCopy(
+															conflictGroupDetailsById[primaryConflict.conflictGroupId]
+														)}
+													</p>
+												{/if}
 											</div>
 											{#if additionalConflictCount > 0}
 												<p class="decision-secondary-count">
-													+{additionalConflictCount} bentrok lain masih menunggu tindak lanjut
+													+{additionalConflictCount} bentrok lain belum ditangani
 												</p>
 											{/if}
+											<div class="decision-actions conflict-card-actions">
+												<Button
+													class="ghost-button"
+													variant="ghost"
+													size="sm"
+													onclick={() => openBuilderForSchedule(primaryConflict)}
+												>
+													Buka di penjadwalan
+												</Button>
+												<Button
+													class="ghost-button"
+													variant="ghost"
+													size="sm"
+													onclick={() => openCalendarForSchedule(primaryConflict)}
+												>
+													Buka di kalender
+												</Button>
+											</div>
 										</section>
 									{:else if nextSchedule}
 										<section class="decision-primary decision-primary-steady">
@@ -2043,7 +2276,7 @@
 								<aside class="decision-notes">
 									<div class="decision-note-row">
 										<span>Ruang belum padat</span>
-										<strong>{underusedRooms} ruang masih bisa dioptimalkan</strong>
+										<strong>{underusedRooms} ruang masih longgar</strong>
 									</div>
 									<div class="decision-note-row">
 										<span>Kelas berikutnya</span>
@@ -2080,6 +2313,7 @@
 										class="ghost-button"
 										variant="ghost"
 										size="sm"
+										disabled={!calendarCanRender}
 										onclick={() => (calendarWeekOffset -= 1)}
 									>
 										<ChevronLeft size={16} />
@@ -2089,6 +2323,7 @@
 										class="ghost-button"
 										variant="outline"
 										size="sm"
+										disabled={!calendarCanRender}
 										onclick={() => (calendarWeekOffset = 0)}
 									>
 										Minggu dasar
@@ -2097,6 +2332,7 @@
 										class="ghost-button"
 										variant="ghost"
 										size="sm"
+										disabled={!calendarCanRender}
 										onclick={() => (calendarWeekOffset += 1)}
 									>
 										<span>Minggu depan</span>
@@ -2104,6 +2340,91 @@
 									</Button>
 								</div>
 							</header>
+
+							<section class="schedule-filter-panel">
+								<div class="editor-grid schedule-filter-grid">
+									<label class="schedule-filter-search">
+										<span>Cari jadwal</span>
+										<div class="search-box compact">
+											<Search size={16} />
+											<input
+												bind:value={enrollmentSearch}
+												aria-label="Cari jadwal kalender"
+												placeholder="Cari mahasiswa, mata kuliah, ruang, atau dosen"
+											/>
+										</div>
+									</label>
+									<label>
+										<span>Hari</span>
+										<select bind:value={scheduleDayFilter}>
+											<option value="">Semua hari</option>
+											{#each days as day (day)}
+												<option value={day}>{DAY_LABELS[day]}</option>
+											{/each}
+										</select>
+									</label>
+									<label>
+										<span>Mata kuliah</span>
+										<select bind:value={scheduleCourseFilter}>
+											<option value="">Semua mata kuliah</option>
+											{#each courses as item (item.id)}
+												<option value={item.id}>{item.name}</option>
+											{/each}
+										</select>
+									</label>
+									<label>
+										<span>Ruang</span>
+										<select bind:value={scheduleRoomFilter}>
+											<option value="">Semua ruang</option>
+											{#each classrooms as item (item.id)}
+												<option value={item.id}>{item.name}</option>
+											{/each}
+										</select>
+									</label>
+									<label>
+										<span>Dosen</span>
+										<select bind:value={scheduleLecturerFilter}>
+											<option value="">Semua dosen</option>
+											{#each lecturers as item (item.id)}
+												<option value={item.id}>{item.name}</option>
+											{/each}
+										</select>
+									</label>
+									<label>
+										<span>Semester</span>
+										<select bind:value={scheduleSemesterFilter}>
+											<option value="">Semua semester</option>
+											{#each scheduleSemesterOptions as item (item)}
+												<option value={item}>{item}</option>
+											{/each}
+										</select>
+									</label>
+									<label>
+										<span>Tahun akademik</span>
+										<select bind:value={scheduleAcademicYearFilter}>
+											<option value="">Semua tahun</option>
+											{#each scheduleAcademicYearOptions as item (item)}
+												<option value={item}>{item}</option>
+											{/each}
+										</select>
+									</label>
+								</div>
+								<div class="list-summary schedule-filter-summary">
+									<span>{filteredScheduleCards.length} jadwal tampil</span>
+									<div class="schedule-filter-actions">
+										<Badge variant="secondary">{scheduleActiveFilterCount} filter aktif</Badge>
+										<Button
+											class="ghost-button"
+											variant="ghost"
+											size="sm"
+											onclick={resetScheduleFilters}
+											disabled={scheduleActiveFilterCount === 0}
+										>
+											Hapus filter
+										</Button>
+									</div>
+								</div>
+							</section>
 
 							{#if calendarConflictLegend.length}
 								<div class="calendar-conflict-toolbar">
@@ -2116,7 +2437,7 @@
 												size="sm"
 												onclick={() => (selectedConflictGroupId = null)}
 											>
-												Tampilkan semua
+												Lihat semua
 											</Button>
 										{/if}
 									</div>
@@ -2131,7 +2452,10 @@
 												<span class="calendar-conflict-chip-dot"></span>
 												<span class="calendar-conflict-chip-copy">
 													<strong>{group.label}</strong>
-													<small>{group.course} • {group.count} jadwal</small>
+													<small>{group.course}</small>
+													{#if group.details}
+														<small>{conflictGroupMetaCopy(group.details)}</small>
+													{/if}
 												</span>
 											</button>
 										{/each}
@@ -2139,25 +2463,51 @@
 								</div>
 							{/if}
 
-							<div class="event-calendar-host">
-								{#if EventCalendarComponent}
-									<EventCalendarComponent plugins={calendarPlugins} options={calendarOptions} />
-								{:else}
-									<div class="calendar-loading">Memuat kalender...</div>
-								{/if}
-							</div>
+							{#if calendarNeedsFilters}
+								<section class="calendar-empty-state support-panel">
+									<h3>Terapkan filter jadwal terlebih dahulu</h3>
+									<p class="detail-hint">
+										Kalender penuh disembunyikan. Pilih mata kuliah, ruang, dosen, hari, semester,
+										atau tahun akademik untuk menampilkan jadwal yang ingin dilihat.
+									</p>
+								</section>
+							{:else if calendarHasTooMuchData}
+								<section class="calendar-empty-state support-warning">
+									<h3>Persempit hasil sebelum membuka kalender</h3>
+									<p>
+										{filteredScheduleCards.length} jadwal masih cocok dengan filter saat ini. Kurangi
+										hasil hingga maksimal {CALENDAR_MAX_VISIBLE_SCHEDULES} jadwal agar kalender tetap
+										mudah dibaca.
+									</p>
+								</section>
+							{:else if !filteredScheduleCards.length}
+								<section class="calendar-empty-state support-panel">
+									<h3>Tidak ada jadwal yang cocok</h3>
+									<p class="detail-hint">
+										Ubah kata kunci atau longgarkan filter untuk menampilkan jadwal pada kalender.
+									</p>
+								</section>
+							{:else}
+								<div class="event-calendar-host">
+									{#if EventCalendarComponent}
+										<EventCalendarComponent plugins={calendarPlugins} options={calendarOptions} />
+									{:else}
+										<div class="calendar-loading">Memuat kalender...</div>
+									{/if}
+								</div>
+							{/if}
 						</section>
 
 						<section
 							class="detail-card"
-							class:calendar-conflict={selectedSchedule?.hasConflict}
-							style={conflictToneVariables(selectedSchedule?.conflictTone ?? null)}
+							class:calendar-conflict={calendarDetailSchedule?.hasConflict}
+							style={conflictToneVariables(calendarDetailSchedule?.conflictTone ?? null)}
 						>
-							{#if selectedSchedule}
+							{#if calendarDetailSchedule}
 								<div class="pane-head compact">
 									<div>
-										<h3>{selectedSchedule.course}</h3>
-										{#if selectedSchedule.hasConflict && selectedScheduleConflictSummary}
+										<h3>{calendarDetailSchedule.course}</h3>
+										{#if calendarDetailSchedule.hasConflict && selectedScheduleConflictSummary}
 											<p class="calendar-conflict-copy">
 												Bentrok dengan {selectedScheduleConflictSummary}
 											</p>
@@ -2167,45 +2517,59 @@
 										class="ghost-button"
 										variant="ghost"
 										size="sm"
-										onclick={() => openBuilderForSchedule(selectedSchedule)}
+										onclick={() => openBuilderForSchedule(calendarDetailSchedule)}
 									>
 										Buka di penjadwalan
 									</Button>
 								</div>
 								<div class="detail-lines">
-									<div><span>Hari</span><strong>{DAY_LABELS[selectedSchedule.day]}</strong></div>
+									<div>
+										<span>Hari</span><strong>{DAY_LABELS[calendarDetailSchedule.day]}</strong>
+									</div>
 									<div>
 										<span>Jam</span><strong
-											>{selectedSchedule.startLabel} - {selectedSchedule.endLabel}</strong
+											>{calendarDetailSchedule.startLabel} - {calendarDetailSchedule.endLabel}</strong
 										>
 									</div>
-									<div><span>Ruang</span><strong>{selectedSchedule.room}</strong></div>
-									<div><span>Dosen</span><strong>{selectedSchedule.lecturer}</strong></div>
+									<div><span>Ruang</span><strong>{calendarDetailSchedule.room}</strong></div>
+									<div><span>Dosen</span><strong>{calendarDetailSchedule.lecturer}</strong></div>
 									<div>
 										<span>Semester</span><strong
-											>{selectedSchedule.semester} • {selectedSchedule.academicYear}</strong
+											>{calendarDetailSchedule.semester} • {calendarDetailSchedule.academicYear}</strong
 										>
 									</div>
 									<div>
 										<span>Status</span><strong
-											class:selected-danger={selectedSchedule.hasConflict}
-											class:selected-safe={!selectedSchedule.hasConflict}
-											>{selectedSchedule.hasConflict ? 'Bentrok' : 'Aman'}</strong
+											class:selected-danger={calendarDetailSchedule.hasConflict}
+											class:selected-safe={!calendarDetailSchedule.hasConflict}
+											>{calendarDetailSchedule.hasConflict ? 'Bentrok' : 'Aman'}</strong
 										>
 									</div>
+									{#if selectedScheduleConflictGroup}
+										<div>
+											<span>Ruang bentrok</span><strong
+												>{selectedScheduleConflictGroup.rooms}</strong
+											>
+										</div>
+										<div>
+											<span>Dosen terkait</span><strong
+												>{selectedScheduleConflictGroup.lecturers}</strong
+											>
+										</div>
+									{/if}
 								</div>
-								{#if selectedScheduleOverlapPeers.length}
+								{#if calendarDetailSchedule.hasConflict && selectedScheduleConflictPeers.length}
 									<section class="calendar-overlap-panel">
-										<h4>Jadwal lain pada slot ini</h4>
+										<h4>Jadwal lain di grup bentrok ini</h4>
 										<div class="calendar-overlap-list">
-											{#each selectedScheduleOverlapPeers as peer (peer.id)}
+											{#each selectedScheduleConflictPeers as peer (peer.id)}
 												<div
 													class={`calendar-overlap-item ${peer.hasConflict ? 'conflict' : ''} ${selectedScheduleId === peer.id ? 'selected' : ''}`}
 													style={conflictToneVariables(peer.conflictTone ?? null)}
 												>
 													<div class="calendar-overlap-copy">
 														<strong>{peer.course}</strong>
-														<span>{peer.student} • {peer.room}</span>
+														<span>{peer.student} • {peer.lecturer} • {peer.room}</span>
 														<small
 															>{DAY_LABELS[peer.day]} • {peer.startLabel} - {peer.endLabel}</small
 														>
@@ -2217,7 +2581,7 @@
 															size="sm"
 															onclick={() => focusSchedule(peer)}
 														>
-															Lihat
+															Lihat jadwal
 														</Button>
 														<Button
 															class="ghost-button"
@@ -2225,7 +2589,45 @@
 															size="sm"
 															onclick={() => openBuilderForSchedule(peer)}
 														>
-															Atur
+															Buka penjadwalan
+														</Button>
+													</div>
+												</div>
+											{/each}
+										</div>
+									</section>
+								{:else if selectedScheduleOverlapPeers.length}
+									<section class="calendar-overlap-panel">
+										<h4>Jadwal lain pada slot ini</h4>
+										<div class="calendar-overlap-list">
+											{#each selectedScheduleOverlapPeers as peer (peer.id)}
+												<div
+													class={`calendar-overlap-item ${peer.hasConflict ? 'conflict' : ''} ${selectedScheduleId === peer.id ? 'selected' : ''}`}
+													style={conflictToneVariables(peer.conflictTone ?? null)}
+												>
+													<div class="calendar-overlap-copy">
+														<strong>{peer.course}</strong>
+														<span>{peer.student} • {peer.lecturer} • {peer.room}</span>
+														<small
+															>{DAY_LABELS[peer.day]} • {peer.startLabel} - {peer.endLabel}</small
+														>
+													</div>
+													<div class="calendar-overlap-actions">
+														<Button
+															class="ghost-button"
+															variant="ghost"
+															size="sm"
+															onclick={() => focusSchedule(peer)}
+														>
+															Lihat jadwal
+														</Button>
+														<Button
+															class="ghost-button"
+															variant="ghost"
+															size="sm"
+															onclick={() => openBuilderForSchedule(peer)}
+														>
+															Buka penjadwalan
 														</Button>
 													</div>
 												</div>
@@ -2233,6 +2635,19 @@
 										</div>
 									</section>
 								{/if}
+							{:else if calendarNeedsFilters}
+								<p class="empty-copy">
+									Kalender mingguan akan tampil setelah filter dipilih. Gunakan daftar bentrok di
+									atas untuk mulai memeriksa jadwal yang bentrok.
+								</p>
+							{:else if calendarHasTooMuchData}
+								<p class="empty-copy">
+									Terlalu banyak jadwal untuk ditampilkan sekaligus. Tambahkan filter sampai
+									hasilnya maksimal {CALENDAR_MAX_VISIBLE_SCHEDULES} jadwal, atau pilih salah satu grup
+									bentrok di atas untuk melihat rinciannya lebih dulu.
+								</p>
+							{:else if !filteredScheduleCards.length}
+								<p class="empty-copy">Belum ada jadwal yang cocok dengan filter saat ini.</p>
 							{:else}
 								<p class="empty-copy">Pilih satu blok jadwal untuk melihat detail kelas.</p>
 							{/if}
@@ -2264,12 +2679,89 @@
 								/>
 							</label>
 
+							<div class="editor-grid schedule-filter-grid list-filter-grid">
+								<label>
+									<span>Hari</span>
+									<select bind:value={scheduleDayFilter}>
+										<option value="">Semua hari</option>
+										{#each days as day (day)}
+											<option value={day}>{DAY_LABELS[day]}</option>
+										{/each}
+									</select>
+								</label>
+								<label>
+									<span>Mata kuliah</span>
+									<select bind:value={scheduleCourseFilter}>
+										<option value="">Semua mata kuliah</option>
+										{#each courses as item (item.id)}
+											<option value={item.id}>{item.name}</option>
+										{/each}
+									</select>
+								</label>
+								<label>
+									<span>Ruang</span>
+									<select bind:value={scheduleRoomFilter}>
+										<option value="">Semua ruang</option>
+										{#each classrooms as item (item.id)}
+											<option value={item.id}>{item.name}</option>
+										{/each}
+									</select>
+								</label>
+								<label>
+									<span>Dosen</span>
+									<select bind:value={scheduleLecturerFilter}>
+										<option value="">Semua dosen</option>
+										{#each lecturers as item (item.id)}
+											<option value={item.id}>{item.name}</option>
+										{/each}
+									</select>
+								</label>
+								<label>
+									<span>Semester</span>
+									<select bind:value={scheduleSemesterFilter}>
+										<option value="">Semua semester</option>
+										{#each scheduleSemesterOptions as item (item)}
+											<option value={item}>{item}</option>
+										{/each}
+									</select>
+								</label>
+								<label>
+									<span>Tahun akademik</span>
+									<select bind:value={scheduleAcademicYearFilter}>
+										<option value="">Semua tahun</option>
+										{#each scheduleAcademicYearOptions as item (item)}
+											<option value={item}>{item}</option>
+										{/each}
+									</select>
+								</label>
+							</div>
+
+							<label class="filter-toggle-row">
+								<input type="checkbox" bind:checked={builderConflictOnly} />
+								<span>Hanya tampilkan jadwal bentrok</span>
+							</label>
+
 							<div class="list-summary">
-								<span>{filteredEnrollments.length} jadwal ditemukan</span>
+								<span>{filteredBuilderEnrollments.length} jadwal ditemukan</span>
+								<div class="schedule-filter-actions">
+									{#if builderConflictOnly}
+										<Badge variant="secondary">Bentrok saja</Badge>
+									{/if}
+									<Badge variant="secondary">{scheduleActiveFilterCount} filter aktif</Badge>
+									<Button
+										class="ghost-button"
+										variant="ghost"
+										size="sm"
+										onclick={resetScheduleFilters}
+										disabled={scheduleActiveFilterCount === 0}
+									>
+										Hapus filter
+									</Button>
+								</div>
 							</div>
 
 							<div class="list-stack">
-								{#each filteredEnrollments as item (item.id)}
+								{#each filteredBuilderEnrollments as item (item.id)}
 									{@const scheduleCard = item.id ? scheduleCardMap[item.id] : null}
 									<button
 										type="button"
@@ -2313,6 +2805,11 @@
 										>
 											Bentrok dengan {selectedEnrollmentConflictSummary}
 										</p>
+										{#if selectedEnrollmentConflictGroup}
+											<p class="builder-conflict-copy">
+												Ruang: {selectedEnrollmentConflictGroup.rooms} • Dosen: {selectedEnrollmentConflictGroup.lecturers}
+											</p>
+										{/if}
 									{/if}
 								</div>
 								{#if selectedEnrollmentId}
@@ -2402,6 +2899,55 @@
 											<p>{conflictCount} bentrok masih tercatat di kalender aktif</p>
 										</div>
 									</section>
+
+									{#if builderConflictCards.length}
+										<section class="support-panel builder-conflict-panel">
+											<div class="pane-head compact">
+												<div>
+													<h4>Daftar bentrok</h4>
+													<p class="detail-hint">
+														Pilih bentrok untuk langsung membuka jadwal terkait di penjadwalan atau
+														kalender.
+													</p>
+												</div>
+												<Badge variant="secondary">{builderConflictCards.length} grup</Badge>
+											</div>
+											<div class="builder-conflict-list">
+												{#each builderConflictCards as group (group.id)}
+													<article
+														class={`builder-conflict-card ${group.selected ? 'selected' : ''}`}
+														style={conflictToneVariables(group.representative.conflictTone ?? null)}
+													>
+														<div class="builder-conflict-card-copy">
+															<strong>{group.label}</strong>
+															<span>{group.representative.course}</span>
+															{#if group.details}
+																<small>{conflictGroupMetaCopy(group.details)}</small>
+															{/if}
+														</div>
+														<div class="builder-conflict-card-actions">
+															<Button
+																class="ghost-button"
+																variant="ghost"
+																size="sm"
+																onclick={() => openBuilderForSchedule(group.representative)}
+															>
+																Buka di penjadwalan
+															</Button>
+															<Button
+																class="ghost-button"
+																variant="ghost"
+																size="sm"
+																onclick={() => openCalendarForSchedule(group.representative)}
+															>
+																Buka di kalender
+															</Button>
+														</div>
+													</article>
+												{/each}
+											</div>
+										</section>
+									{/if}
 
 									<section
 										class:hidden-stage={builderStep !== 'participant'}
@@ -3746,8 +4292,81 @@
 									placeholder="Cari mahasiswa, mata kuliah, atau ruang"
 								/></label
 							>
+							<div class="editor-grid schedule-filter-grid list-filter-grid">
+								<label>
+									<span>Hari</span>
+									<select bind:value={scheduleDayFilter}>
+										<option value="">Semua hari</option>
+										{#each days as day (day)}
+											<option value={day}>{DAY_LABELS[day]}</option>
+										{/each}
+									</select>
+								</label>
+								<label>
+									<span>Mata kuliah</span>
+									<select bind:value={scheduleCourseFilter}>
+										<option value="">Semua mata kuliah</option>
+										{#each courses as item (item.id)}
+											<option value={item.id}>{item.name}</option>
+										{/each}
+									</select>
+								</label>
+								<label>
+									<span>Ruang</span>
+									<select bind:value={scheduleRoomFilter}>
+										<option value="">Semua ruang</option>
+										{#each classrooms as item (item.id)}
+											<option value={item.id}>{item.name}</option>
+										{/each}
+									</select>
+								</label>
+								<label>
+									<span>Dosen</span>
+									<select bind:value={scheduleLecturerFilter}>
+										<option value="">Semua dosen</option>
+										{#each lecturers as item (item.id)}
+											<option value={item.id}>{item.name}</option>
+										{/each}
+									</select>
+								</label>
+								<label>
+									<span>Semester</span>
+									<select bind:value={scheduleSemesterFilter}>
+										<option value="">Semua semester</option>
+										{#each scheduleSemesterOptions as item (item)}
+											<option value={item}>{item}</option>
+										{/each}
+									</select>
+								</label>
+								<label>
+									<span>Tahun akademik</span>
+									<select bind:value={scheduleAcademicYearFilter}>
+										<option value="">Semua tahun</option>
+										{#each scheduleAcademicYearOptions as item (item)}
+											<option value={item}>{item}</option>
+										{/each}
+									</select>
+								</label>
+							</div>
+							<div class="list-summary schedule-filter-summary">
+								<span>{filteredEnrollments.length} KRS tampil</span>
+								<div class="schedule-filter-actions">
+									<Badge variant="secondary">{scheduleActiveFilterCount} filter aktif</Badge>
+									<Button
+										class="ghost-button"
+										variant="ghost"
+										size="sm"
+										onclick={resetScheduleFilters}
+										disabled={scheduleActiveFilterCount === 0}
+									>
+										Hapus filter
+									</Button>
+								</div>
+							</div>
 							<div class="list-stack">
-								{#each filteredEnrollments as item (item.id)}<button
+								{#each filteredEnrollments as item (item.id)}
+									{@const scheduleCard = item.id ? scheduleCardMap[item.id] : null}
+									<button
 										type="button"
 										class:selected={selectedEnrollmentId === item.id}
 										class="list-row"
@@ -3756,6 +4375,11 @@
 											<strong>{item.student_name}</strong><span
 												>{item.course_name} • {item.class_room_name}</span
 											>
+											{#if item.id && scheduleCard?.hasConflict && conflictSummaryByCardId[item.id]}
+												<small class="list-conflict-copy">
+													Bentrok dengan {conflictSummaryByCardId[item.id]}
+												</small>
+											{/if}
 										</div>
 										<small>{item.semester} • {item.academic_year}</small></button
 									>{/each}
@@ -3767,28 +4391,49 @@
 									<h3>{selectedEnrollment ? selectedEnrollment.course_name : 'Pilih satu KRS'}</h3>
 								</div>
 							</div>
-							{#if selectedEnrollment}<div class="detail-lines">
-									<div>
-										<span>Mahasiswa</span><strong>{selectedEnrollment.student_name}</strong>
+							{#if selectedEnrollment}
+								<div class="detail-stack">
+									{#if selectedEnrollmentConflictSummary}
+										<p class="builder-conflict-copy">
+											Bentrok dengan {selectedEnrollmentConflictSummary}
+										</p>
+									{/if}
+									<div class="detail-lines">
+										<div>
+											<span>Mahasiswa</span><strong>{selectedEnrollment.student_name}</strong>
+										</div>
+										<div>
+											<span>Mata kuliah</span><strong>{selectedEnrollment.course_name}</strong>
+										</div>
+										<div>
+											<span>Ruang</span><strong>{selectedEnrollment.class_room_name}</strong>
+										</div>
+										<div>
+											<span>Jadwal</span><strong
+												>{selectedEnrollment.schedule_day
+													? DAY_LABELS[selectedEnrollment.schedule_day as keyof typeof DAY_LABELS]
+													: '-'} • {formatTimeRange(
+													selectedEnrollment.schedule_start_time,
+													selectedEnrollment.schedule_end_time,
+													timezone
+												)}</strong
+											>
+										</div>
+										{#if selectedEnrollmentConflictGroup}
+											<div>
+												<span>Ruang bentrok</span><strong
+													>{selectedEnrollmentConflictGroup.rooms}</strong
+												>
+											</div>
+											<div>
+												<span>Dosen terkait</span><strong
+													>{selectedEnrollmentConflictGroup.lecturers}</strong
+												>
+											</div>
+										{/if}
 									</div>
-									<div>
-										<span>Mata kuliah</span><strong>{selectedEnrollment.course_name}</strong>
-									</div>
-									<div><span>Ruang</span><strong>{selectedEnrollment.class_room_name}</strong></div>
-									<div>
-										<span>Jadwal</span><strong
-											>{selectedEnrollment.schedule_day
-												? DAY_LABELS[selectedEnrollment.schedule_day as keyof typeof DAY_LABELS]
-												: '-'} • {formatTimeRange(
-												selectedEnrollment.schedule_start_time,
-												selectedEnrollment.schedule_end_time,
-												timezone
-											)}</strong
-										>
-									</div>
-								</div>{:else}<p class="empty-copy">
-									Pilih satu baris untuk melihat detail KRS.
-								</p>{/if}
+								</div>
+							{:else}<p class="empty-copy">Pilih satu baris untuk melihat detail KRS.</p>{/if}
 						</section>
 					</div>
 				{/if}
@@ -4090,10 +4735,10 @@
 			<Card.Header>
 				<Card.Title class="login-title">
 					<p class="kicker">Watum</p>
-					Masuk ke Watum
+					Masuk
 				</Card.Title>
 				<Card.Description class="login-description">
-					Pantau jadwal, ruang, dan perubahan data akademik dari satu panel kerja yang ringkas.
+					Lihat jadwal, ruang, dan data akademik dari satu tempat.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content>
@@ -4108,12 +4753,12 @@
 						/>
 					</div>
 					<div>
-						<Label for="password-login">Password</Label>
+						<Label for="password-login">Kata sandi</Label>
 						<Input
 							id="password-login"
 							{...loginUser.fields.password.as('password')}
 							autocomplete="current-password"
-							placeholder="Masukkan password"
+							placeholder="Masukkan kata sandi"
 						/>
 					</div>
 					<Button type="submit" class="primary-button wide">Masuk</Button>
@@ -4490,6 +5135,57 @@
 		font-weight: 700;
 		letter-spacing: 0.01em;
 		color: var(--color-foreground-soft);
+	}
+
+	.schedule-filter-panel {
+		display: grid;
+		gap: 0.85rem;
+		padding: 0.95rem 1rem;
+		border: 1px solid color-mix(in oklch, var(--color-border) 88%, var(--color-surface) 12%);
+		border-radius: 1rem;
+		background: color-mix(in oklch, var(--color-surface) 86%, var(--color-panel) 14%);
+	}
+
+	.schedule-filter-grid {
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		align-items: end;
+	}
+
+	.list-filter-grid {
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+	}
+
+	.schedule-filter-search {
+		display: grid;
+		gap: 0.45rem;
+	}
+
+	.schedule-filter-summary {
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.schedule-filter-actions {
+		display: flex;
+		gap: 0.6rem;
+		justify-content: flex-end;
+		align-items: center;
+		flex-wrap: wrap;
+	}
+
+	.filter-toggle-row {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.6rem;
+		color: var(--color-muted-foreground);
+		font-size: 0.92rem;
+	}
+
+	.filter-toggle-row input {
+		margin: 0;
+		inline-size: 1rem;
+		block-size: 1rem;
 	}
 
 	.workspace-summary-strong {
@@ -4937,11 +5633,12 @@
 	}
 
 	:global(.event-calendar-host .watum-ec-event.is-selected) {
+		border-width: 2px;
 		border-color: var(--color-accent-strong);
 		background: color-mix(in oklch, var(--color-surface) 72%, var(--color-accent-soft) 28%);
 		box-shadow:
 			0 12px 24px color-mix(in oklch, var(--color-accent-strong) 12%, transparent 88%),
-			inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 34%, transparent 66%);
+			inset 0 0 0 2px color-mix(in oklch, var(--color-accent-strong) 34%, transparent 66%);
 	}
 
 	:global(.event-calendar-host .watum-ec-event.is-dimmed) {
@@ -4950,10 +5647,11 @@
 	}
 
 	:global(.event-calendar-host .watum-ec-event.is-conflict-focus) {
+		border-width: 2px;
 		box-shadow:
 			0 16px 28px
 				color-mix(in oklch, var(--conflict-border, var(--color-danger)) 12%, transparent 88%),
-			inset 0 0 0 2px
+			inset 0 0 0 3px
 				color-mix(in oklch, var(--conflict-border, var(--color-danger)) 18%, transparent 82%);
 		transform: translateY(-1px);
 	}
@@ -4968,6 +5666,7 @@
 	}
 
 	:global(.event-calendar-host .watum-ec-event.is-conflict.is-selected) {
+		border-width: 2px;
 		border-color: var(--color-accent-strong);
 		background: color-mix(
 			in oklch,
@@ -4976,7 +5675,7 @@
 		);
 		box-shadow:
 			0 14px 28px color-mix(in oklch, var(--color-danger) 12%, transparent 88%),
-			inset 0 0 0 2px color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
+			inset 0 0 0 3px color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
 	}
 
 	:global(.event-calendar-host .watum-ec-event[data-lane='1']) {
@@ -5221,6 +5920,10 @@
 		line-height: 1.4;
 	}
 
+	.conflict-card-actions {
+		margin-top: 0.2rem;
+	}
+
 	.decision-actions {
 		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
 		gap: 0.65rem;
@@ -5302,6 +6005,59 @@
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
 		border-radius: 0.8rem;
+	}
+
+	.builder-conflict-panel {
+		display: grid;
+		gap: 0.85rem;
+	}
+
+	.builder-conflict-list {
+		display: grid;
+		gap: 0.75rem;
+	}
+
+	.builder-conflict-card {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 0.75rem;
+		align-items: start;
+		padding: 0.9rem;
+		border: 1px solid var(--conflict-border, var(--color-border));
+		border-radius: 0.9rem;
+		background: color-mix(
+			in oklch,
+			var(--conflict-surface, var(--color-surface)) 86%,
+			var(--color-panel) 14%
+		);
+	}
+
+	.builder-conflict-card.selected {
+		box-shadow:
+			0 12px 24px color-mix(in oklch, var(--conflict-ink, var(--color-danger)) 10%, transparent 90%),
+			inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 38%, transparent 62%);
+	}
+
+	.builder-conflict-card-copy {
+		display: grid;
+		gap: 0.22rem;
+		min-width: 0;
+	}
+
+	.builder-conflict-card-copy span,
+	.builder-conflict-card-copy small {
+		color: color-mix(
+			in oklch,
+			var(--conflict-ink, var(--color-muted-foreground)) 72%,
+			var(--color-foreground) 28%
+		);
+	}
+
+	.builder-conflict-card-actions {
+		display: flex;
+		gap: 0.55rem;
+		flex-wrap: wrap;
+		justify-content: flex-end;
 	}
 
 	.metric-card {
@@ -5814,6 +6570,10 @@
 		background: var(--color-surface);
 	}
 
+	.search-box.compact {
+		padding: 0.62rem 0.75rem;
+	}
+
 	.search-box:focus-within {
 		border-color: color-mix(in oklch, var(--color-accent-strong) 46%, var(--color-border) 54%);
 		box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 18%, transparent 82%);
@@ -6132,6 +6892,10 @@
 		}
 
 		.builder-section-actions.split {
+			grid-template-columns: 1fr;
+		}
+
+		.schedule-filter-summary {
 			grid-template-columns: 1fr;
 		}
 
