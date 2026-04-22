@@ -6075,7 +6075,8 @@
 		}
 
 		:global(.event-calendar-host .ec) {
-			min-width: 54rem;
+			--ec-slot-height: 38px;
+			min-width: 112rem;
 		}
 
 		:global(.event-calendar-host .ec-time-grid .ec-header .ec-sidebar),
