@@ -5860,6 +5860,19 @@
 		min-width: 0;
 	}
 
+	.list-row > small {
+		justify-self: end;
+		text-align: right;
+		min-width: 0;
+	}
+
+	.list-row strong,
+	.list-row span,
+	.list-row small {
+		overflow-wrap: anywhere;
+		word-break: break-word;
+	}
+
 	.list-conflict-copy {
 		display: block;
 		line-height: 1.38;
@@ -6054,6 +6067,36 @@
 			padding: 1rem;
 		}
 
+		.event-calendar-host {
+			overflow-x: auto;
+			overflow-y: hidden;
+			-webkit-overflow-scrolling: touch;
+			overscroll-behavior-x: contain;
+		}
+
+		:global(.event-calendar-host .ec) {
+			min-width: 54rem;
+		}
+
+		:global(.event-calendar-host .ec-time-grid .ec-header .ec-sidebar),
+		:global(.event-calendar-host .ec-time-grid .ec-body .ec-sidebar) {
+			inline-size: 3.35rem;
+			width: 3.35rem;
+			flex: 0 0 3.35rem;
+		}
+
+		:global(.event-calendar-host .ec-day-head) {
+			padding: 0.8rem 0.7rem;
+		}
+
+		:global(.event-calendar-host .watum-day-head strong) {
+			font-size: 0.84rem;
+		}
+
+		:global(.event-calendar-host .watum-day-head span) {
+			font-size: 0.72rem;
+		}
+
 		.topbar,
 		.pane-head {
 			grid-template-columns: 1fr;
@@ -6095,8 +6138,14 @@
 
 		.list-row {
 			display: grid;
-			grid-template-columns: minmax(0, 1fr) auto;
+			grid-template-columns: minmax(0, 1fr);
+			gap: 0.45rem;
 			align-items: start;
+		}
+
+		.list-row > small {
+			justify-self: start;
+			text-align: left;
 		}
 
 		.user-pill {
