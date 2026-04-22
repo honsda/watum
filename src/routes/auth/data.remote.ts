@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 import { query, form } from '$app/server';
-import { login, getUser, setSession, clearSession } from '$lib/server/auth';
+import { clearSession, getUser, loginAndSetSession } from '$lib/server/auth';
 
 const loginSchema = v.object({
 	email: v.pipe(v.string(), v.email('Email tidak valid')),
@@ -13,11 +13,10 @@ export const getCurrentUser = query(async () => {
 });
 
 export const loginUser = form(loginSchema, async (data) => {
-	const authenticatedLogin = await login(data.email, data.password);
-	const session = await setSession(authenticatedLogin.user.id, authenticatedLogin.passwordHash);
+	const session = await loginAndSetSession(data.email, data.password);
 	return {
 		success: true,
-		user: authenticatedLogin.user,
+		user: session.user,
 		accessToken: session.accessToken
 	};
 });

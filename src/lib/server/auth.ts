@@ -5,7 +5,7 @@ import { verify } from 'argon2';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { SignJWT, jwtVerify } from 'jose';
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from './db';
-import { getPool, retryRead, withTransaction } from './db';
+import { getConnection, getPool, retryRead, withTransaction } from './db';
 import { selectUsers } from './sql';
 
 const ACCESS_TOKEN_TTL_SECONDS = 60 * 5;
@@ -61,8 +61,8 @@ function mapUser(user: SelectUserRow): User {
 		role: user.role!,
 		studentId: user.student_id ?? null,
 		lecturerId: user.lecturer_id ?? null,
-		student: user.student_id ? { id: user.student_id, name: user.student_name! } : null,
-		lecturer: user.lecturer_id ? { id: user.lecturer_id, name: user.lecturer_name! } : null
+		student: user.student_id ? { id: user.student_id, name: user.student_name ?? '' } : null,
+		lecturer: user.lecturer_id ? { id: user.lecturer_id, name: user.lecturer_name ?? '' } : null
 	};
 }
 
@@ -436,7 +436,19 @@ export async function revokeRefreshTokensForUser(userId: string) {
 }
 
 export async function login(email: string, password: string): Promise<AuthenticatedLoginResult> {
-	const [user] = await retryRead(() => selectUsers(getPool(), { where: [['email', '=', email]] }));
+	const [user] = await retryRead(() =>
+		selectUsers(getPool(), {
+			select: {
+				id: true,
+				email: true,
+				role: true,
+				password: true,
+				student_id: true,
+				lecturer_id: true
+			},
+			where: [['email', '=', email]]
+		})
+	);
 	if (!user?.password) {
 		throw error(401, 'Email atau password salah');
 	}
@@ -448,4 +460,61 @@ export async function login(email: string, password: string): Promise<Authentica
 		user: mapUser(user),
 		passwordHash: user.password
 	};
+}
+
+export async function loginAndSetSession(
+	email: string,
+	password: string
+): Promise<{ user: User; accessToken: string }> {
+	const connection = await getConnection();
+
+	try {
+		const [user] = await selectUsers(connection, {
+			select: {
+				id: true,
+				email: true,
+				role: true,
+				password: true,
+				student_id: true,
+				lecturer_id: true
+			},
+			where: [['email', '=', email]]
+		});
+
+		if (!user?.id || !user.password) {
+			throw error(401, 'Email atau password salah');
+		}
+
+		const valid = await verify(user.password, password);
+		if (!valid) {
+			throw error(401, 'Email atau password salah');
+		}
+
+		const refreshToken = createOpaqueToken();
+		const refreshTokenHash = hashRefreshToken(refreshToken);
+		const contextBinding = getRequestContextBinding();
+		const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000);
+
+		await connection.beginTransaction();
+		try {
+			await connection.query(
+				'DELETE FROM refresh_tokens WHERE user_id = ? AND context_binding = ?',
+				[user.id, contextBinding]
+			);
+			await insertRefreshToken(connection, user.id, refreshTokenHash, contextBinding, expiresAt);
+			await connection.commit();
+		} catch (err) {
+			await connection.rollback();
+			throw err;
+		}
+
+		setRefreshTokenCookie(refreshToken);
+
+		return {
+			user: mapUser(user),
+			accessToken: await signAccessToken(user.id, user.password)
+		};
+	} finally {
+		connection.release();
+	}
 }
