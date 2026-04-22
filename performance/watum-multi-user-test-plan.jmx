@@ -29,7 +29,7 @@
           </elementProp>
           <elementProp name="THREADS" elementType="Argument">
             <stringProp name="Argument.name">THREADS</stringProp>
-            <stringProp name="Argument.value">220</stringProp>
+            <stringProp name="Argument.value">120000</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
           <elementProp name="RAMP_UP" elementType="Argument">
@@ -99,7 +99,7 @@
           </elementProp>
           <elementProp name="WRITE_THREADS" elementType="Argument">
             <stringProp name="Argument.name">WRITE_THREADS</stringProp>
-            <stringProp name="Argument.value">1</stringProp>
+            <stringProp name="Argument.value">2</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
           <elementProp name="WRITE_RAMP_UP" elementType="Argument">
@@ -109,7 +109,7 @@
           </elementProp>
           <elementProp name="WRITE_LOOPS" elementType="Argument">
             <stringProp name="Argument.name">WRITE_LOOPS</stringProp>
-            <stringProp name="Argument.value">15</stringProp>
+            <stringProp name="Argument.value">50</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
           <elementProp name="WRITE_THINK_TIME_MS" elementType="Argument">
