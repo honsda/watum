@@ -16,7 +16,8 @@
 		"test": "npm run test:e2e",
 		"typesql": "typesql compile",
 		"typesql:watch": "typesql compile --watch",
-		"seed": "tsx seed.ts"
+		"seed": "tsx seed.ts",
+		"seed:stress": "tsx stress-seed.ts"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^2.0.5",
