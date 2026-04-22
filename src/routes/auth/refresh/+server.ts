@@ -4,7 +4,7 @@ import { refreshSession } from '$lib/server/auth';
 export async function POST() {
 	const session = await refreshSession();
 	if (!session) {
-		return json({ message: 'Refresh token tidak valid' }, { status: 401 });
+		return new Response(null, { status: 204 });
 	}
 
 	return json({

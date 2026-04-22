@@ -394,15 +394,15 @@ function buildStudents(studentCount: number) {
 
 function buildUniqueSlots(classRoomIds: string[]) {
 	const slots: SlotRecord[] = [];
-	for (const dayConfig of dayConfigs) {
-		for (const timeSlot of timeSlotConfigs) {
-			const isReservedConflictTime =
-				dayConfig.day === dayConfigs[0].day && timeSlot.start === timeSlotConfigs[0].start;
-			if (isReservedConflictTime) {
-				continue;
-			}
+	for (const [classRoomIndex, classRoomId] of classRoomIds.entries()) {
+		for (const dayConfig of dayConfigs) {
+			for (const timeSlot of timeSlotConfigs) {
+				const isReservedConflictTime =
+					dayConfig.day === dayConfigs[0].day && timeSlot.start === timeSlotConfigs[0].start;
+				if (isReservedConflictTime) {
+					continue;
+				}
 
-			for (const [classRoomIndex, classRoomId] of classRoomIds.entries()) {
 				slots.push({
 					classRoomId,
 					classRoomIndex,

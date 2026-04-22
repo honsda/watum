@@ -109,7 +109,6 @@ export const createGrade = form(gradeSchema, async (data, issue) => {
 		})
 	]);
 
-	
 	if (!enrollment) {
 		throw error(404, 'Data KRS tidak ditemukan');
 	}
@@ -118,7 +117,6 @@ export const createGrade = form(gradeSchema, async (data, issue) => {
 		throw error(403, 'Anda tidak berhak menginput nilai untuk mata kuliah ini');
 	}
 
-	
 	if (existing) invalid(issue.enrollmentId('Nilai untuk KRS ini sudah ada'));
 
 	const { total, letter } = calculateGrade(

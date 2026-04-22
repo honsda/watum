@@ -5,6 +5,7 @@ const REFRESH_ENDPOINT_PATH = '/auth/refresh';
 let accessToken: string | null = null;
 let refreshPromise: Promise<string | null> | null = null;
 let fetchInstalled = false;
+let refreshUnavailable = false;
 
 const nativeFetch = browser ? window.fetch.bind(window) : fetch;
 
@@ -44,22 +45,32 @@ async function requestNewAccessToken() {
 		}
 	});
 
+	if (response.status === 204) {
+		accessToken = null;
+		refreshUnavailable = true;
+		return null;
+	}
+
 	if (!response.ok) {
 		accessToken = null;
+		refreshUnavailable = response.status === 401 || response.status === 403;
 		return null;
 	}
 
 	const payload = (await response.json()) as { accessToken?: string };
 	accessToken = typeof payload.accessToken === 'string' ? payload.accessToken : null;
+	refreshUnavailable = accessToken == null;
 	return accessToken;
 }
 
 export function setAccessToken(token: string | null) {
 	accessToken = token;
+	refreshUnavailable = token == null;
 }
 
 export function clearAccessToken() {
 	accessToken = null;
+	refreshUnavailable = true;
 }
 
 export async function ensureAccessToken(force = false) {
@@ -69,6 +80,10 @@ export async function ensureAccessToken(force = false) {
 
 	if (!force && accessToken) {
 		return accessToken;
+	}
+
+	if (refreshUnavailable) {
+		return null;
 	}
 
 	if (refreshPromise) {
