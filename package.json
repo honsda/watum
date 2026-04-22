@@ -17,7 +17,8 @@
 		"typesql": "typesql compile",
 		"typesql:watch": "typesql compile --watch",
 		"seed": "tsx seed.ts",
-		"seed:stress": "tsx stress-seed.ts"
+		"seed:stress": "tsx stress-seed.ts",
+		"seed:stress:coolify": "bash ./scripts/seed-stress-coolify.sh"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^2.0.5",

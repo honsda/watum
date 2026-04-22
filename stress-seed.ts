@@ -1,10 +1,11 @@
 import 'dotenv/config';
 import { hash } from 'argon2';
-import { createPool, type Connection, type Pool } from 'mysql2/promise';
+import { createConnection, type Connection } from 'mysql2/promise';
 
-const MIN_STRESS_SEED_COUNT = 300;
-const MAX_STRESS_SEED_COUNT = 500;
-const DEFAULT_STRESS_SEED_COUNT = 400;
+const DEFAULT_STRESS_SEED_TARGET_ROWS = 10_000_000;
+const DEFAULT_INSERT_BATCH_SIZE = 10_000;
+const MIN_INSERT_BATCH_SIZE = 100;
+const MAX_INSERT_BATCH_SIZE = 50_000;
 const DEFAULT_ADMIN_ID = 'admin-default';
 const DEFAULT_ADMIN_EMAIL = 'admin@watum.local';
 const DEFAULT_ADMIN_PASSWORD_HASH =
@@ -218,41 +219,153 @@ type SlotRecord = {
 	end: string;
 };
 
-const pool: Pool = createPool({
-	host: process.env.DB_HOST || 'localhost',
-	user: process.env.DB_USER || 'root',
-	password: process.env.DB_PASSWORD || '',
-	database: process.env.DB_NAME || 'akademik_db',
-	port: parseInt(process.env.DB_PORT || '3306', 10),
-	timezone: '+00:00',
-	multipleStatements: true,
-	enableKeepAlive: true,
-	keepAliveInitialDelay: 10000,
-	connectTimeout: 5000
-});
+async function createSeedConnection() {
+	return createConnection({
+		host: process.env.DB_HOST || 'localhost',
+		user: process.env.DB_USER || 'root',
+		password: process.env.DB_PASSWORD || '',
+		database: process.env.DB_NAME || 'akademik_db',
+		port: parseInt(process.env.DB_PORT || '3306', 10),
+		timezone: '+00:00',
+		charset: 'utf8mb4',
+		compress: true,
+		enableKeepAlive: true,
+		keepAliveInitialDelay: 10000,
+		connectTimeout: 30000
+	});
+}
 
-async function withConnection<T>(fn: (conn: Connection) => Promise<T>): Promise<T> {
-	const conn = await pool.getConnection();
+async function withTransaction<T>(conn: Connection, fn: () => Promise<T>): Promise<T> {
+	await conn.beginTransaction();
 	try {
-		await conn.beginTransaction();
-		const result = await fn(conn);
+		const result = await fn();
 		await conn.commit();
 		return result;
 	} catch (err) {
 		await conn.rollback();
 		throw err;
-	} finally {
-		conn.release();
 	}
 }
 
-function getStressSeedCount() {
-	const parsed = parseInt(process.env.STRESS_SEED_COUNT || `${DEFAULT_STRESS_SEED_COUNT}`, 10);
-	if (Number.isNaN(parsed)) {
-		return DEFAULT_STRESS_SEED_COUNT;
+function parsePositiveInteger(value: string | undefined, fallback: number) {
+	if (!value) {
+		return fallback;
 	}
 
-	return Math.min(MAX_STRESS_SEED_COUNT, Math.max(MIN_STRESS_SEED_COUNT, parsed));
+	const parsed = Number.parseInt(value, 10);
+	if (!Number.isFinite(parsed) || Number.isNaN(parsed) || parsed <= 0) {
+		return fallback;
+	}
+
+	return parsed;
+}
+
+function getInsertBatchSize() {
+	const parsed = parsePositiveInteger(
+		process.env.STRESS_SEED_BATCH_SIZE,
+		DEFAULT_INSERT_BATCH_SIZE
+	);
+	return Math.min(MAX_INSERT_BATCH_SIZE, Math.max(MIN_INSERT_BATCH_SIZE, parsed));
+}
+
+function getStressSeedTargetRows() {
+	return parsePositiveInteger(process.env.STRESS_SEED_TARGET_ROWS, DEFAULT_STRESS_SEED_TARGET_ROWS);
+}
+
+function getStudentCountOverride() {
+	if (!process.env.STRESS_SEED_COUNT) {
+		return null;
+	}
+
+	const parsed = Number.parseInt(process.env.STRESS_SEED_COUNT, 10);
+	if (!Number.isFinite(parsed) || Number.isNaN(parsed) || parsed <= 0) {
+		return null;
+	}
+
+	return parsed;
+}
+
+function getStudentsWithThreeCoursesCount(studentCount: number) {
+	return Math.floor((studentCount + 4) / 5);
+}
+
+function getEnrollmentCount(studentCount: number) {
+	return studentCount * 2 + getStudentsWithThreeCoursesCount(studentCount);
+}
+
+function getGradeCount(enrollmentCount: number) {
+	if (enrollmentCount <= CONFLICTING_SCHEDULE_COUNT) {
+		return 0;
+	}
+
+	const eligibleEnrollments = enrollmentCount - CONFLICTING_SCHEDULE_COUNT;
+	const fullBlocks = Math.floor(eligibleEnrollments / 10);
+	const remainder = eligibleEnrollments % 10;
+	return fullBlocks * 7 + Math.min(7, remainder);
+}
+
+function estimateTotalRows(studentCount: number) {
+	const lecturerCount = getLecturerCount(studentCount);
+	const enrollmentCount = getEnrollmentCount(studentCount);
+	const gradeCount = getGradeCount(enrollmentCount);
+	const classRoomCount = buildClassRooms().length;
+	const courseCount = Object.values(courseNameCatalog).reduce(
+		(sum, names) => sum + names.length,
+		0
+	);
+
+	return (
+		1 +
+		facultyRows.length +
+		studyProgramRows.length +
+		classRoomCount +
+		lecturerCount +
+		lecturerCount +
+		courseCount +
+		studentCount +
+		studentCount +
+		enrollmentCount +
+		enrollmentCount +
+		gradeCount
+	);
+}
+
+function deriveStudentCountFromTargetRows(targetRows: number) {
+	let low = 1;
+	let high = Math.max(1, Math.ceil(targetRows / 6));
+
+	while (estimateTotalRows(high) < targetRows) {
+		high *= 2;
+	}
+
+	while (low < high) {
+		const mid = Math.floor((low + high + 1) / 2);
+		if (estimateTotalRows(mid) <= targetRows) {
+			low = mid;
+		} else {
+			high = mid - 1;
+		}
+	}
+
+	return low;
+}
+
+function getStressSeedPlan() {
+	const explicitStudentCount = getStudentCountOverride();
+	if (explicitStudentCount) {
+		return {
+			mode: 'student-count' as const,
+			studentCount: explicitStudentCount,
+			targetRows: estimateTotalRows(explicitStudentCount)
+		};
+	}
+
+	const targetRows = getStressSeedTargetRows();
+	return {
+		mode: 'target-rows' as const,
+		studentCount: deriveStudentCountFromTargetRows(targetRows),
+		targetRows
+	};
 }
 
 function buildPersonName(index: number) {
@@ -339,7 +452,7 @@ function buildClassRooms() {
 }
 
 function getLecturerCount(studentCount: number) {
-	return Math.max(32, Math.min(48, Math.ceil(studentCount / 12)));
+	return Math.max(48, Math.ceil(studentCount / 5000));
 }
 
 function buildLecturers(count: number) {
@@ -376,45 +489,16 @@ function buildCourses(lecturers: LecturerRecord[]) {
 	return courses;
 }
 
-function buildStudents(studentCount: number) {
-	const students: StudentRecord[] = [];
-	for (let index = 0; index < studentCount; index += 1) {
-		students.push({
-			id: buildStudentId(index),
-			name: buildPersonName(index),
-			email: buildStudentEmail(index),
-			phone: buildStudentPhone(index),
-			address: buildStudentAddress(index),
-			yearAdmitted: buildStudentYearAdmitted(index),
-			studyProgramId: studyProgramRows[index % studyProgramRows.length][0]
-		});
-	}
-	return students;
-}
-
-function buildUniqueSlots(classRoomIds: string[]) {
-	const slots: SlotRecord[] = [];
-	for (const [classRoomIndex, classRoomId] of classRoomIds.entries()) {
-		for (const dayConfig of dayConfigs) {
-			for (const timeSlot of timeSlotConfigs) {
-				const isReservedConflictTime =
-					dayConfig.day === dayConfigs[0].day && timeSlot.start === timeSlotConfigs[0].start;
-				if (isReservedConflictTime) {
-					continue;
-				}
-
-				slots.push({
-					classRoomId,
-					classRoomIndex,
-					day: dayConfig.day,
-					date: dayConfig.date,
-					start: timeSlot.start,
-					end: timeSlot.end
-				});
-			}
-		}
-	}
-	return slots;
+function buildStudent(index: number): StudentRecord {
+	return {
+		id: buildStudentId(index),
+		name: buildPersonName(index),
+		email: buildStudentEmail(index),
+		phone: buildStudentPhone(index),
+		address: buildStudentAddress(index),
+		yearAdmitted: buildStudentYearAdmitted(index),
+		studyProgramId: studyProgramRows[index % studyProgramRows.length][0]
+	};
 }
 
 function buildConflictSlot(classRoomId: string): SlotRecord {
@@ -426,6 +510,55 @@ function buildConflictSlot(classRoomId: string): SlotRecord {
 		start: timeSlotConfigs[0].start,
 		end: timeSlotConfigs[0].end
 	};
+}
+
+function buildSlotForEnrollment(enrollmentIndex: number, classRoomIds: string[]) {
+	if (enrollmentIndex < CONFLICTING_SCHEDULE_COUNT) {
+		return buildConflictSlot(classRoomIds[0]);
+	}
+
+	const slotIndex =
+		(enrollmentIndex - CONFLICTING_SCHEDULE_COUNT) %
+		(classRoomIds.length * dayConfigs.length * timeSlotConfigs.length);
+	const slotsPerRoom = dayConfigs.length * timeSlotConfigs.length;
+	const classRoomIndex = Math.floor(slotIndex / slotsPerRoom);
+	const slotWithinRoom = slotIndex % slotsPerRoom;
+	const dayIndex = Math.floor(slotWithinRoom / timeSlotConfigs.length);
+	const timeIndex = slotWithinRoom % timeSlotConfigs.length;
+	const dayConfig = dayConfigs[dayIndex];
+	const timeSlot = timeSlotConfigs[timeIndex];
+
+	return {
+		classRoomId: classRoomIds[classRoomIndex],
+		classRoomIndex,
+		day: dayConfig.day,
+		date: dayConfig.date,
+		start: timeSlot.start,
+		end: timeSlot.end
+	};
+}
+
+async function insertRows<T>(conn: Connection, sql: string, rows: T[]) {
+	if (rows.length === 0) {
+		return;
+	}
+
+	await conn.query(sql, [rows]);
+}
+
+async function insertRowsInBatches<T>(conn: Connection, sql: string, rows: T[], batchSize: number) {
+	if (rows.length === 0) {
+		return;
+	}
+
+	if (rows.length <= batchSize) {
+		await conn.query(sql, [rows]);
+		return;
+	}
+
+	for (let offset = 0; offset < rows.length; offset += batchSize) {
+		await conn.query(sql, [rows.slice(offset, offset + batchSize)]);
+	}
 }
 
 function formatScheduleDate(date: string, time: string) {
@@ -454,50 +587,53 @@ function calculateGrade(studentIndex: number, enrollmentIndex: number) {
 }
 
 async function resetDatabase(conn: Connection) {
-	await conn.query('SET FOREIGN_KEY_CHECKS = 0');
-	try {
-		const tablesToTruncate = [
-			'grades',
-			'enrollments',
-			'schedules',
-			'courses',
-			'refresh_tokens',
-			'students',
-			'lecturers',
-			'class_rooms',
-			'study_programs',
-			'faculties'
-		];
+	const tablesToTruncate = [
+		'grades',
+		'enrollments',
+		'schedules',
+		'courses',
+		'refresh_tokens',
+		'students',
+		'lecturers',
+		'class_rooms',
+		'study_programs',
+		'faculties'
+	];
 
-		for (const tableName of tablesToTruncate) {
-			await conn.query(`TRUNCATE TABLE ${tableName}`);
-		}
-
-		await conn.query('DELETE FROM users WHERE id <> ?', [DEFAULT_ADMIN_ID]);
-		await conn.query(
-			`INSERT INTO users (id, email, password, role, student_id, lecturer_id)
-			 VALUES (?, ?, ?, 'ADMIN', NULL, NULL)
-			 ON DUPLICATE KEY UPDATE
-			   email = VALUES(email),
-			   password = VALUES(password),
-			   role = 'ADMIN',
-			   student_id = NULL,
-			   lecturer_id = NULL`,
-			[DEFAULT_ADMIN_ID, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD_HASH]
-		);
-	} finally {
-		await conn.query('SET FOREIGN_KEY_CHECKS = 1');
+	for (const tableName of tablesToTruncate) {
+		await conn.query(`TRUNCATE TABLE ${tableName}`);
 	}
+
+	await conn.query('DELETE FROM users WHERE id <> ?', [DEFAULT_ADMIN_ID]);
+	await conn.query(
+		`INSERT INTO users (id, email, password, role, student_id, lecturer_id)
+		 VALUES (?, ?, ?, 'ADMIN', NULL, NULL)
+		 ON DUPLICATE KEY UPDATE
+		   email = VALUES(email),
+		   password = VALUES(password),
+		   role = 'ADMIN',
+		   student_id = NULL,
+		   lecturer_id = NULL`,
+		[DEFAULT_ADMIN_ID, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD_HASH]
+	);
 }
 
 async function seedStressData() {
-	const studentCount = getStressSeedCount();
+	const plan = getStressSeedPlan();
+	const studentCount = plan.studentCount;
+	const batchSize = getInsertBatchSize();
 	const lecturerCount = getLecturerCount(studentCount);
 	const classRoomRows = buildClassRooms();
 	const lecturers = buildLecturers(lecturerCount);
 	const courses = buildCourses(lecturers);
-	const students = buildStudents(studentCount);
 	const coursesByProgram = new Map<StudyProgramId, CourseRecord[]>();
+	const courseCount = Object.values(courseNameCatalog).reduce(
+		(sum, names) => sum + names.length,
+		0
+	);
+	const estimatedEnrollmentCount = getEnrollmentCount(studentCount);
+	const estimatedGradeCount = getGradeCount(estimatedEnrollmentCount);
+	const estimatedTotalRows = estimateTotalRows(studentCount);
 
 	for (const course of courses) {
 		const programCourses = coursesByProgram.get(course.studyProgramId) ?? [];
@@ -505,52 +641,99 @@ async function seedStressData() {
 		coursesByProgram.set(course.studyProgramId, programCourses);
 	}
 
-	console.log(`Resetting database and seeding ${studentCount} students...`);
+	console.log(
+		`Resetting database and seeding approximately ${estimatedTotalRows.toLocaleString()} rows...`
+	);
+	console.log(
+		plan.mode === 'student-count'
+			? `  Using explicit student count override: ${studentCount.toLocaleString()} students`
+			: `  Target rows: ${plan.targetRows.toLocaleString()} | derived students: ${studentCount.toLocaleString()}`
+	);
+	console.log(`  Insert batch size: ${batchSize.toLocaleString()} students per batch`);
 
-	await withConnection(async (conn) => {
-		await resetDatabase(conn);
+	const conn = await createSeedConnection();
+	try {
+		await conn.query('SET SESSION foreign_key_checks = 0');
+		await conn.query('SET SESSION unique_checks = 0');
 
-		console.log('  Inserting faculties, study programs, and classrooms...');
-		await conn.query('INSERT INTO faculties (id, name) VALUES ?', [facultyRows]);
-		await conn.query('INSERT INTO study_programs (id, name, head, faculty_id) VALUES ?', [
-			studyProgramRows
-		]);
-		await conn.query(
-			`INSERT INTO class_rooms (id, name, class_room_type, capacity, has_projector, has_ac)
+		await withTransaction(conn, async () => {
+			await resetDatabase(conn);
+
+			console.log('  Inserting faculties, study programs, and classrooms...');
+			await conn.query('INSERT INTO faculties (id, name) VALUES ?', [facultyRows]);
+			await conn.query('INSERT INTO study_programs (id, name, head, faculty_id) VALUES ?', [
+				studyProgramRows
+			]);
+			await conn.query(
+				`INSERT INTO class_rooms (id, name, class_room_type, capacity, has_projector, has_ac)
 			 VALUES ?`,
-			[classRoomRows]
-		);
+				[classRoomRows]
+			);
+		});
 
 		console.log('  Inserting lecturers, courses, students, and users...');
-		await conn.query('INSERT INTO lecturers (id, name, email, phone, address) VALUES ?', [
-			lecturers.map((lecturer) => [
-				lecturer.id,
-				lecturer.name,
-				lecturer.email,
-				lecturer.phone,
-				lecturer.address
-			])
-		]);
-
-		await conn.query(
-			`INSERT INTO courses (id, name, credits, study_program_id, lecturer_id)
-			 VALUES ?`,
-			[
-				courses.map((course) => [
-					course.id,
-					course.name,
-					course.credits,
-					course.studyProgramId,
-					course.lecturerId
+		await withTransaction(conn, async () => {
+			await conn.query('INSERT INTO lecturers (id, name, email, phone, address) VALUES ?', [
+				lecturers.map((lecturer) => [
+					lecturer.id,
+					lecturer.name,
+					lecturer.email,
+					lecturer.phone,
+					lecturer.address
 				])
-			]
-		);
+			]);
 
-		await conn.query(
-			`INSERT INTO students (id, name, email, phone, address, year_admitted, study_program_id)
-			 VALUES ?`,
-			[
-				students.map((student) => [
+			await conn.query(
+				`INSERT INTO courses (id, name, credits, study_program_id, lecturer_id)
+				 VALUES ?`,
+				[
+					courses.map((course) => [
+						course.id,
+						course.name,
+						course.credits,
+						course.studyProgramId,
+						course.lecturerId
+					])
+				]
+			);
+
+			const lecturerPasswordHash = await hash('stresslecturer123');
+			await conn.query(
+				`INSERT INTO users (id, email, password, role, student_id, lecturer_id)
+				 VALUES ?`,
+				[
+					lecturers.map((lecturer, index) => [
+						buildLecturerUserId(index),
+						lecturer.email,
+						lecturerPasswordHash,
+						'LECTURER',
+						null,
+						lecturer.id
+					])
+				]
+			);
+		});
+
+		const studentPasswordHash = await hash('stress123');
+
+		console.log('  Building schedules, enrollments, and grades...');
+		const classRoomIds = classRoomRows.map((row) => row[0]);
+
+		let enrollmentIndex = 0;
+		let gradeIndex = 0;
+		const relatedRowsBatchSize = batchSize * 3;
+		const totalBatches = Math.ceil(studentCount / batchSize);
+		for (let batchStart = 0; batchStart < studentCount; batchStart += batchSize) {
+			const batchEnd = Math.min(studentCount, batchStart + batchSize);
+			const studentRows: Array<[string, string, string, string, string, number, string]> = [];
+			const studentUserRows: Array<[string, string, string, string, string, null]> = [];
+			const scheduleRows: Array<[string, string, string, string, string, string | null]> = [];
+			const enrollmentRows: Array<[string, string, string, string, string, string, string]> = [];
+			const gradeRows: Array<[string, string, number, number, number, number, string]> = [];
+
+			for (let studentIndex = batchStart; studentIndex < batchEnd; studentIndex += 1) {
+				const student = buildStudent(studentIndex);
+				studentRows.push([
 					student.id,
 					student.name,
 					student.email,
@@ -558,141 +741,127 @@ async function seedStressData() {
 					student.address,
 					student.yearAdmitted,
 					student.studyProgramId
-				])
-			]
-		);
-
-		const lecturerPasswordHash = await hash('stresslecturer123');
-		const studentPasswordHash = await hash('stress123');
-
-		await conn.query(
-			`INSERT INTO users (id, email, password, role, student_id, lecturer_id)
-			 VALUES ?`,
-			[
-				[
-					...lecturers.map((lecturer, index) => [
-						buildLecturerUserId(index),
-						lecturer.email,
-						lecturerPasswordHash,
-						'LECTURER',
-						null,
-						lecturer.id
-					]),
-					...students.map((student, index) => [
-						buildUserId(index),
-						student.email,
-						studentPasswordHash,
-						'STUDENT',
-						student.id,
-						null
-					])
-				]
-			]
-		);
-
-		console.log('  Building schedules, enrollments, and grades...');
-		const uniqueSlots = buildUniqueSlots(classRoomRows.map((row) => row[0]));
-		const conflictSlot = buildConflictSlot(classRoomRows[0][0]);
-
-		const scheduleRows: Array<[string, string, string, string, string, string | null]> = [];
-		const enrollmentRows: Array<[string, string, string, string, string, string, string]> = [];
-		const gradeRows: Array<[string, string, number, number, number, number, string]> = [];
-
-		let enrollmentIndex = 0;
-		for (const [studentIndex, student] of students.entries()) {
-			const programCourses = coursesByProgram.get(student.studyProgramId) ?? [];
-			const courseCount = studentIndex % 5 === 0 ? 3 : 2;
-			const startOffset = (studentIndex * 2) % programCourses.length;
-
-			for (let offset = 0; offset < courseCount; offset += 1) {
-				const course = programCourses[(startOffset + offset) % programCourses.length];
-				const scheduleId = `${SCHEDULE_ID_PREFIX}${String(enrollmentIndex + 1).padStart(5, '0')}`;
-				const enrollmentId = `${ENROLLMENT_ID_PREFIX}${String(enrollmentIndex + 1).padStart(5, '0')}`;
-				const slot =
-					enrollmentIndex < CONFLICTING_SCHEDULE_COUNT
-						? conflictSlot
-						: uniqueSlots[enrollmentIndex - CONFLICTING_SCHEDULE_COUNT];
-
-				if (!slot) {
-					throw new Error('Not enough unique slots to generate the requested stress dataset.');
-				}
-
-				const scheduleLecturerId =
-					enrollmentIndex < CONFLICTING_SCHEDULE_COUNT
-						? lecturers[enrollmentIndex].id
-						: lecturers[slot.classRoomIndex % lecturers.length].id;
-
-				scheduleRows.push([
-					scheduleId,
-					slot.classRoomId,
-					slot.day,
-					formatScheduleDate(slot.date, slot.start),
-					formatScheduleDate(slot.date, slot.end),
-					scheduleLecturerId
 				]);
-
-				enrollmentRows.push([
-					enrollmentId,
+				studentUserRows.push([
+					buildUserId(studentIndex),
+					student.email,
+					studentPasswordHash,
+					'STUDENT',
 					student.id,
-					course.id,
-					slot.classRoomId,
-					scheduleId,
-					SEMESTER,
-					ACADEMIC_YEAR
+					null
 				]);
 
-				const shouldGrade =
-					enrollmentIndex >= CONFLICTING_SCHEDULE_COUNT && enrollmentIndex % 10 < 7;
-				if (shouldGrade) {
-					const grade = calculateGrade(studentIndex, enrollmentIndex);
-					gradeRows.push([
-						`${GRADE_ID_PREFIX}${String(gradeRows.length + 1).padStart(5, '0')}`,
-						enrollmentId,
-						grade.assignment,
-						grade.midterm,
-						grade.final,
-						grade.total,
-						grade.letter
-					]);
-				}
+				const programCourses = coursesByProgram.get(student.studyProgramId) ?? [];
+				const courseCount = studentIndex % 5 === 0 ? 3 : 2;
+				const startOffset = (studentIndex * 2) % programCourses.length;
 
-				enrollmentIndex += 1;
+				for (let offset = 0; offset < courseCount; offset += 1) {
+					const course = programCourses[(startOffset + offset) % programCourses.length];
+					const scheduleId = `${SCHEDULE_ID_PREFIX}${String(enrollmentIndex + 1).padStart(5, '0')}`;
+					const enrollmentId = `${ENROLLMENT_ID_PREFIX}${String(enrollmentIndex + 1).padStart(5, '0')}`;
+					const slot = buildSlotForEnrollment(enrollmentIndex, classRoomIds);
+					const scheduleLecturerId =
+						enrollmentIndex < CONFLICTING_SCHEDULE_COUNT
+							? lecturers[enrollmentIndex % lecturers.length].id
+							: lecturers[(slot.classRoomIndex + enrollmentIndex) % lecturers.length].id;
+
+					scheduleRows.push([
+						scheduleId,
+						slot.classRoomId,
+						slot.day,
+						formatScheduleDate(slot.date, slot.start),
+						formatScheduleDate(slot.date, slot.end),
+						scheduleLecturerId
+					]);
+
+					enrollmentRows.push([
+						enrollmentId,
+						student.id,
+						course.id,
+						slot.classRoomId,
+						scheduleId,
+						SEMESTER,
+						ACADEMIC_YEAR
+					]);
+
+					const shouldGrade =
+						enrollmentIndex >= CONFLICTING_SCHEDULE_COUNT && enrollmentIndex % 10 < 7;
+					if (shouldGrade) {
+						const grade = calculateGrade(studentIndex, enrollmentIndex);
+						gradeIndex += 1;
+						gradeRows.push([
+							`${GRADE_ID_PREFIX}${String(gradeIndex).padStart(5, '0')}`,
+							enrollmentId,
+							grade.assignment,
+							grade.midterm,
+							grade.final,
+							grade.total,
+							grade.letter
+						]);
+					}
+
+					enrollmentIndex += 1;
+				}
+			}
+
+			await withTransaction(conn, async () => {
+				await insertRows(
+					conn,
+					`INSERT INTO students (id, name, email, phone, address, year_admitted, study_program_id)
+					 VALUES ?`,
+					studentRows
+				);
+				await insertRows(
+					conn,
+					`INSERT INTO users (id, email, password, role, student_id, lecturer_id)
+					 VALUES ?`,
+					studentUserRows
+				);
+				await insertRowsInBatches(
+					conn,
+					`INSERT INTO schedules (id, class_room_id, day, start_time, end_time, lecturer_id)
+					 VALUES ?`,
+					scheduleRows,
+					relatedRowsBatchSize
+				);
+				await insertRowsInBatches(
+					conn,
+					`INSERT INTO enrollments (id, student_id, course_id, class_room_id, schedule_id, semester, academic_year)
+					 VALUES ?`,
+					enrollmentRows,
+					relatedRowsBatchSize
+				);
+				await insertRowsInBatches(
+					conn,
+					`INSERT INTO grades (id, enrollment_id, assignment_score, midterm_score, final_score, total_score, letter_grade)
+					 VALUES ?`,
+					gradeRows,
+					relatedRowsBatchSize
+				);
+			});
+
+			const completedBatches = Math.ceil(batchEnd / batchSize);
+			if (completedBatches === totalBatches || completedBatches % 10 === 0) {
+				console.log(
+					`  Processed batch ${completedBatches.toLocaleString()} / ${totalBatches.toLocaleString()} (${batchEnd.toLocaleString()} students)`
+				);
 			}
 		}
-
-		await conn.query(
-			`INSERT INTO schedules (id, class_room_id, day, start_time, end_time, lecturer_id)
-			 VALUES ?`,
-			[scheduleRows]
-		);
-
-		await conn.query(
-			`INSERT INTO enrollments (id, student_id, course_id, class_room_id, schedule_id, semester, academic_year)
-			 VALUES ?`,
-			[enrollmentRows]
-		);
-
-		await conn.query(
-			`INSERT INTO grades (id, enrollment_id, assignment_score, midterm_score, final_score, total_score, letter_grade)
-			 VALUES ?`,
-			[gradeRows]
-		);
-	});
-
-	const enrollmentCount = students.reduce(
-		(total, _student, index) => total + (index % 5 === 0 ? 3 : 2),
-		0
-	);
+	} finally {
+		await conn.query('SET SESSION unique_checks = 1');
+		await conn.query('SET SESSION foreign_key_checks = 1');
+		await conn.end();
+	}
 	console.log('Stress-test seed complete!');
 	console.log(`  Default admin preserved: ${DEFAULT_ADMIN_EMAIL}`);
-	console.log(`  Students created: ${studentCount}`);
-	console.log(`  Student users created: ${studentCount}`);
-	console.log(`  Lecturer users created: ${lecturerCount}`);
-	console.log(
-		`  Courses created: ${Object.values(courseNameCatalog).reduce((sum, names) => sum + names.length, 0)}`
-	);
+	console.log(`  Students created: ${studentCount.toLocaleString()}`);
+	console.log(`  Student users created: ${studentCount.toLocaleString()}`);
+	console.log(`  Lecturer users created: ${lecturerCount.toLocaleString()}`);
+	console.log(`  Courses created: ${courseCount.toLocaleString()}`);
 	console.log(`  Classrooms created: ${classRoomRows.length}`);
-	console.log(`  Enrollments and schedules created: ${enrollmentCount}`);
+	console.log(`  Enrollments and schedules created: ${estimatedEnrollmentCount.toLocaleString()}`);
+	console.log(`  Grades created: ${estimatedGradeCount.toLocaleString()}`);
+	console.log(`  Estimated total rows created: ${estimatedTotalRows.toLocaleString()}`);
 	console.log(`  Intentional conflicting schedules: ${CONFLICTING_SCHEDULE_COUNT}`);
 	console.log('  Student password: stress123');
 	console.log('  Lecturer password: stresslecturer123');
@@ -703,5 +872,4 @@ seedStressData()
 	.catch((err) => {
 		console.error('Stress seed failed:', err);
 		process.exit(1);
-	})
-	.finally(() => pool.end());
+	});
