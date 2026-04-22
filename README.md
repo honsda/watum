@@ -75,7 +75,7 @@ Use these settings in Coolify:
 
 - Build method: `Dockerfile`
 - Port: `3000`
-- Start command: use Dockerfile default (`node build`)
+- Start command: use Dockerfile default (`./docker-entrypoint.sh`)
 - Health check path: `/health`
 
 Optional readiness check:
@@ -87,36 +87,38 @@ Required environment variables:
 ```env
 NODE_ENV=production
 PORT=3000
+AUTO_APPLY_MIGRATIONS=true
 DB_HOST=<mysql-host>
 DB_PORT=3306
 DB_USER=<mysql-user>
 DB_PASSWORD=<mysql-password>
 DB_NAME=<mysql-database>
 JWT_SECRET=<long-random-secret>
+ORIGIN=https://your-domain.example.com
+PROTOCOL_HEADER=x-forwarded-proto
+HOST_HEADER=x-forwarded-host
+PORT_HEADER=x-forwarded-port
 # Optional:
 # JWT_ISSUER=watum
 ```
 
-Recommended proxy/origin environment variables for SvelteKit remote functions:
+Alternative origin setup for Coolify:
 
 ```env
-# Option 1 (explicit)
-ORIGIN=https://your-domain.example.com
-
 # Option 2 (Coolify magic variable)
 # Leave ORIGIN empty and set COOLIFY_FQDN in Coolify. The container entrypoint
 # will auto-derive ORIGIN as https://<first COOLIFY_FQDN value>.
 COOLIFY_FQDN=your-domain.example.com
-
-PROTOCOL_HEADER=x-forwarded-proto
-HOST_HEADER=x-forwarded-host
-PORT_HEADER=x-forwarded-port
 ```
 
 Notes:
 
 - The app runtime DB connection uses `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, and `DB_PORT`.
-- `JWT_SECRET` is required to sign and verify the `httpOnly` session JWT cookie.
+- On container startup, `docker-entrypoint.sh` automatically runs pending SQL migrations before starting the app. Set `AUTO_APPLY_MIGRATIONS=false` to disable that behavior.
+- `JWT_SECRET` is required to sign and verify short-lived access JWTs.
 - `JWT_ISSUER` is optional and can be used to pin token issuer verification across environments.
+- Refresh tokens are stored server-side in `refresh_tokens` and sent as secure `httpOnly` cookies on the `/auth` path.
+- Automatic migration apply tracks executed files in `schema_migrations`, so container restarts only apply new SQL files.
+- `ORIGIN` plus the forwarded-header variables are required so SvelteKit generates correct same-origin remote-function URLs behind Coolify's proxy.
 - `DATABASE_URL` can still be used for Prisma CLI workflows, but runtime queries use the variables above.
 - The runtime image includes `curl` for connectivity checks in Coolify terminal.

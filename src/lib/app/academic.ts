@@ -158,56 +158,72 @@ export function buildScheduleCards(
 
 	let conflictIndex = 0;
 	for (const day of DAY_ORDER) {
-		const roomNames = [
-			...new Set(cards.filter((card) => card.day === day).map((card) => card.room))
-		].sort();
+		const dayCards = cards
+			.filter((card) => card.day === day)
+			.sort((left, right) => left.startMinutes - right.startMinutes);
+		const dayCardById = new Map(dayCards.map((card) => [card.id, card]));
 
-		for (const room of roomNames) {
-			const roomCards = cards
-				.filter((card) => card.day === day && card.room === room)
-				.sort((left, right) => left.startMinutes - right.startMinutes);
+		const conflictPeersById = new Map<string, Set<string>>();
+		for (const card of dayCards) {
+			conflictPeersById.set(card.id, new Set());
+		}
 
-			let cluster: ScheduleCard[] = [];
-			let clusterEnd = 0;
+		for (let index = 0; index < dayCards.length; index += 1) {
+			const left = dayCards[index];
 
-			for (const card of roomCards) {
-				if (!cluster.length) {
-					cluster = [card];
-					clusterEnd = card.endMinutes;
-					continue;
+			for (let peerIndex = index + 1; peerIndex < dayCards.length; peerIndex += 1) {
+				const right = dayCards[peerIndex];
+				if (right.startMinutes >= left.endMinutes) break;
+
+				const sharesRoom =
+					left.original.class_room_id && right.original.class_room_id
+						? left.original.class_room_id === right.original.class_room_id
+						: left.room === right.room;
+				const sharesStudent = Boolean(
+					left.original.student_id &&
+					right.original.student_id &&
+					left.original.student_id === right.original.student_id
+				);
+
+				if (!sharesRoom && !sharesStudent) continue;
+
+				conflictPeersById.get(left.id)?.add(right.id);
+				conflictPeersById.get(right.id)?.add(left.id);
+			}
+		}
+
+		const visited = new Set<string>();
+		for (const card of dayCards) {
+			if (visited.has(card.id)) continue;
+			visited.add(card.id);
+
+			const stack = [card.id];
+			const group: ScheduleCard[] = [];
+			while (stack.length) {
+				const currentId = stack.pop();
+				if (!currentId) continue;
+
+				const currentCard = dayCardById.get(currentId);
+				if (!currentCard || group.some((item) => item.id === currentId)) continue;
+				group.push(currentCard);
+
+				for (const peerId of conflictPeersById.get(currentId) ?? []) {
+					if (visited.has(peerId)) continue;
+					visited.add(peerId);
+					stack.push(peerId);
 				}
-
-				if (card.startMinutes < clusterEnd) {
-					cluster.push(card);
-					clusterEnd = Math.max(clusterEnd, card.endMinutes);
-					continue;
-				}
-
-				if (cluster.length > 1) {
-					const tone = conflictIndex;
-					const groupId = `conflict-${conflictIndex + 1}`;
-					for (const conflictCard of cluster) {
-						conflictCard.hasConflict = true;
-						conflictCard.conflictGroupId = groupId;
-						conflictCard.conflictTone = tone;
-					}
-					conflictIndex += 1;
-				}
-
-				cluster = [card];
-				clusterEnd = card.endMinutes;
 			}
 
-			if (cluster.length > 1) {
-				const tone = conflictIndex;
-				const groupId = `conflict-${conflictIndex + 1}`;
-				for (const conflictCard of cluster) {
-					conflictCard.hasConflict = true;
-					conflictCard.conflictGroupId = groupId;
-					conflictCard.conflictTone = tone;
-				}
-				conflictIndex += 1;
+			if (group.length < 2) continue;
+
+			const tone = conflictIndex;
+			const groupId = `conflict-${conflictIndex + 1}`;
+			for (const conflictCard of group) {
+				conflictCard.hasConflict = true;
+				conflictCard.conflictGroupId = groupId;
+				conflictCard.conflictTone = tone;
 			}
+			conflictIndex += 1;
 		}
 	}
 

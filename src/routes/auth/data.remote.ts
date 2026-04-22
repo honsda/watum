@@ -14,14 +14,15 @@ export const getCurrentUser = query(async () => {
 
 export const loginUser = form(loginSchema, async (data) => {
 	const user = await login(data.email, data.password);
-	await setSession(user.id);
+	const session = await setSession(user.id);
 	return {
 		success: true,
-		user
+		user,
+		accessToken: session.accessToken
 	};
 });
 
 export const logoutUser = form(v.object({}), async () => {
-	clearSession();
+	await clearSession();
 	return { success: true };
 });

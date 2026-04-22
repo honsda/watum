@@ -23,6 +23,29 @@ import { days, enrollmentSchema } from '$lib/validations/enrollment';
 
 const weekdayFromIndex = ['MINGGU', ...days] as const;
 
+function timeRangesOverlap(
+	existingStart: Date | null | undefined,
+	existingEnd: Date | null | undefined,
+	nextStart: Date,
+	nextEnd: Date
+) {
+	if (!existingStart || !existingEnd) return false;
+	const existingStartMs = new Date(existingStart).getTime();
+	const existingEndMs = new Date(existingEnd).getTime();
+	const nextStartMs = nextStart.getTime();
+	const nextEndMs = nextEnd.getTime();
+	return existingStartMs < nextEndMs && nextStartMs < existingEndMs;
+}
+
+function scheduleWindowLabel(
+	start: Date | null | undefined,
+	end: Date | null | undefined,
+	timezone: string
+) {
+	if (!start || !end) return 'jadwal lain di hari yang sama';
+	return `${formatDateTime(start, 'time', timezone)} - ${formatDateTime(end, 'time', timezone)}`;
+}
+
 function validateScheduleWindow(
 	data: { day: string; startTime: string; endTime: string; timezone?: string },
 	issue: {
@@ -156,7 +179,7 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 		invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
 	}
 
-	const [existingSchedules, [existing]] = await Promise.all([
+	const [existingSchedules, [existing], existingStudentSchedules] = await Promise.all([
 		selectSchedules(getPool(), {
 			where: [
 				['class_room_id', '=', data.classRoomId],
@@ -169,21 +192,38 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 				['course_id', '=', data.courseId],
 				['semester', '=', data.semester]
 			]
+		}),
+		selectEnrollments(getPool(), {
+			where: [
+				['student_id', '=', data.studentId],
+				['schedule_day', '=', data.day]
+			]
 		})
 	]);
 
 	const hasConflict = existingSchedules.find((s) => {
-		if (!s.start_time || !s.end_time) return false;
-		const s1 = new Date(s.start_time).getTime();
-		const e1 = new Date(s.end_time).getTime();
-		const s2 = startDate.getTime();
-		const e2 = endDate.getTime();
-		return s1 < e2 && s2 < e1;
+		return timeRangesOverlap(s.start_time, s.end_time, startDate, endDate);
 	});
 	if (hasConflict) {
 		invalid(
 			issue.classRoomId(
 				`Jadwal bentrok (${formatDateTime(startDate, 'time', clientTimezone)} - ${formatDateTime(endDate, 'time', clientTimezone)}) dengan jadwal yang sudah ada`
+			)
+		);
+	}
+
+	const studentConflict = existingStudentSchedules.find((enrollment) =>
+		timeRangesOverlap(
+			enrollment.schedule_start_time,
+			enrollment.schedule_end_time,
+			startDate,
+			endDate
+		)
+	);
+	if (studentConflict) {
+		invalid(
+			issue.studentId(
+				`Mahasiswa memiliki jadwal bentrok dengan ${studentConflict.course_name ?? 'kelas lain'} pada ${scheduleWindowLabel(studentConflict.schedule_start_time, studentConflict.schedule_end_time, clientTimezone)}`
 			)
 		);
 	}
@@ -262,20 +302,30 @@ export const updateEnrollment = form(
 			invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
 		}
 
-		const existingSchedules = await selectSchedules(getPool(), {
-			where: [
-				['class_room_id', '=', data.classRoomId],
-				['day', '=', data.day]
-			]
-		});
+		const [existingSchedules, existingStudentSchedules, [existing]] = await Promise.all([
+			selectSchedules(getPool(), {
+				where: [
+					['class_room_id', '=', data.classRoomId],
+					['day', '=', data.day]
+				]
+			}),
+			selectEnrollments(getPool(), {
+				where: [
+					['student_id', '=', data.studentId],
+					['schedule_day', '=', data.day]
+				]
+			}),
+			selectEnrollments(getPool(), {
+				where: [
+					['student_id', '=', data.studentId],
+					['course_id', '=', data.courseId],
+					['semester', '=', data.semester]
+				]
+			})
+		]);
 		const hasConflict = existingSchedules.find((s) => {
-			if (!s.start_time || !s.end_time) return false;
 			if (s.id === enrollment.schedule_id) return false;
-			const s1 = new Date(s.start_time).getTime();
-			const e1 = new Date(s.end_time).getTime();
-			const s2 = startDate.getTime();
-			const e2 = endDate.getTime();
-			return s1 < e2 && s2 < e1;
+			return timeRangesOverlap(s.start_time, s.end_time, startDate, endDate);
 		});
 		if (hasConflict) {
 			invalid(
@@ -285,13 +335,23 @@ export const updateEnrollment = form(
 			);
 		}
 
-		const [existing] = await selectEnrollments(getPool(), {
-			where: [
-				['student_id', '=', data.studentId],
-				['course_id', '=', data.courseId],
-				['semester', '=', data.semester]
-			]
+		const studentConflict = existingStudentSchedules.find((item) => {
+			if (item.id === data.id) return false;
+			return timeRangesOverlap(
+				item.schedule_start_time,
+				item.schedule_end_time,
+				startDate,
+				endDate
+			);
 		});
+		if (studentConflict) {
+			invalid(
+				issue.studentId(
+					`Mahasiswa memiliki jadwal bentrok dengan ${studentConflict.course_name ?? 'kelas lain'} pada ${scheduleWindowLabel(studentConflict.schedule_start_time, studentConflict.schedule_end_time, clientTimezone)}`
+				)
+			);
+		}
+
 		if (existing && existing.id !== data.id) {
 			invalid(
 				issue.courseId('Mahasiswa sudah terdaftar di mata kuliah ini pada semester yang sama')

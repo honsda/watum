@@ -4,7 +4,7 @@ import { error } from '@sveltejs/kit';
 import { hash } from 'argon2';
 import { randomUUID } from 'crypto';
 import { getPool, withTransaction } from '$lib/server/db';
-import { requireRole } from '$lib/server/auth';
+import { requireRole, revokeRefreshTokensForUser } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
 	selectUsers,
@@ -260,6 +260,10 @@ export const updateUser = form(
 			},
 			{ id: data.id }
 		);
+
+		if (data.password) {
+			await revokeRefreshTokensForUser(data.id);
+		}
 
 		await getUsers().refresh();
 		return { success: true, id: data.id };
