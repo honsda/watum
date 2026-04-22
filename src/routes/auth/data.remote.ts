@@ -13,11 +13,11 @@ export const getCurrentUser = query(async () => {
 });
 
 export const loginUser = form(loginSchema, async (data) => {
-	const user = await login(data.email, data.password);
-	const session = await setSession(user.id);
+	const authenticatedLogin = await login(data.email, data.password);
+	const session = await setSession(authenticatedLogin.user.id, authenticatedLogin.passwordHash);
 	return {
 		success: true,
-		user,
+		user: authenticatedLogin.user,
 		accessToken: session.accessToken
 	};
 });
