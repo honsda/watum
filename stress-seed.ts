@@ -1,6 +1,10 @@
 import 'dotenv/config';
 import { hash } from 'argon2';
+import { createReadStream } from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createConnection, type Connection } from 'mysql2/promise';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const DEFAULT_STRESS_SEED_TARGET_ROWS = 10_000_000;
 const DEFAULT_INSERT_BATCH_SIZE = 10_000;
@@ -229,6 +233,7 @@ async function createSeedConnection() {
 		timezone: '+00:00',
 		charset: 'utf8mb4',
 		compress: true,
+		infileStreamFactory: (path) => createReadStream(path),
 		enableKeepAlive: true,
 		keepAliveInitialDelay: 10000,
 		connectTimeout: 30000
@@ -512,14 +517,21 @@ function buildConflictSlot(classRoomId: string): SlotRecord {
 	};
 }
 
+function addDaysToDate(date: string, daysToAdd: number) {
+	const next = new Date(`${date}T00:00:00Z`);
+	next.setUTCDate(next.getUTCDate() + daysToAdd);
+	return next.toISOString().slice(0, 10);
+}
+
 function buildSlotForEnrollment(enrollmentIndex: number, classRoomIds: string[]) {
 	if (enrollmentIndex < CONFLICTING_SCHEDULE_COUNT) {
 		return buildConflictSlot(classRoomIds[0]);
 	}
 
-	const slotIndex =
-		(enrollmentIndex - CONFLICTING_SCHEDULE_COUNT) %
-		(classRoomIds.length * dayConfigs.length * timeSlotConfigs.length);
+	const slotSequence = enrollmentIndex - CONFLICTING_SCHEDULE_COUNT;
+	const baseSlotCount = classRoomIds.length * dayConfigs.length * timeSlotConfigs.length;
+	const slotIndex = slotSequence % baseSlotCount;
+	const weekOffset = Math.floor(slotSequence / baseSlotCount);
 	const slotsPerRoom = dayConfigs.length * timeSlotConfigs.length;
 	const classRoomIndex = Math.floor(slotIndex / slotsPerRoom);
 	const slotWithinRoom = slotIndex % slotsPerRoom;
@@ -532,7 +544,7 @@ function buildSlotForEnrollment(enrollmentIndex: number, classRoomIds: string[])
 		classRoomId: classRoomIds[classRoomIndex],
 		classRoomIndex,
 		day: dayConfig.day,
-		date: dayConfig.date,
+		date: addDaysToDate(dayConfig.date, weekOffset * 7),
 		start: timeSlot.start,
 		end: timeSlot.end
 	};
@@ -544,6 +556,49 @@ async function insertRows<T>(conn: Connection, sql: string, rows: T[]) {
 	}
 
 	await conn.query(sql, [rows]);
+}
+
+function formatLoadDataValue(value: unknown): string {
+	if (value == null) {
+		return '\\N';
+	}
+
+	const text =
+		value instanceof Date ? value.toISOString().slice(0, 23).replace('T', ' ') : String(value);
+
+	return text
+		.replaceAll('\\', '\\\\')
+		.replaceAll('\t', '\\t')
+		.replaceAll('\n', '\\n')
+		.replaceAll('\r', '\\r');
+}
+
+async function loadRowsWithLocalInfile(
+	conn: Connection,
+	tempDir: string,
+	fileName: string,
+	tableName: string,
+	columns: string[],
+	rows: unknown[][]
+) {
+	if (rows.length === 0) {
+		return;
+	}
+
+	const filePath = join(tempDir, fileName);
+	const content = rows.map((row) => row.map(formatLoadDataValue).join('\t')).join('\n');
+	await writeFile(filePath, `${content}\n`, 'utf8');
+
+	const escapedPath = filePath.replaceAll('\\', '\\\\');
+	await conn.query(
+		`LOAD DATA LOCAL INFILE '${escapedPath}'
+		 INTO TABLE ${tableName}
+		 CHARACTER SET utf8mb4
+		 FIELDS TERMINATED BY '\t'
+		 ESCAPED BY '\\\\'
+		 LINES TERMINATED BY '\n'
+		 (${columns.join(', ')})`
+	);
 }
 
 async function insertRowsInBatches<T>(conn: Connection, sql: string, rows: T[], batchSize: number) {
@@ -652,6 +707,7 @@ async function seedStressData() {
 	console.log(`  Insert batch size: ${batchSize.toLocaleString()} students per batch`);
 
 	const conn = await createSeedConnection();
+	const tempDir = await mkdtemp(join(tmpdir(), 'watum-stress-seed-'));
 	try {
 		await conn.query('SET SESSION foreign_key_checks = 0');
 		await conn.query('SET SESSION unique_checks = 0');
@@ -673,7 +729,12 @@ async function seedStressData() {
 
 		console.log('  Inserting lecturers, courses, students, and users...');
 		await withTransaction(conn, async () => {
-			await conn.query('INSERT INTO lecturers (id, name, email, phone, address) VALUES ?', [
+			await loadRowsWithLocalInfile(
+				conn,
+				tempDir,
+				'lecturers.tsv',
+				'lecturers',
+				['id', 'name', 'email', 'phone', 'address'],
 				lecturers.map((lecturer) => [
 					lecturer.id,
 					lecturer.name,
@@ -681,36 +742,38 @@ async function seedStressData() {
 					lecturer.phone,
 					lecturer.address
 				])
-			]);
+			);
 
-			await conn.query(
-				`INSERT INTO courses (id, name, credits, study_program_id, lecturer_id)
-				 VALUES ?`,
-				[
-					courses.map((course) => [
-						course.id,
-						course.name,
-						course.credits,
-						course.studyProgramId,
-						course.lecturerId
-					])
-				]
+			await loadRowsWithLocalInfile(
+				conn,
+				tempDir,
+				'courses.tsv',
+				'courses',
+				['id', 'name', 'credits', 'study_program_id', 'lecturer_id'],
+				courses.map((course) => [
+					course.id,
+					course.name,
+					course.credits,
+					course.studyProgramId,
+					course.lecturerId
+				])
 			);
 
 			const lecturerPasswordHash = await hash('stresslecturer123');
-			await conn.query(
-				`INSERT INTO users (id, email, password, role, student_id, lecturer_id)
-				 VALUES ?`,
-				[
-					lecturers.map((lecturer, index) => [
-						buildLecturerUserId(index),
-						lecturer.email,
-						lecturerPasswordHash,
-						'LECTURER',
-						null,
-						lecturer.id
-					])
-				]
+			await loadRowsWithLocalInfile(
+				conn,
+				tempDir,
+				'lecturer-users.tsv',
+				'users',
+				['id', 'email', 'password', 'role', 'student_id', 'lecturer_id'],
+				lecturers.map((lecturer, index) => [
+					buildLecturerUserId(index),
+					lecturer.email,
+					lecturerPasswordHash,
+					'LECTURER',
+					null,
+					lecturer.id
+				])
 			);
 		});
 
@@ -760,10 +823,7 @@ async function seedStressData() {
 					const scheduleId = `${SCHEDULE_ID_PREFIX}${String(enrollmentIndex + 1).padStart(5, '0')}`;
 					const enrollmentId = `${ENROLLMENT_ID_PREFIX}${String(enrollmentIndex + 1).padStart(5, '0')}`;
 					const slot = buildSlotForEnrollment(enrollmentIndex, classRoomIds);
-					const scheduleLecturerId =
-						enrollmentIndex < CONFLICTING_SCHEDULE_COUNT
-							? lecturers[enrollmentIndex % lecturers.length].id
-							: lecturers[(slot.classRoomIndex + enrollmentIndex) % lecturers.length].id;
+					const scheduleLecturerId = course.lecturerId;
 
 					scheduleRows.push([
 						scheduleId,
@@ -805,38 +865,61 @@ async function seedStressData() {
 			}
 
 			await withTransaction(conn, async () => {
-				await insertRows(
+				await loadRowsWithLocalInfile(
 					conn,
-					`INSERT INTO students (id, name, email, phone, address, year_admitted, study_program_id)
-					 VALUES ?`,
+					tempDir,
+					`students-${batchStart}.tsv`,
+					'students',
+					['id', 'name', 'email', 'phone', 'address', 'year_admitted', 'study_program_id'],
 					studentRows
 				);
-				await insertRows(
+				await loadRowsWithLocalInfile(
 					conn,
-					`INSERT INTO users (id, email, password, role, student_id, lecturer_id)
-					 VALUES ?`,
+					tempDir,
+					`student-users-${batchStart}.tsv`,
+					'users',
+					['id', 'email', 'password', 'role', 'student_id', 'lecturer_id'],
 					studentUserRows
 				);
-				await insertRowsInBatches(
+				await loadRowsWithLocalInfile(
 					conn,
-					`INSERT INTO schedules (id, class_room_id, day, start_time, end_time, lecturer_id)
-					 VALUES ?`,
-					scheduleRows,
-					relatedRowsBatchSize
+					tempDir,
+					`schedules-${batchStart}.tsv`,
+					'schedules',
+					['id', 'class_room_id', 'day', 'start_time', 'end_time', 'lecturer_id'],
+					scheduleRows
 				);
-				await insertRowsInBatches(
+				await loadRowsWithLocalInfile(
 					conn,
-					`INSERT INTO enrollments (id, student_id, course_id, class_room_id, schedule_id, semester, academic_year)
-					 VALUES ?`,
-					enrollmentRows,
-					relatedRowsBatchSize
+					tempDir,
+					`enrollments-${batchStart}.tsv`,
+					'enrollments',
+					[
+						'id',
+						'student_id',
+						'course_id',
+						'class_room_id',
+						'schedule_id',
+						'semester',
+						'academic_year'
+					],
+					enrollmentRows
 				);
-				await insertRowsInBatches(
+				await loadRowsWithLocalInfile(
 					conn,
-					`INSERT INTO grades (id, enrollment_id, assignment_score, midterm_score, final_score, total_score, letter_grade)
-					 VALUES ?`,
-					gradeRows,
-					relatedRowsBatchSize
+					tempDir,
+					`grades-${batchStart}.tsv`,
+					'grades',
+					[
+						'id',
+						'enrollment_id',
+						'assignment_score',
+						'midterm_score',
+						'final_score',
+						'total_score',
+						'letter_grade'
+					],
+					gradeRows
 				);
 			});
 
@@ -851,6 +934,7 @@ async function seedStressData() {
 		await conn.query('SET SESSION unique_checks = 1');
 		await conn.query('SET SESSION foreign_key_checks = 1');
 		await conn.end();
+		await rm(tempDir, { recursive: true, force: true });
 	}
 	console.log('Stress-test seed complete!');
 	console.log(`  Default admin preserved: ${DEFAULT_ADMIN_EMAIL}`);
