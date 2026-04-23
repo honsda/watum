@@ -1,7 +1,7 @@
 import * as v from 'valibot';
 
 export const listPageEntries = {
-	offset: v.optional(v.number())
+	cursor: v.optional(v.string())
 };
 
 export const listPageSchema = v.optional(v.object(listPageEntries));

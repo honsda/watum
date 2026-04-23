@@ -8,7 +8,7 @@ export type SelectStudentsDynamicParams = {
 }
 
 export type SelectStudentsParams = {
-    offset?: number | null;
+    afterId?: string | null;
     limit?: number | null;
 }
 
@@ -174,9 +174,12 @@ export async function selectStudents(connection: Connection, params?: SelectStud
             sql += EOL + 'AND ' + where.sql;
             paramsValues.push(...where.values);
         }
-    });if (params?.params?.offset != null && params?.params?.limit != null) {
-        sql += EOL + `LIMIT ?, ?`;
-        paramsValues.push(params.params.offset);
+    });if (params?.params?.afterId != null) {
+        sql += EOL + `AND s.id > ?`;
+        paramsValues.push(params.params.afterId);
+    }sql += EOL + `ORDER BY s.id ASC`;
+    if (params?.params?.limit != null) {
+        sql += EOL + `LIMIT ?`;
         paramsValues.push(params.params.limit);
     }
     return connection.query({ sql, rowsAsArray: true }, paramsValues)
@@ -262,7 +265,7 @@ function whereCondition(condition: SelectStudentsWhere): WhereConditionResult | 
 
     if (operator == 'LIKE') {
         return {
-            sql: `${selectFragment} LIKE concat('%', ?, '%')`,
+            sql: `${selectFragment} LIKE ?`,
             hasValue: condition[2] != null,
             values: [condition[2]]
         }

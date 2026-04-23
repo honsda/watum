@@ -8,7 +8,7 @@ export type SelectClassRoomsDynamicParams = {
 }
 
 export type SelectClassRoomsParams = {
-    offset?: number | null;
+    afterId?: string | null;
     limit?: number | null;
 }
 
@@ -131,9 +131,12 @@ export async function selectClassRooms(connection: Connection, params?: SelectCl
             sql += EOL + 'AND ' + where.sql;
             paramsValues.push(...where.values);
         }
-    });if (params?.params?.offset != null && params?.params?.limit != null) {
-        sql += EOL + `LIMIT ?, ?`;
-        paramsValues.push(params.params.offset);
+    });if (params?.params?.afterId != null) {
+        sql += EOL + `AND c.id > ?`;
+        paramsValues.push(params.params.afterId);
+    }sql += EOL + `ORDER BY c.id ASC`;
+    if (params?.params?.limit != null) {
+        sql += EOL + `LIMIT ?`;
         paramsValues.push(params.params.limit);
     }
     return connection.query({ sql, rowsAsArray: true }, paramsValues)
@@ -210,7 +213,7 @@ function whereCondition(condition: SelectClassRoomsWhere): WhereConditionResult 
 
     if (operator == 'LIKE') {
         return {
-            sql: `${selectFragment} LIKE concat('%', ?, '%')`,
+            sql: `${selectFragment} LIKE ?`,
             hasValue: condition[2] != null,
             values: [condition[2]]
         }

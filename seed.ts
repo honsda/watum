@@ -15,6 +15,10 @@ const pool: Pool = createPool({
 	connectTimeout: 5000
 });
 
+const DEFAULT_ADMIN_ID = 'admin-default';
+const DEFAULT_ADMIN_EMAIL = 'admin@watum.local';
+const DEFAULT_ADMIN_PASSWORD = 'admin123';
+
 async function withConnection<T>(fn: (conn: Connection) => Promise<T>): Promise<T> {
 	const conn = await pool.getConnection();
 	try {
@@ -52,6 +56,7 @@ async function seed() {
 		await conn.query('SET FOREIGN_KEY_CHECKS = 0');
 		try {
 			const tables = [
+				'refresh_tokens',
 				'grades',
 				'enrollments',
 				'schedules',
@@ -60,12 +65,21 @@ async function seed() {
 				'lecturers',
 				'class_rooms',
 				'study_programs',
-				'faculties',
-				'users'
+				'faculties'
 			];
 			for (const t of tables) {
 				await conn.query(`TRUNCATE TABLE ${t}`);
 			}
+
+			console.log('  Preserving admin users and clearing seeded user accounts...');
+			await conn.query(`DELETE FROM users WHERE role <> 'ADMIN'`);
+
+			const defaultAdminPw = await hash(DEFAULT_ADMIN_PASSWORD);
+			await conn.query(
+				`INSERT IGNORE INTO users (id, email, password, role, student_id, lecturer_id)
+				 VALUES (?, ?, ?, 'ADMIN', NULL, NULL)`,
+				[DEFAULT_ADMIN_ID, DEFAULT_ADMIN_EMAIL, defaultAdminPw]
+			);
 
 			console.log('  Inserting faculties...');
 			await conn.query(
@@ -211,13 +225,11 @@ async function seed() {
 			}
 
 			console.log('  Inserting users...');
-			const adminPw = await hash('admin123');
 			const studentPw = await hash('student123');
 			const lecturerPw = await hash('lecturer123');
 
 			await conn.query(
 				`INSERT INTO users (id, email, password, role, student_id, lecturer_id) VALUES
-			('user-admin', 'admin@watum.local', ?, 'ADMIN', NULL, NULL),
 			('user-01', 'ahmad.rizky@student.watum.ac.id', ?, 'STUDENT', 'mhs-01', NULL),
 			('user-02', 'bella.safira@student.watum.ac.id', ?, 'STUDENT', 'mhs-02', NULL),
 			('user-03', 'citra.nuraini@student.watum.ac.id', ?, 'STUDENT', 'mhs-03', NULL),
@@ -228,7 +240,6 @@ async function seed() {
 			('user-l03', 'rina.sulistyowati@watum.ac.id', ?, 'LECTURER', NULL, 'lec-04'),
 			('user-l04', 'hendra.gunawan@watum.ac.id', ?, 'LECTURER', NULL, 'lec-05')`,
 				[
-					adminPw,
 					studentPw,
 					studentPw,
 					studentPw,
@@ -246,7 +257,9 @@ async function seed() {
 	});
 
 	console.log('\nSeed complete!\n');
-	console.log('  Admin:     admin@watum.local / admin123');
+	console.log(
+		`  Admin:     preserved existing ADMIN user(s); default is ${DEFAULT_ADMIN_EMAIL} / ${DEFAULT_ADMIN_PASSWORD} if missing`
+	);
 	console.log('  Student:   ahmad.rizky@student.watum.ac.id / student123');
 	console.log('  Lecturer:  andi.wijaya@watum.ac.id / lecturer123');
 }

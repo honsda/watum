@@ -8,7 +8,7 @@ export type SelectStudyProgramsDynamicParams = {
 }
 
 export type SelectStudyProgramsParams = {
-    offset?: number | null;
+    afterId?: string | null;
     limit?: number | null;
 }
 
@@ -118,9 +118,12 @@ export async function selectStudyPrograms(connection: Connection, params?: Selec
             sql += EOL + 'AND ' + where.sql;
             paramsValues.push(...where.values);
         }
-    });if (params?.params?.offset != null && params?.params?.limit != null) {
-        sql += EOL + `LIMIT ?, ?`;
-        paramsValues.push(params.params.offset);
+    });if (params?.params?.afterId != null) {
+        sql += EOL + `AND sp.id > ?`;
+        paramsValues.push(params.params.afterId);
+    }sql += EOL + `ORDER BY sp.id ASC`;
+    if (params?.params?.limit != null) {
+        sql += EOL + `LIMIT ?`;
         paramsValues.push(params.params.limit);
     }
     return connection.query({ sql, rowsAsArray: true }, paramsValues)
@@ -191,7 +194,7 @@ function whereCondition(condition: SelectStudyProgramsWhere): WhereConditionResu
 
     if (operator == 'LIKE') {
         return {
-            sql: `${selectFragment} LIKE concat('%', ?, '%')`,
+            sql: `${selectFragment} LIKE ?`,
             hasValue: condition[2] != null,
             values: [condition[2]]
         }

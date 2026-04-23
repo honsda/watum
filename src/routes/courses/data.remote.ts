@@ -3,13 +3,14 @@ import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import {
 	getListQueryLimit,
-	getListQueryOffset,
+	getListQueryCursor,
 	mergeLimitedListResult,
 	getPool,
 	toLimitedListResult
 } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
+import { containsSearchPattern, prefixSearchPattern } from '$lib/server/search';
 import {
 	selectCourses,
 	selectLecturers,
@@ -25,10 +26,11 @@ import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 export const getCourses = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const limit = getListQueryLimit();
-	const offset = getListQueryOffset(page?.offset);
+	const afterId = getListQueryCursor(page?.cursor);
 	return toLimitedListResult(
-		await selectCourses(getPool(), { params: { offset, limit: limit + 1 } }),
-		limit
+		await selectCourses(getPool(), { params: { afterId, limit: limit + 1 } }),
+		limit,
+		(item) => item.id ?? null
 	);
 });
 
@@ -49,12 +51,13 @@ export const searchCourses = query(searchCoursesSchema, async (filters) => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const where: SelectCoursesWhere[] = [];
 	if (filters.id) where.push(['id', '=', filters.id]);
-	if (filters.name) where.push(['name', 'LIKE', filters.name]);
+	if (filters.name) where.push(['name', 'LIKE', containsSearchPattern(filters.name)!]);
 	if (filters.studyProgramId) where.push(['study_program_id', '=', filters.studyProgramId]);
 	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
-	if (filters.lecturerName) where.push(['lecturer_name', 'LIKE', filters.lecturerName]);
+	if (filters.lecturerName)
+		where.push(['lecturer_name', 'LIKE', containsSearchPattern(filters.lecturerName)!]);
 	if (filters.studyProgramName)
-		where.push(['study_program_name', 'LIKE', filters.studyProgramName]);
+		where.push(['study_program_name', 'LIKE', containsSearchPattern(filters.studyProgramName)!]);
 	if (filters.minCredits != null && filters.maxCredits != null) {
 		where.push(['credits', 'BETWEEN', filters.minCredits, filters.maxCredits]);
 	} else if (filters.minCredits != null) {
@@ -63,33 +66,35 @@ export const searchCourses = query(searchCoursesSchema, async (filters) => {
 		where.push(['credits', '<=', filters.maxCredits]);
 	}
 	const limit = getListQueryLimit();
-	const offset = getListQueryOffset(filters.offset);
+	const afterId = getListQueryCursor(filters.cursor);
 	const q = filters.q?.trim();
 	if (q) {
-		const queryLimit = offset + limit + 1;
+		const qPrefix = prefixSearchPattern(q)!;
+		const queryLimit = limit + 1;
 		const resultSets = await Promise.all([
 			selectCourses(getPool(), {
 				where: [...where, ['id', '=', q]],
-				params: { offset: 0, limit: queryLimit }
+				params: { afterId, limit: queryLimit }
 			}),
 			selectCourses(getPool(), {
-				where: [...where, ['name', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['name', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			}),
 			selectCourses(getPool(), {
-				where: [...where, ['lecturer_name', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['lecturer_name', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			}),
 			selectCourses(getPool(), {
-				where: [...where, ['study_program_name', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['study_program_name', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			})
 		]);
-		return mergeLimitedListResult(resultSets, offset, limit, (item) => item.id ?? null);
+		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
 	}
 	return toLimitedListResult(
-		await selectCourses(getPool(), { where, params: { offset, limit: limit + 1 } }),
-		limit
+		await selectCourses(getPool(), { where, params: { afterId, limit: limit + 1 } }),
+		limit,
+		(item) => item.id ?? null
 	);
 });
 

@@ -4,13 +4,14 @@ import { error, invalid } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import {
 	getListQueryLimit,
-	getListQueryOffset,
+	getListQueryCursor,
 	mergeLimitedListResult,
 	getPool,
 	toLimitedListResult,
 	withTransaction
 } from '$lib/server';
 import { requireRole, requireUser } from '$lib/server/auth';
+import { containsSearchPattern, prefixSearchPattern } from '$lib/server/search';
 import { getTimeComponents, parseISO, formatDateTime } from '$lib/time-helpers';
 import {
 	selectClassRooms,
@@ -69,28 +70,31 @@ function validateScheduleWindow(
 export const getEnrollments = query(listPageSchema, async (page) => {
 	const user = await requireUser();
 	const limit = getListQueryLimit();
-	const offset = getListQueryOffset(page?.offset);
+	const afterId = getListQueryCursor(page?.cursor);
 	if (user.role === 'STUDENT') {
 		return toLimitedListResult(
 			await selectEnrollments(getPool(), {
 				where: [['student_id', '=', user.studentId!]],
-				params: { offset, limit: limit + 1 }
+				params: { afterId, limit: limit + 1 }
 			}),
-			limit
+			limit,
+			(item) => item.id ?? null
 		);
 	}
 	if (user.role === 'LECTURER') {
 		return toLimitedListResult(
 			await selectEnrollments(getPool(), {
 				where: [['lecturer_id', '=', user.lecturerId!]],
-				params: { offset, limit: limit + 1 }
+				params: { afterId, limit: limit + 1 }
 			}),
-			limit
+			limit,
+			(item) => item.id ?? null
 		);
 	}
 	return toLimitedListResult(
-		await selectEnrollments(getPool(), { params: { offset, limit: limit + 1 } }),
-		limit
+		await selectEnrollments(getPool(), { params: { afterId, limit: limit + 1 } }),
+		limit,
+		(item) => item.id ?? null
 	);
 });
 
@@ -126,49 +130,55 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 	if (filters.courseId) where.push(['course_id', '=', filters.courseId]);
 	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
 	if (filters.classRoomId) where.push(['class_room_id', '=', filters.classRoomId]);
-	if (filters.semester) where.push(['semester', 'LIKE', filters.semester]);
-	if (filters.academicYear) where.push(['academic_year', 'LIKE', filters.academicYear]);
-	if (filters.studentName) where.push(['student_name', 'LIKE', filters.studentName]);
+	if (filters.semester) where.push(['semester', 'LIKE', containsSearchPattern(filters.semester)!]);
+	if (filters.academicYear)
+		where.push(['academic_year', 'LIKE', containsSearchPattern(filters.academicYear)!]);
+	if (filters.studentName)
+		where.push(['student_name', 'LIKE', containsSearchPattern(filters.studentName)!]);
 	if (filters.studyProgramName)
-		where.push(['study_program_name', 'LIKE', filters.studyProgramName]);
-	if (filters.courseName) where.push(['course_name', 'LIKE', filters.courseName]);
-	if (filters.lecturerName) where.push(['lecturer_name', 'LIKE', filters.lecturerName]);
-	if (filters.classRoomName) where.push(['class_room_name', 'LIKE', filters.classRoomName]);
+		where.push(['study_program_name', 'LIKE', containsSearchPattern(filters.studyProgramName)!]);
+	if (filters.courseName)
+		where.push(['course_name', 'LIKE', containsSearchPattern(filters.courseName)!]);
+	if (filters.lecturerName)
+		where.push(['lecturer_name', 'LIKE', containsSearchPattern(filters.lecturerName)!]);
+	if (filters.classRoomName)
+		where.push(['class_room_name', 'LIKE', containsSearchPattern(filters.classRoomName)!]);
 	if (filters.scheduleDay) where.push(['schedule_day', '=', filters.scheduleDay]);
 	if (filters.letterGrade) where.push(['letter_grade', '=', filters.letterGrade]);
 	const limit = getListQueryLimit();
-	const offset = getListQueryOffset(filters.offset);
+	const afterId = getListQueryCursor(filters.cursor);
 	const q = filters.q?.trim();
 	if (q) {
-		const queryLimit = offset + limit + 1;
+		const qPrefix = prefixSearchPattern(q)!;
+		const queryLimit = limit + 1;
 		const resultSets = await Promise.all([
 			selectEnrollments(getPool(), {
 				where: [...where, ['id', '=', q]],
-				params: { offset: 0, limit: queryLimit }
+				params: { afterId, limit: queryLimit }
 			}),
 			selectEnrollments(getPool(), {
-				where: [...where, ['student_name', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['student_name', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			}),
 			selectEnrollments(getPool(), {
-				where: [...where, ['course_name', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['course_name', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			}),
 			selectEnrollments(getPool(), {
-				where: [...where, ['lecturer_name', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['lecturer_name', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			}),
 			selectEnrollments(getPool(), {
-				where: [...where, ['class_room_name', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['class_room_name', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			}),
 			selectEnrollments(getPool(), {
-				where: [...where, ['semester', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['semester', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			}),
 			selectEnrollments(getPool(), {
-				where: [...where, ['academic_year', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['academic_year', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			})
 		]);
 		const normalizedDay = q.toUpperCase();
@@ -176,15 +186,16 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 			resultSets.push(
 				await selectEnrollments(getPool(), {
 					where: [...where, ['schedule_day', '=', normalizedDay as (typeof days)[number]]],
-					params: { offset: 0, limit: queryLimit }
+					params: { afterId, limit: queryLimit }
 				})
 			);
 		}
-		return mergeLimitedListResult(resultSets, offset, limit, (item) => item.id ?? null);
+		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
 	}
 	return toLimitedListResult(
-		await selectEnrollments(getPool(), { where, params: { offset, limit: limit + 1 } }),
-		limit
+		await selectEnrollments(getPool(), { where, params: { afterId, limit: limit + 1 } }),
+		limit,
+		(item) => item.id ?? null
 	);
 });
 

@@ -36,6 +36,7 @@ export type LimitedListResult<T> = {
 	items: T[];
 	limit: number;
 	hasMore: boolean;
+	nextCursor: string | null;
 };
 
 export function getListQueryLimit(requestedLimit?: number): number {
@@ -45,24 +46,29 @@ export function getListQueryLimit(requestedLimit?: number): number {
 	return Math.min(MAX_LIST_QUERY_LIMIT, Math.trunc(requestedLimit));
 }
 
-export function getListQueryOffset(requestedOffset?: number): number {
-	if (requestedOffset == null || !Number.isFinite(requestedOffset) || requestedOffset < 0) {
-		return 0;
-	}
-	return Math.trunc(requestedOffset);
+export function getListQueryCursor(requestedCursor?: string | null): string | undefined {
+	const trimmed = requestedCursor?.trim();
+	return trimmed ? trimmed : undefined;
 }
 
-export function toLimitedListResult<T>(items: T[], limit: number): LimitedListResult<T> {
+export function toLimitedListResult<T>(
+	items: T[],
+	limit: number,
+	getCursor: (item: T) => string | null | undefined
+): LimitedListResult<T> {
+	const visibleItems = items.slice(0, limit);
+	const hasMore = items.length > limit;
+	const lastItem = visibleItems.at(-1);
 	return {
-		items: items.slice(0, limit),
+		items: visibleItems,
 		limit,
-		hasMore: items.length > limit
+		hasMore,
+		nextCursor: hasMore && lastItem ? (getCursor(lastItem) ?? null) : null
 	};
 }
 
 export function mergeLimitedListResult<T>(
 	resultSets: T[][],
-	offset: number,
 	limit: number,
 	getKey: (item: T) => string | null | undefined
 ): LimitedListResult<T> {
@@ -78,7 +84,13 @@ export function mergeLimitedListResult<T>(
 		}
 	}
 
-	return toLimitedListResult(merged.slice(offset, offset + limit + 1), limit);
+	merged.sort((left, right) => {
+		const leftKey = getKey(left) ?? '';
+		const rightKey = getKey(right) ?? '';
+		return leftKey.localeCompare(rightKey);
+	});
+
+	return toLimitedListResult(merged.slice(0, limit + 1), limit, getKey);
 }
 
 type RetryableDbOperation<T> = () => Promise<T>;
