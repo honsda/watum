@@ -27,4 +27,5 @@ INNER JOIN lecturers l ON c.lecturer_id = l.id
 INNER JOIN class_rooms cr ON e.class_room_id = cr.id
 INNER JOIN schedules sch ON e.schedule_id = sch.id
 LEFT JOIN grades g ON e.id = g.enrollment_id
-ORDER BY e.academic_year DESC, s.name ASC
+ORDER BY e.academic_year DESC, s.name ASC, e.id ASC
+LIMIT :offset, :limit

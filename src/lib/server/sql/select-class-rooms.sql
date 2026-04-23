@@ -11,4 +11,5 @@ SELECT
     (SELECT COUNT(*) FROM enrollments e WHERE e.class_room_id = c.id) as enrollment_count,
     (SELECT COUNT(*) FROM schedules s WHERE s.class_room_id = c.id) as schedule_count
 FROM class_rooms c
-ORDER BY c.name
+ORDER BY c.name ASC, c.id ASC
+LIMIT :offset, :limit

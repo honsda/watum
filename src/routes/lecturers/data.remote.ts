@@ -3,7 +3,14 @@ import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import { hash } from 'argon2';
 import { randomUUID } from 'crypto';
-import { getPool, withTransaction } from '$lib/server/db';
+import {
+	getListQueryLimit,
+	getListQueryOffset,
+	mergeLimitedListResult,
+	getPool,
+	toLimitedListResult,
+	withTransaction
+} from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
@@ -17,13 +24,21 @@ import {
 } from '$lib/server/sql';
 import { type SelectLecturersWhere } from '$lib/server/sql';
 import { lecturerCreateSchema, lecturerSchema } from '$lib/validations/lecturer';
+import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 
-export const getLecturers = query(async () => {
+export const getLecturers = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
-	return selectLecturers(getPool());
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(page?.offset);
+	return toLimitedListResult(
+		await selectLecturers(getPool(), { params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 const searchLecturersSchema = v.object({
+	...listPageEntries,
+	q: v.optional(v.string()),
 	id: v.optional(v.string()),
 	name: v.optional(v.string()),
 	email: v.optional(v.string()),
@@ -48,7 +63,31 @@ export const searchLecturers = query(searchLecturersSchema, async (filters) => {
 	} else if (filters.maxScheduleCount != null) {
 		where.push(['schedule_count', '<=', filters.maxScheduleCount]);
 	}
-	return selectLecturers(getPool(), { where });
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(filters.offset);
+	const q = filters.q?.trim();
+	if (q) {
+		const queryLimit = offset + limit + 1;
+		const resultSets = await Promise.all([
+			selectLecturers(getPool(), {
+				where: [...where, ['id', '=', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectLecturers(getPool(), {
+				where: [...where, ['name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectLecturers(getPool(), {
+				where: [...where, ['email', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			})
+		]);
+		return mergeLimitedListResult(resultSets, offset, limit, (item) => item.id ?? null);
+	}
+	return toLimitedListResult(
+		await selectLecturers(getPool(), { where, params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 export const getLecturer = query(v.string(), async (id) => {

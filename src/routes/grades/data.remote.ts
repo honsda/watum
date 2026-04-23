@@ -3,7 +3,14 @@ import { query, form, command } from '$app/server';
 import { error, invalid } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import { calculateGrade } from '$lib/validations/grade';
-import { getPool, withTransaction } from '$lib/server/db';
+import {
+	getListQueryLimit,
+	getListQueryOffset,
+	mergeLimitedListResult,
+	getPool,
+	toLimitedListResult,
+	withTransaction
+} from '$lib/server/db';
 import { requireRole, requireUser } from '$lib/server/auth';
 import {
 	selectGrades,
@@ -14,20 +21,39 @@ import {
 } from '$lib/server/sql';
 import { type SelectGradesWhere } from '$lib/server/sql';
 import { gradeSchema } from '$lib/validations/grade';
+import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 
-export const getGrades = query(async () => {
+export const getGrades = query(listPageSchema, async (page) => {
 	const user = await requireUser();
-	const allGrades = await selectGrades(getPool());
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(page?.offset);
 	if (user.role === 'LECTURER') {
-		return allGrades.filter((g) => g.lecturer_id === user.lecturerId);
+		return toLimitedListResult(
+			await selectGrades(getPool(), {
+				where: [['lecturer_id', '=', user.lecturerId!]],
+				params: { offset, limit: limit + 1 }
+			}),
+			limit
+		);
 	}
 	if (user.role === 'STUDENT') {
-		return allGrades.filter((g) => g.student_id === user.studentId);
+		return toLimitedListResult(
+			await selectGrades(getPool(), {
+				where: [['student_id', '=', user.studentId!]],
+				params: { offset, limit: limit + 1 }
+			}),
+			limit
+		);
 	}
-	return allGrades;
+	return toLimitedListResult(
+		await selectGrades(getPool(), { params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 const searchGradesSchema = v.object({
+	...listPageEntries,
+	q: v.optional(v.string()),
 	id: v.optional(v.string()),
 	enrollmentId: v.optional(v.string()),
 	studentId: v.optional(v.string()),
@@ -68,7 +94,39 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 	} else if (filters.maxTotalScore != null) {
 		where.push(['total_score', '<=', filters.maxTotalScore]);
 	}
-	return selectGrades(getPool(), { where });
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(filters.offset);
+	const q = filters.q?.trim();
+	if (q) {
+		const queryLimit = offset + limit + 1;
+		const resultSets = await Promise.all([
+			selectGrades(getPool(), {
+				where: [...where, ['id', '=', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectGrades(getPool(), {
+				where: [...where, ['student_name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectGrades(getPool(), {
+				where: [...where, ['course_name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectGrades(getPool(), {
+				where: [...where, ['student_email', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectGrades(getPool(), {
+				where: [...where, ['letter_grade', '=', q]],
+				params: { offset: 0, limit: queryLimit }
+			})
+		]);
+		return mergeLimitedListResult(resultSets, offset, limit, (item) => item.id ?? null);
+	}
+	return toLimitedListResult(
+		await selectGrades(getPool(), { where, params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 export const getGrade = query(v.string(), async (id) => {
@@ -86,7 +144,14 @@ export const getGrade = query(v.string(), async (id) => {
 
 export const getGradesByCourse = query(v.string(), async (courseId) => {
 	await requireRole(['ADMIN', 'LECTURER']);
-	return await selectGrades(getPool(), { where: [['course_id', '=', courseId]] });
+	const limit = getListQueryLimit();
+	return toLimitedListResult(
+		await selectGrades(getPool(), {
+			where: [['course_id', '=', courseId]],
+			params: { offset: 0, limit: limit + 1 }
+		}),
+		limit
+	);
 });
 
 export const getGradesByStudent = query(v.string(), async (studentId) => {
@@ -94,7 +159,14 @@ export const getGradesByStudent = query(v.string(), async (studentId) => {
 	if (user.role === 'STUDENT' && user.studentId !== studentId) {
 		throw error(403, 'Anda tidak berhak melihat nilai mahasiswa lain');
 	}
-	return await selectGrades(getPool(), { where: [['student_id', '=', studentId]] });
+	const limit = getListQueryLimit();
+	return toLimitedListResult(
+		await selectGrades(getPool(), {
+			where: [['student_id', '=', studentId]],
+			params: { offset: 0, limit: limit + 1 }
+		}),
+		limit
+	);
 });
 
 export const createGrade = form(gradeSchema, async (data, issue) => {

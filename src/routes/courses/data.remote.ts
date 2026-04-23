@@ -1,7 +1,13 @@
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
-import { getPool } from '$lib/server/db';
+import {
+	getListQueryLimit,
+	getListQueryOffset,
+	mergeLimitedListResult,
+	getPool,
+	toLimitedListResult
+} from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
@@ -14,13 +20,21 @@ import {
 } from '$lib/server/sql';
 import { type SelectCoursesWhere } from '$lib/server/sql';
 import { courseCreateSchema, courseSchema } from '$lib/validations/course';
+import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 
-export const getCourses = query(async () => {
+export const getCourses = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
-	return selectCourses(getPool());
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(page?.offset);
+	return toLimitedListResult(
+		await selectCourses(getPool(), { params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 const searchCoursesSchema = v.object({
+	...listPageEntries,
+	q: v.optional(v.string()),
 	id: v.optional(v.string()),
 	name: v.optional(v.string()),
 	studyProgramId: v.optional(v.string()),
@@ -48,7 +62,35 @@ export const searchCourses = query(searchCoursesSchema, async (filters) => {
 	} else if (filters.maxCredits != null) {
 		where.push(['credits', '<=', filters.maxCredits]);
 	}
-	return selectCourses(getPool(), { where });
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(filters.offset);
+	const q = filters.q?.trim();
+	if (q) {
+		const queryLimit = offset + limit + 1;
+		const resultSets = await Promise.all([
+			selectCourses(getPool(), {
+				where: [...where, ['id', '=', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectCourses(getPool(), {
+				where: [...where, ['name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectCourses(getPool(), {
+				where: [...where, ['lecturer_name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectCourses(getPool(), {
+				where: [...where, ['study_program_name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			})
+		]);
+		return mergeLimitedListResult(resultSets, offset, limit, (item) => item.id ?? null);
+	}
+	return toLimitedListResult(
+		await selectCourses(getPool(), { where, params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 export const getCourse = query(v.string(), async (id) => {

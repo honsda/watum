@@ -5,6 +5,7 @@ export type SelectSchedulesConflictParams = {
     day: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
     startTime: Date;
     endTime: Date;
+    excludeScheduleId?: string;
 }
 
 export type SelectSchedulesConflictResult = {
@@ -14,14 +15,21 @@ export type SelectSchedulesConflictResult = {
 }
 
 export async function selectSchedulesConflict(connection: Connection, params: SelectSchedulesConflictParams): Promise<SelectSchedulesConflictResult[]> {
-    const sql = `
+    let sql = `
     SELECT id, start_time, end_time FROM schedules
-    WHERE class_room_id =? AND day = ?
-    AND ((start_time < ? AND end_time > ?)
-    OR (start_time < ? AND end_time > ?))
+    WHERE class_room_id = ? AND day = ?
+    AND start_time < ? AND end_time > ?
     `
+    const values: unknown[] = [params.classRoomId, params.day, params.endTime, params.startTime];
 
-    return connection.query({sql, rowsAsArray: true}, [params.classRoomId, params.day, params.startTime, params.startTime, params.endTime, params.endTime])
+    if (params.excludeScheduleId) {
+        sql += ` AND id <> ?`;
+        values.push(params.excludeScheduleId);
+    }
+
+    sql += ` ORDER BY start_time ASC LIMIT 1`;
+
+    return connection.query({sql, rowsAsArray: true}, values)
         .then(res => res[0] as any[])
         .then(res => res.map(data => mapArrayToSelectSchedulesConflictResult(data)));
 }

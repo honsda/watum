@@ -15,6 +15,72 @@ const RETRY_DELAY_MS = 150;
 const CONNECT_TIMEOUT_MS = 500;
 const RETIRED_POOL_GRACE_MS = 5000;
 
+function toPositiveInt(value: string | undefined, fallback: number): number {
+	if (!value) {
+		return fallback;
+	}
+	const parsed = Number.parseInt(value, 10);
+	if (!Number.isFinite(parsed) || Number.isNaN(parsed) || parsed <= 0) {
+		return fallback;
+	}
+	return parsed;
+}
+
+const DEFAULT_LIST_QUERY_LIMIT = toPositiveInt(env.DB_LIST_QUERY_LIMIT, 1000);
+const MAX_LIST_QUERY_LIMIT = Math.max(
+	DEFAULT_LIST_QUERY_LIMIT,
+	toPositiveInt(env.DB_MAX_LIST_QUERY_LIMIT, 5000)
+);
+
+export type LimitedListResult<T> = {
+	items: T[];
+	limit: number;
+	hasMore: boolean;
+};
+
+export function getListQueryLimit(requestedLimit?: number): number {
+	if (requestedLimit == null || !Number.isFinite(requestedLimit) || requestedLimit <= 0) {
+		return DEFAULT_LIST_QUERY_LIMIT;
+	}
+	return Math.min(MAX_LIST_QUERY_LIMIT, Math.trunc(requestedLimit));
+}
+
+export function getListQueryOffset(requestedOffset?: number): number {
+	if (requestedOffset == null || !Number.isFinite(requestedOffset) || requestedOffset < 0) {
+		return 0;
+	}
+	return Math.trunc(requestedOffset);
+}
+
+export function toLimitedListResult<T>(items: T[], limit: number): LimitedListResult<T> {
+	return {
+		items: items.slice(0, limit),
+		limit,
+		hasMore: items.length > limit
+	};
+}
+
+export function mergeLimitedListResult<T>(
+	resultSets: T[][],
+	offset: number,
+	limit: number,
+	getKey: (item: T) => string | null | undefined
+): LimitedListResult<T> {
+	const merged: T[] = [];
+	const seen = new Set<string>();
+
+	for (const resultSet of resultSets) {
+		for (const item of resultSet) {
+			const key = getKey(item);
+			if (!key || seen.has(key)) continue;
+			seen.add(key);
+			merged.push(item);
+		}
+	}
+
+	return toLimitedListResult(merged.slice(offset, offset + limit + 1), limit);
+}
+
 type RetryableDbOperation<T> = () => Promise<T>;
 
 function isTimeoutError(err: unknown): boolean {

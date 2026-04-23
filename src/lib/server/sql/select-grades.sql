@@ -22,4 +22,5 @@ INNER JOIN enrollments e ON g.enrollment_id = e.id
 INNER JOIN students s ON e.student_id = s.id
 INNER JOIN courses c ON e.course_id = c.id
 INNER JOIN study_programs sp ON s.study_program_id = sp.id
-ORDER BY s.name ASC
+ORDER BY s.name ASC, g.id ASC
+LIMIT :offset, :limit

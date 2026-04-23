@@ -43,6 +43,7 @@
 	} from '$lib/app/academic';
 	import { formatDateTimeInput, parseISO } from '$lib/time-helpers';
 	import ClassroomDashboard from '$lib/components/app/ClassroomDashboard.svelte';
+	import CollectionPagination from '$lib/components/app/CollectionPagination.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
@@ -52,38 +53,61 @@
 	import { getCurrentUser, loginUser, logoutUser } from './auth/data.remote';
 	import {
 		getClassRooms,
+		searchClassRooms,
 		createClassRoom,
 		updateClassRoom,
 		deleteClassRoom
 	} from './classrooms/data.remote';
-	import { getCourses, createCourse, updateCourse, deleteCourse } from './courses/data.remote';
-	import { getStudents, createStudent, updateStudent, deleteStudent } from './students/data.remote';
+	import {
+		getCourses,
+		searchCourses,
+		createCourse,
+		updateCourse,
+		deleteCourse
+	} from './courses/data.remote';
+	import {
+		getStudents,
+		searchStudents,
+		createStudent,
+		updateStudent,
+		deleteStudent
+	} from './students/data.remote';
 	import {
 		getLecturers,
+		searchLecturers,
 		createLecturer,
 		updateLecturer,
 		deleteLecturer
 	} from './lecturers/data.remote';
 	import {
 		getFaculties,
+		searchFaculties,
 		createFaculty,
 		updateFaculty,
 		deleteFaculty
 	} from './faculties/data.remote';
 	import {
 		getStudyPrograms,
+		searchStudyPrograms,
 		createStudyProgram,
 		updateStudyProgram,
 		deleteStudyProgram
 	} from './study-programs/data.remote';
 	import {
 		getEnrollments,
+		searchEnrollments,
 		createEnrollment,
 		updateEnrollment,
 		deleteEnrollment
 	} from './enrollments/data.remote';
-	import { getGrades, createGrade, updateGrade, deleteGrade } from './grades/data.remote';
-	import { getUsers, updateUser } from './users/data.remote';
+	import {
+		getGrades,
+		searchGrades,
+		createGrade,
+		updateGrade,
+		deleteGrade
+	} from './grades/data.remote';
+	import { getUsers, searchUsers, updateUser } from './users/data.remote';
 	import type {
 		SelectClassRoomsResult,
 		SelectCoursesResult,
@@ -169,6 +193,18 @@
 		fields?: {
 			allIssues?: () => Array<{ message?: string }> | undefined;
 		};
+	};
+	type LimitedCollectionResponse<T> = {
+		items: T[];
+		limit: number;
+		hasMore: boolean;
+	};
+	type CollectionPaginationState = {
+		offset: number;
+		limit: number;
+		hasMore: boolean;
+		loading: boolean;
+		itemCount: number;
 	};
 	type EnhancedForm = IssueForm & {
 		enhance: (callback: (opts: { submit: () => Promise<boolean> }) => void | Promise<void>) => {
@@ -564,7 +600,11 @@
 	let loadedForUserId = $state<string | null>(null);
 	let viewRestored = $state(!browser);
 	let collectionIssues = $state<Partial<Record<DataCollectionKey, string>>>({});
+	let collectionPagination = $state<Record<DataCollectionKey, CollectionPaginationState>>(
+		createCollectionPaginationState()
+	);
 	let pendingRefreshTimer = $state<number | null>(null);
+	let collectionRefreshTimers: Partial<Record<DataCollectionKey, number>> = {};
 	let studentPickerSearch = $state('');
 	let coursePickerSearch = $state('');
 	let studentPickerOpen = $state(false);
@@ -635,12 +675,61 @@
 		collectionIssues = nextIssues;
 	}
 
+	function emptyCollectionPaginationState(): CollectionPaginationState {
+		return {
+			offset: 0,
+			limit: 0,
+			hasMore: false,
+			loading: false,
+			itemCount: 0
+		};
+	}
+
+	function createCollectionPaginationState(): Record<DataCollectionKey, CollectionPaginationState> {
+		return {
+			classrooms: emptyCollectionPaginationState(),
+			courses: emptyCollectionPaginationState(),
+			students: emptyCollectionPaginationState(),
+			lecturers: emptyCollectionPaginationState(),
+			faculties: emptyCollectionPaginationState(),
+			studyPrograms: emptyCollectionPaginationState(),
+			enrollments: emptyCollectionPaginationState(),
+			grades: emptyCollectionPaginationState(),
+			users: emptyCollectionPaginationState()
+		};
+	}
+
+	function setCollectionPagination(
+		key: DataCollectionKey,
+		patch: Partial<CollectionPaginationState>
+	) {
+		collectionPagination = {
+			...collectionPagination,
+			[key]: {
+				...collectionPagination[key],
+				...patch
+			}
+		};
+	}
+
+	function applyLimitedCollection<T>(
+		result: LimitedCollectionResponse<T>,
+		assign: (items: T[]) => void
+	) {
+		assign(result.items);
+	}
+
 	function errorMessage(error: unknown, fallback: string) {
 		return (
 			(error as { body?: { message?: string }; message?: string })?.body?.message ||
 			(error as Error)?.message ||
 			fallback
 		);
+	}
+
+	function normalizedSearchValue(value: string) {
+		const trimmed = value.trim();
+		return trimmed.length > 0 ? trimmed : undefined;
 	}
 
 	function scheduleFiltersMatch(item: SelectEnrollmentsResult) {
@@ -680,6 +769,7 @@
 		scheduleSemesterFilter = '';
 		scheduleAcademicYearFilter = '';
 		selectedConflictGroupId = null;
+		queueCollectionRefresh('enrollments', 0);
 	}
 
 	function firstIssue(form: IssueForm) {
@@ -741,6 +831,13 @@
 		grades = [];
 		users = [];
 		collectionIssues = {};
+		collectionPagination = createCollectionPaginationState();
+		if (browser) {
+			for (const timer of Object.values(collectionRefreshTimers)) {
+				if (timer != null) window.clearTimeout(timer);
+			}
+		}
+		collectionRefreshTimers = {};
 	}
 
 	async function loadCollection(
@@ -756,40 +853,215 @@
 		}
 	}
 
-	async function refreshClassrooms() {
-		classrooms = await getClassRooms().run();
+	async function loadCollectionPage<T>(
+		key: DataCollectionKey,
+		offset: number,
+		request: (offset: number) => Promise<LimitedCollectionResponse<T>>,
+		assign: (items: T[]) => void
+	) {
+		setCollectionPagination(key, { loading: true });
+		try {
+			let resolvedOffset = Math.max(0, offset);
+			let result = await request(resolvedOffset);
+
+			if (!result.items.length && resolvedOffset > 0) {
+				const pageSize = Math.max(result.limit, collectionPagination[key].limit, 1);
+				resolvedOffset = Math.max(0, resolvedOffset - pageSize);
+				result = await request(resolvedOffset);
+			}
+
+			applyLimitedCollection(result, assign);
+			setCollectionPagination(key, {
+				offset: resolvedOffset,
+				limit: result.limit,
+				hasMore: result.hasMore,
+				loading: false,
+				itemCount: result.items.length
+			});
+		} catch (error) {
+			setCollectionPagination(key, { loading: false });
+			throw error;
+		}
 	}
 
-	async function refreshCourses() {
-		courses = await getCourses().run();
+	function buildEnrollmentSearchParams(offset: number) {
+		return {
+			offset,
+			q: normalizedSearchValue(enrollmentSearch),
+			courseId: scheduleCourseFilter || undefined,
+			classRoomId: scheduleRoomFilter || undefined,
+			lecturerId: scheduleLecturerFilter || undefined,
+			scheduleDay: (scheduleDayFilter || undefined) as (typeof days)[number] | undefined,
+			semester: scheduleSemesterFilter || undefined,
+			academicYear: scheduleAcademicYearFilter || undefined
+		};
 	}
 
-	async function refreshStudents() {
-		students = await getStudents().run();
+	function requestClassroomsPage(offset: number) {
+		const q = normalizedSearchValue(roomSearch);
+		return q ? searchClassRooms({ offset, q }).run() : getClassRooms({ offset }).run();
 	}
 
-	async function refreshLecturers() {
-		lecturers = await getLecturers().run();
+	function requestCoursesPage(offset: number) {
+		const q = normalizedSearchValue(courseSearch);
+		return q ? searchCourses({ offset, q }).run() : getCourses({ offset }).run();
 	}
 
-	async function refreshFaculties() {
-		faculties = await getFaculties().run();
+	function requestStudentsPage(offset: number) {
+		const q = normalizedSearchValue(studentSearch);
+		return q ? searchStudents({ offset, q }).run() : getStudents({ offset }).run();
 	}
 
-	async function refreshStudyPrograms() {
-		studyPrograms = await getStudyPrograms().run();
+	function requestLecturersPage(offset: number) {
+		const q = normalizedSearchValue(lecturerSearch);
+		return q ? searchLecturers({ offset, q }).run() : getLecturers({ offset }).run();
 	}
 
-	async function refreshEnrollments() {
-		enrollments = await getEnrollments().run();
+	function requestFacultiesPage(offset: number) {
+		const q = normalizedSearchValue(facultySearch);
+		return q ? searchFaculties({ offset, q }).run() : getFaculties({ offset }).run();
 	}
 
-	async function refreshGrades() {
-		grades = await getGrades().run();
+	function requestStudyProgramsPage(offset: number) {
+		const q = normalizedSearchValue(studyProgramSearch);
+		return q ? searchStudyPrograms({ offset, q }).run() : getStudyPrograms({ offset }).run();
 	}
 
-	async function refreshUsers() {
-		users = await getUsers().run();
+	function requestEnrollmentsPage(offset: number) {
+		const params = buildEnrollmentSearchParams(offset);
+		const hasFilters = Object.values(params).some((value) => value != null && value !== 0);
+		return hasFilters ? searchEnrollments(params).run() : getEnrollments({ offset }).run();
+	}
+
+	function requestGradesPage(offset: number) {
+		const q = normalizedSearchValue(gradeSearch);
+		return q ? searchGrades({ offset, q }).run() : getGrades({ offset }).run();
+	}
+
+	function requestUsersPage(offset: number) {
+		const q = normalizedSearchValue(userSearch);
+		return q ? searchUsers({ offset, q }).run() : getUsers({ offset }).run();
+	}
+
+	async function refreshClassrooms(offset = collectionPagination.classrooms.offset) {
+		await loadCollectionPage(
+			'classrooms',
+			offset,
+			requestClassroomsPage,
+			(items) => (classrooms = items)
+		);
+	}
+
+	async function refreshCourses(offset = collectionPagination.courses.offset) {
+		await loadCollectionPage('courses', offset, requestCoursesPage, (items) => (courses = items));
+	}
+
+	async function refreshStudents(offset = collectionPagination.students.offset) {
+		await loadCollectionPage(
+			'students',
+			offset,
+			requestStudentsPage,
+			(items) => (students = items)
+		);
+	}
+
+	async function refreshLecturers(offset = collectionPagination.lecturers.offset) {
+		await loadCollectionPage(
+			'lecturers',
+			offset,
+			requestLecturersPage,
+			(items) => (lecturers = items)
+		);
+	}
+
+	async function refreshFaculties(offset = collectionPagination.faculties.offset) {
+		await loadCollectionPage(
+			'faculties',
+			offset,
+			requestFacultiesPage,
+			(items) => (faculties = items)
+		);
+	}
+
+	async function refreshStudyPrograms(offset = collectionPagination.studyPrograms.offset) {
+		await loadCollectionPage(
+			'studyPrograms',
+			offset,
+			requestStudyProgramsPage,
+			(items) => (studyPrograms = items)
+		);
+	}
+
+	async function refreshEnrollments(offset = collectionPagination.enrollments.offset) {
+		await loadCollectionPage(
+			'enrollments',
+			offset,
+			requestEnrollmentsPage,
+			(items) => (enrollments = items)
+		);
+	}
+
+	async function refreshGrades(offset = collectionPagination.grades.offset) {
+		await loadCollectionPage('grades', offset, requestGradesPage, (items) => (grades = items));
+	}
+
+	async function refreshUsers(offset = collectionPagination.users.offset) {
+		await loadCollectionPage('users', offset, requestUsersPage, (items) => (users = items));
+	}
+
+	function collectionFallbackMessage(key: DataCollectionKey) {
+		if (key === 'classrooms') return 'Ruang kelas gagal dimuat.';
+		if (key === 'courses') return 'Mata kuliah gagal dimuat.';
+		if (key === 'students') return 'Data mahasiswa gagal dimuat.';
+		if (key === 'lecturers') return 'Data dosen gagal dimuat.';
+		if (key === 'faculties') return 'Data fakultas gagal dimuat.';
+		if (key === 'studyPrograms') return 'Program studi gagal dimuat.';
+		if (key === 'enrollments') return 'Data KRS gagal dimuat.';
+		if (key === 'grades') return 'Data nilai gagal dimuat.';
+		return 'Data akun gagal dimuat.';
+	}
+
+	function collectionRefresher(key: DataCollectionKey) {
+		const refreshers: Record<DataCollectionKey, (offset?: number) => Promise<void>> = {
+			classrooms: refreshClassrooms,
+			courses: refreshCourses,
+			students: refreshStudents,
+			lecturers: refreshLecturers,
+			faculties: refreshFaculties,
+			studyPrograms: refreshStudyPrograms,
+			enrollments: refreshEnrollments,
+			grades: refreshGrades,
+			users: refreshUsers
+		};
+
+		return refreshers[key];
+	}
+
+	function queueCollectionRefresh(key: DataCollectionKey, delay = 220) {
+		if (!browser || !loadedForUserId) return;
+		const existingTimer = collectionRefreshTimers[key];
+		if (existingTimer != null) {
+			window.clearTimeout(existingTimer);
+		}
+		collectionRefreshTimers[key] = window.setTimeout(() => {
+			delete collectionRefreshTimers[key];
+			void loadCollection(key, () => collectionRefresher(key)(0), collectionFallbackMessage(key));
+		}, delay);
+	}
+
+	async function changeCollectionPage(key: DataCollectionKey, direction: 'previous' | 'next') {
+		const pageState = collectionPagination[key];
+		const pageSize = Math.max(pageState.limit, 1);
+		const nextOffset =
+			direction === 'next' ? pageState.offset + pageSize : Math.max(0, pageState.offset - pageSize);
+
+		if (nextOffset === pageState.offset) return;
+
+		await loadCollection(
+			key,
+			() => collectionRefresher(key)(nextOffset),
+			collectionFallbackMessage(key)
+		);
 	}
 
 	async function refreshAll() {
@@ -2674,15 +2946,31 @@
 								<Search size={16} />
 								<input
 									bind:value={enrollmentSearch}
+									oninput={() => queueCollectionRefresh('enrollments')}
 									aria-label="Cari jadwal kuliah"
 									placeholder="Cari mahasiswa, mata kuliah, atau ruang"
 								/>
+								{#if enrollmentSearch}
+									<button
+										type="button"
+										class="search-clear"
+										onclick={() => {
+											enrollmentSearch = '';
+											queueCollectionRefresh('enrollments', 0);
+										}}
+									>
+										<X size={14} />
+									</button>
+								{/if}
 							</label>
 
 							<div class="editor-grid schedule-filter-grid list-filter-grid">
 								<label>
 									<span>Hari</span>
-									<select bind:value={scheduleDayFilter}>
+									<select
+										bind:value={scheduleDayFilter}
+										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									>
 										<option value="">Semua hari</option>
 										{#each days as day (day)}
 											<option value={day}>{DAY_LABELS[day]}</option>
@@ -2691,7 +2979,10 @@
 								</label>
 								<label>
 									<span>Mata kuliah</span>
-									<select bind:value={scheduleCourseFilter}>
+									<select
+										bind:value={scheduleCourseFilter}
+										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									>
 										<option value="">Semua mata kuliah</option>
 										{#each courses as item (item.id)}
 											<option value={item.id}>{item.name}</option>
@@ -2700,7 +2991,10 @@
 								</label>
 								<label>
 									<span>Ruang</span>
-									<select bind:value={scheduleRoomFilter}>
+									<select
+										bind:value={scheduleRoomFilter}
+										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									>
 										<option value="">Semua ruang</option>
 										{#each classrooms as item (item.id)}
 											<option value={item.id}>{item.name}</option>
@@ -2709,7 +3003,10 @@
 								</label>
 								<label>
 									<span>Dosen</span>
-									<select bind:value={scheduleLecturerFilter}>
+									<select
+										bind:value={scheduleLecturerFilter}
+										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									>
 										<option value="">Semua dosen</option>
 										{#each lecturers as item (item.id)}
 											<option value={item.id}>{item.name}</option>
@@ -2718,7 +3015,10 @@
 								</label>
 								<label>
 									<span>Semester</span>
-									<select bind:value={scheduleSemesterFilter}>
+									<select
+										bind:value={scheduleSemesterFilter}
+										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									>
 										<option value="">Semua semester</option>
 										{#each scheduleSemesterOptions as item (item)}
 											<option value={item}>{item}</option>
@@ -2727,7 +3027,10 @@
 								</label>
 								<label>
 									<span>Tahun akademik</span>
-									<select bind:value={scheduleAcademicYearFilter}>
+									<select
+										bind:value={scheduleAcademicYearFilter}
+										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									>
 										<option value="">Semua tahun</option>
 										{#each scheduleAcademicYearOptions as item (item)}
 											<option value={item}>{item}</option>
@@ -2792,6 +3095,16 @@
 									</button>
 								{/each}
 							</div>
+							<CollectionPagination
+								label="jadwal"
+								offset={collectionPagination.enrollments.offset}
+								limit={collectionPagination.enrollments.limit}
+								itemCount={collectionPagination.enrollments.itemCount}
+								hasMore={collectionPagination.enrollments.hasMore}
+								loading={collectionPagination.enrollments.loading}
+								onPrevious={() => void changeCollectionPage('enrollments', 'previous')}
+								onNext={() => void changeCollectionPage('enrollments', 'next')}
+							/>
 						</section>
 
 						<section class="workspace-detail builder-detail">
@@ -3313,9 +3626,17 @@
 							<label class="search-box"
 								><Search size={16} /><input
 									bind:value={roomSearch}
+									oninput={() => queueCollectionRefresh('classrooms')}
 									aria-label="Cari ruang"
 									placeholder="Cari nama ruang atau jenis ruang"
-								/></label
+								/>{#if roomSearch}<button
+										type="button"
+										class="search-clear"
+										onclick={() => {
+											roomSearch = '';
+											queueCollectionRefresh('classrooms', 0);
+										}}><X size={14} /></button
+									>{/if}</label
 							>
 							<div class="list-stack">
 								{#each filteredClassrooms as item (item.id)}
@@ -3334,6 +3655,16 @@
 									</button>
 								{/each}
 							</div>
+							<CollectionPagination
+								label="ruang"
+								offset={collectionPagination.classrooms.offset}
+								limit={collectionPagination.classrooms.limit}
+								itemCount={collectionPagination.classrooms.itemCount}
+								hasMore={collectionPagination.classrooms.hasMore}
+								loading={collectionPagination.classrooms.loading}
+								onPrevious={() => void changeCollectionPage('classrooms', 'previous')}
+								onNext={() => void changeCollectionPage('classrooms', 'next')}
+							/>
 						</section>
 						<section class="workspace-detail">
 							<div class="pane-head compact">
@@ -3497,9 +3828,17 @@
 							<label class="search-box"
 								><Search size={16} /><input
 									bind:value={courseSearch}
+									oninput={() => queueCollectionRefresh('courses')}
 									aria-label="Cari data mata kuliah"
 									placeholder="Cari kode, nama, atau dosen pengampu"
-								/></label
+								/>{#if courseSearch}<button
+										type="button"
+										class="search-clear"
+										onclick={() => {
+											courseSearch = '';
+											queueCollectionRefresh('courses', 0);
+										}}><X size={14} /></button
+									>{/if}</label
 							>
 							<div class="list-stack">
 								{#each filteredCourses as item (item.id)}<button
@@ -3515,6 +3854,16 @@
 										<small>{item.credits} SKS</small></button
 									>{/each}
 							</div>
+							<CollectionPagination
+								label="mata kuliah"
+								offset={collectionPagination.courses.offset}
+								limit={collectionPagination.courses.limit}
+								itemCount={collectionPagination.courses.itemCount}
+								hasMore={collectionPagination.courses.hasMore}
+								loading={collectionPagination.courses.loading}
+								onPrevious={() => void changeCollectionPage('courses', 'previous')}
+								onNext={() => void changeCollectionPage('courses', 'next')}
+							/>
 						</section>
 						<section class="workspace-detail">
 							<div class="pane-head compact">
@@ -3674,9 +4023,17 @@
 							<label class="search-box"
 								><Search size={16} /><input
 									bind:value={studentSearch}
+									oninput={() => queueCollectionRefresh('students')}
 									aria-label="Cari data mahasiswa"
 									placeholder="Cari NRP, nama, atau program studi"
-								/></label
+								/>{#if studentSearch}<button
+										type="button"
+										class="search-clear"
+										onclick={() => {
+											studentSearch = '';
+											queueCollectionRefresh('students', 0);
+										}}><X size={14} /></button
+									>{/if}</label
 							>
 							<div class="list-stack">
 								{#each filteredStudents as item (item.id)}<button
@@ -3690,6 +4047,16 @@
 										<small>{item.enrollment_count ?? 0} KRS</small></button
 									>{/each}
 							</div>
+							<CollectionPagination
+								label="mahasiswa"
+								offset={collectionPagination.students.offset}
+								limit={collectionPagination.students.limit}
+								itemCount={collectionPagination.students.itemCount}
+								hasMore={collectionPagination.students.hasMore}
+								loading={collectionPagination.students.loading}
+								onPrevious={() => void changeCollectionPage('students', 'previous')}
+								onNext={() => void changeCollectionPage('students', 'next')}
+							/>
 						</section>
 						<section class="workspace-detail">
 							<div class="pane-head compact">
@@ -3850,9 +4217,17 @@
 							<label class="search-box"
 								><Search size={16} /><input
 									bind:value={lecturerSearch}
+									oninput={() => queueCollectionRefresh('lecturers')}
 									aria-label="Cari data dosen"
 									placeholder="Cari ID dosen, nama, atau email"
-								/></label
+								/>{#if lecturerSearch}<button
+										type="button"
+										class="search-clear"
+										onclick={() => {
+											lecturerSearch = '';
+											queueCollectionRefresh('lecturers', 0);
+										}}><X size={14} /></button
+									>{/if}</label
 							>
 							<div class="list-stack">
 								{#each filteredLecturers as item (item.id)}<button
@@ -3864,6 +4239,16 @@
 										<small>{item.schedule_count ?? 0} jadwal</small></button
 									>{/each}
 							</div>
+							<CollectionPagination
+								label="dosen"
+								offset={collectionPagination.lecturers.offset}
+								limit={collectionPagination.lecturers.limit}
+								itemCount={collectionPagination.lecturers.itemCount}
+								hasMore={collectionPagination.lecturers.hasMore}
+								loading={collectionPagination.lecturers.loading}
+								onPrevious={() => void changeCollectionPage('lecturers', 'previous')}
+								onNext={() => void changeCollectionPage('lecturers', 'next')}
+							/>
 						</section>
 						<section class="workspace-detail">
 							<div class="pane-head compact">
@@ -4000,9 +4385,17 @@
 							<label class="search-box"
 								><Search size={16} /><input
 									bind:value={facultySearch}
+									oninput={() => queueCollectionRefresh('faculties')}
 									aria-label="Cari data fakultas"
 									placeholder="Cari kode atau nama fakultas"
-								/></label
+								/>{#if facultySearch}<button
+										type="button"
+										class="search-clear"
+										onclick={() => {
+											facultySearch = '';
+											queueCollectionRefresh('faculties', 0);
+										}}><X size={14} /></button
+									>{/if}</label
 							>
 							<div class="list-stack">
 								{#each filteredFaculties as item (item.id)}<button
@@ -4014,6 +4407,16 @@
 										<small>{item.study_program_count ?? 0} prodi</small></button
 									>{/each}
 							</div>
+							<CollectionPagination
+								label="fakultas"
+								offset={collectionPagination.faculties.offset}
+								limit={collectionPagination.faculties.limit}
+								itemCount={collectionPagination.faculties.itemCount}
+								hasMore={collectionPagination.faculties.hasMore}
+								loading={collectionPagination.faculties.loading}
+								onPrevious={() => void changeCollectionPage('faculties', 'previous')}
+								onNext={() => void changeCollectionPage('faculties', 'next')}
+							/>
 						</section>
 						<section class="workspace-detail">
 							<div class="pane-head compact">
@@ -4127,9 +4530,17 @@
 							<label class="search-box"
 								><Search size={16} /><input
 									bind:value={studyProgramSearch}
+									oninput={() => queueCollectionRefresh('studyPrograms')}
 									aria-label="Cari data program studi"
 									placeholder="Cari kode, nama, atau fakultas"
-								/></label
+								/>{#if studyProgramSearch}<button
+										type="button"
+										class="search-clear"
+										onclick={() => {
+											studyProgramSearch = '';
+											queueCollectionRefresh('studyPrograms', 0);
+										}}><X size={14} /></button
+									>{/if}</label
 							>
 							<div class="list-stack">
 								{#each filteredStudyPrograms as item (item.id)}<button
@@ -4143,6 +4554,16 @@
 										<small>{item.student_count ?? 0} mahasiswa</small></button
 									>{/each}
 							</div>
+							<CollectionPagination
+								label="program studi"
+								offset={collectionPagination.studyPrograms.offset}
+								limit={collectionPagination.studyPrograms.limit}
+								itemCount={collectionPagination.studyPrograms.itemCount}
+								hasMore={collectionPagination.studyPrograms.hasMore}
+								loading={collectionPagination.studyPrograms.loading}
+								onPrevious={() => void changeCollectionPage('studyPrograms', 'previous')}
+								onNext={() => void changeCollectionPage('studyPrograms', 'next')}
+							/>
 						</section>
 						<section class="workspace-detail">
 							<div class="pane-head compact">
@@ -4288,14 +4709,25 @@
 							<label class="search-box"
 								><Search size={16} /><input
 									bind:value={enrollmentSearch}
+									oninput={() => queueCollectionRefresh('enrollments')}
 									aria-label="Cari KRS aktif"
 									placeholder="Cari mahasiswa, mata kuliah, atau ruang"
-								/></label
+								/>{#if enrollmentSearch}<button
+										type="button"
+										class="search-clear"
+										onclick={() => {
+											enrollmentSearch = '';
+											queueCollectionRefresh('enrollments', 0);
+										}}><X size={14} /></button
+									>{/if}</label
 							>
 							<div class="editor-grid schedule-filter-grid list-filter-grid">
 								<label>
 									<span>Hari</span>
-									<select bind:value={scheduleDayFilter}>
+									<select
+										bind:value={scheduleDayFilter}
+										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									>
 										<option value="">Semua hari</option>
 										{#each days as day (day)}
 											<option value={day}>{DAY_LABELS[day]}</option>
@@ -4304,7 +4736,10 @@
 								</label>
 								<label>
 									<span>Mata kuliah</span>
-									<select bind:value={scheduleCourseFilter}>
+									<select
+										bind:value={scheduleCourseFilter}
+										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									>
 										<option value="">Semua mata kuliah</option>
 										{#each courses as item (item.id)}
 											<option value={item.id}>{item.name}</option>
@@ -4313,7 +4748,10 @@
 								</label>
 								<label>
 									<span>Ruang</span>
-									<select bind:value={scheduleRoomFilter}>
+									<select
+										bind:value={scheduleRoomFilter}
+										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									>
 										<option value="">Semua ruang</option>
 										{#each classrooms as item (item.id)}
 											<option value={item.id}>{item.name}</option>
@@ -4322,7 +4760,10 @@
 								</label>
 								<label>
 									<span>Dosen</span>
-									<select bind:value={scheduleLecturerFilter}>
+									<select
+										bind:value={scheduleLecturerFilter}
+										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									>
 										<option value="">Semua dosen</option>
 										{#each lecturers as item (item.id)}
 											<option value={item.id}>{item.name}</option>
@@ -4331,7 +4772,10 @@
 								</label>
 								<label>
 									<span>Semester</span>
-									<select bind:value={scheduleSemesterFilter}>
+									<select
+										bind:value={scheduleSemesterFilter}
+										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									>
 										<option value="">Semua semester</option>
 										{#each scheduleSemesterOptions as item (item)}
 											<option value={item}>{item}</option>
@@ -4340,7 +4784,10 @@
 								</label>
 								<label>
 									<span>Tahun akademik</span>
-									<select bind:value={scheduleAcademicYearFilter}>
+									<select
+										bind:value={scheduleAcademicYearFilter}
+										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									>
 										<option value="">Semua tahun</option>
 										{#each scheduleAcademicYearOptions as item (item)}
 											<option value={item}>{item}</option>
@@ -4384,6 +4831,16 @@
 										<small>{item.semester} • {item.academic_year}</small></button
 									>{/each}
 							</div>
+							<CollectionPagination
+								label="KRS"
+								offset={collectionPagination.enrollments.offset}
+								limit={collectionPagination.enrollments.limit}
+								itemCount={collectionPagination.enrollments.itemCount}
+								hasMore={collectionPagination.enrollments.hasMore}
+								loading={collectionPagination.enrollments.loading}
+								onPrevious={() => void changeCollectionPage('enrollments', 'previous')}
+								onNext={() => void changeCollectionPage('enrollments', 'next')}
+							/>
 						</section>
 						<section class="workspace-detail">
 							<div class="pane-head compact">
@@ -4455,9 +4912,17 @@
 							<label class="search-box"
 								><Search size={16} /><input
 									bind:value={gradeSearch}
+									oninput={() => queueCollectionRefresh('grades')}
 									aria-label="Cari data nilai"
 									placeholder="Cari mahasiswa, mata kuliah, atau nilai huruf"
-								/></label
+								/>{#if gradeSearch}<button
+										type="button"
+										class="search-clear"
+										onclick={() => {
+											gradeSearch = '';
+											queueCollectionRefresh('grades', 0);
+										}}><X size={14} /></button
+									>{/if}</label
 							>
 							<div class="list-stack">
 								{#each filteredGrades as item (item.id)}<button
@@ -4473,6 +4938,16 @@
 										<small>{item.total_score ?? '-'} poin</small></button
 									>{/each}
 							</div>
+							<CollectionPagination
+								label="nilai"
+								offset={collectionPagination.grades.offset}
+								limit={collectionPagination.grades.limit}
+								itemCount={collectionPagination.grades.itemCount}
+								hasMore={collectionPagination.grades.hasMore}
+								loading={collectionPagination.grades.loading}
+								onPrevious={() => void changeCollectionPage('grades', 'previous')}
+								onNext={() => void changeCollectionPage('grades', 'next')}
+							/>
 						</section>
 						<section class="workspace-detail">
 							<div class="pane-head compact">
@@ -4622,9 +5097,17 @@
 							<label class="search-box"
 								><Search size={16} /><input
 									bind:value={userSearch}
+									oninput={() => queueCollectionRefresh('users')}
 									aria-label="Cari akun pengguna"
 									placeholder="Cari email atau pemilik akun"
-								/></label
+								/>{#if userSearch}<button
+										type="button"
+										class="search-clear"
+										onclick={() => {
+											userSearch = '';
+											queueCollectionRefresh('users', 0);
+										}}><X size={14} /></button
+									>{/if}</label
 							>
 							<div class="list-stack">
 								{#each filteredUsers as item (item.id)}<button
@@ -4640,6 +5123,16 @@
 										<small>{item.role}</small></button
 									>{/each}
 							</div>
+							<CollectionPagination
+								label="akun"
+								offset={collectionPagination.users.offset}
+								limit={collectionPagination.users.limit}
+								itemCount={collectionPagination.users.itemCount}
+								hasMore={collectionPagination.users.hasMore}
+								loading={collectionPagination.users.loading}
+								onPrevious={() => void changeCollectionPage('users', 'previous')}
+								onNext={() => void changeCollectionPage('users', 'next')}
+							/>
 						</section>
 						<section class="workspace-detail">
 							<div class="pane-head compact">
@@ -6562,12 +7055,13 @@
 	}
 
 	.search-box {
-		grid-template-columns: auto 1fr;
+		grid-template-columns: auto 1fr auto;
 		align-items: center;
 		padding: 0.7rem 0.85rem;
 		border: 1px solid var(--color-border);
 		border-radius: 0.8rem;
 		background: var(--color-surface);
+		gap: 0.55rem;
 	}
 
 	.search-box.compact {
@@ -6603,6 +7097,23 @@
 		padding: 0;
 		border: 0;
 		background: transparent;
+	}
+
+	.search-clear {
+		display: inline-grid;
+		place-items: center;
+		width: 1.6rem;
+		height: 1.6rem;
+		padding: 0;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		color: var(--color-muted-foreground);
+	}
+
+	.search-clear:hover {
+		background: color-mix(in oklch, var(--color-surface) 78%, var(--color-border) 22%);
+		color: var(--color-foreground);
 	}
 
 	.list-row {

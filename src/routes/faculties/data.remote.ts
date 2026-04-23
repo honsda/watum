@@ -1,7 +1,13 @@
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
-import { getPool } from '$lib/server/db';
+import {
+	getListQueryLimit,
+	getListQueryOffset,
+	mergeLimitedListResult,
+	getPool,
+	toLimitedListResult
+} from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
@@ -12,13 +18,21 @@ import {
 } from '$lib/server/sql';
 import { type SelectFacultiesWhere } from '$lib/server/sql';
 import { facultyCreateSchema, facultySchema } from '$lib/validations/faculty';
+import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 
-export const getFaculties = query(async () => {
+export const getFaculties = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
-	return selectFaculties(getPool());
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(page?.offset);
+	return toLimitedListResult(
+		await selectFaculties(getPool(), { params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 const searchFacultiesSchema = v.object({
+	...listPageEntries,
+	q: v.optional(v.string()),
 	id: v.optional(v.string()),
 	name: v.optional(v.string()),
 	minStudyProgramCount: v.optional(v.number()),
@@ -42,7 +56,27 @@ export const searchFaculties = query(searchFacultiesSchema, async (filters) => {
 	} else if (filters.maxStudyProgramCount != null) {
 		where.push(['study_program_count', '<=', filters.maxStudyProgramCount]);
 	}
-	return selectFaculties(getPool(), { where });
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(filters.offset);
+	const q = filters.q?.trim();
+	if (q) {
+		const queryLimit = offset + limit + 1;
+		const resultSets = await Promise.all([
+			selectFaculties(getPool(), {
+				where: [...where, ['id', '=', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectFaculties(getPool(), {
+				where: [...where, ['name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			})
+		]);
+		return mergeLimitedListResult(resultSets, offset, limit, (item) => item.id ?? null);
+	}
+	return toLimitedListResult(
+		await selectFaculties(getPool(), { where, params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 export const getFaculty = query(v.string(), async (id) => {

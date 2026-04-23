@@ -16,4 +16,5 @@ SELECT
 FROM students s
 INNER JOIN study_programs sp ON s.study_program_id = sp.id
 INNER JOIN faculties f ON sp.faculty_id = f.id
-ORDER BY s.name ASC
+ORDER BY s.name ASC, s.id ASC
+LIMIT :offset, :limit

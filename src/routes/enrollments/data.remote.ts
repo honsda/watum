@@ -2,14 +2,22 @@ import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error, invalid } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
-import { getPool, withTransaction } from '$lib/server';
+import {
+	getListQueryLimit,
+	getListQueryOffset,
+	mergeLimitedListResult,
+	getPool,
+	toLimitedListResult,
+	withTransaction
+} from '$lib/server';
 import { requireRole, requireUser } from '$lib/server/auth';
 import { getTimeComponents, parseISO, formatDateTime } from '$lib/time-helpers';
 import {
 	selectClassRooms,
 	selectCourses,
 	selectEnrollments,
-	selectSchedules,
+	selectSchedulesConflict,
+	selectStudentScheduleConflict,
 	selectStudents,
 	insertSchedule,
 	insertEnrollment,
@@ -20,22 +28,9 @@ import {
 } from '$lib/server/sql';
 import { type SelectEnrollmentsWhere } from '$lib/server/sql';
 import { days, enrollmentSchema } from '$lib/validations/enrollment';
+import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 
 const weekdayFromIndex = ['MINGGU', ...days] as const;
-
-function timeRangesOverlap(
-	existingStart: Date | null | undefined,
-	existingEnd: Date | null | undefined,
-	nextStart: Date,
-	nextEnd: Date
-) {
-	if (!existingStart || !existingEnd) return false;
-	const existingStartMs = new Date(existingStart).getTime();
-	const existingEndMs = new Date(existingEnd).getTime();
-	const nextStartMs = nextStart.getTime();
-	const nextEndMs = nextEnd.getTime();
-	return existingStartMs < nextEndMs && nextStartMs < existingEndMs;
-}
 
 function scheduleWindowLabel(
 	start: Date | null | undefined,
@@ -71,22 +66,37 @@ function validateScheduleWindow(
 	return { clientTimezone, startDate, endDate };
 }
 
-export const getEnrollments = query(async () => {
+export const getEnrollments = query(listPageSchema, async (page) => {
 	const user = await requireUser();
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(page?.offset);
 	if (user.role === 'STUDENT') {
-		return await selectEnrollments(getPool(), {
-			where: [['student_id', '=', user.studentId!]]
-		});
+		return toLimitedListResult(
+			await selectEnrollments(getPool(), {
+				where: [['student_id', '=', user.studentId!]],
+				params: { offset, limit: limit + 1 }
+			}),
+			limit
+		);
 	}
 	if (user.role === 'LECTURER') {
-		return await selectEnrollments(getPool(), {
-			where: [['lecturer_id', '=', user.lecturerId!]]
-		});
+		return toLimitedListResult(
+			await selectEnrollments(getPool(), {
+				where: [['lecturer_id', '=', user.lecturerId!]],
+				params: { offset, limit: limit + 1 }
+			}),
+			limit
+		);
 	}
-	return selectEnrollments(getPool());
+	return toLimitedListResult(
+		await selectEnrollments(getPool(), { params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 const searchEnrollmentsSchema = v.object({
+	...listPageEntries,
+	q: v.optional(v.string()),
 	id: v.optional(v.string()),
 	studentId: v.optional(v.string()),
 	courseId: v.optional(v.string()),
@@ -126,7 +136,56 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 	if (filters.classRoomName) where.push(['class_room_name', 'LIKE', filters.classRoomName]);
 	if (filters.scheduleDay) where.push(['schedule_day', '=', filters.scheduleDay]);
 	if (filters.letterGrade) where.push(['letter_grade', '=', filters.letterGrade]);
-	return selectEnrollments(getPool(), { where });
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(filters.offset);
+	const q = filters.q?.trim();
+	if (q) {
+		const queryLimit = offset + limit + 1;
+		const resultSets = await Promise.all([
+			selectEnrollments(getPool(), {
+				where: [...where, ['id', '=', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectEnrollments(getPool(), {
+				where: [...where, ['student_name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectEnrollments(getPool(), {
+				where: [...where, ['course_name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectEnrollments(getPool(), {
+				where: [...where, ['lecturer_name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectEnrollments(getPool(), {
+				where: [...where, ['class_room_name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectEnrollments(getPool(), {
+				where: [...where, ['semester', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectEnrollments(getPool(), {
+				where: [...where, ['academic_year', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			})
+		]);
+		const normalizedDay = q.toUpperCase();
+		if (['SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU'].includes(normalizedDay)) {
+			resultSets.push(
+				await selectEnrollments(getPool(), {
+					where: [...where, ['schedule_day', '=', normalizedDay as (typeof days)[number]]],
+					params: { offset: 0, limit: queryLimit }
+				})
+			);
+		}
+		return mergeLimitedListResult(resultSets, offset, limit, (item) => item.id ?? null);
+	}
+	return toLimitedListResult(
+		await selectEnrollments(getPool(), { where, params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 export const getEnrollment = query(v.string(), async (id) => {
@@ -179,32 +238,30 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 		invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
 	}
 
-	const [existingSchedules, [existing], existingStudentSchedules] = await Promise.all([
-		selectSchedules(getPool(), {
-			where: [
-				['class_room_id', '=', data.classRoomId],
-				['day', '=', data.day]
-			]
+	const [[roomConflict], [existing], [studentConflict]] = await Promise.all([
+		selectSchedulesConflict(getPool(), {
+			classRoomId: data.classRoomId,
+			day: data.day,
+			startTime: startDate,
+			endTime: endDate
 		}),
 		selectEnrollments(getPool(), {
+			select: { id: true },
 			where: [
 				['student_id', '=', data.studentId],
 				['course_id', '=', data.courseId],
 				['semester', '=', data.semester]
 			]
 		}),
-		selectEnrollments(getPool(), {
-			where: [
-				['student_id', '=', data.studentId],
-				['schedule_day', '=', data.day]
-			]
+		selectStudentScheduleConflict(getPool(), {
+			studentId: data.studentId,
+			day: data.day,
+			startTime: startDate,
+			endTime: endDate
 		})
 	]);
 
-	const hasConflict = existingSchedules.find((s) => {
-		return timeRangesOverlap(s.start_time, s.end_time, startDate, endDate);
-	});
-	if (hasConflict) {
+	if (roomConflict) {
 		invalid(
 			issue.classRoomId(
 				`Jadwal bentrok (${formatDateTime(startDate, 'time', clientTimezone)} - ${formatDateTime(endDate, 'time', clientTimezone)}) dengan jadwal yang sudah ada`
@@ -212,18 +269,10 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 		);
 	}
 
-	const studentConflict = existingStudentSchedules.find((enrollment) =>
-		timeRangesOverlap(
-			enrollment.schedule_start_time,
-			enrollment.schedule_end_time,
-			startDate,
-			endDate
-		)
-	);
 	if (studentConflict) {
 		invalid(
 			issue.studentId(
-				`Mahasiswa memiliki jadwal bentrok dengan ${studentConflict.course_name ?? 'kelas lain'} pada ${scheduleWindowLabel(studentConflict.schedule_start_time, studentConflict.schedule_end_time, clientTimezone)}`
+				`Mahasiswa memiliki jadwal bentrok dengan ${studentConflict.course_name ?? 'kelas lain'} pada ${scheduleWindowLabel(studentConflict.start_time, studentConflict.end_time, clientTimezone)}`
 			)
 		);
 	}
@@ -302,20 +351,23 @@ export const updateEnrollment = form(
 			invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
 		}
 
-		const [existingSchedules, existingStudentSchedules, [existing]] = await Promise.all([
-			selectSchedules(getPool(), {
-				where: [
-					['class_room_id', '=', data.classRoomId],
-					['day', '=', data.day]
-				]
+		const [[roomConflict], [studentConflict], [existing]] = await Promise.all([
+			selectSchedulesConflict(getPool(), {
+				classRoomId: data.classRoomId,
+				day: data.day,
+				startTime: startDate,
+				endTime: endDate,
+				excludeScheduleId: enrollment.schedule_id ?? undefined
+			}),
+			selectStudentScheduleConflict(getPool(), {
+				studentId: data.studentId,
+				day: data.day,
+				startTime: startDate,
+				endTime: endDate,
+				excludeEnrollmentId: data.id
 			}),
 			selectEnrollments(getPool(), {
-				where: [
-					['student_id', '=', data.studentId],
-					['schedule_day', '=', data.day]
-				]
-			}),
-			selectEnrollments(getPool(), {
+				select: { id: true },
 				where: [
 					['student_id', '=', data.studentId],
 					['course_id', '=', data.courseId],
@@ -323,11 +375,7 @@ export const updateEnrollment = form(
 				]
 			})
 		]);
-		const hasConflict = existingSchedules.find((s) => {
-			if (s.id === enrollment.schedule_id) return false;
-			return timeRangesOverlap(s.start_time, s.end_time, startDate, endDate);
-		});
-		if (hasConflict) {
+		if (roomConflict) {
 			invalid(
 				issue.classRoomId(
 					`Jadwal bentrok (${formatDateTime(startDate, 'time', clientTimezone)} - ${formatDateTime(endDate, 'time', clientTimezone)}) dengan jadwal yang sudah ada`
@@ -335,19 +383,10 @@ export const updateEnrollment = form(
 			);
 		}
 
-		const studentConflict = existingStudentSchedules.find((item) => {
-			if (item.id === data.id) return false;
-			return timeRangesOverlap(
-				item.schedule_start_time,
-				item.schedule_end_time,
-				startDate,
-				endDate
-			);
-		});
 		if (studentConflict) {
 			invalid(
 				issue.studentId(
-					`Mahasiswa memiliki jadwal bentrok dengan ${studentConflict.course_name ?? 'kelas lain'} pada ${scheduleWindowLabel(studentConflict.schedule_start_time, studentConflict.schedule_end_time, clientTimezone)}`
+					`Mahasiswa memiliki jadwal bentrok dengan ${studentConflict.course_name ?? 'kelas lain'} pada ${scheduleWindowLabel(studentConflict.start_time, studentConflict.end_time, clientTimezone)}`
 				)
 			);
 		}
