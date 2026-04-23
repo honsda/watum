@@ -3,7 +3,13 @@ import { EOL } from 'os';
 
 export type SelectFacultiesDynamicParams = {
     select?: SelectFacultiesSelect;
+    params?: SelectFacultiesParams;
     where?: SelectFacultiesWhere[];
+}
+
+export type SelectFacultiesParams = {
+    offset?: number | null;
+    limit?: number | null;
 }
 
 export type SelectFacultiesResult = {
@@ -80,7 +86,11 @@ export async function selectFaculties(connection: Connection, params?: SelectFac
             sql += EOL + 'AND ' + where.sql;
             paramsValues.push(...where.values);
         }
-    });
+    });if (params?.params?.offset != null && params?.params?.limit != null) {
+        sql += EOL + `LIMIT ?, ?`;
+        paramsValues.push(params.params.offset);
+        paramsValues.push(params.params.limit);
+    }
     return connection.query({ sql, rowsAsArray: true }, paramsValues)
         .then(res => res[0] as any[])
         .then(res => res.map(data => mapArrayToSelectFacultiesResult(data, params?.select)));

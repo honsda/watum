@@ -3,7 +3,13 @@ import { EOL } from 'os';
 
 export type SelectCoursesDynamicParams = {
     select?: SelectCoursesSelect;
+    params?: SelectCoursesParams;
     where?: SelectCoursesWhere[];
+}
+
+export type SelectCoursesParams = {
+    offset?: number | null;
+    limit?: number | null;
 }
 
 export type SelectCoursesResult = {
@@ -135,7 +141,11 @@ export async function selectCourses(connection: Connection, params?: SelectCours
             sql += EOL + 'AND ' + where.sql;
             paramsValues.push(...where.values);
         }
-    });
+    });if (params?.params?.offset != null && params?.params?.limit != null) {
+        sql += EOL + `LIMIT ?, ?`;
+        paramsValues.push(params.params.offset);
+        paramsValues.push(params.params.limit);
+    }
     return connection.query({ sql, rowsAsArray: true }, paramsValues)
         .then(res => res[0] as any[])
         .then(res => res.map(data => mapArrayToSelectCoursesResult(data, params?.select)));

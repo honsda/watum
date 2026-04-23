@@ -3,7 +3,13 @@ import { EOL } from 'os';
 
 export type SelectSchedulesDynamicParams = {
     select?: SelectSchedulesSelect;
+    params?: SelectSchedulesParams;
     where?: SelectSchedulesWhere[];
+}
+
+export type SelectSchedulesParams = {
+    offset?: number | null;
+    limit?: number | null;
 }
 
 export type SelectSchedulesResult = {
@@ -108,7 +114,11 @@ export async function selectSchedules(connection: Connection, params?: SelectSch
             sql += EOL + 'AND ' + where.sql;
             paramsValues.push(...where.values);
         }
-    });
+    });if (params?.params?.offset != null && params?.params?.limit != null) {
+        sql += EOL + `LIMIT ?, ?`;
+        paramsValues.push(params.params.offset);
+        paramsValues.push(params.params.limit);
+    }
     return connection.query({ sql, rowsAsArray: true }, paramsValues)
         .then(res => res[0] as any[])
         .then(res => res.map(data => mapArrayToSelectSchedulesResult(data, params?.select)));

@@ -3,7 +3,14 @@ import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import { hash } from 'argon2';
 import { randomUUID } from 'crypto';
-import { getPool, withTransaction } from '$lib/server/db';
+import {
+	getListQueryLimit,
+	getListQueryOffset,
+	mergeLimitedListResult,
+	getPool,
+	toLimitedListResult,
+	withTransaction
+} from '$lib/server/db';
 import { requireRole, requireUser } from '$lib/server/auth';
 import { generateNRP } from '$lib/server/NRP-generator';
 import {
@@ -20,19 +27,29 @@ import {
 } from '$lib/server/sql';
 import { type SelectStudentsWhere } from '$lib/server/sql';
 import { studentSchema } from '$lib/validations/student';
+import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 import { gradePoints } from '$lib/validations/grade';
 
-export const getStudents = query(async () => {
+export const getStudents = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN', 'LECTURER']);
-	return await selectStudents(getPool());
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(page?.offset);
+	return toLimitedListResult(
+		await selectStudents(getPool(), { params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 const searchStudentsSchema = v.object({
+	...listPageEntries,
+	q: v.optional(v.string()),
 	id: v.optional(v.string()),
 	name: v.optional(v.string()),
 	email: v.optional(v.string()),
 	studyProgramId: v.optional(v.string()),
+	studyProgramName: v.optional(v.string()),
 	facultyId: v.optional(v.string()),
+	facultyName: v.optional(v.string()),
 	minYearAdmitted: v.optional(v.number()),
 	maxYearAdmitted: v.optional(v.number())
 });
@@ -44,7 +61,10 @@ export const searchStudents = query(searchStudentsSchema, async (filters) => {
 	if (filters.name) where.push(['name', 'LIKE', filters.name]);
 	if (filters.email) where.push(['email', 'LIKE', filters.email]);
 	if (filters.studyProgramId) where.push(['study_program_id', '=', filters.studyProgramId]);
+	if (filters.studyProgramName)
+		where.push(['study_program_name', 'LIKE', filters.studyProgramName]);
 	if (filters.facultyId) where.push(['faculty_id', '=', filters.facultyId]);
+	if (filters.facultyName) where.push(['faculty_name', 'LIKE', filters.facultyName]);
 	if (filters.minYearAdmitted != null && filters.maxYearAdmitted != null) {
 		where.push(['year_admitted', 'BETWEEN', filters.minYearAdmitted, filters.maxYearAdmitted]);
 	} else if (filters.minYearAdmitted != null) {
@@ -52,7 +72,39 @@ export const searchStudents = query(searchStudentsSchema, async (filters) => {
 	} else if (filters.maxYearAdmitted != null) {
 		where.push(['year_admitted', '<=', filters.maxYearAdmitted]);
 	}
-	return selectStudents(getPool(), { where });
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(filters.offset);
+	const q = filters.q?.trim();
+	if (q) {
+		const queryLimit = offset + limit + 1;
+		const resultSets = await Promise.all([
+			selectStudents(getPool(), {
+				where: [...where, ['id', '=', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectStudents(getPool(), {
+				where: [...where, ['name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectStudents(getPool(), {
+				where: [...where, ['email', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectStudents(getPool(), {
+				where: [...where, ['study_program_name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectStudents(getPool(), {
+				where: [...where, ['faculty_name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			})
+		]);
+		return mergeLimitedListResult(resultSets, offset, limit, (item) => item.id ?? null);
+	}
+	return toLimitedListResult(
+		await selectStudents(getPool(), { where, params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 export const getStudent = query(v.string(), async (id) => {
@@ -165,9 +217,10 @@ export const updateStudent = form(
 					conn,
 					{
 						email: updateData.email,
+						password: linkedUser.password ?? '',
 						role: 'STUDENT',
 						student_id: id,
-						lecturer_id: null
+						lecturer_id: undefined
 					},
 					{ id: linkedUser.id }
 				);

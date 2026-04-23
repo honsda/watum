@@ -28,6 +28,7 @@ export * from "./select-schedules-conflict.js";
 export * from "./select-schedules.js";
 export * from "./select-students.js";
 export * from "./select-study-programs.js";
+export * from "./select-student-schedule-conflict.js";
 export * from "./select-users.js";
 export * from "./update-class-room.js";
 export * from "./update-course.js";

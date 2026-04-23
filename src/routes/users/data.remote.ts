@@ -3,7 +3,14 @@ import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import { hash } from 'argon2';
 import { randomUUID } from 'crypto';
-import { getPool, withTransaction } from '$lib/server/db';
+import {
+	getListQueryLimit,
+	getListQueryOffset,
+	mergeLimitedListResult,
+	getPool,
+	toLimitedListResult,
+	withTransaction
+} from '$lib/server/db';
 import { requireRole, revokeRefreshTokensForUser } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
@@ -22,13 +29,21 @@ import { userSchema, userUpdateSchema } from '$lib/validations/user';
 import { studentSchema } from '$lib/validations/student';
 import { lecturerCreateSchema } from '$lib/validations/lecturer';
 import { generateNRP } from '$lib/server/NRP-generator';
+import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 
-export const getUsers = query(async () => {
+export const getUsers = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN']);
-	return await selectUsers(getPool());
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(page?.offset);
+	return toLimitedListResult(
+		await selectUsers(getPool(), { params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 const searchUsersSchema = v.object({
+	...listPageEntries,
+	q: v.optional(v.string()),
 	id: v.optional(v.string()),
 	email: v.optional(v.string()),
 	role: v.optional(v.picklist(['ADMIN', 'STUDENT', 'LECTURER'])),
@@ -48,7 +63,35 @@ export const searchUsers = query(searchUsersSchema, async (filters) => {
 	if (filters.studentName) where.push(['student_name', 'LIKE', filters.studentName]);
 	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
 	if (filters.lecturerName) where.push(['lecturer_name', 'LIKE', filters.lecturerName]);
-	return selectUsers(getPool(), { where });
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(filters.offset);
+	const q = filters.q?.trim();
+	if (q) {
+		const queryLimit = offset + limit + 1;
+		const resultSets = await Promise.all([
+			selectUsers(getPool(), {
+				where: [...where, ['id', '=', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectUsers(getPool(), {
+				where: [...where, ['email', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectUsers(getPool(), {
+				where: [...where, ['student_name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectUsers(getPool(), {
+				where: [...where, ['lecturer_name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			})
+		]);
+		return mergeLimitedListResult(resultSets, offset, limit, (item) => item.id ?? null);
+	}
+	return toLimitedListResult(
+		await selectUsers(getPool(), { where, params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 export const getUser = query(v.string(), async (id) => {
@@ -253,10 +296,10 @@ export const updateUser = form(
 			getPool(),
 			{
 				email: data.email,
-				password: data.password ? await hash(data.password) : undefined,
+				password: data.password ? await hash(data.password) : (user.password ?? ''),
 				role: data.role,
-				student_id: data.role === 'STUDENT' ? data.studentId : null,
-				lecturer_id: data.role === 'LECTURER' ? (data.lecturerId ?? null) : null
+				student_id: data.role === 'STUDENT' ? (data.studentId ?? undefined) : undefined,
+				lecturer_id: data.role === 'LECTURER' ? (data.lecturerId ?? undefined) : undefined
 			},
 			{ id: data.id }
 		);

@@ -10,4 +10,5 @@ SELECT
 FROM schedules s
 LEFT JOIN enrollments e ON s.id = e.schedule_id
 LEFT JOIN courses c ON e.course_id = c.id
-ORDER BY s.day, s.start_time
+ORDER BY s.day, s.start_time, s.id ASC
+LIMIT :offset, :limit

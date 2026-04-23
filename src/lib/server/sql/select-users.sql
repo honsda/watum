@@ -11,3 +11,5 @@ SELECT
 FROM users u
 LEFT JOIN students s ON u.student_id = s.id
 LEFT JOIN lecturers l ON u.lecturer_id = l.id
+ORDER BY u.email ASC, u.id ASC
+LIMIT :offset, :limit

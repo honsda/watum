@@ -13,4 +13,5 @@ SELECT
 FROM courses c
 INNER JOIN study_programs sp ON c.study_program_id = sp.id
 INNER JOIN lecturers l ON c.lecturer_id = l.id
-ORDER BY c.name ASC
+ORDER BY c.name ASC, c.id ASC
+LIMIT :offset, :limit

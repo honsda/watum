@@ -3,7 +3,13 @@ import { EOL } from 'os';
 
 export type SelectEnrollmentsDynamicParams = {
     select?: SelectEnrollmentsSelect;
+    params?: SelectEnrollmentsParams;
     where?: SelectEnrollmentsWhere[];
+}
+
+export type SelectEnrollmentsParams = {
+    offset?: number | null;
+    limit?: number | null;
 }
 
 export type SelectEnrollmentsResult = {
@@ -255,7 +261,11 @@ export async function selectEnrollments(connection: Connection, params?: SelectE
             sql += EOL + 'AND ' + where.sql;
             paramsValues.push(...where.values);
         }
-    });
+    });if (params?.params?.offset != null && params?.params?.limit != null) {
+        sql += EOL + `LIMIT ?, ?`;
+        paramsValues.push(params.params.offset);
+        paramsValues.push(params.params.limit);
+    }
     return connection.query({ sql, rowsAsArray: true }, paramsValues)
         .then(res => res[0] as any[])
         .then(res => res.map(data => mapArrayToSelectEnrollmentsResult(data, params?.select)));

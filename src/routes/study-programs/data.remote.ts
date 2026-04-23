@@ -1,7 +1,13 @@
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
-import { getPool } from '$lib/server/db';
+import {
+	getListQueryLimit,
+	getListQueryOffset,
+	mergeLimitedListResult,
+	getPool,
+	toLimitedListResult
+} from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
@@ -13,13 +19,21 @@ import {
 } from '$lib/server/sql';
 import { type SelectStudyProgramsWhere } from '$lib/server/sql';
 import { studyProgramCreateSchema, studyProgramSchema } from '$lib/validations/study-program';
+import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 
-export const getStudyPrograms = query(async () => {
+export const getStudyPrograms = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
-	return selectStudyPrograms(getPool());
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(page?.offset);
+	return toLimitedListResult(
+		await selectStudyPrograms(getPool(), { params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 const searchStudyProgramsSchema = v.object({
+	...listPageEntries,
+	q: v.optional(v.string()),
 	id: v.optional(v.string()),
 	name: v.optional(v.string()),
 	head: v.optional(v.string()),
@@ -44,7 +58,35 @@ export const searchStudyPrograms = query(searchStudyProgramsSchema, async (filte
 	} else if (filters.maxStudentCount != null) {
 		where.push(['student_count', '<=', filters.maxStudentCount]);
 	}
-	return selectStudyPrograms(getPool(), { where });
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(filters.offset);
+	const q = filters.q?.trim();
+	if (q) {
+		const queryLimit = offset + limit + 1;
+		const resultSets = await Promise.all([
+			selectStudyPrograms(getPool(), {
+				where: [...where, ['id', '=', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectStudyPrograms(getPool(), {
+				where: [...where, ['name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectStudyPrograms(getPool(), {
+				where: [...where, ['faculty_name', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			}),
+			selectStudyPrograms(getPool(), {
+				where: [...where, ['head', 'LIKE', q]],
+				params: { offset: 0, limit: queryLimit }
+			})
+		]);
+		return mergeLimitedListResult(resultSets, offset, limit, (item) => item.id ?? null);
+	}
+	return toLimitedListResult(
+		await selectStudyPrograms(getPool(), { where, params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 export const getStudyProgram = query(v.string(), async (id) => {

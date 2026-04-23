@@ -3,7 +3,13 @@ import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import { formatDateTime } from '$lib/time-helpers';
-import { getPool } from '$lib/server/db';
+import {
+	getListQueryLimit,
+	getListQueryOffset,
+	mergeLimitedListResult,
+	getPool,
+	toLimitedListResult
+} from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
 import {
 	selectClassRooms,
@@ -14,16 +20,24 @@ import {
 } from '$lib/server/sql';
 import { type SelectClassRoomsWhere } from '$lib/server/sql';
 import { classRoomSchema } from '$lib/validations/classroom';
+import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 import dayjs from 'dayjs';
 
 type ClassRoomType = v.InferOutput<typeof classRoomSchema>['classRoomType'];
 
-export const getClassRooms = query(async () => {
+export const getClassRooms = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
-	return await selectClassRooms(getPool());
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(page?.offset);
+	return toLimitedListResult(
+		await selectClassRooms(getPool(), { params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 const searchClassRoomsSchema = v.object({
+	...listPageEntries,
+	q: v.optional(v.string()),
 	id: v.optional(v.string()),
 	name: v.optional(v.string()),
 	classRoomType: v.optional(v.picklist(['REGULER', 'LAB_KOMPUTER', 'LAB_BAHASA', 'AUDITORIUM'])),
@@ -44,7 +58,36 @@ export const searchClassRooms = query(searchClassRoomsSchema, async (filters) =>
 	} else if (filters.maxCapacity != null) {
 		where.push(['capacity', '<=', filters.maxCapacity]);
 	}
-	return selectClassRooms(getPool(), { where });
+	const limit = getListQueryLimit();
+	const offset = getListQueryOffset(filters.offset);
+	const q = filters.q?.trim();
+	if (q) {
+		const queryLimit = offset + limit + 1;
+		const variants: SelectClassRoomsWhere[][] = [
+			[...where, ['id', '=', q]],
+			[...where, ['name', 'LIKE', q]]
+		];
+		const normalizedType = q
+			.toUpperCase()
+			.replaceAll(/[^A-Z]/g, '_')
+			.replaceAll(/_+/g, '_') as ClassRoomType;
+		if (['REGULER', 'LAB_KOMPUTER', 'LAB_BAHASA', 'AUDITORIUM'].includes(normalizedType)) {
+			variants.push([...where, ['class_room_type', '=', normalizedType]]);
+		}
+		const resultSets = await Promise.all(
+			variants.map((variantWhere) =>
+				selectClassRooms(getPool(), {
+					where: variantWhere,
+					params: { offset: 0, limit: queryLimit }
+				})
+			)
+		);
+		return mergeLimitedListResult(resultSets, offset, limit, (item) => item.id ?? null);
+	}
+	return toLimitedListResult(
+		await selectClassRooms(getPool(), { where, params: { offset, limit: limit + 1 } }),
+		limit
+	);
 });
 
 export const getClassRoom = query(v.string(), async (id) => {
@@ -60,11 +103,14 @@ export const getClassRoomUtilization = query(
 	v.object({ classRoomId: v.string(), timezone: v.string() }),
 	async ({ classRoomId, timezone }) => {
 		await requireRole(['ADMIN', 'LECTURER']);
+		const limit = getListQueryLimit();
 		const schedules = await selectSchedules(getPool(), {
-			where: [['class_room_id', '=', classRoomId]]
+			where: [['class_room_id', '=', classRoomId]],
+			params: { offset: 0, limit: limit + 1 }
 		});
+		const limitedSchedules = toLimitedListResult(schedules, limit);
 		const utilization: Record<string, Array<{ start: string; end: string; course: string }>> = {};
-		for (const schedule of schedules) {
+		for (const schedule of limitedSchedules.items) {
 			if (!schedule.start_time || !schedule.end_time) {
 				schedule.start_time = dayjs('1970-01-01').toDate();
 				schedule.end_time = dayjs('1970-01-01').toDate();
@@ -79,7 +125,11 @@ export const getClassRoomUtilization = query(
 				course: schedule.course_name ?? ''
 			});
 		}
-		return utilization;
+		return {
+			utilization,
+			limit: limitedSchedules.limit,
+			hasMore: limitedSchedules.hasMore
+		};
 	}
 );
 
