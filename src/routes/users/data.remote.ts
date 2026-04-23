@@ -5,7 +5,7 @@ import { hash } from 'argon2';
 import { randomUUID } from 'crypto';
 import {
 	getListQueryLimit,
-	getListQueryOffset,
+	getListQueryCursor,
 	mergeLimitedListResult,
 	getPool,
 	toLimitedListResult,
@@ -13,6 +13,7 @@ import {
 } from '$lib/server/db';
 import { requireRole, revokeRefreshTokensForUser } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
+import { containsSearchPattern, prefixSearchPattern } from '$lib/server/search';
 import {
 	selectUsers,
 	selectStudents,
@@ -34,10 +35,11 @@ import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 export const getUsers = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN']);
 	const limit = getListQueryLimit();
-	const offset = getListQueryOffset(page?.offset);
+	const afterId = getListQueryCursor(page?.cursor);
 	return toLimitedListResult(
-		await selectUsers(getPool(), { params: { offset, limit: limit + 1 } }),
-		limit
+		await selectUsers(getPool(), { params: { afterId, limit: limit + 1 } }),
+		limit,
+		(item) => item.id ?? null
 	);
 });
 
@@ -57,40 +59,44 @@ export const searchUsers = query(searchUsersSchema, async (filters) => {
 	await requireRole(['ADMIN']);
 	const where: SelectUsersWhere[] = [];
 	if (filters.id) where.push(['id', '=', filters.id]);
-	if (filters.email) where.push(['email', 'LIKE', filters.email]);
+	if (filters.email) where.push(['email', 'LIKE', containsSearchPattern(filters.email)!]);
 	if (filters.role) where.push(['role', '=', filters.role]);
 	if (filters.studentId) where.push(['student_id', '=', filters.studentId]);
-	if (filters.studentName) where.push(['student_name', 'LIKE', filters.studentName]);
+	if (filters.studentName)
+		where.push(['student_name', 'LIKE', containsSearchPattern(filters.studentName)!]);
 	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
-	if (filters.lecturerName) where.push(['lecturer_name', 'LIKE', filters.lecturerName]);
+	if (filters.lecturerName)
+		where.push(['lecturer_name', 'LIKE', containsSearchPattern(filters.lecturerName)!]);
 	const limit = getListQueryLimit();
-	const offset = getListQueryOffset(filters.offset);
+	const afterId = getListQueryCursor(filters.cursor);
 	const q = filters.q?.trim();
 	if (q) {
-		const queryLimit = offset + limit + 1;
+		const qPrefix = prefixSearchPattern(q)!;
+		const queryLimit = limit + 1;
 		const resultSets = await Promise.all([
 			selectUsers(getPool(), {
 				where: [...where, ['id', '=', q]],
-				params: { offset: 0, limit: queryLimit }
+				params: { afterId, limit: queryLimit }
 			}),
 			selectUsers(getPool(), {
-				where: [...where, ['email', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['email', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			}),
 			selectUsers(getPool(), {
-				where: [...where, ['student_name', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['student_name', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			}),
 			selectUsers(getPool(), {
-				where: [...where, ['lecturer_name', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['lecturer_name', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			})
 		]);
-		return mergeLimitedListResult(resultSets, offset, limit, (item) => item.id ?? null);
+		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
 	}
 	return toLimitedListResult(
-		await selectUsers(getPool(), { where, params: { offset, limit: limit + 1 } }),
-		limit
+		await selectUsers(getPool(), { where, params: { afterId, limit: limit + 1 } }),
+		limit,
+		(item) => item.id ?? null
 	);
 });
 

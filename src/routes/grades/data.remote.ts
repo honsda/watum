@@ -5,13 +5,14 @@ import { randomUUID } from 'crypto';
 import { calculateGrade } from '$lib/validations/grade';
 import {
 	getListQueryLimit,
-	getListQueryOffset,
+	getListQueryCursor,
 	mergeLimitedListResult,
 	getPool,
 	toLimitedListResult,
 	withTransaction
 } from '$lib/server/db';
 import { requireRole, requireUser } from '$lib/server/auth';
+import { containsSearchPattern, prefixSearchPattern } from '$lib/server/search';
 import {
 	selectGrades,
 	selectEnrollments,
@@ -26,28 +27,31 @@ import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 export const getGrades = query(listPageSchema, async (page) => {
 	const user = await requireUser();
 	const limit = getListQueryLimit();
-	const offset = getListQueryOffset(page?.offset);
+	const afterId = getListQueryCursor(page?.cursor);
 	if (user.role === 'LECTURER') {
 		return toLimitedListResult(
 			await selectGrades(getPool(), {
 				where: [['lecturer_id', '=', user.lecturerId!]],
-				params: { offset, limit: limit + 1 }
+				params: { afterId, limit: limit + 1 }
 			}),
-			limit
+			limit,
+			(item) => item.id ?? null
 		);
 	}
 	if (user.role === 'STUDENT') {
 		return toLimitedListResult(
 			await selectGrades(getPool(), {
 				where: [['student_id', '=', user.studentId!]],
-				params: { offset, limit: limit + 1 }
+				params: { afterId, limit: limit + 1 }
 			}),
-			limit
+			limit,
+			(item) => item.id ?? null
 		);
 	}
 	return toLimitedListResult(
-		await selectGrades(getPool(), { params: { offset, limit: limit + 1 } }),
-		limit
+		await selectGrades(getPool(), { params: { afterId, limit: limit + 1 } }),
+		limit,
+		(item) => item.id ?? null
 	);
 });
 
@@ -79,12 +83,15 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 	if (filters.id) where.push(['id', '=', filters.id]);
 	if (filters.enrollmentId) where.push(['enrollment_id', '=', filters.enrollmentId]);
 	if (filters.studentId) where.push(['student_id', '=', filters.studentId]);
-	if (filters.studentName) where.push(['student_name', 'LIKE', filters.studentName]);
-	if (filters.studentEmail) where.push(['student_email', 'LIKE', filters.studentEmail]);
+	if (filters.studentName)
+		where.push(['student_name', 'LIKE', containsSearchPattern(filters.studentName)!]);
+	if (filters.studentEmail)
+		where.push(['student_email', 'LIKE', containsSearchPattern(filters.studentEmail)!]);
 	if (filters.studyProgramName)
-		where.push(['study_program_name', 'LIKE', filters.studyProgramName]);
+		where.push(['study_program_name', 'LIKE', containsSearchPattern(filters.studyProgramName)!]);
 	if (filters.courseId) where.push(['course_id', '=', filters.courseId]);
-	if (filters.courseName) where.push(['course_name', 'LIKE', filters.courseName]);
+	if (filters.courseName)
+		where.push(['course_name', 'LIKE', containsSearchPattern(filters.courseName)!]);
 	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
 	if (filters.letterGrade) where.push(['letter_grade', '=', filters.letterGrade]);
 	if (filters.minTotalScore != null && filters.maxTotalScore != null) {
@@ -95,37 +102,39 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 		where.push(['total_score', '<=', filters.maxTotalScore]);
 	}
 	const limit = getListQueryLimit();
-	const offset = getListQueryOffset(filters.offset);
+	const afterId = getListQueryCursor(filters.cursor);
 	const q = filters.q?.trim();
 	if (q) {
-		const queryLimit = offset + limit + 1;
+		const qPrefix = prefixSearchPattern(q)!;
+		const queryLimit = limit + 1;
 		const resultSets = await Promise.all([
 			selectGrades(getPool(), {
 				where: [...where, ['id', '=', q]],
-				params: { offset: 0, limit: queryLimit }
+				params: { afterId, limit: queryLimit }
 			}),
 			selectGrades(getPool(), {
-				where: [...where, ['student_name', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['student_name', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			}),
 			selectGrades(getPool(), {
-				where: [...where, ['course_name', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['course_name', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			}),
 			selectGrades(getPool(), {
-				where: [...where, ['student_email', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['student_email', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			}),
 			selectGrades(getPool(), {
 				where: [...where, ['letter_grade', '=', q]],
-				params: { offset: 0, limit: queryLimit }
+				params: { afterId, limit: queryLimit }
 			})
 		]);
-		return mergeLimitedListResult(resultSets, offset, limit, (item) => item.id ?? null);
+		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
 	}
 	return toLimitedListResult(
-		await selectGrades(getPool(), { where, params: { offset, limit: limit + 1 } }),
-		limit
+		await selectGrades(getPool(), { where, params: { afterId, limit: limit + 1 } }),
+		limit,
+		(item) => item.id ?? null
 	);
 });
 
@@ -148,9 +157,10 @@ export const getGradesByCourse = query(v.string(), async (courseId) => {
 	return toLimitedListResult(
 		await selectGrades(getPool(), {
 			where: [['course_id', '=', courseId]],
-			params: { offset: 0, limit: limit + 1 }
+			params: { limit: limit + 1 }
 		}),
-		limit
+		limit,
+		(item) => item.id ?? null
 	);
 });
 
@@ -163,9 +173,10 @@ export const getGradesByStudent = query(v.string(), async (studentId) => {
 	return toLimitedListResult(
 		await selectGrades(getPool(), {
 			where: [['student_id', '=', studentId]],
-			params: { offset: 0, limit: limit + 1 }
+			params: { limit: limit + 1 }
 		}),
-		limit
+		limit,
+		(item) => item.id ?? null
 	);
 });
 

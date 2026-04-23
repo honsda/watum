@@ -4,7 +4,8 @@
 
 	let {
 		label = 'data',
-		offset = 0,
+		pageNumber = 1,
+		canPrevious = false,
 		limit = 0,
 		itemCount = 0,
 		hasMore = false,
@@ -13,7 +14,8 @@
 		onNext = () => {}
 	}: {
 		label?: string;
-		offset?: number;
+		pageNumber?: number;
+		canPrevious?: boolean;
 		limit?: number;
 		itemCount?: number;
 		hasMore?: boolean;
@@ -22,17 +24,14 @@
 		onNext?: () => void;
 	} = $props();
 
-	const pageSize = $derived(Math.max(limit, 1));
-	const pageNumber = $derived(Math.floor(offset / pageSize) + 1);
-	const visibleStart = $derived(itemCount > 0 ? offset + 1 : 0);
-	const visibleEnd = $derived(itemCount > 0 ? offset + itemCount : 0);
+	const visibleCount = $derived(itemCount > 0 ? `${itemCount}` : '0');
 </script>
 
 <div class="collection-pagination">
 	<p class="collection-pagination-copy">
 		{#if itemCount > 0}
-			Menampilkan {visibleStart}-{visibleEnd} {label}
-		{:else if offset > 0}
+			Menampilkan {visibleCount} {label} pada halaman ini
+		{:else if canPrevious}
 			Halaman ini kosong. Kembali ke halaman sebelumnya untuk melihat {label}.
 		{:else}
 			Belum ada {label} untuk ditampilkan.
@@ -43,7 +42,7 @@
 			variant="ghost"
 			size="sm"
 			class="ghost-button"
-			disabled={loading || offset === 0}
+			disabled={loading || !canPrevious}
 			onclick={onPrevious}
 		>
 			<ChevronLeft size={14} />

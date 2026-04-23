@@ -3,13 +3,14 @@ import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import {
 	getListQueryLimit,
-	getListQueryOffset,
+	getListQueryCursor,
 	mergeLimitedListResult,
 	getPool,
 	toLimitedListResult
 } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
+import { containsSearchPattern, prefixSearchPattern } from '$lib/server/search';
 import {
 	selectStudyPrograms,
 	selectFaculties,
@@ -24,10 +25,11 @@ import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 export const getStudyPrograms = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const limit = getListQueryLimit();
-	const offset = getListQueryOffset(page?.offset);
+	const afterId = getListQueryCursor(page?.cursor);
 	return toLimitedListResult(
-		await selectStudyPrograms(getPool(), { params: { offset, limit: limit + 1 } }),
-		limit
+		await selectStudyPrograms(getPool(), { params: { afterId, limit: limit + 1 } }),
+		limit,
+		(item) => item.id ?? null
 	);
 });
 
@@ -47,10 +49,11 @@ export const searchStudyPrograms = query(searchStudyProgramsSchema, async (filte
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const where: SelectStudyProgramsWhere[] = [];
 	if (filters.id) where.push(['id', '=', filters.id]);
-	if (filters.name) where.push(['name', 'LIKE', filters.name]);
-	if (filters.head) where.push(['head', 'LIKE', filters.head]);
+	if (filters.name) where.push(['name', 'LIKE', containsSearchPattern(filters.name)!]);
+	if (filters.head) where.push(['head', 'LIKE', containsSearchPattern(filters.head)!]);
 	if (filters.facultyId) where.push(['faculty_id', '=', filters.facultyId]);
-	if (filters.facultyName) where.push(['faculty_name', 'LIKE', filters.facultyName]);
+	if (filters.facultyName)
+		where.push(['faculty_name', 'LIKE', containsSearchPattern(filters.facultyName)!]);
 	if (filters.minStudentCount != null && filters.maxStudentCount != null) {
 		where.push(['student_count', 'BETWEEN', filters.minStudentCount, filters.maxStudentCount]);
 	} else if (filters.minStudentCount != null) {
@@ -59,33 +62,35 @@ export const searchStudyPrograms = query(searchStudyProgramsSchema, async (filte
 		where.push(['student_count', '<=', filters.maxStudentCount]);
 	}
 	const limit = getListQueryLimit();
-	const offset = getListQueryOffset(filters.offset);
+	const afterId = getListQueryCursor(filters.cursor);
 	const q = filters.q?.trim();
 	if (q) {
-		const queryLimit = offset + limit + 1;
+		const qPrefix = prefixSearchPattern(q)!;
+		const queryLimit = limit + 1;
 		const resultSets = await Promise.all([
 			selectStudyPrograms(getPool(), {
 				where: [...where, ['id', '=', q]],
-				params: { offset: 0, limit: queryLimit }
+				params: { afterId, limit: queryLimit }
 			}),
 			selectStudyPrograms(getPool(), {
-				where: [...where, ['name', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['name', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			}),
 			selectStudyPrograms(getPool(), {
-				where: [...where, ['faculty_name', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['faculty_name', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			}),
 			selectStudyPrograms(getPool(), {
-				where: [...where, ['head', 'LIKE', q]],
-				params: { offset: 0, limit: queryLimit }
+				where: [...where, ['head', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
 			})
 		]);
-		return mergeLimitedListResult(resultSets, offset, limit, (item) => item.id ?? null);
+		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
 	}
 	return toLimitedListResult(
-		await selectStudyPrograms(getPool(), { where, params: { offset, limit: limit + 1 } }),
-		limit
+		await selectStudyPrograms(getPool(), { where, params: { afterId, limit: limit + 1 } }),
+		limit,
+		(item) => item.id ?? null
 	);
 });
 

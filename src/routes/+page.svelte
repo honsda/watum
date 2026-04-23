@@ -198,13 +198,22 @@
 		items: T[];
 		limit: number;
 		hasMore: boolean;
+		nextCursor: string | null;
 	};
 	type CollectionPaginationState = {
-		offset: number;
+		currentCursor: string | null;
+		nextCursor: string | null;
+		history: Array<string | null>;
+		pageNumber: number;
 		limit: number;
 		hasMore: boolean;
 		loading: boolean;
 		itemCount: number;
+	};
+	type SchedulePreviewState = {
+		items: SelectEnrollmentsResult[];
+		hasMore: boolean;
+		loading: boolean;
 	};
 	type EnhancedForm = IssueForm & {
 		enhance: (callback: (opts: { submit: () => Promise<boolean> }) => void | Promise<void>) => {
@@ -619,6 +628,20 @@
 	let enrollments = $state<SelectEnrollmentsResult[]>([]);
 	let grades = $state<SelectGradesResult[]>([]);
 	let users = $state<SelectUsersResult[]>([]);
+	let schedulePreview = $state<SchedulePreviewState>({
+		items: [],
+		hasMore: false,
+		loading: false
+	});
+	let selectedRoomRecord = $state<SelectClassRoomsResult | null>(null);
+	let selectedCourseRecord = $state<SelectCoursesResult | null>(null);
+	let selectedStudentRecord = $state<SelectStudentsResult | null>(null);
+	let selectedLecturerRecord = $state<SelectLecturersResult | null>(null);
+	let selectedFacultyRecord = $state<SelectFacultiesResult | null>(null);
+	let selectedStudyProgramRecord = $state<SelectStudyProgramsResult | null>(null);
+	let selectedEnrollmentRecord = $state<SelectEnrollmentsResult | null>(null);
+	let selectedGradeRecord = $state<SelectGradesResult | null>(null);
+	let selectedUserRecord = $state<SelectUsersResult | null>(null);
 
 	let roomSearch = $state('');
 	let courseSearch = $state('');
@@ -677,7 +700,10 @@
 
 	function emptyCollectionPaginationState(): CollectionPaginationState {
 		return {
-			offset: 0,
+			currentCursor: null,
+			nextCursor: null,
+			history: [],
+			pageNumber: 1,
 			limit: 0,
 			hasMore: false,
 			loading: false,
@@ -830,6 +856,16 @@
 		enrollments = [];
 		grades = [];
 		users = [];
+		schedulePreview = { items: [], hasMore: false, loading: false };
+		selectedRoomRecord = null;
+		selectedCourseRecord = null;
+		selectedStudentRecord = null;
+		selectedLecturerRecord = null;
+		selectedFacultyRecord = null;
+		selectedStudyProgramRecord = null;
+		selectedEnrollmentRecord = null;
+		selectedGradeRecord = null;
+		selectedUserRecord = null;
 		collectionIssues = {};
 		collectionPagination = createCollectionPaginationState();
 		if (browser) {
@@ -855,24 +891,25 @@
 
 	async function loadCollectionPage<T>(
 		key: DataCollectionKey,
-		offset: number,
-		request: (offset: number) => Promise<LimitedCollectionResponse<T>>,
-		assign: (items: T[]) => void
+		cursor: string | null,
+		request: (cursor: string | null) => Promise<LimitedCollectionResponse<T>>,
+		assign: (items: T[]) => void,
+		meta?: { history?: Array<string | null>; pageNumber?: number }
 	) {
 		setCollectionPagination(key, { loading: true });
 		try {
-			let resolvedOffset = Math.max(0, offset);
-			let result = await request(resolvedOffset);
-
-			if (!result.items.length && resolvedOffset > 0) {
-				const pageSize = Math.max(result.limit, collectionPagination[key].limit, 1);
-				resolvedOffset = Math.max(0, resolvedOffset - pageSize);
-				result = await request(resolvedOffset);
-			}
+			const result = await request(cursor);
 
 			applyLimitedCollection(result, assign);
+			const nextHistory =
+				meta?.history ?? (cursor == null ? [] : collectionPagination[key].history);
+			const nextPageNumber =
+				meta?.pageNumber ?? (cursor == null ? 1 : collectionPagination[key].pageNumber);
 			setCollectionPagination(key, {
-				offset: resolvedOffset,
+				currentCursor: cursor,
+				nextCursor: result.nextCursor,
+				history: nextHistory,
+				pageNumber: nextPageNumber,
 				limit: result.limit,
 				hasMore: result.hasMore,
 				loading: false,
@@ -884,9 +921,9 @@
 		}
 	}
 
-	function buildEnrollmentSearchParams(offset: number) {
+	function buildEnrollmentSearchParams(cursor: string | null) {
 		return {
-			offset,
+			cursor: cursor ?? undefined,
 			q: normalizedSearchValue(enrollmentSearch),
 			courseId: scheduleCourseFilter || undefined,
 			classRoomId: scheduleRoomFilter || undefined,
@@ -897,116 +934,155 @@
 		};
 	}
 
-	function requestClassroomsPage(offset: number) {
+	function requestClassroomsPage(cursor: string | null) {
 		const q = normalizedSearchValue(roomSearch);
-		return q ? searchClassRooms({ offset, q }).run() : getClassRooms({ offset }).run();
+		return q
+			? searchClassRooms({ cursor: cursor ?? undefined, q }).run()
+			: getClassRooms({ cursor: cursor ?? undefined }).run();
 	}
 
-	function requestCoursesPage(offset: number) {
+	function requestCoursesPage(cursor: string | null) {
 		const q = normalizedSearchValue(courseSearch);
-		return q ? searchCourses({ offset, q }).run() : getCourses({ offset }).run();
+		return q
+			? searchCourses({ cursor: cursor ?? undefined, q }).run()
+			: getCourses({ cursor: cursor ?? undefined }).run();
 	}
 
-	function requestStudentsPage(offset: number) {
+	function requestStudentsPage(cursor: string | null) {
 		const q = normalizedSearchValue(studentSearch);
-		return q ? searchStudents({ offset, q }).run() : getStudents({ offset }).run();
+		return q
+			? searchStudents({ cursor: cursor ?? undefined, q }).run()
+			: getStudents({ cursor: cursor ?? undefined }).run();
 	}
 
-	function requestLecturersPage(offset: number) {
+	function requestLecturersPage(cursor: string | null) {
 		const q = normalizedSearchValue(lecturerSearch);
-		return q ? searchLecturers({ offset, q }).run() : getLecturers({ offset }).run();
+		return q
+			? searchLecturers({ cursor: cursor ?? undefined, q }).run()
+			: getLecturers({ cursor: cursor ?? undefined }).run();
 	}
 
-	function requestFacultiesPage(offset: number) {
+	function requestFacultiesPage(cursor: string | null) {
 		const q = normalizedSearchValue(facultySearch);
-		return q ? searchFaculties({ offset, q }).run() : getFaculties({ offset }).run();
+		return q
+			? searchFaculties({ cursor: cursor ?? undefined, q }).run()
+			: getFaculties({ cursor: cursor ?? undefined }).run();
 	}
 
-	function requestStudyProgramsPage(offset: number) {
+	function requestStudyProgramsPage(cursor: string | null) {
 		const q = normalizedSearchValue(studyProgramSearch);
-		return q ? searchStudyPrograms({ offset, q }).run() : getStudyPrograms({ offset }).run();
+		return q
+			? searchStudyPrograms({ cursor: cursor ?? undefined, q }).run()
+			: getStudyPrograms({ cursor: cursor ?? undefined }).run();
 	}
 
-	function requestEnrollmentsPage(offset: number) {
-		const params = buildEnrollmentSearchParams(offset);
-		const hasFilters = Object.values(params).some((value) => value != null && value !== 0);
-		return hasFilters ? searchEnrollments(params).run() : getEnrollments({ offset }).run();
+	function requestEnrollmentsPage(cursor: string | null) {
+		const params = buildEnrollmentSearchParams(cursor);
+		const hasFilters = Object.entries(params).some(
+			([key, value]) => key !== 'cursor' && value != null
+		);
+		return hasFilters
+			? searchEnrollments(params).run()
+			: getEnrollments({ cursor: cursor ?? undefined }).run();
 	}
 
-	function requestGradesPage(offset: number) {
+	function requestGradesPage(cursor: string | null) {
 		const q = normalizedSearchValue(gradeSearch);
-		return q ? searchGrades({ offset, q }).run() : getGrades({ offset }).run();
+		return q
+			? searchGrades({ cursor: cursor ?? undefined, q }).run()
+			: getGrades({ cursor: cursor ?? undefined }).run();
 	}
 
-	function requestUsersPage(offset: number) {
+	function requestUsersPage(cursor: string | null) {
 		const q = normalizedSearchValue(userSearch);
-		return q ? searchUsers({ offset, q }).run() : getUsers({ offset }).run();
+		return q
+			? searchUsers({ cursor: cursor ?? undefined, q }).run()
+			: getUsers({ cursor: cursor ?? undefined }).run();
 	}
 
-	async function refreshClassrooms(offset = collectionPagination.classrooms.offset) {
+	async function refreshSchedulePreview() {
+		schedulePreview = { ...schedulePreview, loading: true };
+		try {
+			const params = buildEnrollmentSearchParams(null);
+			const hasFilters = Object.values(params).some((value) => value != null);
+			const result = hasFilters
+				? await searchEnrollments(params).run()
+				: await getEnrollments().run();
+			schedulePreview = {
+				items: result.items,
+				hasMore: result.hasMore,
+				loading: false
+			};
+		} catch (error) {
+			schedulePreview = { ...schedulePreview, loading: false };
+			throw error;
+		}
+	}
+
+	async function refreshClassrooms(cursor = collectionPagination.classrooms.currentCursor) {
 		await loadCollectionPage(
 			'classrooms',
-			offset,
+			cursor,
 			requestClassroomsPage,
 			(items) => (classrooms = items)
 		);
 	}
 
-	async function refreshCourses(offset = collectionPagination.courses.offset) {
-		await loadCollectionPage('courses', offset, requestCoursesPage, (items) => (courses = items));
+	async function refreshCourses(cursor = collectionPagination.courses.currentCursor) {
+		await loadCollectionPage('courses', cursor, requestCoursesPage, (items) => (courses = items));
 	}
 
-	async function refreshStudents(offset = collectionPagination.students.offset) {
+	async function refreshStudents(cursor = collectionPagination.students.currentCursor) {
 		await loadCollectionPage(
 			'students',
-			offset,
+			cursor,
 			requestStudentsPage,
 			(items) => (students = items)
 		);
 	}
 
-	async function refreshLecturers(offset = collectionPagination.lecturers.offset) {
+	async function refreshLecturers(cursor = collectionPagination.lecturers.currentCursor) {
 		await loadCollectionPage(
 			'lecturers',
-			offset,
+			cursor,
 			requestLecturersPage,
 			(items) => (lecturers = items)
 		);
 	}
 
-	async function refreshFaculties(offset = collectionPagination.faculties.offset) {
+	async function refreshFaculties(cursor = collectionPagination.faculties.currentCursor) {
 		await loadCollectionPage(
 			'faculties',
-			offset,
+			cursor,
 			requestFacultiesPage,
 			(items) => (faculties = items)
 		);
 	}
 
-	async function refreshStudyPrograms(offset = collectionPagination.studyPrograms.offset) {
+	async function refreshStudyPrograms(cursor = collectionPagination.studyPrograms.currentCursor) {
 		await loadCollectionPage(
 			'studyPrograms',
-			offset,
+			cursor,
 			requestStudyProgramsPage,
 			(items) => (studyPrograms = items)
 		);
 	}
 
-	async function refreshEnrollments(offset = collectionPagination.enrollments.offset) {
+	async function refreshEnrollments(cursor = collectionPagination.enrollments.currentCursor) {
 		await loadCollectionPage(
 			'enrollments',
-			offset,
+			cursor,
 			requestEnrollmentsPage,
 			(items) => (enrollments = items)
 		);
 	}
 
-	async function refreshGrades(offset = collectionPagination.grades.offset) {
-		await loadCollectionPage('grades', offset, requestGradesPage, (items) => (grades = items));
+	async function refreshGrades(cursor = collectionPagination.grades.currentCursor) {
+		await loadCollectionPage('grades', cursor, requestGradesPage, (items) => (grades = items));
 	}
 
-	async function refreshUsers(offset = collectionPagination.users.offset) {
-		await loadCollectionPage('users', offset, requestUsersPage, (items) => (users = items));
+	async function refreshUsers(cursor = collectionPagination.users.currentCursor) {
+		await loadCollectionPage('users', cursor, requestUsersPage, (items) => (users = items));
 	}
 
 	function collectionFallbackMessage(key: DataCollectionKey) {
@@ -1022,7 +1098,7 @@
 	}
 
 	function collectionRefresher(key: DataCollectionKey) {
-		const refreshers: Record<DataCollectionKey, (offset?: number) => Promise<void>> = {
+		const refreshers: Record<DataCollectionKey, (cursor?: string | null) => Promise<void>> = {
 			classrooms: refreshClassrooms,
 			courses: refreshCourses,
 			students: refreshStudents,
@@ -1037,6 +1113,30 @@
 		return refreshers[key];
 	}
 
+	function requestCollectionPage(key: DataCollectionKey, cursor: string | null) {
+		if (key === 'classrooms') return requestClassroomsPage(cursor);
+		if (key === 'courses') return requestCoursesPage(cursor);
+		if (key === 'students') return requestStudentsPage(cursor);
+		if (key === 'lecturers') return requestLecturersPage(cursor);
+		if (key === 'faculties') return requestFacultiesPage(cursor);
+		if (key === 'studyPrograms') return requestStudyProgramsPage(cursor);
+		if (key === 'enrollments') return requestEnrollmentsPage(cursor);
+		if (key === 'grades') return requestGradesPage(cursor);
+		return requestUsersPage(cursor);
+	}
+
+	function assignCollectionItems(key: DataCollectionKey, items: unknown[]) {
+		if (key === 'classrooms') classrooms = items as SelectClassRoomsResult[];
+		if (key === 'courses') courses = items as SelectCoursesResult[];
+		if (key === 'students') students = items as SelectStudentsResult[];
+		if (key === 'lecturers') lecturers = items as SelectLecturersResult[];
+		if (key === 'faculties') faculties = items as SelectFacultiesResult[];
+		if (key === 'studyPrograms') studyPrograms = items as SelectStudyProgramsResult[];
+		if (key === 'enrollments') enrollments = items as SelectEnrollmentsResult[];
+		if (key === 'grades') grades = items as SelectGradesResult[];
+		if (key === 'users') users = items as SelectUsersResult[];
+	}
+
 	function queueCollectionRefresh(key: DataCollectionKey, delay = 220) {
 		if (!browser || !loadedForUserId) return;
 		const existingTimer = collectionRefreshTimers[key];
@@ -1045,21 +1145,53 @@
 		}
 		collectionRefreshTimers[key] = window.setTimeout(() => {
 			delete collectionRefreshTimers[key];
-			void loadCollection(key, () => collectionRefresher(key)(0), collectionFallbackMessage(key));
+			if (key === 'enrollments') {
+				void refreshSchedulePreview().catch((error) => {
+					setCollectionIssue('enrollments', errorMessage(error, 'Pratinjau jadwal gagal dimuat.'));
+				});
+			}
+			void loadCollection(
+				key,
+				() => collectionRefresher(key)(null),
+				collectionFallbackMessage(key)
+			);
 		}, delay);
 	}
 
 	async function changeCollectionPage(key: DataCollectionKey, direction: 'previous' | 'next') {
 		const pageState = collectionPagination[key];
-		const pageSize = Math.max(pageState.limit, 1);
-		const nextOffset =
-			direction === 'next' ? pageState.offset + pageSize : Math.max(0, pageState.offset - pageSize);
+		if (direction === 'next') {
+			if (!pageState.nextCursor) return;
+			const nextHistory = [...pageState.history, pageState.currentCursor];
+			await loadCollection(
+				key,
+				() =>
+					loadCollectionPage(
+						key,
+						pageState.nextCursor,
+						(cursor) => requestCollectionPage(key, cursor),
+						(items) => assignCollectionItems(key, items as unknown[]),
+						{ history: nextHistory, pageNumber: pageState.pageNumber + 1 }
+					),
+				collectionFallbackMessage(key)
+			);
+			return;
+		}
 
-		if (nextOffset === pageState.offset) return;
+		if (!pageState.history.length) return;
+		const nextHistory = [...pageState.history];
+		const previousCursor = nextHistory.pop() ?? null;
 
 		await loadCollection(
 			key,
-			() => collectionRefresher(key)(nextOffset),
+			() =>
+				loadCollectionPage(
+					key,
+					previousCursor,
+					(cursor) => requestCollectionPage(key, cursor),
+					(items) => assignCollectionItems(key, items as unknown[]),
+					{ history: nextHistory, pageNumber: Math.max(1, pageState.pageNumber - 1) }
+				),
 			collectionFallbackMessage(key)
 		);
 	}
@@ -1068,7 +1200,11 @@
 		if (!currentUser.current) return;
 		appLoading = true;
 		const role = currentUser.current.role;
+		const schedulePreviewTask = refreshSchedulePreview().catch((error) => {
+			setCollectionIssue('enrollments', errorMessage(error, 'Pratinjau jadwal gagal dimuat.'));
+		});
 		await Promise.all([
+			schedulePreviewTask,
 			loadCollection('classrooms', () => refreshClassrooms(), 'Ruang kelas gagal dimuat.'),
 			loadCollection('courses', () => refreshCourses(), 'Mata kuliah gagal dimuat.'),
 			loadCollection('lecturers', () => refreshLecturers(), 'Data dosen gagal dimuat.'),
@@ -1149,7 +1285,8 @@
 		scheduleRefreshAll();
 	});
 
-	const scheduleCards = $derived(buildScheduleCards(enrollments, timezone));
+	const scheduleCards = $derived(buildScheduleCards(schedulePreview.items, timezone));
+	const scheduleAnalyticsCards = $derived(schedulePreview.hasMore ? [] : scheduleCards);
 	const filteredScheduleCards = $derived(
 		scheduleCards.filter(
 			(card) => scheduleFiltersMatch(card.original) && scheduleSearchMatches(card.original)
@@ -1332,25 +1469,42 @@
 
 		return selectedConflictGroupId && selectedSchedule?.hasConflict ? selectedSchedule : null;
 	});
-	const selectedRoom = $derived(classrooms.find((item) => item.id === selectedRoomId) ?? null);
-	const selectedCourse = $derived(courses.find((item) => item.id === selectedCourseId) ?? null);
-	const selectedStudent = $derived(students.find((item) => item.id === selectedStudentId) ?? null);
-	const selectedLecturer = $derived(
-		lecturers.find((item) => item.id === selectedLecturerId) ?? null
+	const selectedRoom = $derived(
+		classrooms.find((item) => item.id === selectedRoomId) ?? selectedRoomRecord ?? null
 	);
-	const selectedFaculty = $derived(faculties.find((item) => item.id === selectedFacultyId) ?? null);
+	const selectedCourse = $derived(
+		courses.find((item) => item.id === selectedCourseId) ?? selectedCourseRecord ?? null
+	);
+	const selectedStudent = $derived(
+		students.find((item) => item.id === selectedStudentId) ?? selectedStudentRecord ?? null
+	);
+	const selectedLecturer = $derived(
+		lecturers.find((item) => item.id === selectedLecturerId) ?? selectedLecturerRecord ?? null
+	);
+	const selectedFaculty = $derived(
+		faculties.find((item) => item.id === selectedFacultyId) ?? selectedFacultyRecord ?? null
+	);
 	const selectedStudyProgram = $derived(
-		studyPrograms.find((item) => item.id === selectedStudyProgramId) ?? null
+		studyPrograms.find((item) => item.id === selectedStudyProgramId) ??
+			selectedStudyProgramRecord ??
+			null
 	);
 	const selectedEnrollment = $derived(
-		enrollments.find((item) => item.id === selectedEnrollmentId) ?? null
+		enrollments.find((item) => item.id === selectedEnrollmentId) ??
+			schedulePreview.items.find((item) => item.id === selectedEnrollmentId) ??
+			selectedEnrollmentRecord ??
+			null
 	);
-	const selectedGrade = $derived(grades.find((item) => item.id === selectedGradeId) ?? null);
-	const selectedUser = $derived(users.find((item) => item.id === selectedUserId) ?? null);
-	const conflictCards = $derived(scheduleCards.filter((item) => item.hasConflict));
+	const selectedGrade = $derived(
+		grades.find((item) => item.id === selectedGradeId) ?? selectedGradeRecord ?? null
+	);
+	const selectedUser = $derived(
+		users.find((item) => item.id === selectedUserId) ?? selectedUserRecord ?? null
+	);
+	const conflictCards = $derived(scheduleAnalyticsCards.filter((item) => item.hasConflict));
 	const conflictGroupCardsById = $derived.by(() => {
 		const groups: Record<string, ScheduleCard[]> = {};
-		for (const card of scheduleCards) {
+		for (const card of scheduleAnalyticsCards) {
 			if (!card.hasConflict || !card.conflictGroupId) continue;
 			const peers = groups[card.conflictGroupId] ?? [];
 			peers.push(card);
@@ -1385,7 +1539,8 @@
 	});
 	const conflictGroups = $derived.by(() => {
 		const seen: Record<string, true> = {};
-		return conflictCards.filter((item) => {
+		return scheduleAnalyticsCards.filter((item) => {
+			if (!item.hasConflict) return false;
 			const key = item.conflictGroupId ?? item.id;
 			if (seen[key]) return false;
 			seen[key] = true;
@@ -1409,7 +1564,7 @@
 		const summaries: Record<string, string> = {};
 		for (const [id, peers] of Object.entries(conflictPeersByCardId)) {
 			if (!peers.length) continue;
-			const card = scheduleCards.find((item) => item.id === id);
+			const card = scheduleAnalyticsCards.find((item) => item.id === id);
 			const details = card?.conflictGroupId ? conflictGroupDetailsById[card.conflictGroupId] : null;
 			if (details) {
 				summaries[id] =
@@ -1446,14 +1601,14 @@
 	);
 	const overlapPeersByCardId = $derived.by(() => {
 		const peers: Record<string, ScheduleCard[]> = {};
-		for (const card of scheduleCards) {
-			peers[card.id] = scheduleCards
+		for (const card of scheduleAnalyticsCards) {
+			peers[card.id] = scheduleAnalyticsCards
 				.filter((candidate) => schedulesOverlap(card, candidate))
 				.sort((left, right) => left.startMinutes - right.startMinutes);
 		}
 		return peers;
 	});
-	const nextSchedule = $derived(scheduleCards[0] ?? null);
+	const nextSchedule = $derived(scheduleAnalyticsCards[0] ?? null);
 	const underusedRooms = $derived(
 		classrooms.filter((item) => (item.schedule_count ?? 0) === 0).length
 	);
@@ -1513,13 +1668,13 @@
 		})
 	);
 	const scheduleSemesterOptions = $derived.by(() =>
-		Array.from(new Set(enrollments.map((item) => item.semester).filter(Boolean) as string[])).sort(
-			(left, right) => left.localeCompare(right)
-		)
+		Array.from(
+			new Set(schedulePreview.items.map((item) => item.semester).filter(Boolean) as string[])
+		).sort((left, right) => left.localeCompare(right))
 	);
 	const scheduleAcademicYearOptions = $derived.by(() =>
 		Array.from(
-			new Set(enrollments.map((item) => item.academic_year).filter(Boolean) as string[])
+			new Set(schedulePreview.items.map((item) => item.academic_year).filter(Boolean) as string[])
 		).sort((left, right) => right.localeCompare(left))
 	);
 	const scheduleActiveFilterCount = $derived(
@@ -1533,9 +1688,18 @@
 			scheduleAcademicYearFilter
 		].filter(Boolean).length
 	);
+	const schedulePreviewNotice = $derived.by(() => {
+		if (!schedulePreview.hasMore) return null;
+		if (scheduleActiveFilterCount > 0) {
+			return 'Hasil jadwal masih terlalu besar. Persempit filter agar kalender dan analitik menampilkan data yang lengkap.';
+		}
+		return 'Data jadwal terlalu besar untuk dimuat penuh. Gunakan pencarian atau filter agar dashboard, kalender, dan penjadwalan menampilkan hasil yang akurat.';
+	});
 	const calendarNeedsFilters = $derived(scheduleActiveFilterCount === 0);
 	const calendarHasTooMuchData = $derived(
-		scheduleActiveFilterCount > 0 && filteredScheduleCards.length > CALENDAR_MAX_VISIBLE_SCHEDULES
+		schedulePreview.hasMore ||
+			(scheduleActiveFilterCount > 0 &&
+				filteredScheduleCards.length > CALENDAR_MAX_VISIBLE_SCHEDULES)
 	);
 	const calendarCanRender = $derived(
 		!calendarNeedsFilters && !calendarHasTooMuchData && filteredScheduleCards.length > 0
@@ -1606,13 +1770,22 @@
 	const roomStepReady = $derived(Boolean(enrollmentDraft.classRoomId));
 	const builderTaskMode = $derived(Boolean(selectedEnrollmentId || builderStep !== 'participant'));
 	const selectedDraftStudent = $derived(
-		students.find((item) => item.id === enrollmentDraft.studentId)?.name ?? 'Belum dipilih'
+		students.find((item) => item.id === enrollmentDraft.studentId)?.name ??
+			selectedStudentRecord?.name ??
+			selectedEnrollmentRecord?.student_name ??
+			'Belum dipilih'
 	);
 	const selectedDraftCourse = $derived(
-		courses.find((item) => item.id === enrollmentDraft.courseId)?.name ?? 'Belum dipilih'
+		courses.find((item) => item.id === enrollmentDraft.courseId)?.name ??
+			selectedCourseRecord?.name ??
+			selectedEnrollmentRecord?.course_name ??
+			'Belum dipilih'
 	);
 	const selectedDraftRoom = $derived(
-		classrooms.find((item) => item.id === enrollmentDraft.classRoomId)?.name ?? 'Belum dipilih'
+		classrooms.find((item) => item.id === enrollmentDraft.classRoomId)?.name ??
+			selectedRoomRecord?.name ??
+			selectedEnrollmentRecord?.class_room_name ??
+			'Belum dipilih'
 	);
 	const draftTimeSummary = $derived.by(() => {
 		if (!timeStepReady) return 'Belum ditetapkan';
@@ -1676,6 +1849,7 @@
 		pendingDelete = null;
 		stopEditing();
 		selectedRoomId = item.id ?? null;
+		selectedRoomRecord = item;
 		classroomDraft = {
 			name: item.name ?? '',
 			classRoomType: item.class_room_type ?? 'REGULER',
@@ -1689,6 +1863,7 @@
 		pendingDelete = null;
 		stopEditing();
 		selectedCourseId = item.id ?? null;
+		selectedCourseRecord = item;
 		courseDraft = {
 			id: item.id ?? '',
 			name: item.name ?? '',
@@ -1702,6 +1877,7 @@
 		pendingDelete = null;
 		stopEditing();
 		selectedStudentId = item.id ?? null;
+		selectedStudentRecord = item;
 		studentDraft = {
 			name: item.name ?? '',
 			email: item.email ?? '',
@@ -1716,6 +1892,7 @@
 		pendingDelete = null;
 		stopEditing();
 		selectedLecturerId = item.id ?? null;
+		selectedLecturerRecord = item;
 		lecturerDraft = {
 			id: item.id ?? '',
 			name: item.name ?? '',
@@ -1729,6 +1906,7 @@
 		pendingDelete = null;
 		stopEditing();
 		selectedFacultyId = item.id ?? null;
+		selectedFacultyRecord = item;
 		facultyDraft = { id: item.id ?? '', name: item.name ?? '' };
 	}
 
@@ -1736,6 +1914,7 @@
 		pendingDelete = null;
 		stopEditing();
 		selectedStudyProgramId = item.id ?? null;
+		selectedStudyProgramRecord = item;
 		studyProgramDraft = {
 			id: item.id ?? '',
 			name: item.name ?? '',
@@ -1747,6 +1926,7 @@
 	function pickEnrollment(item: SelectEnrollmentsResult) {
 		pendingDelete = null;
 		selectedEnrollmentId = item.id ?? null;
+		selectedEnrollmentRecord = item;
 		builderStep = 'review';
 		enrollmentDraft = {
 			id: item.id ?? '',
@@ -1764,8 +1944,16 @@
 		};
 		const pickedStudent = students.find((s) => s.id === item.student_id);
 		const pickedCourse = courses.find((c) => c.id === item.course_id);
-		studentPickerSearch = pickedStudent ? `${pickedStudent.name} • ${pickedStudent.id}` : '';
-		coursePickerSearch = pickedCourse ? `${pickedCourse.name} • ${pickedCourse.lecturer_name}` : '';
+		studentPickerSearch = pickedStudent
+			? `${pickedStudent.name} • ${pickedStudent.id}`
+			: item.student_name
+				? `${item.student_name} • ${item.student_id}`
+				: '';
+		coursePickerSearch = pickedCourse
+			? `${pickedCourse.name} • ${pickedCourse.lecturer_name}`
+			: item.course_name
+				? `${item.course_name} • ${item.lecturer_name ?? ''}`
+				: '';
 		studentPickerOpen = false;
 		coursePickerOpen = false;
 	}
@@ -1774,6 +1962,7 @@
 		pendingDelete = null;
 		stopEditing();
 		selectedGradeId = item.id ?? null;
+		selectedGradeRecord = item;
 		gradeDraft = {
 			id: item.id ?? '',
 			enrollmentId: item.enrollment_id ?? '',
@@ -1787,6 +1976,7 @@
 		pendingDelete = null;
 		stopEditing();
 		selectedUserId = item.id ?? null;
+		selectedUserRecord = item;
 		userDraft = {
 			id: item.id ?? '',
 			email: item.email ?? '',
@@ -1801,30 +1991,37 @@
 		pendingDelete = null;
 		if (view === 'classrooms') {
 			selectedRoomId = null;
+			selectedRoomRecord = null;
 			classroomDraft = emptyClassRoomDraft();
 		}
 		if (view === 'courses') {
 			selectedCourseId = null;
+			selectedCourseRecord = null;
 			courseDraft = emptyCourseDraft();
 		}
 		if (view === 'students') {
 			selectedStudentId = null;
+			selectedStudentRecord = null;
 			studentDraft = emptyStudentDraft();
 		}
 		if (view === 'lecturers') {
 			selectedLecturerId = null;
+			selectedLecturerRecord = null;
 			lecturerDraft = emptyLecturerDraft();
 		}
 		if (view === 'faculties') {
 			selectedFacultyId = null;
+			selectedFacultyRecord = null;
 			facultyDraft = emptyFacultyDraft();
 		}
 		if (view === 'studyPrograms') {
 			selectedStudyProgramId = null;
+			selectedStudyProgramRecord = null;
 			studyProgramDraft = emptyStudyProgramDraft();
 		}
 		if (view === 'enrollments' || view === 'builder') {
 			selectedEnrollmentId = null;
+			selectedEnrollmentRecord = null;
 			enrollmentDraft = emptyEnrollmentDraft();
 			builderStep = 'participant';
 			studentPickerSearch = '';
@@ -1834,10 +2031,12 @@
 		}
 		if (view === 'grades') {
 			selectedGradeId = null;
+			selectedGradeRecord = null;
 			gradeDraft = emptyGradeDraft();
 		}
 		if (view === 'users') {
 			selectedUserId = null;
+			selectedUserRecord = null;
 			userDraft = emptyUserDraft();
 		}
 	}
@@ -2216,7 +2415,7 @@
 	const gradeEditorBlocked = $derived(Boolean(collectionIssues.enrollments) && !enrollments.length);
 	const scheduleCardMap = $derived.by(
 		() =>
-			Object.fromEntries(scheduleCards.map((card) => [card.id, card])) as Record<
+			Object.fromEntries(scheduleAnalyticsCards.map((card) => [card.id, card])) as Record<
 				string,
 				ScheduleCard
 			>
@@ -2402,6 +2601,15 @@
 							<li>{issue}</li>
 						{/each}
 					</ul>
+				</section>
+			{/if}
+
+			{#if !appLoading && schedulePreviewNotice && ['dashboard', 'calendar', 'builder'].includes(activeView)}
+				<section class="support-warning compact-warning">
+					<div class="support-warning-head">
+						<p class="warning-title">Pratinjau jadwal dibatasi</p>
+					</div>
+					<p>{schedulePreviewNotice}</p>
 				</section>
 			{/if}
 
@@ -3097,7 +3305,8 @@
 							</div>
 							<CollectionPagination
 								label="jadwal"
-								offset={collectionPagination.enrollments.offset}
+								pageNumber={collectionPagination.enrollments.pageNumber}
+								canPrevious={collectionPagination.enrollments.history.length > 0}
 								limit={collectionPagination.enrollments.limit}
 								itemCount={collectionPagination.enrollments.itemCount}
 								hasMore={collectionPagination.enrollments.hasMore}
@@ -3657,7 +3866,8 @@
 							</div>
 							<CollectionPagination
 								label="ruang"
-								offset={collectionPagination.classrooms.offset}
+								pageNumber={collectionPagination.classrooms.pageNumber}
+								canPrevious={collectionPagination.classrooms.history.length > 0}
 								limit={collectionPagination.classrooms.limit}
 								itemCount={collectionPagination.classrooms.itemCount}
 								hasMore={collectionPagination.classrooms.hasMore}
@@ -3856,7 +4066,8 @@
 							</div>
 							<CollectionPagination
 								label="mata kuliah"
-								offset={collectionPagination.courses.offset}
+								pageNumber={collectionPagination.courses.pageNumber}
+								canPrevious={collectionPagination.courses.history.length > 0}
 								limit={collectionPagination.courses.limit}
 								itemCount={collectionPagination.courses.itemCount}
 								hasMore={collectionPagination.courses.hasMore}
@@ -4049,7 +4260,8 @@
 							</div>
 							<CollectionPagination
 								label="mahasiswa"
-								offset={collectionPagination.students.offset}
+								pageNumber={collectionPagination.students.pageNumber}
+								canPrevious={collectionPagination.students.history.length > 0}
 								limit={collectionPagination.students.limit}
 								itemCount={collectionPagination.students.itemCount}
 								hasMore={collectionPagination.students.hasMore}
@@ -4241,7 +4453,8 @@
 							</div>
 							<CollectionPagination
 								label="dosen"
-								offset={collectionPagination.lecturers.offset}
+								pageNumber={collectionPagination.lecturers.pageNumber}
+								canPrevious={collectionPagination.lecturers.history.length > 0}
 								limit={collectionPagination.lecturers.limit}
 								itemCount={collectionPagination.lecturers.itemCount}
 								hasMore={collectionPagination.lecturers.hasMore}
@@ -4409,7 +4622,8 @@
 							</div>
 							<CollectionPagination
 								label="fakultas"
-								offset={collectionPagination.faculties.offset}
+								pageNumber={collectionPagination.faculties.pageNumber}
+								canPrevious={collectionPagination.faculties.history.length > 0}
 								limit={collectionPagination.faculties.limit}
 								itemCount={collectionPagination.faculties.itemCount}
 								hasMore={collectionPagination.faculties.hasMore}
@@ -4556,7 +4770,8 @@
 							</div>
 							<CollectionPagination
 								label="program studi"
-								offset={collectionPagination.studyPrograms.offset}
+								pageNumber={collectionPagination.studyPrograms.pageNumber}
+								canPrevious={collectionPagination.studyPrograms.history.length > 0}
 								limit={collectionPagination.studyPrograms.limit}
 								itemCount={collectionPagination.studyPrograms.itemCount}
 								hasMore={collectionPagination.studyPrograms.hasMore}
@@ -4833,7 +5048,8 @@
 							</div>
 							<CollectionPagination
 								label="KRS"
-								offset={collectionPagination.enrollments.offset}
+								pageNumber={collectionPagination.enrollments.pageNumber}
+								canPrevious={collectionPagination.enrollments.history.length > 0}
 								limit={collectionPagination.enrollments.limit}
 								itemCount={collectionPagination.enrollments.itemCount}
 								hasMore={collectionPagination.enrollments.hasMore}
@@ -4940,7 +5156,8 @@
 							</div>
 							<CollectionPagination
 								label="nilai"
-								offset={collectionPagination.grades.offset}
+								pageNumber={collectionPagination.grades.pageNumber}
+								canPrevious={collectionPagination.grades.history.length > 0}
 								limit={collectionPagination.grades.limit}
 								itemCount={collectionPagination.grades.itemCount}
 								hasMore={collectionPagination.grades.hasMore}
@@ -5125,7 +5342,8 @@
 							</div>
 							<CollectionPagination
 								label="akun"
-								offset={collectionPagination.users.offset}
+								pageNumber={collectionPagination.users.pageNumber}
+								canPrevious={collectionPagination.users.history.length > 0}
 								limit={collectionPagination.users.limit}
 								itemCount={collectionPagination.users.itemCount}
 								hasMore={collectionPagination.users.hasMore}

@@ -4,7 +4,7 @@ export {
 	withTransaction,
 	closePool,
 	getListQueryLimit,
-	getListQueryOffset,
+	getListQueryCursor,
 	mergeLimitedListResult,
 	toLimitedListResult
 } from './db';

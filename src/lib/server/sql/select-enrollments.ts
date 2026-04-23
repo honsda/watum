@@ -8,7 +8,7 @@ export type SelectEnrollmentsDynamicParams = {
 }
 
 export type SelectEnrollmentsParams = {
-    offset?: number | null;
+    afterId?: string | null;
     limit?: number | null;
 }
 
@@ -261,9 +261,12 @@ export async function selectEnrollments(connection: Connection, params?: SelectE
             sql += EOL + 'AND ' + where.sql;
             paramsValues.push(...where.values);
         }
-    });if (params?.params?.offset != null && params?.params?.limit != null) {
-        sql += EOL + `LIMIT ?, ?`;
-        paramsValues.push(params.params.offset);
+    });if (params?.params?.afterId != null) {
+        sql += EOL + `AND e.id > ?`;
+        paramsValues.push(params.params.afterId);
+    }sql += EOL + `ORDER BY e.id ASC`;
+    if (params?.params?.limit != null) {
+        sql += EOL + `LIMIT ?`;
         paramsValues.push(params.params.limit);
     }
     return connection.query({ sql, rowsAsArray: true }, paramsValues)
@@ -367,7 +370,7 @@ function whereCondition(condition: SelectEnrollmentsWhere): WhereConditionResult
 
     if (operator == 'LIKE') {
         return {
-            sql: `${selectFragment} LIKE concat('%', ?, '%')`,
+            sql: `${selectFragment} LIKE ?`,
             hasValue: condition[2] != null,
             values: [condition[2]]
         }

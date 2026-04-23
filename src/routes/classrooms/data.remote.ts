@@ -5,12 +5,13 @@ import { randomUUID } from 'crypto';
 import { formatDateTime } from '$lib/time-helpers';
 import {
 	getListQueryLimit,
-	getListQueryOffset,
+	getListQueryCursor,
 	mergeLimitedListResult,
 	getPool,
 	toLimitedListResult
 } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
+import { containsSearchPattern, prefixSearchPattern } from '$lib/server/search';
 import {
 	selectClassRooms,
 	selectSchedules,
@@ -28,10 +29,11 @@ type ClassRoomType = v.InferOutput<typeof classRoomSchema>['classRoomType'];
 export const getClassRooms = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const limit = getListQueryLimit();
-	const offset = getListQueryOffset(page?.offset);
+	const afterId = getListQueryCursor(page?.cursor);
 	return toLimitedListResult(
-		await selectClassRooms(getPool(), { params: { offset, limit: limit + 1 } }),
-		limit
+		await selectClassRooms(getPool(), { params: { afterId, limit: limit + 1 } }),
+		limit,
+		(item) => item.id ?? null
 	);
 });
 
@@ -49,7 +51,7 @@ export const searchClassRooms = query(searchClassRoomsSchema, async (filters) =>
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const where: SelectClassRoomsWhere[] = [];
 	if (filters.id) where.push(['id', '=', filters.id]);
-	if (filters.name) where.push(['name', 'LIKE', filters.name]);
+	if (filters.name) where.push(['name', 'LIKE', containsSearchPattern(filters.name)!]);
 	if (filters.classRoomType) where.push(['class_room_type', '=', filters.classRoomType]);
 	if (filters.minCapacity != null && filters.maxCapacity != null) {
 		where.push(['capacity', 'BETWEEN', filters.minCapacity, filters.maxCapacity]);
@@ -59,13 +61,14 @@ export const searchClassRooms = query(searchClassRoomsSchema, async (filters) =>
 		where.push(['capacity', '<=', filters.maxCapacity]);
 	}
 	const limit = getListQueryLimit();
-	const offset = getListQueryOffset(filters.offset);
+	const afterId = getListQueryCursor(filters.cursor);
 	const q = filters.q?.trim();
 	if (q) {
-		const queryLimit = offset + limit + 1;
+		const qPrefix = prefixSearchPattern(q)!;
+		const queryLimit = limit + 1;
 		const variants: SelectClassRoomsWhere[][] = [
 			[...where, ['id', '=', q]],
-			[...where, ['name', 'LIKE', q]]
+			[...where, ['name', 'LIKE', qPrefix]]
 		];
 		const normalizedType = q
 			.toUpperCase()
@@ -78,15 +81,16 @@ export const searchClassRooms = query(searchClassRoomsSchema, async (filters) =>
 			variants.map((variantWhere) =>
 				selectClassRooms(getPool(), {
 					where: variantWhere,
-					params: { offset: 0, limit: queryLimit }
+					params: { afterId, limit: queryLimit }
 				})
 			)
 		);
-		return mergeLimitedListResult(resultSets, offset, limit, (item) => item.id ?? null);
+		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
 	}
 	return toLimitedListResult(
-		await selectClassRooms(getPool(), { where, params: { offset, limit: limit + 1 } }),
-		limit
+		await selectClassRooms(getPool(), { where, params: { afterId, limit: limit + 1 } }),
+		limit,
+		(item) => item.id ?? null
 	);
 });
 
@@ -108,7 +112,11 @@ export const getClassRoomUtilization = query(
 			where: [['class_room_id', '=', classRoomId]],
 			params: { offset: 0, limit: limit + 1 }
 		});
-		const limitedSchedules = toLimitedListResult(schedules, limit);
+		const limitedSchedules = toLimitedListResult(
+			schedules,
+			limit,
+			(schedule) => schedule.id ?? null
+		);
 		const utilization: Record<string, Array<{ start: string; end: string; course: string }>> = {};
 		for (const schedule of limitedSchedules.items) {
 			if (!schedule.start_time || !schedule.end_time) {

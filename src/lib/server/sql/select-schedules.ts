@@ -184,7 +184,7 @@ function whereCondition(condition: SelectSchedulesWhere): WhereConditionResult |
 
     if (operator == 'LIKE') {
         return {
-            sql: `${selectFragment} LIKE concat('%', ?, '%')`,
+            sql: `${selectFragment} LIKE ?`,
             hasValue: condition[2] != null,
             values: [condition[2]]
         }
