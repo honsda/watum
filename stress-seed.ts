@@ -23,7 +23,7 @@ const CLASSROOM_ID_PREFIX = 'stress-room-';
 const SCHEDULE_ID_PREFIX = 'stress-sch-';
 const ENROLLMENT_ID_PREFIX = 'stress-enr-';
 const GRADE_ID_PREFIX = 'stress-grade-';
-const CONFLICTING_SCHEDULE_COUNT = 4;
+const CONFLICTING_ENROLLMENT_COUNT = 8;
 const ACADEMIC_YEAR = '2025/2026';
 const SEMESTER = 'GENAP';
 
@@ -215,12 +215,13 @@ type CourseRecord = {
 };
 
 type SlotRecord = {
+	id: string;
 	classRoomId: string;
-	classRoomIndex: number;
 	day: (typeof dayConfigs)[number]['day'];
 	date: string;
 	start: string;
 	end: string;
+	lecturerId: string;
 };
 
 async function createSeedConnection() {
@@ -299,14 +300,18 @@ function getEnrollmentCount(studentCount: number) {
 }
 
 function getGradeCount(enrollmentCount: number) {
-	if (enrollmentCount <= CONFLICTING_SCHEDULE_COUNT) {
+	if (enrollmentCount <= CONFLICTING_ENROLLMENT_COUNT) {
 		return 0;
 	}
 
-	const eligibleEnrollments = enrollmentCount - CONFLICTING_SCHEDULE_COUNT;
+	const eligibleEnrollments = enrollmentCount - CONFLICTING_ENROLLMENT_COUNT;
 	const fullBlocks = Math.floor(eligibleEnrollments / 10);
 	const remainder = eligibleEnrollments % 10;
 	return fullBlocks * 7 + Math.min(7, remainder);
+}
+
+function getScheduleCount(enrollmentCount: number) {
+	return enrollmentCount;
 }
 
 function estimateTotalRows(studentCount: number) {
@@ -318,6 +323,7 @@ function estimateTotalRows(studentCount: number) {
 		(sum, names) => sum + names.length,
 		0
 	);
+	const scheduleCount = getScheduleCount(enrollmentCount);
 
 	return (
 		1 +
@@ -329,7 +335,7 @@ function estimateTotalRows(studentCount: number) {
 		courseCount +
 		studentCount +
 		studentCount +
-		enrollmentCount +
+		scheduleCount +
 		enrollmentCount +
 		gradeCount
 	);
@@ -373,12 +379,12 @@ function getStressSeedPlan() {
 	};
 }
 
-function buildPersonName(index: number) {
+function buildPersonName(index: number, suffix: string) {
 	const firstName = firstNames[index % firstNames.length];
 	const middleName = middleNames[Math.floor(index / firstNames.length) % middleNames.length];
 	const lastName =
 		lastNames[Math.floor(index / (firstNames.length * middleNames.length)) % lastNames.length];
-	return `${firstName} ${middleName} ${lastName}`;
+	return `${firstName} ${middleName} ${lastName} ${suffix}${String(index + 1).padStart(6, '0')}`;
 }
 
 function buildStudentId(index: number) {
@@ -465,7 +471,7 @@ function buildLecturers(count: number) {
 	for (let index = 0; index < count; index += 1) {
 		lecturers.push({
 			id: buildLecturerId(index),
-			name: buildPersonName(index + 700),
+			name: buildPersonName(index + 700, 'DSN'),
 			email: buildLecturerEmail(index),
 			phone: buildLecturerPhone(index),
 			address: buildLecturerAddress(index)
@@ -497,23 +503,12 @@ function buildCourses(lecturers: LecturerRecord[]) {
 function buildStudent(index: number): StudentRecord {
 	return {
 		id: buildStudentId(index),
-		name: buildPersonName(index),
+		name: buildPersonName(index, 'MHS'),
 		email: buildStudentEmail(index),
 		phone: buildStudentPhone(index),
 		address: buildStudentAddress(index),
 		yearAdmitted: buildStudentYearAdmitted(index),
 		studyProgramId: studyProgramRows[index % studyProgramRows.length][0]
-	};
-}
-
-function buildConflictSlot(classRoomId: string): SlotRecord {
-	return {
-		classRoomId,
-		classRoomIndex: 0,
-		day: dayConfigs[0].day,
-		date: dayConfigs[0].date,
-		start: timeSlotConfigs[0].start,
-		end: timeSlotConfigs[0].end
 	};
 }
 
@@ -523,16 +518,31 @@ function addDaysToDate(date: string, daysToAdd: number) {
 	return next.toISOString().slice(0, 10);
 }
 
-function buildSlotForEnrollment(enrollmentIndex: number, classRoomIds: string[]) {
-	if (enrollmentIndex < CONFLICTING_SCHEDULE_COUNT) {
-		return buildConflictSlot(classRoomIds[0]);
+function buildSlotForEnrollment(
+	enrollmentIndex: number,
+	lecturerId: string,
+	classRoomIds: string[]
+): SlotRecord {
+	const conflictRoomId = classRoomIds.at(-1) ?? classRoomIds[0];
+	const usableRoomIds = classRoomIds.slice(0, -1);
+
+	if (enrollmentIndex < CONFLICTING_ENROLLMENT_COUNT) {
+		return {
+			id: `${SCHEDULE_ID_PREFIX}conf-${String(enrollmentIndex + 1).padStart(5, '0')}`,
+			classRoomId: conflictRoomId,
+			day: dayConfigs[0].day,
+			date: dayConfigs[0].date,
+			start: timeSlotConfigs[0].start,
+			end: timeSlotConfigs[0].end,
+			lecturerId
+		};
 	}
 
-	const slotSequence = enrollmentIndex - CONFLICTING_SCHEDULE_COUNT;
-	const baseSlotCount = classRoomIds.length * dayConfigs.length * timeSlotConfigs.length;
+	const slotSequence = enrollmentIndex - CONFLICTING_ENROLLMENT_COUNT;
+	const slotsPerRoom = dayConfigs.length * timeSlotConfigs.length;
+	const baseSlotCount = Math.max(1, usableRoomIds.length) * slotsPerRoom;
 	const slotIndex = slotSequence % baseSlotCount;
 	const weekOffset = Math.floor(slotSequence / baseSlotCount);
-	const slotsPerRoom = dayConfigs.length * timeSlotConfigs.length;
 	const classRoomIndex = Math.floor(slotIndex / slotsPerRoom);
 	const slotWithinRoom = slotIndex % slotsPerRoom;
 	const dayIndex = Math.floor(slotWithinRoom / timeSlotConfigs.length);
@@ -541,12 +551,13 @@ function buildSlotForEnrollment(enrollmentIndex: number, classRoomIds: string[])
 	const timeSlot = timeSlotConfigs[timeIndex];
 
 	return {
-		classRoomId: classRoomIds[classRoomIndex],
-		classRoomIndex,
+		id: `${SCHEDULE_ID_PREFIX}base-${String(enrollmentIndex + 1).padStart(5, '0')}`,
+		classRoomId: usableRoomIds[classRoomIndex] ?? conflictRoomId,
 		day: dayConfig.day,
 		date: addDaysToDate(dayConfig.date, weekOffset * 7),
 		start: timeSlot.start,
-		end: timeSlot.end
+		end: timeSlot.end,
+		lecturerId
 	};
 }
 
@@ -590,14 +601,45 @@ async function loadRowsWithLocalInfile(
 	await writeFile(filePath, `${content}\n`, 'utf8');
 
 	const escapedPath = filePath.replaceAll('\\', '\\\\');
-	await conn.query(
-		`LOAD DATA LOCAL INFILE '${escapedPath}'
-		 INTO TABLE ${tableName}
-		 CHARACTER SET utf8mb4
-		 FIELDS TERMINATED BY '\t'
-		 ESCAPED BY '\\\\'
-		 LINES TERMINATED BY '\n'
-		 (${columns.join(', ')})`
+	try {
+		await conn.query(
+			`LOAD DATA LOCAL INFILE '${escapedPath}'
+			 INTO TABLE ${tableName}
+			 CHARACTER SET utf8mb4
+			 FIELDS TERMINATED BY '\t'
+			 ESCAPED BY '\\\\'
+			 LINES TERMINATED BY '\n'
+			 (${columns.join(', ')})`
+		);
+	} catch (error) {
+		const message = (error as { code?: string; sqlMessage?: string; message?: string })?.sqlMessage;
+		const shouldFallback =
+			(error as { code?: string })?.code === 'ER_ERROR_DURING_COMMIT' ||
+			message?.includes('Operation not permitted') ||
+			(error as Error)?.message?.includes('Operation not permitted');
+
+		if (!shouldFallback) {
+			throw error;
+		}
+
+		console.warn(
+			`LOAD DATA LOCAL INFILE failed for ${tableName}; falling back to batched INSERT for this chunk.`
+		);
+		await conn.query('ROLLBACK').catch(() => undefined);
+		await insertRowsInBatches(
+			conn,
+			`INSERT INTO ${tableName} (${columns.join(', ')}) VALUES ?`,
+			rows,
+			Math.min(getInsertBatchSize(), 500)
+		);
+	}
+}
+
+function isRecoverableBulkInsertError(error: unknown) {
+	return (
+		(error as { code?: string })?.code === 'ER_ERROR_DURING_COMMIT' ||
+		(error as { sqlMessage?: string })?.sqlMessage?.includes('Operation not permitted') ||
+		(error as Error)?.message?.includes('Operation not permitted')
 	);
 }
 
@@ -607,12 +649,23 @@ async function insertRowsInBatches<T>(conn: Connection, sql: string, rows: T[], 
 	}
 
 	if (rows.length <= batchSize) {
-		await conn.query(sql, [rows]);
+		try {
+			await conn.query(sql, [rows]);
+		} catch (error) {
+			if (!isRecoverableBulkInsertError(error) || rows.length === 1) {
+				throw error;
+			}
+
+			await conn.query('ROLLBACK').catch(() => undefined);
+			const midpoint = Math.floor(rows.length / 2);
+			await insertRowsInBatches(conn, sql, rows.slice(0, midpoint), midpoint);
+			await insertRowsInBatches(conn, sql, rows.slice(midpoint), rows.length - midpoint);
+		}
 		return;
 	}
 
 	for (let offset = 0; offset < rows.length; offset += batchSize) {
-		await conn.query(sql, [rows.slice(offset, offset + batchSize)]);
+		await insertRowsInBatches(conn, sql, rows.slice(offset, offset + batchSize), batchSize);
 	}
 }
 
@@ -679,6 +732,7 @@ async function seedStressData() {
 	const batchSize = getInsertBatchSize();
 	const lecturerCount = getLecturerCount(studentCount);
 	const classRoomRows = buildClassRooms();
+	const classRoomIds = classRoomRows.map((row) => row[0]);
 	const lecturers = buildLecturers(lecturerCount);
 	const courses = buildCourses(lecturers);
 	const coursesByProgram = new Map<StudyProgramId, CourseRecord[]>();
@@ -780,11 +834,9 @@ async function seedStressData() {
 		const studentPasswordHash = await hash('stress123');
 
 		console.log('  Building schedules, enrollments, and grades...');
-		const classRoomIds = classRoomRows.map((row) => row[0]);
 
 		let enrollmentIndex = 0;
 		let gradeIndex = 0;
-		const relatedRowsBatchSize = batchSize * 3;
 		const totalBatches = Math.ceil(studentCount / batchSize);
 		for (let batchStart = 0; batchStart < studentCount; batchStart += batchSize) {
 			const batchEnd = Math.min(studentCount, batchStart + batchSize);
@@ -820,18 +872,16 @@ async function seedStressData() {
 
 				for (let offset = 0; offset < courseCount; offset += 1) {
 					const course = programCourses[(startOffset + offset) % programCourses.length];
-					const scheduleId = `${SCHEDULE_ID_PREFIX}${String(enrollmentIndex + 1).padStart(5, '0')}`;
 					const enrollmentId = `${ENROLLMENT_ID_PREFIX}${String(enrollmentIndex + 1).padStart(5, '0')}`;
-					const slot = buildSlotForEnrollment(enrollmentIndex, classRoomIds);
-					const scheduleLecturerId = course.lecturerId;
+					const slot = buildSlotForEnrollment(enrollmentIndex, course.lecturerId, classRoomIds);
 
 					scheduleRows.push([
-						scheduleId,
+						slot.id,
 						slot.classRoomId,
 						slot.day,
 						formatScheduleDate(slot.date, slot.start),
 						formatScheduleDate(slot.date, slot.end),
-						scheduleLecturerId
+						slot.lecturerId
 					]);
 
 					enrollmentRows.push([
@@ -839,13 +889,13 @@ async function seedStressData() {
 						student.id,
 						course.id,
 						slot.classRoomId,
-						scheduleId,
+						slot.id,
 						SEMESTER,
 						ACADEMIC_YEAR
 					]);
 
 					const shouldGrade =
-						enrollmentIndex >= CONFLICTING_SCHEDULE_COUNT && enrollmentIndex % 10 < 7;
+						enrollmentIndex >= CONFLICTING_ENROLLMENT_COUNT && enrollmentIndex % 10 < 7;
 					if (shouldGrade) {
 						const grade = calculateGrade(studentIndex, enrollmentIndex);
 						gradeIndex += 1;
@@ -864,64 +914,65 @@ async function seedStressData() {
 				}
 			}
 
-			await withTransaction(conn, async () => {
-				await loadRowsWithLocalInfile(
-					conn,
-					tempDir,
-					`students-${batchStart}.tsv`,
-					'students',
-					['id', 'name', 'email', 'phone', 'address', 'year_admitted', 'study_program_id'],
-					studentRows
-				);
-				await loadRowsWithLocalInfile(
-					conn,
-					tempDir,
-					`student-users-${batchStart}.tsv`,
-					'users',
-					['id', 'email', 'password', 'role', 'student_id', 'lecturer_id'],
-					studentUserRows
-				);
-				await loadRowsWithLocalInfile(
-					conn,
-					tempDir,
-					`schedules-${batchStart}.tsv`,
-					'schedules',
-					['id', 'class_room_id', 'day', 'start_time', 'end_time', 'lecturer_id'],
-					scheduleRows
-				);
-				await loadRowsWithLocalInfile(
-					conn,
-					tempDir,
-					`enrollments-${batchStart}.tsv`,
-					'enrollments',
-					[
-						'id',
-						'student_id',
-						'course_id',
-						'class_room_id',
-						'schedule_id',
-						'semester',
-						'academic_year'
-					],
-					enrollmentRows
-				);
-				await loadRowsWithLocalInfile(
-					conn,
-					tempDir,
-					`grades-${batchStart}.tsv`,
-					'grades',
-					[
-						'id',
-						'enrollment_id',
-						'assignment_score',
-						'midterm_score',
-						'final_score',
-						'total_score',
-						'letter_grade'
-					],
-					gradeRows
-				);
-			});
+			// LOAD DATA LOCAL INFILE is much faster here, but wrapping multiple
+			// infile loads in one explicit transaction caused COMMIT failures on MariaDB.
+			// Keep the fast path and let each load commit independently.
+			await loadRowsWithLocalInfile(
+				conn,
+				tempDir,
+				`students-${batchStart}.tsv`,
+				'students',
+				['id', 'name', 'email', 'phone', 'address', 'year_admitted', 'study_program_id'],
+				studentRows
+			);
+			await loadRowsWithLocalInfile(
+				conn,
+				tempDir,
+				`student-users-${batchStart}.tsv`,
+				'users',
+				['id', 'email', 'password', 'role', 'student_id', 'lecturer_id'],
+				studentUserRows
+			);
+			await loadRowsWithLocalInfile(
+				conn,
+				tempDir,
+				`schedules-${batchStart}.tsv`,
+				'schedules',
+				['id', 'class_room_id', 'day', 'start_time', 'end_time', 'lecturer_id'],
+				scheduleRows
+			);
+			await loadRowsWithLocalInfile(
+				conn,
+				tempDir,
+				`enrollments-${batchStart}.tsv`,
+				'enrollments',
+				[
+					'id',
+					'student_id',
+					'course_id',
+					'class_room_id',
+					'schedule_id',
+					'semester',
+					'academic_year'
+				],
+				enrollmentRows
+			);
+			await loadRowsWithLocalInfile(
+				conn,
+				tempDir,
+				`grades-${batchStart}.tsv`,
+				'grades',
+				[
+					'id',
+					'enrollment_id',
+					'assignment_score',
+					'midterm_score',
+					'final_score',
+					'total_score',
+					'letter_grade'
+				],
+				gradeRows
+			);
 
 			const completedBatches = Math.ceil(batchEnd / batchSize);
 			if (completedBatches === totalBatches || completedBatches % 10 === 0) {
@@ -942,11 +993,14 @@ async function seedStressData() {
 	console.log(`  Student users created: ${studentCount.toLocaleString()}`);
 	console.log(`  Lecturer users created: ${lecturerCount.toLocaleString()}`);
 	console.log(`  Courses created: ${courseCount.toLocaleString()}`);
+	console.log(
+		`  Schedules created: ${getScheduleCount(estimatedEnrollmentCount).toLocaleString()}`
+	);
 	console.log(`  Classrooms created: ${classRoomRows.length}`);
-	console.log(`  Enrollments and schedules created: ${estimatedEnrollmentCount.toLocaleString()}`);
+	console.log(`  Enrollments created: ${estimatedEnrollmentCount.toLocaleString()}`);
 	console.log(`  Grades created: ${estimatedGradeCount.toLocaleString()}`);
 	console.log(`  Estimated total rows created: ${estimatedTotalRows.toLocaleString()}`);
-	console.log(`  Intentional conflicting schedules: ${CONFLICTING_SCHEDULE_COUNT}`);
+	console.log(`  Intentional conflicting schedules: ${CONFLICTING_ENROLLMENT_COUNT}`);
 	console.log('  Student password: stress123');
 	console.log('  Lecturer password: stresslecturer123');
 }

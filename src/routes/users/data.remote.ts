@@ -13,7 +13,11 @@ import {
 } from '$lib/server/db';
 import { requireRole, revokeRefreshTokensForUser } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
-import { containsSearchPattern, prefixSearchPattern } from '$lib/server/search';
+import {
+	containsSearchPattern,
+	prefixSearchPattern,
+	wordPrefixSearchPattern
+} from '$lib/server/search';
 import {
 	selectUsers,
 	selectStudents,
@@ -24,7 +28,7 @@ import {
 	insertLecturer,
 	deleteUser as deleteUserDb
 } from '$lib/server/sql';
-import { type SelectUsersWhere } from '$lib/server/sql';
+import { type SelectUsersResult, type SelectUsersWhere } from '$lib/server/sql';
 import { updateUser as updateUserDb } from '$lib/server/sql';
 import { userSchema, userUpdateSchema } from '$lib/validations/user';
 import { studentSchema } from '$lib/validations/student';
@@ -32,12 +36,22 @@ import { lecturerCreateSchema } from '$lib/validations/lecturer';
 import { generateNRP } from '$lib/server/NRP-generator';
 import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 
+const userListSelect = {
+	id: true,
+	email: true,
+	role: true,
+	student_id: true,
+	student_name: true,
+	lecturer_id: true,
+	lecturer_name: true
+} as const;
+
 export const getUsers = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN']);
-	const limit = getListQueryLimit();
+	const limit = getListQueryLimit(60);
 	const afterId = getListQueryCursor(page?.cursor);
 	return toLimitedListResult(
-		await selectUsers(getPool(), { params: { afterId, limit: limit + 1 } }),
+		await selectUsers(getPool(), { select: userListSelect, params: { afterId, limit: limit + 1 } }),
 		limit,
 		(item) => item.id ?? null
 	);
@@ -55,6 +69,95 @@ const searchUsersSchema = v.object({
 	lecturerName: v.optional(v.string())
 });
 
+async function searchUsersByRelatedNamePattern(
+	base: 'students' | 'lecturers',
+	filters: v.InferOutput<typeof searchUsersSchema>,
+	pattern: string | string[],
+	limit: number,
+	afterId?: string
+) {
+	const relatedTable = base === 'students' ? 'students' : 'lecturers';
+	const relatedAlias = base === 'students' ? 's' : 'l';
+	const joinColumn = base === 'students' ? 'student_id' : 'lecturer_id';
+	const patterns = Array.isArray(pattern) ? pattern : [pattern];
+	const sqlParts = [
+		'SELECT u.id',
+		...(base === 'students'
+			? [
+					'FROM users u FORCE INDEX (PRIMARY)',
+					`INNER JOIN ${relatedTable} ${relatedAlias} ON u.${joinColumn} = ${relatedAlias}.id`
+				]
+			: [
+					`FROM ${relatedTable} ${relatedAlias}`,
+					`INNER JOIN users u ON u.${joinColumn} = ${relatedAlias}.id`
+				]),
+		`WHERE (${patterns.map(() => `${relatedAlias}.name LIKE ?`).join(' OR ')})`
+	];
+	const values: unknown[] = [...patterns];
+
+	if (filters.id) {
+		sqlParts.push('AND u.id = ?');
+		values.push(filters.id);
+	}
+	if (filters.email) {
+		sqlParts.push('AND u.email LIKE ?');
+		values.push(containsSearchPattern(filters.email)!);
+	}
+	if (filters.role) {
+		sqlParts.push('AND u.role = ?');
+		values.push(filters.role);
+	}
+	if (filters.studentId) {
+		sqlParts.push('AND u.student_id = ?');
+		values.push(filters.studentId);
+	}
+	if (filters.studentName) {
+		if (base === 'students') {
+			sqlParts.push('AND s.name LIKE ?');
+			values.push(containsSearchPattern(filters.studentName)!);
+		} else {
+			sqlParts.push(
+				'AND EXISTS (SELECT 1 FROM students s WHERE s.id = u.student_id AND s.name LIKE ?)'
+			);
+			values.push(containsSearchPattern(filters.studentName)!);
+		}
+	}
+	if (filters.lecturerId) {
+		sqlParts.push('AND u.lecturer_id = ?');
+		values.push(filters.lecturerId);
+	}
+	if (filters.lecturerName) {
+		if (base === 'lecturers') {
+			sqlParts.push('AND l.name LIKE ?');
+			values.push(containsSearchPattern(filters.lecturerName)!);
+		} else {
+			sqlParts.push(
+				'AND EXISTS (SELECT 1 FROM lecturers l WHERE l.id = u.lecturer_id AND l.name LIKE ?)'
+			);
+			values.push(containsSearchPattern(filters.lecturerName)!);
+		}
+	}
+	if (afterId) {
+		sqlParts.push('AND u.id > ?');
+		values.push(afterId);
+	}
+
+	sqlParts.push('ORDER BY u.id ASC');
+	sqlParts.push('LIMIT ?');
+	values.push(limit + 1);
+
+	const [rows] = await getPool().query(sqlParts.join(' '), values);
+	const ids = (rows as Array<{ id: string }>).map((row) => row.id).filter(Boolean);
+	if (!ids.length) return [];
+
+	const fullRows = await selectUsers(getPool(), {
+		select: userListSelect,
+		where: [['id', 'IN', ids]]
+	});
+	const rowsById = new Map(fullRows.map((row) => [row.id, row]));
+	return ids.map((id) => rowsById.get(id)).filter((row): row is SelectUsersResult => Boolean(row));
+}
+
 export const searchUsers = query(searchUsersSchema, async (filters) => {
 	await requireRole(['ADMIN']);
 	const where: SelectUsersWhere[] = [];
@@ -67,34 +170,61 @@ export const searchUsers = query(searchUsersSchema, async (filters) => {
 	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
 	if (filters.lecturerName)
 		where.push(['lecturer_name', 'LIKE', containsSearchPattern(filters.lecturerName)!]);
-	const limit = getListQueryLimit();
+	const limit = getListQueryLimit(60);
 	const afterId = getListQueryCursor(filters.cursor);
 	const q = filters.q?.trim();
 	if (q) {
 		const qPrefix = prefixSearchPattern(q)!;
+		const qWordPrefix = wordPrefixSearchPattern(q)!;
 		const queryLimit = limit + 1;
 		const resultSets = await Promise.all([
 			selectUsers(getPool(), {
+				select: userListSelect,
 				where: [...where, ['id', '=', q]],
 				params: { afterId, limit: queryLimit }
 			}),
 			selectUsers(getPool(), {
+				select: userListSelect,
 				where: [...where, ['email', 'LIKE', qPrefix]],
 				params: { afterId, limit: queryLimit }
 			}),
-			selectUsers(getPool(), {
-				where: [...where, ['student_name', 'LIKE', qPrefix]],
-				params: { afterId, limit: queryLimit }
-			}),
-			selectUsers(getPool(), {
-				where: [...where, ['lecturer_name', 'LIKE', qPrefix]],
-				params: { afterId, limit: queryLimit }
-			})
+			searchUsersByRelatedNamePattern('students', filters, [qPrefix, qWordPrefix], limit, afterId),
+			searchUsersByRelatedNamePattern('lecturers', filters, [qPrefix, qWordPrefix], limit, afterId)
 		]);
 		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
 	}
+	if (filters.studentName) {
+		return toLimitedListResult(
+			await searchUsersByRelatedNamePattern(
+				'students',
+				filters,
+				containsSearchPattern(filters.studentName)!,
+				limit,
+				afterId
+			),
+			limit,
+			(item) => item.id ?? null
+		);
+	}
+	if (filters.lecturerName) {
+		return toLimitedListResult(
+			await searchUsersByRelatedNamePattern(
+				'lecturers',
+				filters,
+				containsSearchPattern(filters.lecturerName)!,
+				limit,
+				afterId
+			),
+			limit,
+			(item) => item.id ?? null
+		);
+	}
 	return toLimitedListResult(
-		await selectUsers(getPool(), { where, params: { afterId, limit: limit + 1 } }),
+		await selectUsers(getPool(), {
+			select: userListSelect,
+			where,
+			params: { afterId, limit: limit + 1 }
+		}),
 		limit,
 		(item) => item.id ?? null
 	);

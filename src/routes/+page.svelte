@@ -2,7 +2,7 @@
 	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import type { Component } from 'svelte';
 	import { clearAccessToken, ensureAccessToken, setAccessToken } from '$lib/client/auth';
 	import {
@@ -53,6 +53,7 @@
 	import { getCurrentUser, loginUser, logoutUser } from './auth/data.remote';
 	import {
 		getClassRooms,
+		getClassRoom,
 		searchClassRooms,
 		createClassRoom,
 		updateClassRoom,
@@ -60,6 +61,7 @@
 	} from './classrooms/data.remote';
 	import {
 		getCourses,
+		getCourse,
 		searchCourses,
 		createCourse,
 		updateCourse,
@@ -67,6 +69,7 @@
 	} from './courses/data.remote';
 	import {
 		getStudents,
+		getStudent,
 		searchStudents,
 		createStudent,
 		updateStudent,
@@ -74,6 +77,7 @@
 	} from './students/data.remote';
 	import {
 		getLecturers,
+		getLecturer,
 		searchLecturers,
 		createLecturer,
 		updateLecturer,
@@ -81,6 +85,7 @@
 	} from './lecturers/data.remote';
 	import {
 		getFaculties,
+		getFaculty,
 		searchFaculties,
 		createFaculty,
 		updateFaculty,
@@ -88,6 +93,7 @@
 	} from './faculties/data.remote';
 	import {
 		getStudyPrograms,
+		getStudyProgram,
 		searchStudyPrograms,
 		createStudyProgram,
 		updateStudyProgram,
@@ -95,6 +101,7 @@
 	} from './study-programs/data.remote';
 	import {
 		getEnrollments,
+		getSchedulePreview,
 		searchEnrollments,
 		createEnrollment,
 		updateEnrollment,
@@ -215,6 +222,7 @@
 		hasMore: boolean;
 		loading: boolean;
 	};
+	type CollectionLoadedState = Record<DataCollectionKey, boolean>;
 	type EnhancedForm = IssueForm & {
 		enhance: (callback: (opts: { submit: () => Promise<boolean> }) => void | Promise<void>) => {
 			action: string;
@@ -606,18 +614,31 @@
 	let pendingDelete = $state<DeleteIntent | null>(null);
 	let feedback = $state<Feedback>(null);
 	let appLoading = $state(false);
+	let initialViewHydrated = $state(false);
 	let loadedForUserId = $state<string | null>(null);
 	let viewRestored = $state(!browser);
 	let collectionIssues = $state<Partial<Record<DataCollectionKey, string>>>({});
 	let collectionPagination = $state<Record<DataCollectionKey, CollectionPaginationState>>(
 		createCollectionPaginationState()
 	);
+	let collectionLoaded = $state<CollectionLoadedState>(createCollectionLoadedState());
+	let schedulePreviewLoaded = $state(false);
 	let pendingRefreshTimer = $state<number | null>(null);
 	let collectionRefreshTimers: Partial<Record<DataCollectionKey, number>> = {};
 	let studentPickerSearch = $state('');
 	let coursePickerSearch = $state('');
 	let studentPickerOpen = $state(false);
 	let coursePickerOpen = $state(false);
+	let studentPickerOptions = $state<SelectStudentsResult[]>([]);
+	let coursePickerOptions = $state<SelectCoursesResult[]>([]);
+	let studentPickerLoading = $state(false);
+	let coursePickerLoading = $state(false);
+	let studentPickerIssue = $state<string | null>(null);
+	let coursePickerIssue = $state<string | null>(null);
+	let studentPickerRefreshTimer = $state<number | null>(null);
+	let coursePickerRefreshTimer = $state<number | null>(null);
+	let studentPickerRequestToken = 0;
+	let coursePickerRequestToken = 0;
 
 	let classrooms = $state<SelectClassRoomsResult[]>([]);
 	let courses = $state<SelectCoursesResult[]>([]);
@@ -725,6 +746,20 @@
 		};
 	}
 
+	function createCollectionLoadedState(): CollectionLoadedState {
+		return {
+			classrooms: false,
+			courses: false,
+			students: false,
+			lecturers: false,
+			faculties: false,
+			studyPrograms: false,
+			enrollments: false,
+			grades: false,
+			users: false
+		};
+	}
+
 	function setCollectionPagination(
 		key: DataCollectionKey,
 		patch: Partial<CollectionPaginationState>
@@ -745,6 +780,26 @@
 		assign(result.items);
 	}
 
+	async function resolveRemoteQuery<T>(query: Promise<T> | { run: () => Promise<T> }): Promise<T> {
+		try {
+			return await (query as Promise<T>);
+		} catch (error) {
+			if (
+				typeof query === 'object' &&
+				query != null &&
+				'run' in query &&
+				typeof query.run === 'function' &&
+				(error as Error)?.message?.includes(
+					'This query was not created in a reactive context and is limited to calling `.run`, `.refresh`, and `.set`.'
+				)
+			) {
+				return await query.run();
+			}
+
+			throw error;
+		}
+	}
+
 	function errorMessage(error: unknown, fallback: string) {
 		return (
 			(error as { body?: { message?: string }; message?: string })?.body?.message ||
@@ -756,6 +811,76 @@
 	function normalizedSearchValue(value: string) {
 		const trimmed = value.trim();
 		return trimmed.length > 0 ? trimmed : undefined;
+	}
+
+	async function refreshStudentPickerOptions() {
+		const token = ++studentPickerRequestToken;
+		studentPickerLoading = true;
+		studentPickerIssue = null;
+		try {
+			const q = normalizedSearchValue(studentPickerSearch);
+			const result = q
+				? await resolveRemoteQuery(searchStudents({ q }))
+				: await resolveRemoteQuery(getStudents());
+			if (token !== studentPickerRequestToken) return;
+			studentPickerOptions = result.items;
+		} catch (error) {
+			if (token !== studentPickerRequestToken) return;
+			studentPickerIssue = errorMessage(error, 'Daftar mahasiswa gagal dimuat.');
+		} finally {
+			if (token === studentPickerRequestToken) {
+				studentPickerLoading = false;
+			}
+		}
+	}
+
+	async function refreshCoursePickerOptions() {
+		const token = ++coursePickerRequestToken;
+		coursePickerLoading = true;
+		coursePickerIssue = null;
+		try {
+			const q = normalizedSearchValue(coursePickerSearch);
+			const result = q
+				? await resolveRemoteQuery(searchCourses({ q }))
+				: await resolveRemoteQuery(getCourses());
+			if (token !== coursePickerRequestToken) return;
+			coursePickerOptions = result.items;
+		} catch (error) {
+			if (token !== coursePickerRequestToken) return;
+			coursePickerIssue = errorMessage(error, 'Daftar mata kuliah gagal dimuat.');
+		} finally {
+			if (token === coursePickerRequestToken) {
+				coursePickerLoading = false;
+			}
+		}
+	}
+
+	function queueStudentPickerRefresh(delay = 120) {
+		if (!browser) {
+			void refreshStudentPickerOptions();
+			return;
+		}
+		if (studentPickerRefreshTimer != null) {
+			window.clearTimeout(studentPickerRefreshTimer);
+		}
+		studentPickerRefreshTimer = window.setTimeout(() => {
+			studentPickerRefreshTimer = null;
+			void refreshStudentPickerOptions();
+		}, delay);
+	}
+
+	function queueCoursePickerRefresh(delay = 120) {
+		if (!browser) {
+			void refreshCoursePickerOptions();
+			return;
+		}
+		if (coursePickerRefreshTimer != null) {
+			window.clearTimeout(coursePickerRefreshTimer);
+		}
+		coursePickerRefreshTimer = window.setTimeout(() => {
+			coursePickerRefreshTimer = null;
+			void refreshCoursePickerOptions();
+		}, delay);
 	}
 
 	function scheduleFiltersMatch(item: SelectEnrollmentsResult) {
@@ -857,6 +982,8 @@
 		grades = [];
 		users = [];
 		schedulePreview = { items: [], hasMore: false, loading: false };
+		schedulePreviewLoaded = false;
+		initialViewHydrated = false;
 		selectedRoomRecord = null;
 		selectedCourseRecord = null;
 		selectedStudentRecord = null;
@@ -868,12 +995,21 @@
 		selectedUserRecord = null;
 		collectionIssues = {};
 		collectionPagination = createCollectionPaginationState();
+		collectionLoaded = createCollectionLoadedState();
 		if (browser) {
 			for (const timer of Object.values(collectionRefreshTimers)) {
 				if (timer != null) window.clearTimeout(timer);
 			}
+			if (studentPickerRefreshTimer != null) window.clearTimeout(studentPickerRefreshTimer);
+			if (coursePickerRefreshTimer != null) window.clearTimeout(coursePickerRefreshTimer);
 		}
 		collectionRefreshTimers = {};
+		studentPickerRefreshTimer = null;
+		coursePickerRefreshTimer = null;
+		studentPickerOptions = [];
+		coursePickerOptions = [];
+		studentPickerIssue = null;
+		coursePickerIssue = null;
 	}
 
 	async function loadCollection(
@@ -892,13 +1028,17 @@
 	async function loadCollectionPage<T>(
 		key: DataCollectionKey,
 		cursor: string | null,
-		request: (cursor: string | null) => Promise<LimitedCollectionResponse<T>>,
+		request: (
+			cursor: string | null
+		) =>
+			| Promise<LimitedCollectionResponse<T>>
+			| { run: () => Promise<LimitedCollectionResponse<T>> },
 		assign: (items: T[]) => void,
 		meta?: { history?: Array<string | null>; pageNumber?: number }
 	) {
 		setCollectionPagination(key, { loading: true });
 		try {
-			const result = await request(cursor);
+			const result = await resolveRemoteQuery(request(cursor));
 
 			applyLimitedCollection(result, assign);
 			const nextHistory =
@@ -915,6 +1055,7 @@
 				loading: false,
 				itemCount: result.items.length
 			});
+			collectionLoaded = { ...collectionLoaded, [key]: true };
 		} catch (error) {
 			setCollectionPagination(key, { loading: false });
 			throw error;
@@ -937,43 +1078,43 @@
 	function requestClassroomsPage(cursor: string | null) {
 		const q = normalizedSearchValue(roomSearch);
 		return q
-			? searchClassRooms({ cursor: cursor ?? undefined, q }).run()
-			: getClassRooms({ cursor: cursor ?? undefined }).run();
+			? searchClassRooms({ cursor: cursor ?? undefined, q })
+			: getClassRooms({ cursor: cursor ?? undefined });
 	}
 
 	function requestCoursesPage(cursor: string | null) {
 		const q = normalizedSearchValue(courseSearch);
 		return q
-			? searchCourses({ cursor: cursor ?? undefined, q }).run()
-			: getCourses({ cursor: cursor ?? undefined }).run();
+			? searchCourses({ cursor: cursor ?? undefined, q })
+			: getCourses({ cursor: cursor ?? undefined });
 	}
 
 	function requestStudentsPage(cursor: string | null) {
 		const q = normalizedSearchValue(studentSearch);
 		return q
-			? searchStudents({ cursor: cursor ?? undefined, q }).run()
-			: getStudents({ cursor: cursor ?? undefined }).run();
+			? searchStudents({ cursor: cursor ?? undefined, q })
+			: getStudents({ cursor: cursor ?? undefined });
 	}
 
 	function requestLecturersPage(cursor: string | null) {
 		const q = normalizedSearchValue(lecturerSearch);
 		return q
-			? searchLecturers({ cursor: cursor ?? undefined, q }).run()
-			: getLecturers({ cursor: cursor ?? undefined }).run();
+			? searchLecturers({ cursor: cursor ?? undefined, q })
+			: getLecturers({ cursor: cursor ?? undefined });
 	}
 
 	function requestFacultiesPage(cursor: string | null) {
 		const q = normalizedSearchValue(facultySearch);
 		return q
-			? searchFaculties({ cursor: cursor ?? undefined, q }).run()
-			: getFaculties({ cursor: cursor ?? undefined }).run();
+			? searchFaculties({ cursor: cursor ?? undefined, q })
+			: getFaculties({ cursor: cursor ?? undefined });
 	}
 
 	function requestStudyProgramsPage(cursor: string | null) {
 		const q = normalizedSearchValue(studyProgramSearch);
 		return q
-			? searchStudyPrograms({ cursor: cursor ?? undefined, q }).run()
-			: getStudyPrograms({ cursor: cursor ?? undefined }).run();
+			? searchStudyPrograms({ cursor: cursor ?? undefined, q })
+			: getStudyPrograms({ cursor: cursor ?? undefined });
 	}
 
 	function requestEnrollmentsPage(cursor: string | null) {
@@ -981,23 +1122,21 @@
 		const hasFilters = Object.entries(params).some(
 			([key, value]) => key !== 'cursor' && value != null
 		);
-		return hasFilters
-			? searchEnrollments(params).run()
-			: getEnrollments({ cursor: cursor ?? undefined }).run();
+		return hasFilters ? searchEnrollments(params) : getEnrollments({ cursor: cursor ?? undefined });
 	}
 
 	function requestGradesPage(cursor: string | null) {
 		const q = normalizedSearchValue(gradeSearch);
 		return q
-			? searchGrades({ cursor: cursor ?? undefined, q }).run()
-			: getGrades({ cursor: cursor ?? undefined }).run();
+			? searchGrades({ cursor: cursor ?? undefined, q })
+			: getGrades({ cursor: cursor ?? undefined });
 	}
 
 	function requestUsersPage(cursor: string | null) {
 		const q = normalizedSearchValue(userSearch);
 		return q
-			? searchUsers({ cursor: cursor ?? undefined, q }).run()
-			: getUsers({ cursor: cursor ?? undefined }).run();
+			? searchUsers({ cursor: cursor ?? undefined, q })
+			: getUsers({ cursor: cursor ?? undefined });
 	}
 
 	async function refreshSchedulePreview() {
@@ -1006,13 +1145,14 @@
 			const params = buildEnrollmentSearchParams(null);
 			const hasFilters = Object.values(params).some((value) => value != null);
 			const result = hasFilters
-				? await searchEnrollments(params).run()
-				: await getEnrollments().run();
+				? await resolveRemoteQuery(searchEnrollments({ ...params, preview: true }))
+				: await resolveRemoteQuery(getSchedulePreview());
 			schedulePreview = {
 				items: result.items,
 				hasMore: result.hasMore,
 				loading: false
 			};
+			schedulePreviewLoaded = true;
 		} catch (error) {
 			schedulePreview = { ...schedulePreview, loading: false };
 			throw error;
@@ -1097,6 +1237,102 @@
 		return 'Data akun gagal dimuat.';
 	}
 
+	function viewDataPlan(
+		view: ViewId,
+		role: AppRole | undefined
+	): { collections: DataCollectionKey[]; requiresSchedulePreview: boolean } {
+		if (view === 'dashboard') {
+			return {
+				collections:
+					role === 'STUDENT'
+						? (['grades'] as DataCollectionKey[])
+						: (['classrooms'] as DataCollectionKey[]),
+				requiresSchedulePreview: true
+			};
+		}
+		if (view === 'calendar') {
+			return { collections: [] as DataCollectionKey[], requiresSchedulePreview: true };
+		}
+		if (view === 'builder') {
+			return {
+				collections: ['courses', 'classrooms', 'lecturers', 'enrollments'] as DataCollectionKey[],
+				requiresSchedulePreview: true
+			};
+		}
+		if (view === 'classrooms') {
+			return { collections: ['classrooms'] as DataCollectionKey[], requiresSchedulePreview: false };
+		}
+		if (view === 'courses') {
+			return {
+				collections: ['courses', 'studyPrograms', 'lecturers'] as DataCollectionKey[],
+				requiresSchedulePreview: false
+			};
+		}
+		if (view === 'students') {
+			return {
+				collections: ['students', 'studyPrograms'] as DataCollectionKey[],
+				requiresSchedulePreview: false
+			};
+		}
+		if (view === 'lecturers') {
+			return { collections: ['lecturers'] as DataCollectionKey[], requiresSchedulePreview: false };
+		}
+		if (view === 'faculties') {
+			return { collections: ['faculties'] as DataCollectionKey[], requiresSchedulePreview: false };
+		}
+		if (view === 'studyPrograms') {
+			return {
+				collections: ['studyPrograms', 'faculties'] as DataCollectionKey[],
+				requiresSchedulePreview: false
+			};
+		}
+		if (view === 'enrollments') {
+			return {
+				collections: ['enrollments'] as DataCollectionKey[],
+				requiresSchedulePreview: false
+			};
+		}
+		if (view === 'grades') {
+			return {
+				collections: ['grades'] as DataCollectionKey[],
+				requiresSchedulePreview: false
+			};
+		}
+		return { collections: ['users'] as DataCollectionKey[], requiresSchedulePreview: false };
+	}
+
+	async function ensureViewData(view: ViewId, force = false) {
+		const role = currentUser.current?.role as AppRole | undefined;
+		const plan = viewDataPlan(view, role);
+		const tasks: Promise<unknown>[] = [];
+		const shouldBlockUi = !initialViewHydrated;
+
+		if (plan.requiresSchedulePreview && (force || !schedulePreviewLoaded)) {
+			tasks.push(
+				refreshSchedulePreview().catch((error) => {
+					setCollectionIssue('enrollments', errorMessage(error, 'Pratinjau jadwal gagal dimuat.'));
+				})
+			);
+		}
+
+		for (const key of plan.collections) {
+			if (!force && collectionLoaded[key]) continue;
+			tasks.push(
+				loadCollection(key, () => collectionRefresher(key)(null), collectionFallbackMessage(key))
+			);
+		}
+
+		if (!tasks.length) return;
+		if (shouldBlockUi) {
+			appLoading = true;
+		}
+		await Promise.all(tasks);
+		if (shouldBlockUi) {
+			initialViewHydrated = true;
+			appLoading = false;
+		}
+	}
+
 	function collectionRefresher(key: DataCollectionKey) {
 		const refreshers: Record<DataCollectionKey, (cursor?: string | null) => Promise<void>> = {
 			classrooms: refreshClassrooms,
@@ -1145,7 +1381,7 @@
 		}
 		collectionRefreshTimers[key] = window.setTimeout(() => {
 			delete collectionRefreshTimers[key];
-			if (key === 'enrollments') {
+			if (key === 'enrollments' && ['dashboard', 'calendar', 'builder'].includes(activeView)) {
 				void refreshSchedulePreview().catch((error) => {
 					setCollectionIssue('enrollments', errorMessage(error, 'Pratinjau jadwal gagal dimuat.'));
 				});
@@ -1196,35 +1432,10 @@
 		);
 	}
 
-	async function refreshAll() {
-		if (!currentUser.current) return;
-		appLoading = true;
-		const role = currentUser.current.role;
-		const schedulePreviewTask = refreshSchedulePreview().catch((error) => {
-			setCollectionIssue('enrollments', errorMessage(error, 'Pratinjau jadwal gagal dimuat.'));
-		});
-		await Promise.all([
-			schedulePreviewTask,
-			loadCollection('classrooms', () => refreshClassrooms(), 'Ruang kelas gagal dimuat.'),
-			loadCollection('courses', () => refreshCourses(), 'Mata kuliah gagal dimuat.'),
-			loadCollection('lecturers', () => refreshLecturers(), 'Data dosen gagal dimuat.'),
-			loadCollection('faculties', () => refreshFaculties(), 'Data fakultas gagal dimuat.'),
-			loadCollection('studyPrograms', () => refreshStudyPrograms(), 'Program studi gagal dimuat.'),
-			loadCollection('enrollments', () => refreshEnrollments(), 'Data KRS gagal dimuat.'),
-			loadCollection('grades', () => refreshGrades(), 'Data nilai gagal dimuat.'),
-			...(role === 'ADMIN' || role === 'LECTURER'
-				? [loadCollection('students', () => refreshStudents(), 'Data mahasiswa gagal dimuat.')]
-				: []),
-			...(role === 'ADMIN'
-				? [loadCollection('users', () => refreshUsers(), 'Data akun gagal dimuat.')]
-				: [])
-		]);
-		appLoading = false;
-	}
-
-	function scheduleRefreshAll() {
+	function scheduleViewRefresh(force = false) {
 		if (!browser) {
-			void refreshAll();
+			const view = activeView;
+			void untrack(() => ensureViewData(view, force));
 			return;
 		}
 		if (pendingRefreshTimer != null) {
@@ -1232,7 +1443,8 @@
 		}
 		pendingRefreshTimer = window.setTimeout(() => {
 			pendingRefreshTimer = null;
-			void refreshAll();
+			const view = activeView;
+			void untrack(() => ensureViewData(view, force));
 		}, 0);
 	}
 
@@ -1248,6 +1460,13 @@
 	$effect(() => {
 		if (!currentUser.current || !viewRestored) return;
 		writeViewToUrl(activeView);
+	});
+
+	$effect(() => {
+		const view = activeView;
+		const userId = currentUser.current?.id ?? null;
+		if (!userId || !viewRestored || loadedForUserId !== userId) return;
+		void untrack(() => ensureViewData(view));
 	});
 
 	$effect(() => {
@@ -1281,9 +1500,13 @@
 			return;
 		}
 		if (loadedForUserId === userId) return;
+		if (loadedForUserId) {
+			resetCollections();
+		}
 		loadedForUserId = userId;
-		scheduleRefreshAll();
 	});
+
+	const blocksViewRendering = $derived(appLoading && !initialViewHydrated);
 
 	const scheduleCards = $derived(buildScheduleCards(schedulePreview.items, timezone));
 	const scheduleAnalyticsCards = $derived(schedulePreview.hasMore ? [] : scheduleCards);
@@ -1609,72 +1832,38 @@
 		return peers;
 	});
 	const nextSchedule = $derived(scheduleAnalyticsCards[0] ?? null);
-	const underusedRooms = $derived(
-		classrooms.filter((item) => (item.schedule_count ?? 0) === 0).length
-	);
+	const underusedRooms = $derived.by(() => {
+		const occupiedRoomIds = new Set(
+			scheduleAnalyticsCards.map((card) => card.original.class_room_id).filter(Boolean)
+		);
+		return classrooms.filter((item) => !item.id || !occupiedRoomIds.has(item.id)).length;
+	});
 	const studentGradeHighlights = $derived(grades.slice(0, 3));
 
-	const filteredClassrooms = $derived(
-		classrooms.filter(
-			(item) =>
-				matchesText(item.name, roomSearch) ||
-				matchesText(beautifyRoomType(item.class_room_type), roomSearch)
-		)
-	);
-	const filteredCourses = $derived(
-		courses.filter(
-			(item) =>
-				matchesText(item.id, courseSearch) ||
-				matchesText(item.name, courseSearch) ||
-				matchesText(item.lecturer_name, courseSearch)
-		)
-	);
-	const filteredStudents = $derived(
-		students.filter(
-			(item) =>
-				matchesText(item.id, studentSearch) ||
-				matchesText(item.name, studentSearch) ||
-				matchesText(item.study_program_name, studentSearch)
-		)
-	);
-	const filteredLecturers = $derived(
-		lecturers.filter(
-			(item) =>
-				matchesText(item.id, lecturerSearch) ||
-				matchesText(item.name, lecturerSearch) ||
-				matchesText(item.email, lecturerSearch)
-		)
-	);
-	const filteredFaculties = $derived(
-		faculties.filter(
-			(item) => matchesText(item.id, facultySearch) || matchesText(item.name, facultySearch)
-		)
-	);
-	const filteredStudyPrograms = $derived(
-		studyPrograms.filter(
-			(item) =>
-				matchesText(item.id, studyProgramSearch) ||
-				matchesText(item.name, studyProgramSearch) ||
-				matchesText(item.faculty_name, studyProgramSearch)
-		)
-	);
-	const filteredEnrollments = $derived(
-		enrollments.filter((item) => scheduleFiltersMatch(item) && scheduleSearchMatches(item))
-	);
+	const filteredClassrooms = $derived(classrooms);
+	const filteredCourses = $derived(courses);
+	const filteredStudents = $derived(students);
+	const filteredLecturers = $derived(lecturers);
+	const filteredFaculties = $derived(faculties);
+	const filteredStudyPrograms = $derived(studyPrograms);
+	const filteredEnrollments = $derived(enrollments);
 	const filteredBuilderEnrollments = $derived(
 		filteredEnrollments.filter((item) => {
 			if (!builderConflictOnly) return true;
 			return Boolean(item.id && scheduleCardMap[item.id]?.hasConflict);
 		})
 	);
+	const scheduleFilterSource = $derived(
+		activeView === 'enrollments' ? enrollments : schedulePreview.items
+	);
 	const scheduleSemesterOptions = $derived.by(() =>
 		Array.from(
-			new Set(schedulePreview.items.map((item) => item.semester).filter(Boolean) as string[])
+			new Set(scheduleFilterSource.map((item) => item.semester).filter(Boolean) as string[])
 		).sort((left, right) => left.localeCompare(right))
 	);
 	const scheduleAcademicYearOptions = $derived.by(() =>
 		Array.from(
-			new Set(schedulePreview.items.map((item) => item.academic_year).filter(Boolean) as string[])
+			new Set(scheduleFilterSource.map((item) => item.academic_year).filter(Boolean) as string[])
 		).sort((left, right) => right.localeCompare(left))
 	);
 	const scheduleActiveFilterCount = $derived(
@@ -1696,51 +1885,37 @@
 		return 'Data jadwal terlalu besar untuk dimuat penuh. Gunakan pencarian atau filter agar dashboard, kalender, dan penjadwalan menampilkan hasil yang akurat.';
 	});
 	const calendarNeedsFilters = $derived(scheduleActiveFilterCount === 0);
-	const calendarHasTooMuchData = $derived(
-		schedulePreview.hasMore ||
-			(scheduleActiveFilterCount > 0 &&
-				filteredScheduleCards.length > CALENDAR_MAX_VISIBLE_SCHEDULES)
+	const calendarHasMoreResults = $derived(schedulePreview.hasMore);
+	const calendarExceedsVisibleLimit = $derived(
+		scheduleActiveFilterCount > 0 && filteredScheduleCards.length > CALENDAR_MAX_VISIBLE_SCHEDULES
 	);
 	const calendarCanRender = $derived(
-		!calendarNeedsFilters && !calendarHasTooMuchData && filteredScheduleCards.length > 0
+		!calendarNeedsFilters && !calendarExceedsVisibleLimit && filteredScheduleCards.length > 0
 	);
-	const filteredStudentsForPicker = $derived(
-		students
-			.filter(
-				(item) =>
-					!studentPickerSearch ||
-					matchesText(item.name, studentPickerSearch) ||
-					matchesText(item.id, studentPickerSearch)
-			)
-			.slice(0, 24)
-	);
-	const filteredCoursesForPicker = $derived(
-		courses
-			.filter(
-				(item) =>
-					!coursePickerSearch ||
-					matchesText(item.name, coursePickerSearch) ||
-					matchesText(item.id, coursePickerSearch) ||
-					matchesText(item.lecturer_name, coursePickerSearch)
-			)
-			.slice(0, 24)
-	);
-	const filteredGrades = $derived(
-		grades.filter(
-			(item) =>
-				matchesText(item.student_name, gradeSearch) ||
-				matchesText(item.course_name, gradeSearch) ||
-				matchesText(item.letter_grade, gradeSearch)
-		)
-	);
-	const filteredUsers = $derived(
-		users.filter(
-			(item) =>
-				matchesText(item.email, userSearch) ||
-				matchesText(item.student_name, userSearch) ||
-				matchesText(item.lecturer_name, userSearch)
-		)
-	);
+	const studentPickerLookup = $derived.by(() => {
+		const lookup = new Map<string, SelectStudentsResult>();
+		for (const item of students) {
+			if (item.id) lookup.set(item.id, item);
+		}
+		for (const item of studentPickerOptions) {
+			if (item.id) lookup.set(item.id, item);
+		}
+		return lookup;
+	});
+	const coursePickerLookup = $derived.by(() => {
+		const lookup = new Map<string, SelectCoursesResult>();
+		for (const item of courses) {
+			if (item.id) lookup.set(item.id, item);
+		}
+		for (const item of coursePickerOptions) {
+			if (item.id) lookup.set(item.id, item);
+		}
+		return lookup;
+	});
+	const filteredStudentsForPicker = $derived(studentPickerOptions.slice(0, 24));
+	const filteredCoursesForPicker = $derived(coursePickerOptions.slice(0, 24));
+	const filteredGrades = $derived(grades);
+	const filteredUsers = $derived(users);
 
 	const availableRoomOptions = $derived.by(() => {
 		if (!enrollmentDraft.startTime || !enrollmentDraft.endTime) return classrooms;
@@ -1770,13 +1945,13 @@
 	const roomStepReady = $derived(Boolean(enrollmentDraft.classRoomId));
 	const builderTaskMode = $derived(Boolean(selectedEnrollmentId || builderStep !== 'participant'));
 	const selectedDraftStudent = $derived(
-		students.find((item) => item.id === enrollmentDraft.studentId)?.name ??
+		studentPickerLookup.get(enrollmentDraft.studentId)?.name ??
 			selectedStudentRecord?.name ??
 			selectedEnrollmentRecord?.student_name ??
 			'Belum dipilih'
 	);
 	const selectedDraftCourse = $derived(
-		courses.find((item) => item.id === enrollmentDraft.courseId)?.name ??
+		coursePickerLookup.get(enrollmentDraft.courseId)?.name ??
 			selectedCourseRecord?.name ??
 			selectedEnrollmentRecord?.course_name ??
 			'Belum dipilih'
@@ -1857,6 +2032,21 @@
 			hasProjector: Boolean(item.has_projector),
 			hasAC: Boolean(item.has_ac)
 		};
+		if (item.id) {
+			void getClassRoom(item.id)
+				.run()
+				.then((full) => {
+					if (selectedRoomId !== item.id) return;
+					selectedRoomRecord = full;
+					classroomDraft = {
+						name: full.name ?? '',
+						classRoomType: full.class_room_type ?? 'REGULER',
+						capacity: full.capacity ?? 30,
+						hasProjector: Boolean(full.has_projector),
+						hasAC: Boolean(full.has_ac)
+					};
+				});
+		}
 	}
 
 	function pickCourse(item: SelectCoursesResult) {
@@ -1871,6 +2061,14 @@
 			studyProgramId: item.study_program_id ?? '',
 			lecturerId: item.lecturer_id ?? ''
 		};
+		if (item.id) {
+			void getCourse(item.id)
+				.run()
+				.then((full) => {
+					if (selectedCourseId !== item.id) return;
+					selectedCourseRecord = full;
+				});
+		}
 	}
 
 	function pickStudent(item: SelectStudentsResult) {
@@ -1886,6 +2084,22 @@
 			yearAdmitted: item.year_admitted ?? 2024,
 			studyProgramId: item.study_program_id ?? ''
 		};
+		if (item.id) {
+			void getStudent(item.id)
+				.run()
+				.then((full) => {
+					if (selectedStudentId !== item.id) return;
+					selectedStudentRecord = full;
+					studentDraft = {
+						name: full.name ?? '',
+						email: full.email ?? '',
+						phone: full.phone ?? '',
+						address: full.address ?? '',
+						yearAdmitted: full.year_admitted ?? 2024,
+						studyProgramId: full.study_program_id ?? ''
+					};
+				});
+		}
 	}
 
 	function pickLecturer(item: SelectLecturersResult) {
@@ -1900,6 +2114,21 @@
 			phone: item.phone ?? '',
 			address: item.address ?? ''
 		};
+		if (item.id) {
+			void getLecturer(item.id)
+				.run()
+				.then((full) => {
+					if (selectedLecturerId !== item.id) return;
+					selectedLecturerRecord = full;
+					lecturerDraft = {
+						id: full.id ?? '',
+						name: full.name ?? '',
+						email: full.email ?? '',
+						phone: full.phone ?? '',
+						address: full.address ?? ''
+					};
+				});
+		}
 	}
 
 	function pickFaculty(item: SelectFacultiesResult) {
@@ -1908,6 +2137,14 @@
 		selectedFacultyId = item.id ?? null;
 		selectedFacultyRecord = item;
 		facultyDraft = { id: item.id ?? '', name: item.name ?? '' };
+		if (item.id) {
+			void getFaculty(item.id)
+				.run()
+				.then((full) => {
+					if (selectedFacultyId !== item.id) return;
+					selectedFacultyRecord = full;
+				});
+		}
 	}
 
 	function pickStudyProgram(item: SelectStudyProgramsResult) {
@@ -1921,6 +2158,20 @@
 			head: item.head ?? '',
 			facultyId: item.faculty_id ?? ''
 		};
+		if (item.id) {
+			void getStudyProgram(item.id)
+				.run()
+				.then((full) => {
+					if (selectedStudyProgramId !== item.id) return;
+					selectedStudyProgramRecord = full;
+					studyProgramDraft = {
+						id: full.id ?? '',
+						name: full.name ?? '',
+						head: full.head ?? '',
+						facultyId: full.faculty_id ?? ''
+					};
+				});
+		}
 	}
 
 	function pickEnrollment(item: SelectEnrollmentsResult) {
@@ -1942,8 +2193,8 @@
 			academicYear: item.academic_year ?? '2025/2026',
 			timezone
 		};
-		const pickedStudent = students.find((s) => s.id === item.student_id);
-		const pickedCourse = courses.find((c) => c.id === item.course_id);
+		const pickedStudent = item.student_id ? studentPickerLookup.get(item.student_id) : undefined;
+		const pickedCourse = item.course_id ? coursePickerLookup.get(item.course_id) : undefined;
 		studentPickerSearch = pickedStudent
 			? `${pickedStudent.name} • ${pickedStudent.id}`
 			: item.student_name
@@ -2028,6 +2279,10 @@
 			coursePickerSearch = '';
 			studentPickerOpen = false;
 			coursePickerOpen = false;
+			studentPickerOptions = [];
+			coursePickerOptions = [];
+			studentPickerIssue = null;
+			coursePickerIssue = null;
 		}
 		if (view === 'grades') {
 			selectedGradeId = null;
@@ -2041,15 +2296,31 @@
 		}
 	}
 
+	async function ensureGradeEditorData() {
+		if (currentUser.current?.role === 'STUDENT') return;
+		if (collectionLoaded.enrollments || collectionPagination.enrollments.loading) return;
+		await loadCollection(
+			'enrollments',
+			() => refreshEnrollments(null),
+			collectionFallbackMessage('enrollments')
+		);
+	}
+
 	function beginCreate(view: EditableView) {
 		clearSelection(view);
 		pendingDelete = null;
 		editorView = view;
+		if (view === 'grades') {
+			void ensureGradeEditorData();
+		}
 	}
 
 	function beginEdit(view: EditableView) {
 		pendingDelete = null;
 		editorView = view;
+		if (view === 'grades') {
+			void ensureGradeEditorData();
+		}
 	}
 
 	function stopEditing(view?: EditableView) {
@@ -2412,7 +2683,10 @@
 	const studyProgramEditorBlocked = $derived(
 		Boolean(collectionIssues.faculties) && !faculties.length
 	);
-	const gradeEditorBlocked = $derived(Boolean(collectionIssues.enrollments) && !enrollments.length);
+	const gradeEditorBlocked = $derived(
+		(Boolean(collectionIssues.enrollments) && !enrollments.length) ||
+			(collectionPagination.enrollments.loading && !enrollments.length)
+	);
 	const scheduleCardMap = $derived.by(
 		() =>
 			Object.fromEntries(scheduleAnalyticsCards.map((card) => [card.id, card])) as Record<
@@ -2576,7 +2850,7 @@
 				</div>
 			{/if}
 
-			{#if appLoading}
+			{#if blocksViewRendering}
 				<div class="loading-panel">
 					<div class="skeleton-rows">
 						<div class="skeleton skeleton-title"></div>
@@ -2588,12 +2862,15 @@
 				</div>
 			{/if}
 
-			{#if !appLoading && activeViewIssues.length}
+			{#if !blocksViewRendering && activeViewIssues.length}
 				<section class="support-warning">
 					<div class="support-warning-head">
 						<p class="warning-title">Sebagian data pendukung belum tersedia</p>
-						<Button variant="ghost" size="sm" class="ghost-button" onclick={() => void refreshAll()}
-							>Coba lagi</Button
+						<Button
+							variant="ghost"
+							size="sm"
+							class="ghost-button"
+							onclick={() => void ensureViewData(activeView, true)}>Coba lagi</Button
 						>
 					</div>
 					<ul class="support-warning-list">
@@ -2604,7 +2881,7 @@
 				</section>
 			{/if}
 
-			{#if !appLoading && schedulePreviewNotice && ['dashboard', 'calendar', 'builder'].includes(activeView)}
+			{#if !blocksViewRendering && schedulePreviewNotice && ['dashboard', 'calendar', 'builder'].includes(activeView)}
 				<section class="support-warning compact-warning">
 					<div class="support-warning-head">
 						<p class="warning-title">Pratinjau jadwal dibatasi</p>
@@ -2613,7 +2890,7 @@
 				</section>
 			{/if}
 
-			{#if !appLoading}
+			{#if !blocksViewRendering}
 				{#if activeView === 'dashboard'}
 					<div class="dashboard-stack">
 						{#if currentUser.current.role === 'STUDENT'}
@@ -2831,12 +3108,16 @@
 												bind:value={enrollmentSearch}
 												aria-label="Cari jadwal kalender"
 												placeholder="Cari mahasiswa, mata kuliah, ruang, atau dosen"
+												oninput={() => queueCollectionRefresh('enrollments')}
 											/>
 										</div>
 									</label>
 									<label>
 										<span>Hari</span>
-										<select bind:value={scheduleDayFilter}>
+										<select
+											bind:value={scheduleDayFilter}
+											onchange={() => queueCollectionRefresh('enrollments', 0)}
+										>
 											<option value="">Semua hari</option>
 											{#each days as day (day)}
 												<option value={day}>{DAY_LABELS[day]}</option>
@@ -2845,7 +3126,10 @@
 									</label>
 									<label>
 										<span>Mata kuliah</span>
-										<select bind:value={scheduleCourseFilter}>
+										<select
+											bind:value={scheduleCourseFilter}
+											onchange={() => queueCollectionRefresh('enrollments', 0)}
+										>
 											<option value="">Semua mata kuliah</option>
 											{#each courses as item (item.id)}
 												<option value={item.id}>{item.name}</option>
@@ -2854,7 +3138,10 @@
 									</label>
 									<label>
 										<span>Ruang</span>
-										<select bind:value={scheduleRoomFilter}>
+										<select
+											bind:value={scheduleRoomFilter}
+											onchange={() => queueCollectionRefresh('enrollments', 0)}
+										>
 											<option value="">Semua ruang</option>
 											{#each classrooms as item (item.id)}
 												<option value={item.id}>{item.name}</option>
@@ -2863,7 +3150,10 @@
 									</label>
 									<label>
 										<span>Dosen</span>
-										<select bind:value={scheduleLecturerFilter}>
+										<select
+											bind:value={scheduleLecturerFilter}
+											onchange={() => queueCollectionRefresh('enrollments', 0)}
+										>
 											<option value="">Semua dosen</option>
 											{#each lecturers as item (item.id)}
 												<option value={item.id}>{item.name}</option>
@@ -2872,7 +3162,10 @@
 									</label>
 									<label>
 										<span>Semester</span>
-										<select bind:value={scheduleSemesterFilter}>
+										<select
+											bind:value={scheduleSemesterFilter}
+											onchange={() => queueCollectionRefresh('enrollments', 0)}
+										>
 											<option value="">Semua semester</option>
 											{#each scheduleSemesterOptions as item (item)}
 												<option value={item}>{item}</option>
@@ -2881,7 +3174,10 @@
 									</label>
 									<label>
 										<span>Tahun akademik</span>
-										<select bind:value={scheduleAcademicYearFilter}>
+										<select
+											bind:value={scheduleAcademicYearFilter}
+											onchange={() => queueCollectionRefresh('enrollments', 0)}
+										>
 											<option value="">Semua tahun</option>
 											{#each scheduleAcademicYearOptions as item (item)}
 												<option value={item}>{item}</option>
@@ -2951,7 +3247,7 @@
 										atau tahun akademik untuk menampilkan jadwal yang ingin dilihat.
 									</p>
 								</section>
-							{:else if calendarHasTooMuchData}
+							{:else if calendarExceedsVisibleLimit}
 								<section class="calendar-empty-state support-warning">
 									<h3>Persempit hasil sebelum membuka kalender</h3>
 									<p>
@@ -3120,7 +3416,7 @@
 									Kalender mingguan akan tampil setelah filter dipilih. Gunakan daftar bentrok di
 									atas untuk mulai memeriksa jadwal yang bentrok.
 								</p>
-							{:else if calendarHasTooMuchData}
+							{:else if calendarExceedsVisibleLimit}
 								<p class="empty-copy">
 									Terlalu banyak jadwal untuk ditampilkan sekaligus. Tambahkan filter sampai
 									hasilnya maksimal {CALENDAR_MAX_VISIBLE_SCHEDULES} jadwal, atau pilih salah satu grup
@@ -3504,17 +3800,23 @@
 														class="combobox-input"
 														placeholder="Cari mahasiswa..."
 														value={enrollmentDraft.studentId
-															? `${students.find((s) => s.id === enrollmentDraft.studentId)?.name ?? ''} • ${enrollmentDraft.studentId}`
+															? `${selectedDraftStudent} • ${enrollmentDraft.studentId}`
 															: studentPickerSearch}
 														oninput={(e) => {
 															studentPickerSearch = (e.currentTarget as HTMLInputElement).value;
 															if (enrollmentDraft.studentId) enrollmentDraft.studentId = '';
 															studentPickerOpen = true;
+															queueStudentPickerRefresh();
 														}}
-														onfocus={() => (studentPickerOpen = true)}
+														onfocus={() => {
+															studentPickerOpen = true;
+															queueStudentPickerRefresh(0);
+														}}
 													/>
-													{#if collectionIssues.students && !students.length}
-														<p class="combobox-error">{collectionIssues.students}</p>
+													{#if studentPickerIssue}
+														<p class="combobox-error">{studentPickerIssue}</p>
+													{:else if studentPickerOpen && studentPickerLoading}
+														<p class="combobox-empty">Memuat mahasiswa...</p>
 													{:else if studentPickerOpen && filteredStudentsForPicker.length}
 														<div class="combobox-dropdown" role="listbox">
 															{#each filteredStudentsForPicker as item (item.id)}
@@ -3536,6 +3838,8 @@
 																</button>
 															{/each}
 														</div>
+													{:else if studentPickerOpen}
+														<p class="combobox-empty">Mahasiswa tidak ditemukan.</p>
 													{/if}
 												</div>
 											</label>
@@ -3562,17 +3866,23 @@
 														class="combobox-input"
 														placeholder="Cari mata kuliah..."
 														value={enrollmentDraft.courseId
-															? `${courses.find((c) => c.id === enrollmentDraft.courseId)?.name ?? ''} • ${courses.find((c) => c.id === enrollmentDraft.courseId)?.lecturer_name ?? ''}`
+															? `${selectedDraftCourse} • ${coursePickerLookup.get(enrollmentDraft.courseId)?.lecturer_name ?? selectedEnrollmentRecord?.lecturer_name ?? ''}`
 															: coursePickerSearch}
 														oninput={(e) => {
 															coursePickerSearch = (e.currentTarget as HTMLInputElement).value;
 															if (enrollmentDraft.courseId) enrollmentDraft.courseId = '';
 															coursePickerOpen = true;
+															queueCoursePickerRefresh();
 														}}
-														onfocus={() => (coursePickerOpen = true)}
+														onfocus={() => {
+															coursePickerOpen = true;
+															queueCoursePickerRefresh(0);
+														}}
 													/>
-													{#if collectionIssues.courses && !courses.length}
-														<p class="combobox-error">{collectionIssues.courses}</p>
+													{#if coursePickerIssue}
+														<p class="combobox-error">{coursePickerIssue}</p>
+													{:else if coursePickerOpen && coursePickerLoading}
+														<p class="combobox-empty">Memuat mata kuliah...</p>
 													{:else if coursePickerOpen && filteredCoursesForPicker.length}
 														<div class="combobox-dropdown" role="listbox">
 															{#each filteredCoursesForPicker as item (item.id)}
@@ -3594,6 +3904,8 @@
 																</button>
 															{/each}
 														</div>
+													{:else if coursePickerOpen}
+														<p class="combobox-empty">Mata kuliah tidak ditemukan.</p>
 													{/if}
 												</div>
 											</label>
@@ -3860,7 +4172,7 @@
 												>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
 											>
 										</div>
-										<small>{item.schedule_count ?? 0} jadwal</small>
+										<small>{beautifyRoomType(item.class_room_type)}</small>
 									</button>
 								{/each}
 							</div>
@@ -4255,7 +4567,7 @@
 										><div>
 											<strong>{item.name}</strong><span>{item.id} • {item.study_program_name}</span>
 										</div>
-										<small>{item.enrollment_count ?? 0} KRS</small></button
+										<small>{item.year_admitted}</small></button
 									>{/each}
 							</div>
 							<CollectionPagination
@@ -4448,7 +4760,7 @@
 										class="list-row"
 										onclick={() => pickLecturer(item)}
 										><div><strong>{item.name}</strong><span>{item.id} • {item.email}</span></div>
-										<small>{item.schedule_count ?? 0} jadwal</small></button
+										<small>{item.email}</small></button
 									>{/each}
 							</div>
 							<CollectionPagination
@@ -4617,7 +4929,7 @@
 										class="list-row"
 										onclick={() => pickFaculty(item)}
 										><div><strong>{item.name}</strong><span>{item.id}</span></div>
-										<small>{item.study_program_count ?? 0} prodi</small></button
+										<small>{item.id}</small></button
 									>{/each}
 							</div>
 							<CollectionPagination
@@ -4765,7 +5077,7 @@
 										><div>
 											<strong>{item.name}</strong><span>{item.id} • {item.faculty_name}</span>
 										</div>
-										<small>{item.student_count ?? 0} mahasiswa</small></button
+										<small>{item.head ?? item.faculty_name}</small></button
 									>{/each}
 							</div>
 							<CollectionPagination
@@ -7778,6 +8090,12 @@
 		margin: 0.35rem 0 0;
 		font-size: 0.86rem;
 		color: var(--color-danger);
+	}
+
+	.combobox-empty {
+		margin: 0.35rem 0 0;
+		font-size: 0.86rem;
+		color: var(--color-muted-foreground);
 	}
 
 	/* --- Feedback dismiss --- */

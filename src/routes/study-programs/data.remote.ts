@@ -10,7 +10,11 @@ import {
 } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
-import { containsSearchPattern, prefixSearchPattern } from '$lib/server/search';
+import {
+	containsSearchPattern,
+	prefixSearchPattern,
+	wordPrefixSearchPattern
+} from '$lib/server/search';
 import {
 	selectStudyPrograms,
 	selectFaculties,
@@ -22,12 +26,23 @@ import { type SelectStudyProgramsWhere } from '$lib/server/sql';
 import { studyProgramCreateSchema, studyProgramSchema } from '$lib/validations/study-program';
 import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 
+const studyProgramListSelect = {
+	id: true,
+	name: true,
+	head: true,
+	faculty_id: true,
+	faculty_name: true
+} as const;
+
 export const getStudyPrograms = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const limit = getListQueryLimit();
 	const afterId = getListQueryCursor(page?.cursor);
 	return toLimitedListResult(
-		await selectStudyPrograms(getPool(), { params: { afterId, limit: limit + 1 } }),
+		await selectStudyPrograms(getPool(), {
+			select: studyProgramListSelect,
+			params: { afterId, limit: limit + 1 }
+		}),
 		limit,
 		(item) => item.id ?? null
 	);
@@ -66,29 +81,53 @@ export const searchStudyPrograms = query(searchStudyProgramsSchema, async (filte
 	const q = filters.q?.trim();
 	if (q) {
 		const qPrefix = prefixSearchPattern(q)!;
+		const qWordPrefix = wordPrefixSearchPattern(q)!;
 		const queryLimit = limit + 1;
 		const resultSets = await Promise.all([
 			selectStudyPrograms(getPool(), {
+				select: studyProgramListSelect,
 				where: [...where, ['id', '=', q]],
 				params: { afterId, limit: queryLimit }
 			}),
 			selectStudyPrograms(getPool(), {
+				select: studyProgramListSelect,
 				where: [...where, ['name', 'LIKE', qPrefix]],
 				params: { afterId, limit: queryLimit }
 			}),
 			selectStudyPrograms(getPool(), {
+				select: studyProgramListSelect,
+				where: [...where, ['name', 'LIKE', qWordPrefix]],
+				params: { afterId, limit: queryLimit }
+			}),
+			selectStudyPrograms(getPool(), {
+				select: studyProgramListSelect,
 				where: [...where, ['faculty_name', 'LIKE', qPrefix]],
 				params: { afterId, limit: queryLimit }
 			}),
 			selectStudyPrograms(getPool(), {
+				select: studyProgramListSelect,
+				where: [...where, ['faculty_name', 'LIKE', qWordPrefix]],
+				params: { afterId, limit: queryLimit }
+			}),
+			selectStudyPrograms(getPool(), {
+				select: studyProgramListSelect,
 				where: [...where, ['head', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
+			}),
+			selectStudyPrograms(getPool(), {
+				select: studyProgramListSelect,
+				where: [...where, ['head', 'LIKE', qWordPrefix]],
 				params: { afterId, limit: queryLimit }
 			})
 		]);
 		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
 	}
 	return toLimitedListResult(
-		await selectStudyPrograms(getPool(), { where, params: { afterId, limit: limit + 1 } }),
+		await selectStudyPrograms(getPool(), {
+			select: studyProgramListSelect,
+			where,
+			params: { afterId, limit: limit + 1 }
+		}),
 		limit,
 		(item) => item.id ?? null
 	);

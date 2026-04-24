@@ -26,7 +26,7 @@ function toPositiveInt(value: string | undefined, fallback: number): number {
 	return parsed;
 }
 
-const DEFAULT_LIST_QUERY_LIMIT = toPositiveInt(env.DB_LIST_QUERY_LIMIT, 1000);
+const DEFAULT_LIST_QUERY_LIMIT = toPositiveInt(env.DB_LIST_QUERY_LIMIT, 120);
 const MAX_LIST_QUERY_LIMIT = Math.max(
 	DEFAULT_LIST_QUERY_LIMIT,
 	toPositiveInt(env.DB_MAX_LIST_QUERY_LIMIT, 5000)

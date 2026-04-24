@@ -36,7 +36,7 @@ export async function selectStudentScheduleConflict(
 		values.push(params.excludeEnrollmentId);
 	}
 
-	sql += ` ORDER BY sch.start_time ASC LIMIT 1`;
+	sql += ` LIMIT 1`;
 
 	return connection
 		.query({ sql, rowsAsArray: true }, values)

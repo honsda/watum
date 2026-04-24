@@ -11,7 +11,11 @@ import {
 	toLimitedListResult
 } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
-import { containsSearchPattern, prefixSearchPattern } from '$lib/server/search';
+import {
+	containsSearchPattern,
+	prefixSearchPattern,
+	wordPrefixSearchPattern
+} from '$lib/server/search';
 import {
 	selectClassRooms,
 	selectSchedules,
@@ -26,12 +30,22 @@ import dayjs from 'dayjs';
 
 type ClassRoomType = v.InferOutput<typeof classRoomSchema>['classRoomType'];
 
+const classRoomListSelect = {
+	id: true,
+	name: true,
+	class_room_type: true,
+	capacity: true
+} as const;
+
 export const getClassRooms = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const limit = getListQueryLimit();
 	const afterId = getListQueryCursor(page?.cursor);
 	return toLimitedListResult(
-		await selectClassRooms(getPool(), { params: { afterId, limit: limit + 1 } }),
+		await selectClassRooms(getPool(), {
+			select: classRoomListSelect,
+			params: { afterId, limit: limit + 1 }
+		}),
 		limit,
 		(item) => item.id ?? null
 	);
@@ -65,10 +79,12 @@ export const searchClassRooms = query(searchClassRoomsSchema, async (filters) =>
 	const q = filters.q?.trim();
 	if (q) {
 		const qPrefix = prefixSearchPattern(q)!;
+		const qWordPrefix = wordPrefixSearchPattern(q)!;
 		const queryLimit = limit + 1;
 		const variants: SelectClassRoomsWhere[][] = [
 			[...where, ['id', '=', q]],
-			[...where, ['name', 'LIKE', qPrefix]]
+			[...where, ['name', 'LIKE', qPrefix]],
+			[...where, ['name', 'LIKE', qWordPrefix]]
 		];
 		const normalizedType = q
 			.toUpperCase()
@@ -80,6 +96,7 @@ export const searchClassRooms = query(searchClassRoomsSchema, async (filters) =>
 		const resultSets = await Promise.all(
 			variants.map((variantWhere) =>
 				selectClassRooms(getPool(), {
+					select: classRoomListSelect,
 					where: variantWhere,
 					params: { afterId, limit: queryLimit }
 				})
@@ -88,7 +105,11 @@ export const searchClassRooms = query(searchClassRoomsSchema, async (filters) =>
 		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
 	}
 	return toLimitedListResult(
-		await selectClassRooms(getPool(), { where, params: { afterId, limit: limit + 1 } }),
+		await selectClassRooms(getPool(), {
+			select: classRoomListSelect,
+			where,
+			params: { afterId, limit: limit + 1 }
+		}),
 		limit,
 		(item) => item.id ?? null
 	);
@@ -110,7 +131,7 @@ export const getClassRoomUtilization = query(
 		const limit = getListQueryLimit();
 		const schedules = await selectSchedules(getPool(), {
 			where: [['class_room_id', '=', classRoomId]],
-			params: { offset: 0, limit: limit + 1 }
+			params: { limit: limit + 1 }
 		});
 		const limitedSchedules = toLimitedListResult(
 			schedules,

@@ -10,7 +10,11 @@ import {
 } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
-import { containsSearchPattern, prefixSearchPattern } from '$lib/server/search';
+import {
+	containsSearchPattern,
+	prefixSearchPattern,
+	wordPrefixSearchPattern
+} from '$lib/server/search';
 import {
 	selectFaculties,
 	insertFaculty,
@@ -21,12 +25,20 @@ import { type SelectFacultiesWhere } from '$lib/server/sql';
 import { facultyCreateSchema, facultySchema } from '$lib/validations/faculty';
 import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 
+const facultyListSelect = {
+	id: true,
+	name: true
+} as const;
+
 export const getFaculties = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const limit = getListQueryLimit();
 	const afterId = getListQueryCursor(page?.cursor);
 	return toLimitedListResult(
-		await selectFaculties(getPool(), { params: { afterId, limit: limit + 1 } }),
+		await selectFaculties(getPool(), {
+			select: facultyListSelect,
+			params: { afterId, limit: limit + 1 }
+		}),
 		limit,
 		(item) => item.id ?? null
 	);
@@ -63,21 +75,33 @@ export const searchFaculties = query(searchFacultiesSchema, async (filters) => {
 	const q = filters.q?.trim();
 	if (q) {
 		const qPrefix = prefixSearchPattern(q)!;
+		const qWordPrefix = wordPrefixSearchPattern(q)!;
 		const queryLimit = limit + 1;
 		const resultSets = await Promise.all([
 			selectFaculties(getPool(), {
+				select: facultyListSelect,
 				where: [...where, ['id', '=', q]],
 				params: { afterId, limit: queryLimit }
 			}),
 			selectFaculties(getPool(), {
+				select: facultyListSelect,
 				where: [...where, ['name', 'LIKE', qPrefix]],
+				params: { afterId, limit: queryLimit }
+			}),
+			selectFaculties(getPool(), {
+				select: facultyListSelect,
+				where: [...where, ['name', 'LIKE', qWordPrefix]],
 				params: { afterId, limit: queryLimit }
 			})
 		]);
 		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
 	}
 	return toLimitedListResult(
-		await selectFaculties(getPool(), { where, params: { afterId, limit: limit + 1 } }),
+		await selectFaculties(getPool(), {
+			select: facultyListSelect,
+			where,
+			params: { afterId, limit: limit + 1 }
+		}),
 		limit,
 		(item) => item.id ?? null
 	);
