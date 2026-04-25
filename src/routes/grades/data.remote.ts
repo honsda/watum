@@ -346,6 +346,7 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 	if (filters.courseId) where.push(['course_id', '=', filters.courseId]);
 	if (filters.courseName)
 		where.push(['course_name', 'FULLTEXT', fulltextSearchPattern(filters.courseName)!]);
+	const limit = getListQueryLimit(40);
 	if (filters.lecturerId) {
 		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
 			filters.lecturerId
@@ -368,7 +369,6 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 	} else if (filters.maxTotalScore != null) {
 		where.push(['total_score', '<=', filters.maxTotalScore]);
 	}
-	const limit = getListQueryLimit(40);
 	const afterId = getListQueryCursor(filters.cursor);
 	const q = filters.q?.trim();
 	if (q) {

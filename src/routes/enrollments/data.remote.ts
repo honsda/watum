@@ -528,6 +528,7 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 			where.push(['course_id', 'IN', courseIds]);
 		}
 	}
+	const limit = getListQueryLimit(filters.preview ? 60 : 40);
 	if (filters.id) where.push(['id', '=', filters.id]);
 	if (filters.studentId) where.push(['student_id', '=', filters.studentId]);
 	if (filters.courseId) where.push(['course_id', '=', filters.courseId]);
@@ -563,7 +564,6 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 		where.push(['class_room_name', 'FULLTEXT', fulltextSearchPattern(filters.classRoomName)!]);
 	if (filters.scheduleDay) where.push(['schedule_day', '=', filters.scheduleDay]);
 	if (filters.letterGrade) where.push(['letter_grade', '=', filters.letterGrade]);
-	const limit = getListQueryLimit(filters.preview ? 60 : 40);
 	const afterId = getListQueryCursor(filters.cursor);
 	const q = filters.q?.trim();
 	if (q) {
