@@ -465,7 +465,22 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 	if (filters.id) where.push(['id', '=', filters.id]);
 	if (filters.studentId) where.push(['student_id', '=', filters.studentId]);
 	if (filters.courseId) where.push(['course_id', '=', filters.courseId]);
-	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
+	if (filters.lecturerId) {
+		// Pre-query courses to avoid a slow c.lecturer_id join filter on 2M+ rows.
+		// Filtering by course_id IN (...) lets MariaDB use idx_enrollments_course_schedule_id.
+		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
+			filters.lecturerId
+		]);
+		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
+		if (!courseIds.length) {
+			return toLimitedListResult([], limit, (item) => item.id ?? null);
+		}
+		if (courseIds.length === 1) {
+			where.push(['course_id', '=', courseIds[0]!]);
+		} else {
+			where.push(['course_id', 'IN', courseIds]);
+		}
+	}
 	if (filters.classRoomId) where.push(['class_room_id', '=', filters.classRoomId]);
 	if (filters.semester) where.push(['semester', 'LIKE', containsSearchPattern(filters.semester)!]);
 	if (filters.academicYear)

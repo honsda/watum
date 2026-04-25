@@ -257,9 +257,14 @@ async function prefetchGradeSearchResults(
 	}
 
 	if (user.role === 'LECTURER' && user.lecturerId) {
-		ensureCourses();
-		whereParts.push('c.lecturer_id = ?');
-		values.push(user.lecturerId);
+		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
+			user.lecturerId
+		]);
+		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
+		if (!courseIds.length) return [];
+		ensureEnrollments();
+		whereParts.push('e.course_id IN (?)');
+		values.push(courseIds);
 	} else if (user.role === 'STUDENT' && user.studentId) {
 		ensureEnrollments();
 		whereParts.push('e.student_id = ?');
@@ -305,9 +310,14 @@ async function prefetchGradeSearchResults(
 		values.push(containsSearchPattern(filters.courseName)!);
 	}
 	if (filters.lecturerId) {
-		ensureCourses();
-		whereParts.push('c.lecturer_id = ?');
-		values.push(filters.lecturerId);
+		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
+			filters.lecturerId
+		]);
+		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
+		if (!courseIds.length) return [];
+		ensureEnrollments();
+		whereParts.push('e.course_id IN (?)');
+		values.push(courseIds);
 	}
 	if (filters.letterGrade) {
 		whereParts.push('g.letter_grade = ?');
@@ -360,7 +370,20 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 	if (filters.courseId) where.push(['course_id', '=', filters.courseId]);
 	if (filters.courseName)
 		where.push(['course_name', 'LIKE', containsSearchPattern(filters.courseName)!]);
-	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
+	if (filters.lecturerId) {
+		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
+			filters.lecturerId
+		]);
+		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
+		if (!courseIds.length) {
+			return toLimitedListResult([], limit, (item) => item.id ?? null);
+		}
+		if (courseIds.length === 1) {
+			where.push(['course_id', '=', courseIds[0]!]);
+		} else {
+			where.push(['course_id', 'IN', courseIds]);
+		}
+	}
 	if (filters.letterGrade) where.push(['letter_grade', '=', filters.letterGrade]);
 	if (filters.minTotalScore != null && filters.maxTotalScore != null) {
 		where.push(['total_score', 'BETWEEN', filters.minTotalScore, filters.maxTotalScore]);
