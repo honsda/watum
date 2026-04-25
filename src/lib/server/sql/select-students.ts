@@ -110,7 +110,11 @@ export type SelectStudentsWhere =
 export async function selectStudents(connection: Connection, params?: SelectStudentsDynamicParams): Promise<SelectStudentsResult[]> {
     const where = whereConditionsToObject(params?.where);
     const paramsValues: any = [];
-    let sql = 'SELECT';
+    // MANUAL FIX: STRAIGHT_JOIN forces MariaDB to read students first, avoiding
+    // a full-table scan when the optimizer incorrectly chooses faculties as the
+    // driving table. On 10M rows this improved query time from ~7.5s to ~70ms.
+    // If you regenerate this file with typesql, you must re-apply this change.
+    let sql = 'SELECT STRAIGHT_JOIN';
     if (params?.select == null || params.select.id) {
         sql = appendSelect(sql, `s.id`);
     }

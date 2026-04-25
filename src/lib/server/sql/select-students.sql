@@ -1,5 +1,10 @@
 -- @dynamicQuery
-SELECT
+-- NOTE: STRAIGHT_JOIN is in the SQL template but the TypeSQL generator does not
+-- propagate it into the generated .ts file. The generated select-students.ts has
+-- been manually patched to use 'SELECT STRAIGHT_JOIN'. If you regenerate that
+-- file, you must re-apply the STRAIGHT_JOIN prefix or the query will regress
+-- to a full-table scan on 10M+ rows (~7.5s → ~70ms).
+SELECT STRAIGHT_JOIN
     s.id,
     s.name,
     s.email,
