@@ -237,6 +237,7 @@ const searchEnrollmentsSchema = v.object({
 type EnrollmentSearchFilters = v.InferOutput<typeof searchEnrollmentsSchema>;
 type EnrollmentPrefetchBase =
 	| 'students'
+	| 'studyPrograms'
 	| 'courses'
 	| 'lecturers'
 	| 'classRooms'
@@ -266,6 +267,33 @@ async function hydrateEnrollmentsByIds(ids: string[]) {
 		.filter((row): row is SelectEnrollmentsResult => Boolean(row));
 }
 
+/**
+ * Choose the optimal driving table for enrollment search based on active filters.
+ * When a filter targets a dimension table (students, courses, etc.), driving from
+ * that table lets MariaDB use its index (e.g. FULLTEXT on name) instead of
+ * scanning all 2.7M enrollment rows and joining the dimension for each.
+ *
+ * Priority (most selective first):
+ *   1. Exact ID filters (studentId, courseId, classRoomId) — smallest result set
+ *   2. FULLTEXT name filters — bounded by index, typically <100 rows
+ *   3. Fallback to enrollments (semester, academicYear, scheduleDay)
+ */
+function resolveOptimalEnrollmentBase(
+	filters: EnrollmentSearchFilters,
+	user: Awaited<ReturnType<typeof requireUser>>
+): EnrollmentPrefetchBase {
+	// Role restrictions are handled separately; they don't change the base.
+	if (filters.studentId) return 'students';
+	if (filters.courseId) return 'courses';
+	if (filters.classRoomId) return 'classRooms';
+	if (filters.studentName) return 'students';
+	if (filters.studyProgramName) return 'studyPrograms';
+	if (filters.courseName) return 'courses';
+	if (filters.lecturerName) return 'lecturers';
+	if (filters.classRoomName) return 'classRooms';
+	return 'enrollments';
+}
+
 async function prefetchEnrollmentSearchResults(
 	base: EnrollmentPrefetchBase,
 	predicateSql: string,
@@ -289,6 +317,14 @@ async function prefetchEnrollmentSearchResults(
 
 	if (base === 'students') {
 		joinParts.push('FROM students s', 'INNER JOIN enrollments e ON e.student_id = s.id');
+		joined.s = true;
+	} else if (base === 'studyPrograms') {
+		joinParts.push(
+			'FROM study_programs sp',
+			'INNER JOIN students s ON s.study_program_id = sp.id',
+			'INNER JOIN enrollments e ON e.student_id = s.id'
+		);
+		joined.sp = true;
 		joined.s = true;
 	} else if (base === 'courses') {
 		joinParts.push('FROM courses c', 'INNER JOIN enrollments e ON e.course_id = c.id');
@@ -368,9 +404,19 @@ async function prefetchEnrollmentSearchResults(
 		whereParts.push('e.student_id = ?');
 		values.push(user.studentId);
 	} else if (user.role === 'LECTURER' && user.lecturerId) {
-		ensureCourses();
-		whereParts.push('c.lecturer_id = ?');
-		values.push(user.lecturerId);
+		// Skip if already driving from the lecturer's own dimension table.
+		if (base !== 'lecturers') {
+			const [courseRows] = await getPool().query(
+				'SELECT id FROM courses WHERE lecturer_id = ?',
+				[user.lecturerId!]
+			);
+			const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
+			if (!courseIds.length) {
+				return [];
+			}
+			whereParts.push('e.course_id IN (?)');
+			values.push(courseIds);
+		}
 	}
 
 	if (filters.id) {
@@ -386,9 +432,15 @@ async function prefetchEnrollmentSearchResults(
 		values.push(filters.courseId);
 	}
 	if (filters.lecturerId) {
-		ensureCourses();
-		whereParts.push('c.lecturer_id = ?');
-		values.push(filters.lecturerId);
+		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
+			filters.lecturerId
+		]);
+		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
+		if (!courseIds.length) {
+			return [];
+		}
+		whereParts.push('e.course_id IN (?)');
+		values.push(courseIds);
 	}
 	if (filters.classRoomId) {
 		whereParts.push('e.class_room_id = ?');
@@ -597,136 +649,50 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 		}
 		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
 	}
-	if (filters.studentName) {
-		return toLimitedListResult(
-			await prefetchEnrollmentSearchResults(
-				'enrollments',
-				'MATCH(s.name) AGAINST(? IN BOOLEAN MODE)',
-				[fulltextSearchPattern(filters.studentName)!],
-				filters,
-				user,
-				limit,
-				afterId,
-				{ forcePrimary: true, requiredJoins: ['students'] }
-			),
-			limit,
-			(item) => item.id ?? null
-		);
+	// Multi-filter search: pick the most selective dimension as the driving table.
+	// All other filters are applied as WHERE clauses on joined tables.
+	const base = resolveOptimalEnrollmentBase(filters, user);
+
+	let predicateSql = '1 = 1';
+	const predicateValues: unknown[] = [];
+
+	if (base === 'students' && filters.studentName) {
+		predicateSql = 'MATCH(s.name) AGAINST(? IN BOOLEAN MODE)';
+		predicateValues.push(fulltextSearchPattern(filters.studentName)!);
+	} else if (base === 'studyPrograms' && filters.studyProgramName) {
+		predicateSql = 'MATCH(sp.name) AGAINST(? IN BOOLEAN MODE)';
+		predicateValues.push(fulltextSearchPattern(filters.studyProgramName)!);
+	} else if (base === 'courses' && filters.courseName) {
+		predicateSql = 'MATCH(c.name) AGAINST(? IN BOOLEAN MODE)';
+		predicateValues.push(fulltextSearchPattern(filters.courseName)!);
+	} else if (base === 'lecturers' && filters.lecturerName) {
+		predicateSql = 'MATCH(l.name) AGAINST(? IN BOOLEAN MODE)';
+		predicateValues.push(fulltextSearchPattern(filters.lecturerName)!);
+	} else if (base === 'classRooms' && filters.classRoomName) {
+		predicateSql = 'MATCH(cr.name) AGAINST(? IN BOOLEAN MODE)';
+		predicateValues.push(fulltextSearchPattern(filters.classRoomName)!);
+	} else if (filters.scheduleDay) {
+		predicateSql = 'e.schedule_day = ?';
+		predicateValues.push(filters.scheduleDay);
+	} else if (filters.semester) {
+		predicateSql = 'e.semester LIKE ?';
+		predicateValues.push(containsSearchPattern(filters.semester)!);
+	} else if (filters.academicYear) {
+		predicateSql = 'e.academic_year LIKE ?';
+		predicateValues.push(containsSearchPattern(filters.academicYear)!);
 	}
-	if (filters.studyProgramName) {
-		return toLimitedListResult(
-			await prefetchEnrollmentSearchResults(
-				'enrollments',
-				'MATCH(sp.name) AGAINST(? IN BOOLEAN MODE)',
-				[fulltextSearchPattern(filters.studyProgramName)!],
-				filters,
-				user,
-				limit,
-				afterId,
-				{ forcePrimary: true, requiredJoins: ['studyPrograms'] }
-			),
-			limit,
-			(item) => item.id ?? null
-		);
-	}
-	if (filters.courseName) {
-		return toLimitedListResult(
-			await prefetchEnrollmentSearchResults(
-				'courses',
-				'MATCH(c.name) AGAINST(? IN BOOLEAN MODE)',
-				[fulltextSearchPattern(filters.courseName)!],
-				filters,
-				user,
-				limit,
-				afterId
-			),
-			limit,
-			(item) => item.id ?? null
-		);
-	}
-	if (filters.lecturerName) {
-		return toLimitedListResult(
-			await prefetchEnrollmentSearchResults(
-				'lecturers',
-				'MATCH(l.name) AGAINST(? IN BOOLEAN MODE)',
-				[fulltextSearchPattern(filters.lecturerName)!],
-				filters,
-				user,
-				limit,
-				afterId
-			),
-			limit,
-			(item) => item.id ?? null
-		);
-	}
-	if (filters.classRoomName) {
-		return toLimitedListResult(
-			await prefetchEnrollmentSearchResults(
-				'enrollments',
-				'MATCH(cr.name) AGAINST(? IN BOOLEAN MODE)',
-				[fulltextSearchPattern(filters.classRoomName)!],
-				filters,
-				user,
-				limit,
-				afterId,
-				{ forcePrimary: true, requiredJoins: ['classRooms'] }
-			),
-			limit,
-			(item) => item.id ?? null
-		);
-	}
-	if (filters.scheduleDay) {
-		return toLimitedListResult(
-			await prefetchEnrollmentSearchResults(
-				'enrollments',
-				'e.schedule_day = ?',
-				[filters.scheduleDay],
-				filters,
-				user,
-				limit,
-				afterId,
-				{ forcePrimary: true }
-			),
-			limit,
-			(item) => item.id ?? null
-		);
-	}
-	if (filters.semester) {
-		return toLimitedListResult(
-			await prefetchEnrollmentSearchResults(
-				'enrollments',
-				'e.semester LIKE ?',
-				[containsSearchPattern(filters.semester)!],
-				filters,
-				user,
-				limit,
-				afterId
-			),
-			limit,
-			(item) => item.id ?? null
-		);
-	}
-	if (filters.academicYear) {
-		return toLimitedListResult(
-			await prefetchEnrollmentSearchResults(
-				'enrollments',
-				'e.academic_year LIKE ?',
-				[containsSearchPattern(filters.academicYear)!],
-				filters,
-				user,
-				limit,
-				afterId
-			),
-			limit,
-			(item) => item.id ?? null
-		);
-	}
+
 	return toLimitedListResult(
-		await selectEnrollments(getPool(), {
-			select: enrollmentListSelect,
-			where,
-			params: { afterId, limit: limit + 1 }
-		}),
+		await prefetchEnrollmentSearchResults(
+			base,
+			predicateSql,
+			predicateValues,
+			filters,
+			user,
+			limit,
+			afterId,
+			{ forcePrimary: base === 'enrollments' }
+		),
 		limit,
 		(item) => item.id ?? null
 	);

@@ -144,60 +144,16 @@ const searchGradesSchema = v.object({
 });
 
 type GradeSearchFilters = v.InferOutput<typeof searchGradesSchema>;
-type GradePrefetchBase = 'grades' | 'students' | 'courses';
+type GradePrefetchBase = 'grades' | 'students' | 'studyPrograms' | 'courses';
 type GradePrefetchJoin = 'enrollments' | 'students' | 'studyPrograms' | 'courses';
 
-async function hydrateGradesByIds(ids: string[]) {
-	if (!ids.length) return [];
-	const rows = await selectGrades(getPool(), {
-		select: gradeListSelect,
-		where: [['id', 'IN', ids]]
-	});
-	const rowsById = new Map(rows.map((row) => [row.id, row]));
-	return ids.map((id) => rowsById.get(id)).filter((row): row is SelectGradesResult => Boolean(row));
-}
-
-async function prefetchGradesByCourseNamePrefix(
-	filters: GradeSearchFilters,
-	user: Awaited<ReturnType<typeof requireUser>>,
-	qPrefix: string,
-	qWordPrefix: string,
-	limit: number,
-	afterId?: string
-) {
-	const sqlParts = ['SELECT id FROM courses WHERE (name LIKE ? OR name LIKE ?)'];
-	const values: unknown[] = [qPrefix, qWordPrefix];
-
-	const effectiveLecturerId =
-		filters.lecturerId ?? (user.role === 'LECTURER' ? user.lecturerId : undefined);
-	if (filters.courseId) {
-		sqlParts.push('AND id = ?');
-		values.push(filters.courseId);
-	}
-	if (filters.courseName) {
-		sqlParts.push('AND name LIKE ?');
-		values.push(containsSearchPattern(filters.courseName)!);
-	}
-	if (effectiveLecturerId) {
-		sqlParts.push('AND lecturer_id = ?');
-		values.push(effectiveLecturerId);
-	}
-
-	const [courseRows] = await getPool().query(sqlParts.join(' '), values);
-	const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id).filter(Boolean);
-	if (!courseIds.length) return [];
-
-	return prefetchGradeSearchResults(
-		'grades',
-		'e.course_id IN (?)',
-		[courseIds],
-		filters,
-		user,
-		limit,
-		afterId,
-		true,
-		['enrollments']
-	);
+function resolveOptimalGradeBase(filters: GradeSearchFilters): GradePrefetchBase {
+	if (filters.studentId) return 'students';
+	if (filters.courseId) return 'courses';
+	if (filters.studentName) return 'students';
+	if (filters.studyProgramName) return 'studyPrograms';
+	if (filters.courseName) return 'courses';
+	return 'grades';
 }
 
 async function prefetchGradeSearchResults(
@@ -218,6 +174,15 @@ async function prefetchGradeSearchResults(
 
 	if (base === 'students') {
 		joinParts.push('FROM students s', 'INNER JOIN enrollments e ON e.student_id = s.id');
+		joined.s = true;
+		joined.e = true;
+	} else if (base === 'studyPrograms') {
+		joinParts.push(
+			'FROM study_programs sp',
+			'INNER JOIN students s ON s.study_program_id = sp.id',
+			'INNER JOIN enrollments e ON e.student_id = s.id'
+		);
+		joined.sp = true;
 		joined.s = true;
 		joined.e = true;
 	} else if (base === 'courses') {
@@ -476,46 +441,34 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 			(item) => item.id ?? null
 		);
 	}
-	if (filters.studentName) {
-		return toLimitedListResult(
-			await prefetchGradeSearchResults(
-				'grades',
-				'MATCH(s.name) AGAINST(? IN BOOLEAN MODE)',
-				[fulltextSearchPattern(filters.studentName)!],
-				filters,
-				user,
-				limit,
-				afterId,
-				true,
-				['students']
-			),
-			limit,
-			(item) => item.id ?? null
-		);
+	// Multi-filter search: pick the most selective dimension as the driving table.
+	const base = resolveOptimalGradeBase(filters);
+
+	let predicateSql = '1 = 1';
+	const predicateValues: unknown[] = [];
+
+	if (base === 'students' && filters.studentName) {
+		predicateSql = 'MATCH(s.name) AGAINST(? IN BOOLEAN MODE)';
+		predicateValues.push(fulltextSearchPattern(filters.studentName)!);
+	} else if (base === 'studyPrograms' && filters.studyProgramName) {
+		predicateSql = 'MATCH(sp.name) AGAINST(? IN BOOLEAN MODE)';
+		predicateValues.push(fulltextSearchPattern(filters.studyProgramName)!);
+	} else if (base === 'courses' && filters.courseName) {
+		predicateSql = 'MATCH(c.name) AGAINST(? IN BOOLEAN MODE)';
+		predicateValues.push(fulltextSearchPattern(filters.courseName)!);
 	}
-	if (filters.studyProgramName) {
-		return toLimitedListResult(
-			await prefetchGradeSearchResults(
-				'grades',
-				'MATCH(sp.name) AGAINST(? IN BOOLEAN MODE)',
-				[fulltextSearchPattern(filters.studyProgramName)!],
-				filters,
-				user,
-				limit,
-				afterId,
-				true,
-				['studyPrograms']
-			),
-			limit,
-			(item) => item.id ?? null
-		);
-	}
+
 	return toLimitedListResult(
-		await selectGrades(getPool(), {
-			select: gradeListSelect,
-			where,
-			params: { afterId, limit: limit + 1 }
-		}),
+		await prefetchGradeSearchResults(
+			base,
+			predicateSql,
+			predicateValues,
+			filters,
+			user,
+			limit,
+			afterId,
+			base === 'grades'
+		),
 		limit,
 		(item) => item.id ?? null
 	);
