@@ -333,14 +333,25 @@ async function collectConflictGroupSeeds(
 				? 'e.student_audit_sk'
 				: 'e.lecturer_audit_sk';
 
+	const forceIndex =
+		conflictType === 'room'
+			? 'idx_enrollments_room_conflict'
+			: conflictType === 'student'
+				? 'idx_enrollments_student_conflict'
+				: 'idx_enrollments_lecturer_conflict';
+
 	// Fast index-only aggregation using denormalized schedule columns.
 	// The covering index (idx_enrollments_*_conflict) lets MySQL satisfy
 	// this query without touching the schedules table at all.
+	// FORCE INDEX is required because MariaDB's optimizer incorrectly
+	// chooses a full table scan + temp table + filesort on 10M+ rows
+	// when HAVING COUNT(*) > 1 is present, even though the index covers
+	// all GROUP BY columns.
 	const groupSql = [
 		`SELECT ${resourceCol} AS resource_id, e.academic_year_start, e.semester_sort,`,
 		`  e.schedule_day AS day, e.schedule_start_time AS start_time, e.schedule_end_time AS end_time,`,
 		`  COUNT(*) AS member_count`,
-		`FROM enrollments e`,
+		`FROM enrollments e FORCE INDEX (${forceIndex})`,
 		`WHERE ${whereSql}`,
 		`GROUP BY ${resourceCol}, e.academic_year_start, e.semester_sort,`,
 		`  e.schedule_day, e.schedule_start_time, e.schedule_end_time`,
@@ -388,7 +399,7 @@ async function collectConflictGroupSeeds(
 			`SELECT e.id AS enrollment_id, e.schedule_audit_sk, ${resourceCol} AS resource_id,`,
 			`  e.academic_year_start, e.semester_sort, e.schedule_day AS day,`,
 			`  e.schedule_start_time AS start_time, e.schedule_end_time AS end_time`,
-			`FROM enrollments e`,
+			`FROM enrollments e FORCE INDEX (${forceIndex})`,
 			`WHERE ${conditions}`
 		].join(' ');
 

@@ -476,34 +476,6 @@
 	type ConflictAuditGroupResult = ConflictAuditResult['groups'][number];
 	type ConflictAuditMemberResult = ConflictAuditGroupResult['members'][number];
 
-	function mergeConflictAudits(results: ConflictAuditResult[]): ConflictAuditResult {
-		const groups = results
-			.flatMap((result) => result.groups)
-			.sort((left, right) => right.memberCount - left.memberCount)
-			.slice(0, 1000);
-		const conflictedEnrollments = new Set(
-			results.flatMap((result) =>
-				result.groups.flatMap((group) => group.members.map((member) => member.enrollmentId))
-			)
-		);
-		return {
-			filters: results[0]?.filters ?? {
-				academicYear: null,
-				semester: null,
-				lecturerScope: null
-			},
-			summary: {
-				totalGroups: results.reduce((sum, result) => sum + result.summary.totalGroups, 0),
-				roomGroups: results.reduce((sum, result) => sum + result.summary.roomGroups, 0),
-				studentGroups: results.reduce((sum, result) => sum + result.summary.studentGroups, 0),
-				lecturerGroups: results.reduce((sum, result) => sum + result.summary.lecturerGroups, 0),
-				conflictedEnrollments: conflictedEnrollments.size
-			},
-			truncated: results.some((result) => result.truncated) || groups.length === 1000,
-			groups
-		};
-	}
-
 	function toEnrollmentResultFromConflictMember(
 		member: ConflictAuditMemberResult
 	): SelectEnrollmentsResult {
@@ -1500,13 +1472,7 @@
 		conflictAuditLoading = true;
 		conflictAuditIssue = null;
 		try {
-			const baseFilters = buildConflictAuditFilters();
-			const [roomAudit, studentAudit, lecturerAudit] = await Promise.all([
-				resolveRemoteQuery(getEnrollmentConflictAudit({ ...baseFilters, conflictType: 'room' })),
-				resolveRemoteQuery(getEnrollmentConflictAudit({ ...baseFilters, conflictType: 'student' })),
-				resolveRemoteQuery(getEnrollmentConflictAudit({ ...baseFilters, conflictType: 'lecturer' }))
-			]);
-			conflictAudit = mergeConflictAudits([roomAudit, studentAudit, lecturerAudit]);
+			conflictAudit = await resolveRemoteQuery(getEnrollmentConflictAudit(buildConflictAuditFilters()));
 		} catch (error) {
 			conflictAudit = null;
 			conflictAuditIssue = errorMessage(error, 'Audit bentrok gagal dimuat.');
