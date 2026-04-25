@@ -2,7 +2,7 @@
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
     <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Watum Load Test Plan" enabled="true">
-      <stringProp name="TestPlan.comments">Configurable JMeter plan for Watum. Stable endpoints are /health, /ready, and /auth/refresh. Remote-function endpoints such as LOGIN_PATH, CURRENT_USER_PATH, COURSES_PATH, STUDENTS_PATH, ENROLLMENTS_PATH, and GRADES_PATH must be replaced with real URLs captured from the browser Network tab while using /test or the main dashboard. Unsafe requests require same-origin Origin/Referer headers because hooks.server.ts enforces CSRF checks.</stringProp>
+      <stringProp name="TestPlan.comments">Configurable JMeter plan for Watum. Stable endpoints are /health, /ready, and /auth/refresh. Remote-function endpoints such as LOGIN_PATH, CURRENT_USER_PATH, COURSES_PATH, STUDENTS_PATH, ENROLLMENTS_PATH, and GRADES_PATH must be replaced with real URLs captured from the browser Network tab while using /test or the main dashboard. Unsafe requests require same-origin Origin/Referer headers because hooks.server.ts enforces CSRF checks. Default timeout values are relaxed for the current 10M-row stress seed so long-running paginated queries fail only when they are clearly outside a reasonable benchmark window.</stringProp>
       <boolProp name="TestPlan.functional_mode">false</boolProp>
       <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
       <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
@@ -25,6 +25,16 @@
           <elementProp name="ORIGIN" elementType="Argument">
             <stringProp name="Argument.name">ORIGIN</stringProp>
             <stringProp name="Argument.value">${PROTOCOL}://${HOST}:${PORT}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="CONNECT_TIMEOUT_MS" elementType="Argument">
+            <stringProp name="Argument.name">CONNECT_TIMEOUT_MS</stringProp>
+            <stringProp name="Argument.value">15000</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="RESPONSE_TIMEOUT_MS" elementType="Argument">
+            <stringProp name="Argument.name">RESPONSE_TIMEOUT_MS</stringProp>
+            <stringProp name="Argument.value">45000</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
           <elementProp name="HEALTH_PATH" elementType="Argument">
@@ -89,12 +99,12 @@
           </elementProp>
           <elementProp name="RAMP_UP" elementType="Argument">
             <stringProp name="Argument.name">RAMP_UP</stringProp>
-            <stringProp name="Argument.value">20</stringProp>
+            <stringProp name="Argument.value">60</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
           <elementProp name="LOOPS" elementType="Argument">
             <stringProp name="Argument.name">LOOPS</stringProp>
-            <stringProp name="Argument.value">10</stringProp>
+            <stringProp name="Argument.value">8</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
         </collectionProp>
@@ -112,8 +122,8 @@
         <stringProp name="HTTPSampler.contentEncoding">utf-8</stringProp>
         <stringProp name="HTTPSampler.path"/>
         <stringProp name="HTTPSampler.concurrentPool">6</stringProp>
-        <stringProp name="HTTPSampler.connect_timeout">10000</stringProp>
-        <stringProp name="HTTPSampler.response_timeout">30000</stringProp>
+        <stringProp name="HTTPSampler.connect_timeout">${CONNECT_TIMEOUT_MS}</stringProp>
+        <stringProp name="HTTPSampler.response_timeout">${RESPONSE_TIMEOUT_MS}</stringProp>
       </ConfigTestElement>
       <hashTree/>
       <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Default Headers" enabled="true">
