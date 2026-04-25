@@ -404,15 +404,13 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 				params: { afterId, limit: queryLimit }
 			}),
 			prefetchGradeSearchResults(
-				'grades',
+				'students',
 				'(MATCH(s.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(s.name) AGAINST(? IN BOOLEAN MODE))',
 				[qPrefix, qWordPrefix],
 				filters,
 				user,
 				limit,
-				afterId,
-				true,
-				['students']
+				afterId
 			),
 			prefetchGradeSearchResults(
 				'courses',
@@ -443,15 +441,13 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 	if (filters.studentEmail) {
 		return toLimitedListResult(
 			await prefetchGradeSearchResults(
-				'grades',
+				'students',
 				's.email LIKE ?',
 				[containsSearchPattern(filters.studentEmail)!],
 				filters,
 				user,
 				limit,
-				afterId,
-				true,
-				['students']
+				afterId
 			),
 			limit,
 			(item) => item.id ?? null
