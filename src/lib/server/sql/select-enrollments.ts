@@ -71,9 +71,9 @@ const selectFragments = {
     course_credits: `c.credits`,
     lecturer_name: `l.name`,
     class_room_name: `cr.name`,
-    schedule_day: `sch.day`,
-    schedule_start_time: `sch.start_time`,
-    schedule_end_time: `sch.end_time`,
+    schedule_day: `e.schedule_day`,
+    schedule_start_time: `e.schedule_start_time`,
+    schedule_end_time: `e.schedule_end_time`,
     grade_id: `g.id`,
     letter_grade: `g.letter_grade`,
 } as const;
@@ -190,13 +190,13 @@ export async function selectEnrollments(connection: Connection, params?: SelectE
         sql = appendSelect(sql, `cr.name AS class_room_name`);
     }
     if (params?.select == null || params.select.schedule_day) {
-        sql = appendSelect(sql, `sch.day AS schedule_day`);
+        sql = appendSelect(sql, `e.schedule_day AS schedule_day`);
     }
     if (params?.select == null || params.select.schedule_start_time) {
-        sql = appendSelect(sql, `sch.start_time AS schedule_start_time`);
+        sql = appendSelect(sql, `e.schedule_start_time AS schedule_start_time`);
     }
     if (params?.select == null || params.select.schedule_end_time) {
-        sql = appendSelect(sql, `sch.end_time AS schedule_end_time`);
+        sql = appendSelect(sql, `e.schedule_end_time AS schedule_end_time`);
     }
     if (params?.select == null || params.select.grade_id) {
         sql = appendSelect(sql, `g.id as grade_id`);
@@ -237,15 +237,6 @@ export async function selectEnrollments(connection: Connection, params?: SelectE
         || params.select.class_room_name
         || where.class_room_name != null) {
         sql += EOL + `INNER JOIN class_rooms cr ON e.class_room_id = cr.id`;
-    }
-    if (params?.select == null
-        || params.select.schedule_day
-        || params.select.schedule_start_time
-        || params.select.schedule_end_time
-        || where.schedule_day != null
-        || where.schedule_start_time != null
-        || where.schedule_end_time != null) {
-        sql += EOL + `INNER JOIN schedules sch ON e.schedule_id = sch.id`;
     }
     if (params?.select == null
         || params.select.grade_id

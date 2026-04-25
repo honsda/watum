@@ -8,6 +8,7 @@ import {
 	toLimitedListResult
 } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
+import { invalidateConflictAuditCache } from '$lib/server/conflict-audit';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
 	containsSearchPattern,
@@ -175,6 +176,7 @@ export const createCourse = form(courseCreateSchema, async (data) => {
 				lecturer_id: data.lecturerId
 			})
 	});
+	invalidateConflictAuditCache();
 	await getCourses().refresh();
 	return { success: true, id };
 });
@@ -206,6 +208,7 @@ export const updateCourse = form(courseSchema, async (data) => {
 		},
 		{ id: data.id }
 	);
+	invalidateConflictAuditCache();
 	await getCourses().refresh();
 	return { success: true, id: data.id };
 });
@@ -223,6 +226,7 @@ export const deleteCourse = command(v.string(), async (id) => {
 		);
 	}
 	await deleteCourseDb(getPool(), { id });
+	invalidateConflictAuditCache();
 	await getCourses().refresh();
 	return { success: true };
 });

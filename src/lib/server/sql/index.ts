@@ -23,6 +23,7 @@ export * from "./select-courses.js";
 export * from "./select-enrollments.js";
 export * from "./select-faculties.js";
 export * from "./select-grades.js";
+export * from "./select-lecturer-schedule-conflict.js";
 export * from "./select-lecturers.js";
 export * from "./select-schedules-conflict.js";
 export * from "./select-schedules.js";

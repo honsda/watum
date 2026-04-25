@@ -235,6 +235,14 @@ export function buildScheduleCards(
 				indexes.push(cardIndex);
 				resourceIndexes.set(key, indexes);
 			}
+
+			const lecturerKey = card.original.lecturer_id;
+			if (lecturerKey) {
+				const key = `lecturer:${lecturerKey}`;
+				const indexes = resourceIndexes.get(key) ?? [];
+				indexes.push(cardIndex);
+				resourceIndexes.set(key, indexes);
+			}
 		}
 
 		for (const indexes of resourceIndexes.values()) {

@@ -12,6 +12,7 @@ import {
 	withTransaction
 } from '$lib/server/db';
 import { requireRole, requireUser } from '$lib/server/auth';
+import { invalidateConflictAuditCache } from '$lib/server/conflict-audit';
 import { generateNRP } from '$lib/server/NRP-generator';
 import {
 	containsSearchPattern,
@@ -217,6 +218,7 @@ export const createStudent = form(studentSchema, async (data) => {
 			lecturer_id: undefined
 		});
 	});
+	invalidateConflictAuditCache();
 
 	await getStudents().refresh();
 	return { success: true, nrp };
@@ -268,6 +270,7 @@ export const updateStudent = form(
 				);
 			}
 		});
+		invalidateConflictAuditCache();
 		await getStudents().refresh();
 		return { success: true };
 	}
@@ -287,6 +290,7 @@ export const deleteStudent = command(v.string(), async (id) => {
 			await deleteUser(conn, { id: user.id });
 		}
 	});
+	invalidateConflictAuditCache();
 
 	await getStudents().refresh();
 	return { success: true };

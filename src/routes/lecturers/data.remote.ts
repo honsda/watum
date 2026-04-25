@@ -12,6 +12,7 @@ import {
 	withTransaction
 } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
+import { invalidateConflictAuditCache } from '$lib/server/conflict-audit';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
 	containsSearchPattern,
@@ -162,6 +163,7 @@ export const createLecturer = form(lecturerCreateSchema, async (data) => {
 			});
 		}
 	});
+	invalidateConflictAuditCache();
 
 	await getLecturers().refresh();
 	return { success: true, id: lecturerId };
@@ -192,6 +194,7 @@ export const updateLecturer = form(lecturerSchema, async (data) => {
 		},
 		{ id: data.id }
 	);
+	invalidateConflictAuditCache();
 	await getLecturers().refresh();
 	return { success: true, id: data.id };
 });
@@ -214,6 +217,7 @@ export const deleteLecturer = command(v.string(), async (id) => {
 			await deleteUser(conn, { id: user.id });
 		}
 	});
+	invalidateConflictAuditCache();
 
 	await getLecturers().refresh();
 	return { success: true };

@@ -10,6 +10,7 @@ import {
 	toLimitedListResult,
 	withTransaction
 } from '$lib/server';
+import { auditEnrollmentConflicts, invalidateConflictAuditCache } from '$lib/server/conflict-audit';
 import { requireRole, requireUser } from '$lib/server/auth';
 import {
 	containsSearchPattern,
@@ -21,6 +22,7 @@ import {
 	selectClassRooms,
 	selectCourses,
 	selectEnrollments,
+	selectLecturerScheduleConflict,
 	selectSchedulesConflict,
 	selectStudentScheduleConflict,
 	selectStudents,
@@ -32,8 +34,15 @@ import {
 	deleteEnrollment as deleteEnrollmentDb
 } from '$lib/server/sql';
 import { type SelectEnrollmentsResult, type SelectEnrollmentsWhere } from '$lib/server/sql';
+import type { SelectSchedulesConflictResult } from '$lib/server/sql/select-schedules-conflict';
+import type { SelectStudentScheduleConflictResult } from '$lib/server/sql/select-student-schedule-conflict';
+import type { SelectLecturerScheduleConflictResult } from '$lib/server/sql/select-lecturer-schedule-conflict';
 import { days, enrollmentSchema } from '$lib/validations/enrollment';
 import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
+
+type ConflictNamedResult =
+	| SelectStudentScheduleConflictResult
+	| SelectLecturerScheduleConflictResult;
 
 const enrollmentListSelect = {
 	id: true,
@@ -61,6 +70,31 @@ function scheduleWindowLabel(
 ) {
 	if (!start || !end) return 'jadwal lain di hari yang sama';
 	return `${formatDateTime(start, 'time', timezone)} - ${formatDateTime(end, 'time', timezone)}`;
+}
+
+function summarizeConflictWindows(
+	items: Array<{ start_time: Date | null | undefined; end_time: Date | null | undefined }>,
+	timezone: string,
+	limit = 3
+) {
+	const labels = items
+		.slice(0, limit)
+		.map((item) => scheduleWindowLabel(item.start_time, item.end_time, timezone));
+	if (items.length <= limit) {
+		return labels.join(', ');
+	}
+	return `${labels.join(', ')}, dan ${items.length - limit} jadwal lain`;
+}
+
+function summarizeNamedConflicts(items: ConflictNamedResult[], timezone: string, limit = 3) {
+	const labels = items.slice(0, limit).map((item) => {
+		const name = item.course_name ?? 'kelas lain';
+		return `${name} (${scheduleWindowLabel(item.start_time, item.end_time, timezone)})`;
+	});
+	if (items.length <= limit) {
+		return labels.join(', ');
+	}
+	return `${labels.join(', ')}, dan ${items.length - limit} jadwal lain`;
 }
 
 function validateScheduleWindow(
@@ -108,7 +142,7 @@ async function selectSchedulePreviewRows(
 		'SELECT e.id, e.student_id, e.course_id, c.lecturer_id, e.class_room_id, e.schedule_id,',
 		'e.semester, e.academic_year, s.name AS student_name, c.name AS course_name,',
 		'l.name AS lecturer_name, cr.name AS class_room_name,',
-		'sch.day AS schedule_day, sch.start_time AS schedule_start_time, sch.end_time AS schedule_end_time'
+		'e.schedule_day, e.schedule_start_time, e.schedule_end_time'
 	].join(' ');
 
 	if (user.role === 'STUDENT') {
@@ -119,7 +153,6 @@ async function selectSchedulePreviewRows(
 			'INNER JOIN courses c ON e.course_id = c.id',
 			'INNER JOIN lecturers l ON c.lecturer_id = l.id',
 			'INNER JOIN class_rooms cr ON e.class_room_id = cr.id',
-			'INNER JOIN schedules sch ON e.schedule_id = sch.id',
 			`WHERE e.student_id = ?${afterId ? ' AND e.id > ?' : ''}`,
 			'ORDER BY e.id ASC',
 			'LIMIT ?'
@@ -142,7 +175,6 @@ async function selectSchedulePreviewRows(
 			'INNER JOIN students s ON e.student_id = s.id',
 			'INNER JOIN lecturers l ON c.lecturer_id = l.id',
 			'INNER JOIN class_rooms cr ON e.class_room_id = cr.id',
-			'INNER JOIN schedules sch ON e.schedule_id = sch.id',
 			`WHERE e.course_id IN (?)${afterId ? ' AND e.id > ?' : ''}`,
 			'ORDER BY e.id ASC',
 			'LIMIT ?'
@@ -159,7 +191,6 @@ async function selectSchedulePreviewRows(
 		'INNER JOIN courses c ON e.course_id = c.id',
 		'INNER JOIN lecturers l ON c.lecturer_id = l.id',
 		'INNER JOIN class_rooms cr ON e.class_room_id = cr.id',
-		'INNER JOIN schedules sch ON e.schedule_id = sch.id',
 		afterId ? 'WHERE e.id > ?' : '',
 		'ORDER BY e.id ASC',
 		'LIMIT ?'
@@ -396,8 +427,7 @@ async function prefetchEnrollmentSearchResults(
 		values.push(containsSearchPattern(filters.classRoomName)!);
 	}
 	if (filters.scheduleDay) {
-		ensureSchedules();
-		whereParts.push('sch.day = ?');
+		whereParts.push('e.schedule_day = ?');
 		values.push(filters.scheduleDay);
 	}
 	if (filters.letterGrade) {
@@ -526,13 +556,13 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 			resultSets.push(
 				await prefetchEnrollmentSearchResults(
 					'enrollments',
-					'sch.day = ?',
+					'e.schedule_day = ?',
 					[normalizedDay as (typeof days)[number]],
 					filters,
 					user,
 					limit,
 					afterId,
-					{ forcePrimary: true, requiredJoins: ['schedules'] }
+					{ forcePrimary: true }
 				)
 			);
 		}
@@ -620,13 +650,13 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 		return toLimitedListResult(
 			await prefetchEnrollmentSearchResults(
 				'enrollments',
-				'sch.day = ?',
+				'e.schedule_day = ?',
 				[filters.scheduleDay],
 				filters,
 				user,
 				limit,
 				afterId,
-				{ forcePrimary: true, requiredJoins: ['schedules'] }
+				{ forcePrimary: true }
 			),
 			limit,
 			(item) => item.id ?? null
@@ -688,6 +718,33 @@ export const getEnrollment = query(v.string(), async (id) => {
 	return enrollment;
 });
 
+const conflictAuditSchema = v.object({
+	conflictType: v.optional(v.picklist(['room', 'student', 'lecturer'])),
+	academicYear: v.optional(v.string()),
+	semester: v.optional(v.string()),
+	day: v.optional(v.picklist(['SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU'])),
+	courseId: v.optional(v.string()),
+	classRoomId: v.optional(v.string()),
+	lecturerId: v.optional(v.string()),
+	enrollmentIds: v.optional(v.pipe(v.array(v.string()), v.maxLength(500))),
+	limitGroups: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(1000)))
+});
+
+export const getEnrollmentConflictAudit = query(conflictAuditSchema, async (filters) => {
+	const user = await requireRole(['ADMIN', 'LECTURER']);
+	return auditEnrollmentConflicts(getPool(), {
+		conflictType: filters.conflictType,
+		academicYear: filters.academicYear,
+		semester: filters.semester,
+		day: filters.day,
+		courseId: filters.courseId,
+		classRoomId: filters.classRoomId,
+		focusEnrollmentIds: filters.enrollmentIds,
+		limitGroups: filters.limitGroups,
+		lecturerId: user.role === 'LECTURER' ? (user.lecturerId ?? undefined) : filters.lecturerId
+	});
+});
+
 export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 	const user = await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	if (user.role === 'STUDENT' && data.studentId !== user.studentId) {
@@ -723,7 +780,12 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 		invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
 	}
 
-	const [[roomConflict], [existing], [studentConflict]] = await Promise.all([
+	const [roomConflicts, existingRows, studentConflicts, lecturerConflicts]: [
+		SelectSchedulesConflictResult[],
+		SelectEnrollmentsResult[],
+		SelectStudentScheduleConflictResult[],
+		SelectLecturerScheduleConflictResult[]
+	] = await Promise.all([
 		selectSchedulesConflict(getPool(), {
 			classRoomId: data.classRoomId,
 			day: data.day,
@@ -743,21 +805,36 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 			day: data.day,
 			startTime: startDate,
 			endTime: endDate
+		}),
+		selectLecturerScheduleConflict(getPool(), {
+			lecturerId: course.lecturer_id,
+			day: data.day,
+			startTime: startDate,
+			endTime: endDate
 		})
 	]);
+	const [existing] = existingRows;
 
-	if (roomConflict) {
+	if (roomConflicts.length) {
 		invalid(
 			issue.classRoomId(
-				`Jadwal bentrok (${formatDateTime(startDate, 'time', clientTimezone)} - ${formatDateTime(endDate, 'time', clientTimezone)}) dengan jadwal yang sudah ada`
+				`Ruang kelas bentrok dengan ${roomConflicts.length} jadwal lain: ${summarizeConflictWindows(roomConflicts, clientTimezone)}`
 			)
 		);
 	}
 
-	if (studentConflict) {
+	if (studentConflicts.length) {
 		invalid(
 			issue.studentId(
-				`Mahasiswa memiliki jadwal bentrok dengan ${studentConflict.course_name ?? 'kelas lain'} pada ${scheduleWindowLabel(studentConflict.start_time, studentConflict.end_time, clientTimezone)}`
+				`Mahasiswa memiliki ${studentConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(studentConflicts, clientTimezone)}`
+			)
+		);
+	}
+
+	if (lecturerConflicts.length) {
+		invalid(
+			issue.courseId(
+				`Dosen memiliki ${lecturerConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(lecturerConflicts, clientTimezone)}`
 			)
 		);
 	}
@@ -788,6 +865,7 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 			academic_year: data.academicYear
 		});
 	});
+	invalidateConflictAuditCache();
 
 	await getEnrollments().refresh();
 	return { success: true, enrollmentId: enrollmentId, scheduleId: scheduleId };
@@ -836,7 +914,12 @@ export const updateEnrollment = form(
 			invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
 		}
 
-		const [[roomConflict], [studentConflict], [existing]] = await Promise.all([
+		const [roomConflicts, studentConflicts, lecturerConflicts, existingRows]: [
+			SelectSchedulesConflictResult[],
+			SelectStudentScheduleConflictResult[],
+			SelectLecturerScheduleConflictResult[],
+			SelectEnrollmentsResult[]
+		] = await Promise.all([
 			selectSchedulesConflict(getPool(), {
 				classRoomId: data.classRoomId,
 				day: data.day,
@@ -851,6 +934,13 @@ export const updateEnrollment = form(
 				endTime: endDate,
 				excludeEnrollmentId: data.id
 			}),
+			selectLecturerScheduleConflict(getPool(), {
+				lecturerId: course.lecturer_id,
+				day: data.day,
+				startTime: startDate,
+				endTime: endDate,
+				excludeScheduleId: enrollment.schedule_id ?? undefined
+			}),
 			selectEnrollments(getPool(), {
 				select: { id: true },
 				where: [
@@ -860,18 +950,27 @@ export const updateEnrollment = form(
 				]
 			})
 		]);
-		if (roomConflict) {
+		const [existing] = existingRows;
+		if (roomConflicts.length) {
 			invalid(
 				issue.classRoomId(
-					`Jadwal bentrok (${formatDateTime(startDate, 'time', clientTimezone)} - ${formatDateTime(endDate, 'time', clientTimezone)}) dengan jadwal yang sudah ada`
+					`Ruang kelas bentrok dengan ${roomConflicts.length} jadwal lain: ${summarizeConflictWindows(roomConflicts, clientTimezone)}`
 				)
 			);
 		}
 
-		if (studentConflict) {
+		if (studentConflicts.length) {
 			invalid(
 				issue.studentId(
-					`Mahasiswa memiliki jadwal bentrok dengan ${studentConflict.course_name ?? 'kelas lain'} pada ${scheduleWindowLabel(studentConflict.start_time, studentConflict.end_time, clientTimezone)}`
+					`Mahasiswa memiliki ${studentConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(studentConflicts, clientTimezone)}`
+				)
+			);
+		}
+
+		if (lecturerConflicts.length) {
+			invalid(
+				issue.courseId(
+					`Dosen memiliki ${lecturerConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(lecturerConflicts, clientTimezone)}`
 				)
 			);
 		}
@@ -899,12 +998,16 @@ export const updateEnrollment = form(
 					student_id: data.studentId,
 					course_id: data.courseId,
 					class_room_id: data.classRoomId,
+					schedule_day: data.day,
+					schedule_start_time: startDate,
+					schedule_end_time: endDate,
 					semester: data.semester,
 					academic_year: data.academicYear
 				},
 				{ id: data.id }
 			);
 		});
+		invalidateConflictAuditCache();
 		await getEnrollments().refresh();
 		return { success: true };
 	}
@@ -923,6 +1026,7 @@ export const deleteEnrollment = command(v.string(), async (id) => {
 		await deleteEnrollmentDb(conn, { id });
 		await deleteSchedule(conn, { id: enrollment.schedule_id! });
 	});
+	invalidateConflictAuditCache();
 	await getEnrollments().refresh();
 	return { success: true };
 });

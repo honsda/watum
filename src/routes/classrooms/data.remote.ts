@@ -11,6 +11,7 @@ import {
 	toLimitedListResult
 } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
+import { invalidateConflictAuditCache } from '$lib/server/conflict-audit';
 import {
 	containsSearchPattern,
 	prefixSearchPattern,
@@ -49,6 +50,13 @@ export const getClassRooms = query(listPageSchema, async (page) => {
 		limit,
 		(item) => item.id ?? null
 	);
+});
+
+export const getAllClassRooms = query(async () => {
+	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
+	return await selectClassRooms(getPool(), {
+		select: classRoomListSelect
+	});
 });
 
 const searchClassRoomsSchema = v.object({
@@ -178,7 +186,9 @@ export const createClassRoom = form(classRoomSchema, async (data) => {
 		has_projector: +data.hasProjector,
 		has_ac: +data.hasAC
 	});
+	invalidateConflictAuditCache();
 	await getClassRooms().refresh();
+	await getAllClassRooms().refresh();
 	return { success: true, id };
 });
 
@@ -203,7 +213,9 @@ export const updateClassRoom = form(
 			},
 			{ id }
 		);
+		invalidateConflictAuditCache();
 		await getClassRooms().refresh();
+		await getAllClassRooms().refresh();
 		return { success: true };
 	}
 );
@@ -219,6 +231,8 @@ export const deleteClassRoom = command(v.string(), async (id) => {
 	}
 
 	await deleteClassRoomDb(getPool(), { id });
+	invalidateConflictAuditCache();
 	await getClassRooms().refresh();
+	await getAllClassRooms().refresh();
 	return { success: true };
 });

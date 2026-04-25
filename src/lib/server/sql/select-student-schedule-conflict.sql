@@ -6,4 +6,4 @@ WHERE e.student_id = :studentId
 AND sch.day = :day
 AND sch.start_time < :endTime
 AND sch.end_time > :startTime
-LIMIT 1
+ORDER BY sch.start_time ASC
