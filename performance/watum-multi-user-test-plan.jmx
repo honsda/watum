@@ -2,7 +2,7 @@
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
     <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Watum Multi User Flow" enabled="true">
-      <stringProp name="TestPlan.comments">Ready-to-use high-concurrency JMeter plan for the deployed Watum app at projectbasdat.bumimas12.web.id. The main thread group logs in seeded student users once, then repeats refresh plus authenticated reads for current user, courses, students, enrollments, and grades. Read URLs include cache-busting query strings so the requests are less likely to hit intermediary caches. A separate low-concurrency admin thread group performs temporary write traffic by editing several seeded courses and restoring the original values in the same loop, so the write test does not leave lasting data changes while avoiding repeated writes to only one record.</stringProp>
+      <stringProp name="TestPlan.comments">Ready-to-use JMeter benchmark plan for the deployed Watum app at projectbasdat.bumimas12.web.id. It is tuned for the current 10M-row stress seed shape (about 1,259,363 students, 2,770,599 enrollments, and 1,939,414 grades) while still being realistic for a single JMeter generator. The main thread group logs in a sampled slice of seeded student users once, then repeats refresh plus authenticated reads for current user, courses, students, enrollments, and grades. Read URLs include cache-busting query strings so requests are less likely to hit intermediary caches. A separate low-concurrency admin thread group performs temporary write traffic by editing several seeded courses and restoring the original values in the same loop, so the write test does not leave lasting data changes while avoiding repeated writes to only one record. The default response timeout is 45 seconds for 10M-row runs; any sampler that consistently approaches that ceiling should be treated as a benchmark failure and investigated.</stringProp>
       <boolProp name="TestPlan.functional_mode">false</boolProp>
       <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
       <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
@@ -27,24 +27,59 @@
             <stringProp name="Argument.value">https://projectbasdat.bumimas12.web.id</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
+          <elementProp name="DATASET_TOTAL_ROWS" elementType="Argument">
+            <stringProp name="Argument.name">DATASET_TOTAL_ROWS</stringProp>
+            <stringProp name="Argument.value">10000000</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="DATASET_STUDENT_COUNT" elementType="Argument">
+            <stringProp name="Argument.name">DATASET_STUDENT_COUNT</stringProp>
+            <stringProp name="Argument.value">1259363</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="DATASET_ENROLLMENT_COUNT" elementType="Argument">
+            <stringProp name="Argument.name">DATASET_ENROLLMENT_COUNT</stringProp>
+            <stringProp name="Argument.value">2770599</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="DATASET_GRADE_COUNT" elementType="Argument">
+            <stringProp name="Argument.name">DATASET_GRADE_COUNT</stringProp>
+            <stringProp name="Argument.value">1939414</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="CSV_USER_SAMPLE_COUNT" elementType="Argument">
+            <stringProp name="Argument.name">CSV_USER_SAMPLE_COUNT</stringProp>
+            <stringProp name="Argument.value">150000</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="CONNECT_TIMEOUT_MS" elementType="Argument">
+            <stringProp name="Argument.name">CONNECT_TIMEOUT_MS</stringProp>
+            <stringProp name="Argument.value">15000</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="RESPONSE_TIMEOUT_MS" elementType="Argument">
+            <stringProp name="Argument.name">RESPONSE_TIMEOUT_MS</stringProp>
+            <stringProp name="Argument.value">45000</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
           <elementProp name="THREADS" elementType="Argument">
             <stringProp name="Argument.name">THREADS</stringProp>
-            <stringProp name="Argument.value">120000</stringProp>
+            <stringProp name="Argument.value">200</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
           <elementProp name="RAMP_UP" elementType="Argument">
             <stringProp name="Argument.name">RAMP_UP</stringProp>
-            <stringProp name="Argument.value">90</stringProp>
+            <stringProp name="Argument.value">300</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
           <elementProp name="LOOPS" elementType="Argument">
             <stringProp name="Argument.name">LOOPS</stringProp>
-            <stringProp name="Argument.value">8</stringProp>
+            <stringProp name="Argument.value">3</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
           <elementProp name="THINK_TIME_MS" elementType="Argument">
             <stringProp name="Argument.name">THINK_TIME_MS</stringProp>
-            <stringProp name="Argument.value">250</stringProp>
+            <stringProp name="Argument.value">1000</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
           <elementProp name="LOGIN_PATH" elementType="Argument">
@@ -99,22 +134,22 @@
           </elementProp>
           <elementProp name="WRITE_THREADS" elementType="Argument">
             <stringProp name="Argument.name">WRITE_THREADS</stringProp>
-            <stringProp name="Argument.value">2</stringProp>
+            <stringProp name="Argument.value">1</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
           <elementProp name="WRITE_RAMP_UP" elementType="Argument">
             <stringProp name="Argument.name">WRITE_RAMP_UP</stringProp>
-            <stringProp name="Argument.value">1</stringProp>
+            <stringProp name="Argument.value">30</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
           <elementProp name="WRITE_LOOPS" elementType="Argument">
             <stringProp name="Argument.name">WRITE_LOOPS</stringProp>
-            <stringProp name="Argument.value">50</stringProp>
+            <stringProp name="Argument.value">12</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
           <elementProp name="WRITE_THINK_TIME_MS" elementType="Argument">
             <stringProp name="Argument.name">WRITE_THINK_TIME_MS</stringProp>
-            <stringProp name="Argument.value">500</stringProp>
+            <stringProp name="Argument.value">2000</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
           <elementProp name="WRITE_COURSE_ID" elementType="Argument">
@@ -288,8 +323,8 @@
         <stringProp name="HTTPSampler.protocol">${PROTOCOL}</stringProp>
         <stringProp name="HTTPSampler.contentEncoding">utf-8</stringProp>
         <stringProp name="HTTPSampler.concurrentPool">6</stringProp>
-        <stringProp name="HTTPSampler.connect_timeout">10000</stringProp>
-        <stringProp name="HTTPSampler.response_timeout">30000</stringProp>
+        <stringProp name="HTTPSampler.connect_timeout">${CONNECT_TIMEOUT_MS}</stringProp>
+        <stringProp name="HTTPSampler.response_timeout">${RESPONSE_TIMEOUT_MS}</stringProp>
       </ConfigTestElement>
       <hashTree/>
       <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Default Headers" enabled="true">
