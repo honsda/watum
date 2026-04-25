@@ -26,8 +26,8 @@ export async function selectStudentScheduleConflict(
 	INNER JOIN courses c ON e.course_id = c.id
 	WHERE e.student_id = ?
 	AND sch.day = ?
-	AND sch.start_time < ?
-	AND sch.end_time > ?
+	AND TIME(sch.start_time) < TIME(?)
+	AND TIME(sch.end_time) > TIME(?)
 	`;
 	const values: unknown[] = [params.studentId, params.day, params.endTime, params.startTime];
 

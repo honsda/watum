@@ -18,7 +18,7 @@ export async function selectSchedulesConflict(connection: Connection, params: Se
     let sql = `
     SELECT id, start_time, end_time FROM schedules
     WHERE class_room_id = ? AND day = ?
-    AND start_time < ? AND end_time > ?
+    AND TIME(start_time) < TIME(?) AND TIME(end_time) > TIME(?)
     `
     const values: unknown[] = [params.classRoomId, params.day, params.endTime, params.startTime];
 
@@ -27,7 +27,7 @@ export async function selectSchedulesConflict(connection: Connection, params: Se
         values.push(params.excludeScheduleId);
     }
 
-    sql += ` ORDER BY start_time ASC`;
+    sql += ` ORDER BY TIME(start_time) ASC`;
 
     return connection.query({sql, rowsAsArray: true}, values)
         .then(res => res[0] as any[])

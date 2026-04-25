@@ -129,8 +129,13 @@ export function invalidateConflictAuditCache() {
 	auditCache.clear();
 }
 
-function toMillis(value: Date | string) {
-	return value instanceof Date ? value.getTime() : new Date(value).getTime();
+function timeToSeconds(value: Date | string) {
+	if (typeof value === 'string') {
+		// Handle TIME strings like '13:00:00.000' from MariaDB
+		const parts = value.split(':').map(Number);
+		return (parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0);
+	}
+	return value.getHours() * 3600 + value.getMinutes() * 60 + value.getSeconds();
 }
 
 function mapHydratedMember(row: HydratedMemberRow): ConflictAuditMember {
@@ -236,9 +241,9 @@ function finalizePartition(
 	const sortedRows = [...rows].sort((left, right) => {
 		const dayDiff = DAY_RANK[left.day] - DAY_RANK[right.day];
 		if (dayDiff !== 0) return dayDiff;
-		const startDiff = toMillis(left.start_time) - toMillis(right.start_time);
+		const startDiff = timeToSeconds(left.start_time) - timeToSeconds(right.start_time);
 		if (startDiff !== 0) return startDiff;
-		const endDiff = toMillis(left.end_time) - toMillis(right.end_time);
+		const endDiff = timeToSeconds(left.end_time) - timeToSeconds(right.end_time);
 		if (endDiff !== 0) return endDiff;
 		return left.enrollment_id.localeCompare(right.enrollment_id);
 	});
@@ -273,8 +278,8 @@ function finalizePartition(
 
 	for (let index = 0; index < sortedRows.length; index += 1) {
 		const row = sortedRows[index];
-		const currentStart = toMillis(row.start_time);
-		const currentEnd = toMillis(row.end_time);
+		const currentStart = timeToSeconds(row.start_time);
+		const currentEnd = timeToSeconds(row.end_time);
 
 		if (row.day !== activeDay) {
 			activeDay = row.day;
@@ -282,14 +287,14 @@ function finalizePartition(
 		}
 
 		active = active.filter(
-			(activeIndex) => toMillis(sortedRows[activeIndex].end_time) > currentStart
+			(activeIndex) => timeToSeconds(sortedRows[activeIndex].end_time) > currentStart
 		);
 
 		for (const activeIndex of active) {
 			const activeRow = sortedRows[activeIndex];
 			if (
-				toMillis(activeRow.start_time) < currentEnd &&
-				toMillis(activeRow.end_time) > currentStart
+				timeToSeconds(activeRow.start_time) < currentEnd &&
+				timeToSeconds(activeRow.end_time) > currentStart
 			) {
 				unite(activeIndex, index);
 			}
@@ -354,13 +359,13 @@ async function collectConflictGroupSeeds(
 	const hasExtraFilters = whereSql !== '1 = 1';
 	const groupSql = [
 		`SELECT ${resourceCol} AS resource_id, e.academic_year_start, e.semester_sort,`,
-		`  e.schedule_day AS day, e.schedule_start_time AS start_time, e.schedule_end_time AS end_time,`,
-		`  COUNT(*) AS member_count`,
+		`  e.schedule_day AS day, MIN(e.schedule_start_time) AS start_time, MIN(e.schedule_end_time) AS end_time,`,
+		`  COUNT(DISTINCT e.course_id) AS distinct_courses, COUNT(*) AS member_count`,
 		`FROM enrollments e${hasExtraFilters ? '' : ` FORCE INDEX (${forceIndex})`}`,
 		`WHERE ${whereSql}`,
 		`GROUP BY ${resourceCol}, e.academic_year_start, e.semester_sort,`,
-		`  e.schedule_day, e.schedule_start_time, e.schedule_end_time`,
-		`HAVING COUNT(*) > 1`
+		`  e.schedule_day, TIME(e.schedule_start_time), TIME(e.schedule_end_time)`,
+		`HAVING COUNT(DISTINCT e.course_id) > 1`
 	].join(' ');
 
 	const [groupRows] = await pool.query(groupSql, values);
@@ -388,7 +393,7 @@ async function collectConflictGroupSeeds(
 		const conditions = batch
 			.map(
 				() =>
-					`(${resourceCol} = ? AND e.academic_year_start = ? AND e.semester_sort = ? AND e.schedule_day = ? AND e.schedule_start_time = ? AND e.schedule_end_time = ?)`
+					`(${resourceCol} = ? AND e.academic_year_start = ? AND e.semester_sort = ? AND e.schedule_day = ? AND TIME(e.schedule_start_time) = TIME(?) AND TIME(e.schedule_end_time) = TIME(?))`
 			)
 			.join(' OR ');
 		const memberValues = batch.flatMap((g) => [
@@ -460,7 +465,7 @@ async function hydrateConflictGroupSeeds(pool: Pool, groups: ConflictAuditGroupS
 			.map((row) => hydratedByEnrollmentId.get(row.enrollment_id))
 			.filter((row): row is HydratedMemberRow => Boolean(row))
 			.map(mapHydratedMember)
-			.sort((left, right) => toMillis(left.startTime) - toMillis(right.startTime));
+			.sort((left, right) => timeToSeconds(left.startTime) - timeToSeconds(right.startTime));
 		const firstMember = members[0];
 		const resourceName =
 			group.conflictType === 'room'
