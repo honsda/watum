@@ -83,15 +83,8 @@ async function searchUsersByRelatedNamePattern(
 	const patterns = Array.isArray(pattern) ? pattern : [pattern];
 	const sqlParts = [
 		'SELECT u.id',
-		...(base === 'students'
-			? [
-					'FROM users u FORCE INDEX (PRIMARY)',
-					`INNER JOIN ${relatedTable} ${relatedAlias} ON u.${joinColumn} = ${relatedAlias}.id`
-				]
-			: [
-					`FROM ${relatedTable} ${relatedAlias}`,
-					`INNER JOIN users u ON u.${joinColumn} = ${relatedAlias}.id`
-				]),
+		`FROM ${relatedTable} ${relatedAlias}`,
+		`INNER JOIN users u ON u.${joinColumn} = ${relatedAlias}.id`,
 		`WHERE (${patterns.map(() => `MATCH(${relatedAlias}.name) AGAINST(? IN BOOLEAN MODE)`).join(' OR ')})`
 	];
 	const values: unknown[] = [...patterns];

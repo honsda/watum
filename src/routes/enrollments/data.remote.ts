@@ -604,14 +604,13 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 				afterId
 			),
 			prefetchEnrollmentSearchResults(
-				'enrollments',
+				'classRooms',
 				'(MATCH(cr.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(cr.name) AGAINST(? IN BOOLEAN MODE))',
 				[qPrefix, qWordPrefix],
 				filters,
 				user,
 				limit,
-				afterId,
-				{ forcePrimary: true, requiredJoins: ['classRooms'] }
+				afterId
 			),
 			prefetchEnrollmentSearchResults(
 				'enrollments',
