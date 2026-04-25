@@ -510,6 +510,7 @@ async function prefetchEnrollmentSearchResults(
 export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) => {
 	const user = await requireUser();
 	const where: SelectEnrollmentsWhere[] = [];
+	const limit = getListQueryLimit(filters.preview ? 60 : 40);
 	if (user.role === 'STUDENT') {
 		where.push(['student_id', '=', user.studentId!]);
 	} else if (user.role === 'LECTURER') {
@@ -528,7 +529,6 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 			where.push(['course_id', 'IN', courseIds]);
 		}
 	}
-	const limit = getListQueryLimit(filters.preview ? 60 : 40);
 	if (filters.id) where.push(['id', '=', filters.id]);
 	if (filters.studentId) where.push(['student_id', '=', filters.studentId]);
 	if (filters.courseId) where.push(['course_id', '=', filters.courseId]);

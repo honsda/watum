@@ -181,7 +181,7 @@ function mapArrayToSelectClassRoomsResult(data: any, select?: SelectClassRoomsSe
 }
 
 function appendSelect(sql: string, selectField: string) {
-    if (sql == 'SELECT') {
+    if (!/[\r\n]/.test(sql)) {
         return sql + EOL + selectField;
     }
     else {

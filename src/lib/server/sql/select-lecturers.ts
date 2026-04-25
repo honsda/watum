@@ -157,7 +157,7 @@ function mapArrayToSelectLecturersResult(data: any, select?: SelectLecturersSele
 }
 
 function appendSelect(sql: string, selectField: string) {
-    if (sql == 'SELECT') {
+    if (!/[\r\n]/.test(sql)) {
         return sql + EOL + selectField;
     }
     else {

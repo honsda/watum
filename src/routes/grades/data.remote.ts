@@ -328,9 +328,22 @@ async function prefetchGradeSearchResults(
 
 export const searchGrades = query(searchGradesSchema, async (filters) => {
 	const user = await requireUser();
+	const limit = getListQueryLimit(40);
 	const where: SelectGradesWhere[] = [];
 	if (user.role === 'LECTURER') {
-		where.push(['lecturer_id', '=', user.lecturerId!]);
+		// Pre-query courses to avoid slow c.lecturer_id join filter on 1.9M+ rows.
+		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
+			user.lecturerId!
+		]);
+		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
+		if (!courseIds.length) {
+			return toLimitedListResult([], limit, (item) => item.id ?? null);
+		}
+		if (courseIds.length === 1) {
+			where.push(['course_id', '=', courseIds[0]!]);
+		} else {
+			where.push(['course_id', 'IN', courseIds]);
+		}
 	} else if (user.role === 'STUDENT') {
 		where.push(['student_id', '=', user.studentId!]);
 	}
@@ -346,7 +359,6 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 	if (filters.courseId) where.push(['course_id', '=', filters.courseId]);
 	if (filters.courseName)
 		where.push(['course_name', 'FULLTEXT', fulltextSearchPattern(filters.courseName)!]);
-	const limit = getListQueryLimit(40);
 	if (filters.lecturerId) {
 		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
 			filters.lecturerId
