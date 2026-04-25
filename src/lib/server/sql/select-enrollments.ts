@@ -146,7 +146,14 @@ export type SelectEnrollmentsWhere =
 export async function selectEnrollments(connection: Connection, params?: SelectEnrollmentsDynamicParams): Promise<SelectEnrollmentsResult[]> {
     const where = whereConditionsToObject(params?.where);
     const paramsValues: any = [];
-    let sql = 'SELECT';
+    // MANUAL FIX: STRAIGHT_JOIN forces MariaDB to read enrollments first and
+    // then do eq_ref lookups into joined tables. Without this, the optimizer
+    // often chooses a smaller table (e.g. class_rooms) as the driving table
+    // and does a BNL join into enrollments, causing full index scans on 2M+
+    // rows. With STRAIGHT_JOIN, list queries with ORDER BY e.id LIMIT n stop
+    // early after finding n rows (~40ms instead of ~8s).
+    // If you regenerate this file with typesql, you must re-apply this change.
+    let sql = 'SELECT STRAIGHT_JOIN';
     if (params?.select == null || params.select.id) {
         sql = appendSelect(sql, `e.id`);
     }

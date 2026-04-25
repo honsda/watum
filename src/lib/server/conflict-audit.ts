@@ -343,15 +343,20 @@ async function collectConflictGroupSeeds(
 	// Fast index-only aggregation using denormalized schedule columns.
 	// The covering index (idx_enrollments_*_conflict) lets MySQL satisfy
 	// this query without touching the schedules table at all.
-	// FORCE INDEX is required because MariaDB's optimizer incorrectly
-	// chooses a full table scan + temp table + filesort on 10M+ rows
-	// when HAVING COUNT(*) > 1 is present, even though the index covers
-	// all GROUP BY columns.
+	// FORCE INDEX is required for unfiltered queries because MariaDB's
+	// optimizer incorrectly chooses a full table scan + temp table + filesort
+	// on 2M+ rows when HAVING COUNT(*) > 1 is present.
+	// However, FORCE INDEX must NOT be used when filters are applied on
+	// columns not present in the chosen index (e.g. course_audit_sk,
+	// lecturer_audit_sk on room_conflict index). In those cases the
+	// optimizer's table scan is ~10x faster than a full index scan with
+	// row lookups.
+	const hasExtraFilters = whereSql !== '1 = 1';
 	const groupSql = [
 		`SELECT ${resourceCol} AS resource_id, e.academic_year_start, e.semester_sort,`,
 		`  e.schedule_day AS day, e.schedule_start_time AS start_time, e.schedule_end_time AS end_time,`,
 		`  COUNT(*) AS member_count`,
-		`FROM enrollments e FORCE INDEX (${forceIndex})`,
+		`FROM enrollments e${hasExtraFilters ? '' : ` FORCE INDEX (${forceIndex})`}`,
 		`WHERE ${whereSql}`,
 		`GROUP BY ${resourceCol}, e.academic_year_start, e.semester_sort,`,
 		`  e.schedule_day, e.schedule_start_time, e.schedule_end_time`,

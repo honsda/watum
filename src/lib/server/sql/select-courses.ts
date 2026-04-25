@@ -92,7 +92,12 @@ export type SelectCoursesWhere =
 export async function selectCourses(connection: Connection, params?: SelectCoursesDynamicParams): Promise<SelectCoursesResult[]> {
     const where = whereConditionsToObject(params?.where);
     const paramsValues: any = [];
-    let sql = 'SELECT';
+    // MANUAL FIX: STRAIGHT_JOIN forces MariaDB to read courses first and
+    // then do eq_ref lookups into joined tables. Without this, the optimizer
+    // can choose study_programs (very small table) as the driving table and
+    // BNL join into courses, causing suboptimal plans.
+    // If you regenerate this file with typesql, you must re-apply this change.
+    let sql = 'SELECT STRAIGHT_JOIN';
     if (params?.select == null || params.select.id) {
         sql = appendSelect(sql, `c.id`);
     }
