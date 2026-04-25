@@ -12,8 +12,13 @@ import {
 	withTransaction
 } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
+import { invalidateConflictAuditCache } from '$lib/server/conflict-audit';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
-import { containsSearchPattern, prefixSearchPattern } from '$lib/server/search';
+import {
+	containsSearchPattern,
+	prefixSearchPattern,
+	wordPrefixSearchPattern
+} from '$lib/server/search';
 import {
 	selectLecturers,
 	selectUsers,
@@ -27,12 +32,23 @@ import { type SelectLecturersWhere } from '$lib/server/sql';
 import { lecturerCreateSchema, lecturerSchema } from '$lib/validations/lecturer';
 import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 
+const lecturerListSelect = {
+	id: true,
+	name: true,
+	email: true,
+	phone: true,
+	address: true
+} as const;
+
 export const getLecturers = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const limit = getListQueryLimit();
 	const afterId = getListQueryCursor(page?.cursor);
 	return toLimitedListResult(
-		await selectLecturers(getPool(), { params: { afterId, limit: limit + 1 } }),
+		await selectLecturers(getPool(), {
+			select: lecturerListSelect,
+			params: { afterId, limit: limit + 1 }
+		}),
 		limit,
 		(item) => item.id ?? null
 	);
@@ -70,17 +86,26 @@ export const searchLecturers = query(searchLecturersSchema, async (filters) => {
 	const q = filters.q?.trim();
 	if (q) {
 		const qPrefix = prefixSearchPattern(q)!;
+		const qWordPrefix = wordPrefixSearchPattern(q)!;
 		const queryLimit = limit + 1;
 		const resultSets = await Promise.all([
 			selectLecturers(getPool(), {
+				select: lecturerListSelect,
 				where: [...where, ['id', '=', q]],
 				params: { afterId, limit: queryLimit }
 			}),
 			selectLecturers(getPool(), {
+				select: lecturerListSelect,
 				where: [...where, ['name', 'LIKE', qPrefix]],
 				params: { afterId, limit: queryLimit }
 			}),
 			selectLecturers(getPool(), {
+				select: lecturerListSelect,
+				where: [...where, ['name', 'LIKE', qWordPrefix]],
+				params: { afterId, limit: queryLimit }
+			}),
+			selectLecturers(getPool(), {
+				select: lecturerListSelect,
 				where: [...where, ['email', 'LIKE', qPrefix]],
 				params: { afterId, limit: queryLimit }
 			})
@@ -88,7 +113,11 @@ export const searchLecturers = query(searchLecturersSchema, async (filters) => {
 		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
 	}
 	return toLimitedListResult(
-		await selectLecturers(getPool(), { where, params: { afterId, limit: limit + 1 } }),
+		await selectLecturers(getPool(), {
+			select: lecturerListSelect,
+			where,
+			params: { afterId, limit: limit + 1 }
+		}),
 		limit,
 		(item) => item.id ?? null
 	);
@@ -134,6 +163,7 @@ export const createLecturer = form(lecturerCreateSchema, async (data) => {
 			});
 		}
 	});
+	invalidateConflictAuditCache();
 
 	await getLecturers().refresh();
 	return { success: true, id: lecturerId };
@@ -164,6 +194,7 @@ export const updateLecturer = form(lecturerSchema, async (data) => {
 		},
 		{ id: data.id }
 	);
+	invalidateConflictAuditCache();
 	await getLecturers().refresh();
 	return { success: true, id: data.id };
 });
@@ -186,6 +217,7 @@ export const deleteLecturer = command(v.string(), async (id) => {
 			await deleteUser(conn, { id: user.id });
 		}
 	});
+	invalidateConflictAuditCache();
 
 	await getLecturers().refresh();
 	return { success: true };

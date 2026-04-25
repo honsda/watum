@@ -27,7 +27,7 @@ export async function selectSchedulesConflict(connection: Connection, params: Se
         values.push(params.excludeScheduleId);
     }
 
-    sql += ` ORDER BY start_time ASC LIMIT 1`;
+    sql += ` ORDER BY start_time ASC`;
 
     return connection.query({sql, rowsAsArray: true}, values)
         .then(res => res[0] as any[])

@@ -4,13 +4,19 @@ import { error } from '@sveltejs/kit';
 import {
 	getListQueryLimit,
 	getListQueryCursor,
-	mergeLimitedListResult,
 	getPool,
 	toLimitedListResult
 } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
+import { invalidateConflictAuditCache } from '$lib/server/conflict-audit';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
-import { containsSearchPattern, prefixSearchPattern } from '$lib/server/search';
+import {
+	containsSearchPattern,
+	decodeKeysetCursor,
+	encodeKeysetCursor,
+	prefixSearchPattern,
+	wordPrefixSearchPattern
+} from '$lib/server/search';
 import {
 	selectCourses,
 	selectLecturers,
@@ -19,16 +25,29 @@ import {
 	updateCourse as updateCourseDb,
 	deleteCourse as deleteCourseDb
 } from '$lib/server/sql';
-import { type SelectCoursesWhere } from '$lib/server/sql';
+import { type SelectCoursesResult, type SelectCoursesWhere } from '$lib/server/sql';
 import { courseCreateSchema, courseSchema } from '$lib/validations/course';
 import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
+
+const courseListSelect = {
+	id: true,
+	name: true,
+	credits: true,
+	study_program_id: true,
+	study_program_name: true,
+	lecturer_id: true,
+	lecturer_name: true
+} as const;
 
 export const getCourses = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
 	const limit = getListQueryLimit();
 	const afterId = getListQueryCursor(page?.cursor);
 	return toLimitedListResult(
-		await selectCourses(getPool(), { params: { afterId, limit: limit + 1 } }),
+		await selectCourses(getPool(), {
+			select: courseListSelect,
+			params: { afterId, limit: limit + 1 }
+		}),
 		limit,
 		(item) => item.id ?? null
 	);
@@ -70,29 +89,52 @@ export const searchCourses = query(searchCoursesSchema, async (filters) => {
 	const q = filters.q?.trim();
 	if (q) {
 		const qPrefix = prefixSearchPattern(q)!;
-		const queryLimit = limit + 1;
-		const resultSets = await Promise.all([
-			selectCourses(getPool(), {
-				where: [...where, ['id', '=', q]],
-				params: { afterId, limit: queryLimit }
-			}),
-			selectCourses(getPool(), {
-				where: [...where, ['name', 'LIKE', qPrefix]],
-				params: { afterId, limit: queryLimit }
-			}),
-			selectCourses(getPool(), {
-				where: [...where, ['lecturer_name', 'LIKE', qPrefix]],
-				params: { afterId, limit: queryLimit }
-			}),
-			selectCourses(getPool(), {
-				where: [...where, ['study_program_name', 'LIKE', qPrefix]],
-				params: { afterId, limit: queryLimit }
-			})
-		]);
-		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
+		const qWordPrefix = wordPrefixSearchPattern(q)!;
+		const cursor = decodeKeysetCursor(filters.cursor, 'courses:name');
+		const sqlParts = [
+			'SELECT c.id, c.name, c.credits, c.study_program_id, sp.name AS study_program_name, c.lecturer_id, l.name AS lecturer_name',
+			'FROM courses c',
+			'INNER JOIN study_programs sp ON c.study_program_id = sp.id',
+			'INNER JOIN lecturers l ON c.lecturer_id = l.id',
+			'WHERE (c.name LIKE ? OR c.name LIKE ?)'
+		];
+		const values: unknown[] = [qPrefix, qWordPrefix];
+
+		if (cursor) {
+			sqlParts.push('AND (c.name > ? OR (c.name = ? AND c.id > ?))');
+			values.push(cursor.value, cursor.value, cursor.id);
+		}
+		if (filters.studyProgramId) {
+			sqlParts.push('AND c.study_program_id = ?');
+			values.push(filters.studyProgramId);
+		}
+		if (filters.lecturerId) {
+			sqlParts.push('AND c.lecturer_id = ?');
+			values.push(filters.lecturerId);
+		}
+		if (filters.minCredits != null) {
+			sqlParts.push('AND c.credits >= ?');
+			values.push(filters.minCredits);
+		}
+		if (filters.maxCredits != null) {
+			sqlParts.push('AND c.credits <= ?');
+			values.push(filters.maxCredits);
+		}
+		sqlParts.push('ORDER BY c.name ASC, c.id ASC');
+		sqlParts.push('LIMIT ?');
+		values.push(limit + 1);
+
+		const [rows] = await getPool().query(sqlParts.join(' '), values);
+		return toLimitedListResult(rows as SelectCoursesResult[], limit, (item) =>
+			encodeKeysetCursor('courses:name', item.name ?? null, item.id ?? null)
+		);
 	}
 	return toLimitedListResult(
-		await selectCourses(getPool(), { where, params: { afterId, limit: limit + 1 } }),
+		await selectCourses(getPool(), {
+			select: courseListSelect,
+			where,
+			params: { afterId, limit: limit + 1 }
+		}),
 		limit,
 		(item) => item.id ?? null
 	);
@@ -134,6 +176,7 @@ export const createCourse = form(courseCreateSchema, async (data) => {
 				lecturer_id: data.lecturerId
 			})
 	});
+	invalidateConflictAuditCache();
 	await getCourses().refresh();
 	return { success: true, id };
 });
@@ -165,6 +208,7 @@ export const updateCourse = form(courseSchema, async (data) => {
 		},
 		{ id: data.id }
 	);
+	invalidateConflictAuditCache();
 	await getCourses().refresh();
 	return { success: true, id: data.id };
 });
@@ -182,6 +226,7 @@ export const deleteCourse = command(v.string(), async (id) => {
 		);
 	}
 	await deleteCourseDb(getPool(), { id });
+	invalidateConflictAuditCache();
 	await getCourses().refresh();
 	return { success: true };
 });

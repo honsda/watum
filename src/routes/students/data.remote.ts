@@ -12,8 +12,14 @@ import {
 	withTransaction
 } from '$lib/server/db';
 import { requireRole, requireUser } from '$lib/server/auth';
+import { invalidateConflictAuditCache } from '$lib/server/conflict-audit';
 import { generateNRP } from '$lib/server/NRP-generator';
-import { containsSearchPattern, prefixSearchPattern } from '$lib/server/search';
+import {
+	containsSearchPattern,
+	decodeKeysetCursor,
+	encodeKeysetCursor,
+	prefixSearchPattern
+} from '$lib/server/search';
 import {
 	selectStudents,
 	selectStudyPrograms,
@@ -26,17 +32,30 @@ import {
 	updateStudent as updateStudentDb,
 	deleteStudent as deleteStudentDb
 } from '$lib/server/sql';
-import { type SelectStudentsWhere } from '$lib/server/sql';
+import { type SelectStudentsResult, type SelectStudentsWhere } from '$lib/server/sql';
 import { studentSchema } from '$lib/validations/student';
 import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 import { gradePoints } from '$lib/validations/grade';
+
+const studentListSelect = {
+	id: true,
+	name: true,
+	email: true,
+	study_program_id: true,
+	study_program_name: true,
+	faculty_name: true,
+	year_admitted: true
+} as const;
 
 export const getStudents = query(listPageSchema, async (page) => {
 	await requireRole(['ADMIN', 'LECTURER']);
 	const limit = getListQueryLimit();
 	const afterId = getListQueryCursor(page?.cursor);
 	return toLimitedListResult(
-		await selectStudents(getPool(), { params: { afterId, limit: limit + 1 } }),
+		await selectStudents(getPool(), {
+			select: studentListSelect,
+			params: { afterId, limit: limit + 1 }
+		}),
 		limit,
 		(item) => item.id ?? null
 	);
@@ -80,33 +99,52 @@ export const searchStudents = query(searchStudentsSchema, async (filters) => {
 	const q = filters.q?.trim();
 	if (q) {
 		const qPrefix = prefixSearchPattern(q)!;
-		const queryLimit = limit + 1;
-		const resultSets = await Promise.all([
-			selectStudents(getPool(), {
-				where: [...where, ['id', '=', q]],
-				params: { afterId, limit: queryLimit }
-			}),
-			selectStudents(getPool(), {
-				where: [...where, ['name', 'LIKE', qPrefix]],
-				params: { afterId, limit: queryLimit }
-			}),
-			selectStudents(getPool(), {
-				where: [...where, ['email', 'LIKE', qPrefix]],
-				params: { afterId, limit: queryLimit }
-			}),
-			selectStudents(getPool(), {
-				where: [...where, ['study_program_name', 'LIKE', qPrefix]],
-				params: { afterId, limit: queryLimit }
-			}),
-			selectStudents(getPool(), {
-				where: [...where, ['faculty_name', 'LIKE', qPrefix]],
-				params: { afterId, limit: queryLimit }
-			})
-		]);
-		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
+		const qWordPrefix = `% ${q}%`;
+		const cursor = decodeKeysetCursor(filters.cursor, 'students:name');
+		const sqlParts = [
+			'SELECT s.id, s.name, s.email, s.study_program_id, sp.name AS study_program_name, f.name AS faculty_name, s.year_admitted',
+			'FROM students s',
+			'INNER JOIN study_programs sp ON s.study_program_id = sp.id',
+			'INNER JOIN faculties f ON sp.faculty_id = f.id',
+			'WHERE (s.name LIKE ? OR s.name LIKE ?)'
+		];
+		const values: unknown[] = [qPrefix, qWordPrefix];
+
+		if (cursor) {
+			sqlParts.push('AND (s.name > ? OR (s.name = ? AND s.id > ?))');
+			values.push(cursor.value, cursor.value, cursor.id);
+		}
+		if (filters.studyProgramId) {
+			sqlParts.push('AND s.study_program_id = ?');
+			values.push(filters.studyProgramId);
+		}
+		if (filters.facultyId) {
+			sqlParts.push('AND f.id = ?');
+			values.push(filters.facultyId);
+		}
+		if (filters.minYearAdmitted != null) {
+			sqlParts.push('AND s.year_admitted >= ?');
+			values.push(filters.minYearAdmitted);
+		}
+		if (filters.maxYearAdmitted != null) {
+			sqlParts.push('AND s.year_admitted <= ?');
+			values.push(filters.maxYearAdmitted);
+		}
+		sqlParts.push('ORDER BY s.name ASC, s.id ASC');
+		sqlParts.push('LIMIT ?');
+		values.push(limit + 1);
+
+		const [rows] = await getPool().query(sqlParts.join(' '), values);
+		return toLimitedListResult(rows as SelectStudentsResult[], limit, (item) =>
+			encodeKeysetCursor('students:name', item.name ?? null, item.id ?? null)
+		);
 	}
 	return toLimitedListResult(
-		await selectStudents(getPool(), { where, params: { afterId, limit: limit + 1 } }),
+		await selectStudents(getPool(), {
+			select: studentListSelect,
+			where,
+			params: { afterId, limit: limit + 1 }
+		}),
 		limit,
 		(item) => item.id ?? null
 	);
@@ -180,6 +218,7 @@ export const createStudent = form(studentSchema, async (data) => {
 			lecturer_id: undefined
 		});
 	});
+	invalidateConflictAuditCache();
 
 	await getStudents().refresh();
 	return { success: true, nrp };
@@ -231,6 +270,7 @@ export const updateStudent = form(
 				);
 			}
 		});
+		invalidateConflictAuditCache();
 		await getStudents().refresh();
 		return { success: true };
 	}
@@ -250,6 +290,7 @@ export const deleteStudent = command(v.string(), async (id) => {
 			await deleteUser(conn, { id: user.id });
 		}
 	});
+	invalidateConflictAuditCache();
 
 	await getStudents().refresh();
 	return { success: true };

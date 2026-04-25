@@ -12,7 +12,11 @@ import {
 	withTransaction
 } from '$lib/server/db';
 import { requireRole, requireUser } from '$lib/server/auth';
-import { containsSearchPattern, prefixSearchPattern } from '$lib/server/search';
+import {
+	containsSearchPattern,
+	prefixSearchPattern,
+	wordPrefixSearchPattern
+} from '$lib/server/search';
 import {
 	selectGrades,
 	selectEnrollments,
@@ -20,36 +24,92 @@ import {
 	updateGrade as updateGradeDb,
 	deleteGrade as deleteGradeDb
 } from '$lib/server/sql';
-import { type SelectGradesWhere } from '$lib/server/sql';
+import { type SelectGradesResult, type SelectGradesWhere } from '$lib/server/sql';
 import { gradeSchema } from '$lib/validations/grade';
 import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 
+const gradeListSelect = {
+	id: true,
+	enrollment_id: true,
+	assignment_score: true,
+	midterm_score: true,
+	final_score: true,
+	total_score: true,
+	letter_grade: true,
+	student_name: true,
+	course_name: true
+} as const;
+
+async function selectGradeListRows(
+	user: Awaited<ReturnType<typeof requireUser>>,
+	afterId: string | undefined,
+	limit: number
+) {
+	const selectSql = [
+		'SELECT g.id, g.enrollment_id, g.assignment_score, g.midterm_score, g.final_score,',
+		'g.total_score, g.letter_grade, s.name AS student_name, c.name AS course_name'
+	].join(' ');
+
+	if (user.role === 'STUDENT') {
+		const sql = [
+			selectSql,
+			'FROM grades g FORCE INDEX (PRIMARY)',
+			'INNER JOIN enrollments e ON g.enrollment_id = e.id',
+			'INNER JOIN students s ON e.student_id = s.id',
+			'INNER JOIN courses c ON e.course_id = c.id',
+			`WHERE e.student_id = ?${afterId ? ' AND g.id > ?' : ''}`,
+			'ORDER BY g.id ASC',
+			'LIMIT ?'
+		].join(' ');
+		const values = afterId ? [user.studentId!, afterId, limit + 1] : [user.studentId!, limit + 1];
+		const [rows] = await getPool().query(sql, values);
+		return rows as SelectGradesResult[];
+	}
+
+	if (user.role === 'LECTURER') {
+		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
+			user.lecturerId!
+		]);
+		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id).filter(Boolean);
+		if (!courseIds.length) return [];
+		const sql = [
+			selectSql,
+			'FROM grades g FORCE INDEX (PRIMARY)',
+			'INNER JOIN enrollments e ON g.enrollment_id = e.id',
+			'INNER JOIN students s ON e.student_id = s.id',
+			'INNER JOIN courses c ON e.course_id = c.id',
+			`WHERE e.course_id IN (?)${afterId ? ' AND g.id > ?' : ''}`,
+			'ORDER BY g.id ASC',
+			'LIMIT ?'
+		].join(' ');
+		const values = afterId ? [courseIds, afterId, limit + 1] : [courseIds, limit + 1];
+		const [rows] = await getPool().query(sql, values);
+		return rows as SelectGradesResult[];
+	}
+
+	const sql = [
+		selectSql,
+		'FROM grades g FORCE INDEX (PRIMARY)',
+		'INNER JOIN enrollments e ON g.enrollment_id = e.id',
+		'INNER JOIN students s ON e.student_id = s.id',
+		'INNER JOIN courses c ON e.course_id = c.id',
+		afterId ? 'WHERE g.id > ?' : '',
+		'ORDER BY g.id ASC',
+		'LIMIT ?'
+	]
+		.filter(Boolean)
+		.join(' ');
+	const values = afterId ? [afterId, limit + 1] : [limit + 1];
+	const [rows] = await getPool().query(sql, values);
+	return rows as SelectGradesResult[];
+}
+
 export const getGrades = query(listPageSchema, async (page) => {
 	const user = await requireUser();
-	const limit = getListQueryLimit();
+	const limit = getListQueryLimit(40);
 	const afterId = getListQueryCursor(page?.cursor);
-	if (user.role === 'LECTURER') {
-		return toLimitedListResult(
-			await selectGrades(getPool(), {
-				where: [['lecturer_id', '=', user.lecturerId!]],
-				params: { afterId, limit: limit + 1 }
-			}),
-			limit,
-			(item) => item.id ?? null
-		);
-	}
-	if (user.role === 'STUDENT') {
-		return toLimitedListResult(
-			await selectGrades(getPool(), {
-				where: [['student_id', '=', user.studentId!]],
-				params: { afterId, limit: limit + 1 }
-			}),
-			limit,
-			(item) => item.id ?? null
-		);
-	}
 	return toLimitedListResult(
-		await selectGrades(getPool(), { params: { afterId, limit: limit + 1 } }),
+		await selectGradeListRows(user, afterId, limit),
 		limit,
 		(item) => item.id ?? null
 	);
@@ -71,6 +131,214 @@ const searchGradesSchema = v.object({
 	minTotalScore: v.optional(v.number()),
 	maxTotalScore: v.optional(v.number())
 });
+
+type GradeSearchFilters = v.InferOutput<typeof searchGradesSchema>;
+type GradePrefetchBase = 'grades' | 'students' | 'courses';
+type GradePrefetchJoin = 'enrollments' | 'students' | 'studyPrograms' | 'courses';
+
+async function hydrateGradesByIds(ids: string[]) {
+	if (!ids.length) return [];
+	const rows = await selectGrades(getPool(), {
+		select: gradeListSelect,
+		where: [['id', 'IN', ids]]
+	});
+	const rowsById = new Map(rows.map((row) => [row.id, row]));
+	return ids.map((id) => rowsById.get(id)).filter((row): row is SelectGradesResult => Boolean(row));
+}
+
+async function prefetchGradesByCourseNamePrefix(
+	filters: GradeSearchFilters,
+	user: Awaited<ReturnType<typeof requireUser>>,
+	qPrefix: string,
+	qWordPrefix: string,
+	limit: number,
+	afterId?: string
+) {
+	const sqlParts = ['SELECT id FROM courses WHERE (name LIKE ? OR name LIKE ?)'];
+	const values: unknown[] = [qPrefix, qWordPrefix];
+
+	const effectiveLecturerId =
+		filters.lecturerId ?? (user.role === 'LECTURER' ? user.lecturerId : undefined);
+	if (filters.courseId) {
+		sqlParts.push('AND id = ?');
+		values.push(filters.courseId);
+	}
+	if (filters.courseName) {
+		sqlParts.push('AND name LIKE ?');
+		values.push(containsSearchPattern(filters.courseName)!);
+	}
+	if (effectiveLecturerId) {
+		sqlParts.push('AND lecturer_id = ?');
+		values.push(effectiveLecturerId);
+	}
+
+	const [courseRows] = await getPool().query(sqlParts.join(' '), values);
+	const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id).filter(Boolean);
+	if (!courseIds.length) return [];
+
+	return prefetchGradeSearchResults(
+		'grades',
+		'e.course_id IN (?)',
+		[courseIds],
+		filters,
+		user,
+		limit,
+		afterId,
+		true,
+		['enrollments']
+	);
+}
+
+async function prefetchGradeSearchResults(
+	base: GradePrefetchBase,
+	predicateSql: string,
+	predicateValues: unknown[],
+	filters: GradeSearchFilters,
+	user: Awaited<ReturnType<typeof requireUser>>,
+	limit: number,
+	afterId?: string,
+	forcePrimary = false,
+	requiredJoins: GradePrefetchJoin[] = []
+) {
+	const joinParts: string[] = [];
+	const whereParts = [predicateSql];
+	const values: unknown[] = [...predicateValues];
+	const joined = { e: false, s: false, sp: false, c: false };
+
+	if (base === 'students') {
+		joinParts.push('FROM students s', 'INNER JOIN enrollments e ON e.student_id = s.id');
+		joined.s = true;
+		joined.e = true;
+	} else if (base === 'courses') {
+		joinParts.push('FROM courses c', 'INNER JOIN enrollments e ON e.course_id = c.id');
+		joined.c = true;
+		joined.e = true;
+	} else {
+		joinParts.push(forcePrimary ? 'FROM grades g FORCE INDEX (PRIMARY)' : 'FROM grades g');
+	}
+
+	const ensureEnrollments = () => {
+		if (joined.e) return;
+		joinParts.push('INNER JOIN enrollments e ON g.enrollment_id = e.id');
+		joined.e = true;
+	};
+	const ensureStudents = () => {
+		ensureEnrollments();
+		if (joined.s) return;
+		joinParts.push('INNER JOIN students s ON e.student_id = s.id');
+		joined.s = true;
+	};
+	const ensureStudyPrograms = () => {
+		ensureStudents();
+		if (joined.sp) return;
+		joinParts.push('INNER JOIN study_programs sp ON s.study_program_id = sp.id');
+		joined.sp = true;
+	};
+	const ensureCourses = () => {
+		ensureEnrollments();
+		if (joined.c) return;
+		joinParts.push('INNER JOIN courses c ON e.course_id = c.id');
+		joined.c = true;
+	};
+	const ensureGrades = () => {
+		if (base === 'grades') return;
+		joinParts.push('INNER JOIN grades g ON g.enrollment_id = e.id');
+	};
+
+	for (const join of requiredJoins) {
+		if (join === 'enrollments') ensureEnrollments();
+		if (join === 'students') ensureStudents();
+		if (join === 'studyPrograms') ensureStudyPrograms();
+		if (join === 'courses') ensureCourses();
+	}
+
+	if (base !== 'grades') {
+		ensureGrades();
+	}
+
+	if (user.role === 'LECTURER' && user.lecturerId) {
+		ensureCourses();
+		whereParts.push('c.lecturer_id = ?');
+		values.push(user.lecturerId);
+	} else if (user.role === 'STUDENT' && user.studentId) {
+		ensureEnrollments();
+		whereParts.push('e.student_id = ?');
+		values.push(user.studentId);
+	}
+
+	if (filters.id) {
+		whereParts.push('g.id = ?');
+		values.push(filters.id);
+	}
+	if (filters.enrollmentId) {
+		whereParts.push('g.enrollment_id = ?');
+		values.push(filters.enrollmentId);
+	}
+	if (filters.studentId) {
+		ensureEnrollments();
+		whereParts.push('e.student_id = ?');
+		values.push(filters.studentId);
+	}
+	if (filters.studentName) {
+		ensureStudents();
+		whereParts.push('s.name LIKE ?');
+		values.push(containsSearchPattern(filters.studentName)!);
+	}
+	if (filters.studentEmail) {
+		ensureStudents();
+		whereParts.push('s.email LIKE ?');
+		values.push(containsSearchPattern(filters.studentEmail)!);
+	}
+	if (filters.studyProgramName) {
+		ensureStudyPrograms();
+		whereParts.push('sp.name LIKE ?');
+		values.push(containsSearchPattern(filters.studyProgramName)!);
+	}
+	if (filters.courseId) {
+		ensureEnrollments();
+		whereParts.push('e.course_id = ?');
+		values.push(filters.courseId);
+	}
+	if (filters.courseName) {
+		ensureCourses();
+		whereParts.push('c.name LIKE ?');
+		values.push(containsSearchPattern(filters.courseName)!);
+	}
+	if (filters.lecturerId) {
+		ensureCourses();
+		whereParts.push('c.lecturer_id = ?');
+		values.push(filters.lecturerId);
+	}
+	if (filters.letterGrade) {
+		whereParts.push('g.letter_grade = ?');
+		values.push(filters.letterGrade);
+	}
+	if (filters.minTotalScore != null) {
+		whereParts.push('g.total_score >= ?');
+		values.push(filters.minTotalScore);
+	}
+	if (filters.maxTotalScore != null) {
+		whereParts.push('g.total_score <= ?');
+		values.push(filters.maxTotalScore);
+	}
+	if (afterId) {
+		whereParts.push('g.id > ?');
+		values.push(afterId);
+	}
+
+	const sqlParts = [
+		'SELECT STRAIGHT_JOIN g.id',
+		...joinParts,
+		`WHERE ${whereParts.join(' AND ')}`,
+		'ORDER BY g.id ASC',
+		'LIMIT ?'
+	];
+	values.push(limit + 1);
+
+	const [rows] = await getPool().query(sqlParts.join(' '), values);
+	const ids = (rows as Array<{ id: string }>).map((row) => row.id).filter(Boolean);
+	return hydrateGradesByIds(ids);
+}
 
 export const searchGrades = query(searchGradesSchema, async (filters) => {
 	const user = await requireUser();
@@ -101,38 +369,119 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 	} else if (filters.maxTotalScore != null) {
 		where.push(['total_score', '<=', filters.maxTotalScore]);
 	}
-	const limit = getListQueryLimit();
+	const limit = getListQueryLimit(40);
 	const afterId = getListQueryCursor(filters.cursor);
 	const q = filters.q?.trim();
 	if (q) {
 		const qPrefix = prefixSearchPattern(q)!;
+		const qWordPrefix = wordPrefixSearchPattern(q)!;
 		const queryLimit = limit + 1;
 		const resultSets = await Promise.all([
 			selectGrades(getPool(), {
+				select: gradeListSelect,
 				where: [...where, ['id', '=', q]],
 				params: { afterId, limit: queryLimit }
 			}),
+			prefetchGradeSearchResults(
+				'grades',
+				'(s.name LIKE ? OR s.name LIKE ?)',
+				[qPrefix, qWordPrefix],
+				filters,
+				user,
+				limit,
+				afterId,
+				true,
+				['students']
+			),
+			prefetchGradesByCourseNamePrefix(filters, user, qPrefix, qWordPrefix, limit, afterId),
+			prefetchGradeSearchResults(
+				'students',
+				's.email LIKE ?',
+				[qPrefix],
+				filters,
+				user,
+				limit,
+				afterId
+			),
 			selectGrades(getPool(), {
-				where: [...where, ['student_name', 'LIKE', qPrefix]],
-				params: { afterId, limit: queryLimit }
-			}),
-			selectGrades(getPool(), {
-				where: [...where, ['course_name', 'LIKE', qPrefix]],
-				params: { afterId, limit: queryLimit }
-			}),
-			selectGrades(getPool(), {
-				where: [...where, ['student_email', 'LIKE', qPrefix]],
-				params: { afterId, limit: queryLimit }
-			}),
-			selectGrades(getPool(), {
+				select: gradeListSelect,
 				where: [...where, ['letter_grade', '=', q]],
 				params: { afterId, limit: queryLimit }
 			})
 		]);
 		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
 	}
+	if (filters.courseName) {
+		return toLimitedListResult(
+			await prefetchGradesByCourseNamePrefix(
+				filters,
+				user,
+				containsSearchPattern(filters.courseName)!,
+				containsSearchPattern(filters.courseName)!,
+				limit,
+				afterId
+			),
+			limit,
+			(item) => item.id ?? null
+		);
+	}
+	if (filters.studentEmail) {
+		return toLimitedListResult(
+			await prefetchGradeSearchResults(
+				'grades',
+				's.email LIKE ?',
+				[containsSearchPattern(filters.studentEmail)!],
+				filters,
+				user,
+				limit,
+				afterId,
+				true,
+				['students']
+			),
+			limit,
+			(item) => item.id ?? null
+		);
+	}
+	if (filters.studentName) {
+		return toLimitedListResult(
+			await prefetchGradeSearchResults(
+				'grades',
+				's.name LIKE ?',
+				[containsSearchPattern(filters.studentName)!],
+				filters,
+				user,
+				limit,
+				afterId,
+				true,
+				['students']
+			),
+			limit,
+			(item) => item.id ?? null
+		);
+	}
+	if (filters.studyProgramName) {
+		return toLimitedListResult(
+			await prefetchGradeSearchResults(
+				'grades',
+				'sp.name LIKE ?',
+				[containsSearchPattern(filters.studyProgramName)!],
+				filters,
+				user,
+				limit,
+				afterId,
+				true,
+				['studyPrograms']
+			),
+			limit,
+			(item) => item.id ?? null
+		);
+	}
 	return toLimitedListResult(
-		await selectGrades(getPool(), { where, params: { afterId, limit: limit + 1 } }),
+		await selectGrades(getPool(), {
+			select: gradeListSelect,
+			where,
+			params: { afterId, limit: limit + 1 }
+		}),
 		limit,
 		(item) => item.id ?? null
 	);

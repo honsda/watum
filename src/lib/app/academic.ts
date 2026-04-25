@@ -156,75 +156,119 @@ export function buildScheduleCards(
 			};
 		});
 
-	let conflictIndex = 0;
+	const cardIndexById = new Map(cards.map((card, index) => [card.id, index]));
+	const parents = cards.map((_card, index) => index);
+	const ranks = cards.map(() => 0);
+
+	const find = (index: number): number => {
+		if (parents[index] === index) return index;
+		parents[index] = find(parents[index]);
+		return parents[index];
+	};
+
+	const unite = (leftIndex: number, rightIndex: number) => {
+		const leftRoot = find(leftIndex);
+		const rightRoot = find(rightIndex);
+		if (leftRoot === rightRoot) return;
+		if (ranks[leftRoot] < ranks[rightRoot]) {
+			parents[leftRoot] = rightRoot;
+			return;
+		}
+		if (ranks[leftRoot] > ranks[rightRoot]) {
+			parents[rightRoot] = leftRoot;
+			return;
+		}
+		parents[rightRoot] = leftRoot;
+		ranks[leftRoot] += 1;
+	};
+
+	const connectOverlappingCards = (indexes: number[]) => {
+		if (indexes.length < 2) return;
+
+		const sortedIndexes = [...indexes].sort((left, right) => {
+			const leftCard = cards[left];
+			const rightCard = cards[right];
+			if (leftCard.startMinutes !== rightCard.startMinutes) {
+				return leftCard.startMinutes - rightCard.startMinutes;
+			}
+			return leftCard.endMinutes - rightCard.endMinutes;
+		});
+
+		let componentRepresentative = sortedIndexes[0];
+		let componentEnd = cards[componentRepresentative].endMinutes;
+
+		for (let position = 1; position < sortedIndexes.length; position += 1) {
+			const currentIndex = sortedIndexes[position];
+			const currentCard = cards[currentIndex];
+
+			if (currentCard.startMinutes < componentEnd) {
+				unite(componentRepresentative, currentIndex);
+				componentEnd = Math.max(componentEnd, currentCard.endMinutes);
+				continue;
+			}
+
+			componentRepresentative = currentIndex;
+			componentEnd = currentCard.endMinutes;
+		}
+	};
+
 	for (const day of DAY_ORDER) {
-		const dayCards = cards
-			.filter((card) => card.day === day)
-			.sort((left, right) => left.startMinutes - right.startMinutes);
-		const dayCardById = new Map(dayCards.map((card) => [card.id, card]));
+		const resourceIndexes = new Map<string, number[]>();
 
-		const conflictPeersById = new Map<string, Set<string>>();
-		for (const card of dayCards) {
-			conflictPeersById.set(card.id, new Set());
-		}
+		for (const card of cards) {
+			if (card.day !== day) continue;
+			const cardIndex = cardIndexById.get(card.id);
+			if (cardIndex == null) continue;
 
-		for (let index = 0; index < dayCards.length; index += 1) {
-			const left = dayCards[index];
+			const roomKey = card.original.class_room_id ?? card.room;
+			if (roomKey) {
+				const key = `room:${roomKey}`;
+				const indexes = resourceIndexes.get(key) ?? [];
+				indexes.push(cardIndex);
+				resourceIndexes.set(key, indexes);
+			}
 
-			for (let peerIndex = index + 1; peerIndex < dayCards.length; peerIndex += 1) {
-				const right = dayCards[peerIndex];
-				if (right.startMinutes >= left.endMinutes) break;
+			const studentKey = card.original.student_id;
+			if (studentKey) {
+				const key = `student:${studentKey}`;
+				const indexes = resourceIndexes.get(key) ?? [];
+				indexes.push(cardIndex);
+				resourceIndexes.set(key, indexes);
+			}
 
-				const sharesRoom =
-					left.original.class_room_id && right.original.class_room_id
-						? left.original.class_room_id === right.original.class_room_id
-						: left.room === right.room;
-				const sharesStudent = Boolean(
-					left.original.student_id &&
-					right.original.student_id &&
-					left.original.student_id === right.original.student_id
-				);
-
-				if (!sharesRoom && !sharesStudent) continue;
-
-				conflictPeersById.get(left.id)?.add(right.id);
-				conflictPeersById.get(right.id)?.add(left.id);
+			const lecturerKey = card.original.lecturer_id;
+			if (lecturerKey) {
+				const key = `lecturer:${lecturerKey}`;
+				const indexes = resourceIndexes.get(key) ?? [];
+				indexes.push(cardIndex);
+				resourceIndexes.set(key, indexes);
 			}
 		}
 
-		const visited = new Set<string>();
-		for (const card of dayCards) {
-			if (visited.has(card.id)) continue;
-			visited.add(card.id);
-
-			const stack = [card.id];
-			const group: ScheduleCard[] = [];
-			while (stack.length) {
-				const currentId = stack.pop();
-				if (!currentId) continue;
-
-				const currentCard = dayCardById.get(currentId);
-				if (!currentCard || group.some((item) => item.id === currentId)) continue;
-				group.push(currentCard);
-
-				for (const peerId of conflictPeersById.get(currentId) ?? []) {
-					if (visited.has(peerId)) continue;
-					visited.add(peerId);
-					stack.push(peerId);
-				}
-			}
-
-			if (group.length < 2) continue;
-
-			const tone = conflictIndex;
-			const groupId = `conflict-${conflictIndex + 1}`;
-			for (const conflictCard of group) {
-				conflictCard.hasConflict = true;
-				conflictCard.conflictGroupId = groupId;
-				conflictCard.conflictTone = tone;
-			}
-			conflictIndex += 1;
+		for (const indexes of resourceIndexes.values()) {
+			connectOverlappingCards(indexes);
 		}
+	}
+
+	const groupsByRoot = new Map<number, ScheduleCard[]>();
+	for (let index = 0; index < cards.length; index += 1) {
+		const root = find(index);
+		const group = groupsByRoot.get(root) ?? [];
+		group.push(cards[index]);
+		groupsByRoot.set(root, group);
+	}
+
+	let conflictIndex = 0;
+	for (const group of groupsByRoot.values()) {
+		if (group.length < 2) continue;
+		const tone = conflictIndex;
+		const groupId = `conflict-${conflictIndex + 1}`;
+		for (const conflictCard of group) {
+			conflictCard.hasConflict = true;
+			conflictCard.conflictGroupId = groupId;
+			conflictCard.conflictTone = tone;
+		}
+		conflictIndex += 1;
 	}
 
 	return cards;

@@ -7,4 +7,3 @@ AND sch.day = :day
 AND sch.start_time < :endTime
 AND sch.end_time > :startTime
 ORDER BY sch.start_time ASC
-LIMIT 1

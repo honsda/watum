@@ -2,7 +2,7 @@
 	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import type { Component } from 'svelte';
 	import { clearAccessToken, ensureAccessToken, setAccessToken } from '$lib/client/auth';
 	import {
@@ -19,6 +19,7 @@
 		LayoutPanelTop,
 		Menu,
 		MoonStar,
+		RotateCw,
 		Search,
 		ShieldCheck,
 		SunMedium,
@@ -41,7 +42,7 @@
 		type AppRole,
 		type ScheduleCard
 	} from '$lib/app/academic';
-	import { formatDateTimeInput, parseISO } from '$lib/time-helpers';
+	import { formatDateTime, formatDateTimeInput, parseISO } from '$lib/time-helpers';
 	import ClassroomDashboard from '$lib/components/app/ClassroomDashboard.svelte';
 	import CollectionPagination from '$lib/components/app/CollectionPagination.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -53,6 +54,8 @@
 	import { getCurrentUser, loginUser, logoutUser } from './auth/data.remote';
 	import {
 		getClassRooms,
+		getAllClassRooms,
+		getClassRoom,
 		searchClassRooms,
 		createClassRoom,
 		updateClassRoom,
@@ -60,6 +63,7 @@
 	} from './classrooms/data.remote';
 	import {
 		getCourses,
+		getCourse,
 		searchCourses,
 		createCourse,
 		updateCourse,
@@ -67,6 +71,7 @@
 	} from './courses/data.remote';
 	import {
 		getStudents,
+		getStudent,
 		searchStudents,
 		createStudent,
 		updateStudent,
@@ -74,6 +79,7 @@
 	} from './students/data.remote';
 	import {
 		getLecturers,
+		getLecturer,
 		searchLecturers,
 		createLecturer,
 		updateLecturer,
@@ -81,6 +87,7 @@
 	} from './lecturers/data.remote';
 	import {
 		getFaculties,
+		getFaculty,
 		searchFaculties,
 		createFaculty,
 		updateFaculty,
@@ -88,6 +95,7 @@
 	} from './faculties/data.remote';
 	import {
 		getStudyPrograms,
+		getStudyProgram,
 		searchStudyPrograms,
 		createStudyProgram,
 		updateStudyProgram,
@@ -95,6 +103,8 @@
 	} from './study-programs/data.remote';
 	import {
 		getEnrollments,
+		getEnrollmentConflictAudit,
+		getSchedulePreview,
 		searchEnrollments,
 		createEnrollment,
 		updateEnrollment,
@@ -200,6 +210,18 @@
 		hasMore: boolean;
 		nextCursor: string | null;
 	};
+	type ViewDataPlan = {
+		collections: DataCollectionKey[];
+		requiresSchedulePreview: boolean;
+		requiresBuilderClassrooms: boolean;
+	};
+	type RefreshDependencies = {
+		collections?: DataCollectionKey[];
+		includeSchedulePreview?: boolean;
+		includeBuilderClassrooms?: boolean;
+		includeConflictAudit?: boolean;
+		forceCollections?: boolean;
+	};
 	type CollectionPaginationState = {
 		currentCursor: string | null;
 		nextCursor: string | null;
@@ -215,6 +237,7 @@
 		hasMore: boolean;
 		loading: boolean;
 	};
+	type CollectionLoadedState = Record<DataCollectionKey, boolean>;
 	type EnhancedForm = IssueForm & {
 		enhance: (callback: (opts: { submit: () => Promise<boolean> }) => void | Promise<void>) => {
 			action: string;
@@ -449,6 +472,89 @@
 		);
 	}
 
+	type ConflictAuditResult = Awaited<ReturnType<typeof getEnrollmentConflictAudit>>;
+	type ConflictAuditGroupResult = ConflictAuditResult['groups'][number];
+	type ConflictAuditMemberResult = ConflictAuditGroupResult['members'][number];
+
+	function mergeConflictAudits(results: ConflictAuditResult[]): ConflictAuditResult {
+		const groups = results
+			.flatMap((result) => result.groups)
+			.sort((left, right) => right.memberCount - left.memberCount)
+			.slice(0, 1000);
+		const conflictedEnrollments = new Set(
+			results.flatMap((result) =>
+				result.groups.flatMap((group) => group.members.map((member) => member.enrollmentId))
+			)
+		);
+		return {
+			filters: results[0]?.filters ?? {
+				academicYear: null,
+				semester: null,
+				lecturerScope: null
+			},
+			summary: {
+				totalGroups: results.reduce((sum, result) => sum + result.summary.totalGroups, 0),
+				roomGroups: results.reduce((sum, result) => sum + result.summary.roomGroups, 0),
+				studentGroups: results.reduce((sum, result) => sum + result.summary.studentGroups, 0),
+				lecturerGroups: results.reduce((sum, result) => sum + result.summary.lecturerGroups, 0),
+				conflictedEnrollments: conflictedEnrollments.size
+			},
+			truncated: results.some((result) => result.truncated) || groups.length === 1000,
+			groups
+		};
+	}
+
+	function toEnrollmentResultFromConflictMember(
+		member: ConflictAuditMemberResult
+	): SelectEnrollmentsResult {
+		return {
+			id: member.enrollmentId,
+			student_id: member.studentId,
+			course_id: member.courseId,
+			lecturer_id: member.lecturerId,
+			class_room_id: member.classRoomId,
+			schedule_id: member.scheduleId,
+			semester: member.semester,
+			academic_year: member.academicYear,
+			student_name: member.studentName,
+			course_name: member.courseName,
+			lecturer_name: member.lecturerName,
+			class_room_name: member.classRoomName,
+			schedule_day: member.day,
+			schedule_start_time: member.startTime,
+			schedule_end_time: member.endTime
+		};
+	}
+
+	function scheduleCardFromConflictMember(
+		member: ConflictAuditMemberResult,
+		groupId: string,
+		tone: number
+	): ScheduleCard {
+		const original = toEnrollmentResultFromConflictMember(member);
+		const startMinutes = toMinutes(member.startTime, timezone);
+		const endMinutes = toMinutes(member.endTime, timezone);
+		return {
+			id: member.enrollmentId,
+			day: member.day,
+			course: member.courseName,
+			lecturer: member.lecturerName,
+			room: member.classRoomName,
+			student: member.studentName,
+			semester: member.semester,
+			academicYear: member.academicYear,
+			startLabel: formatDateTime(member.startTime, 'time', timezone),
+			endLabel: formatDateTime(member.endTime, 'time', timezone),
+			startMinutes,
+			endMinutes,
+			durationMinutes: Math.max(30, endMinutes - startMinutes),
+			hasConflict: true,
+			conflictGroupId: groupId,
+			conflictTone: tone,
+			original
+		};
+	}
+
 	function openBuilderForSchedule(card: ScheduleCard | null | undefined) {
 		if (!card) return;
 		selectedScheduleId = card.id;
@@ -484,6 +590,7 @@
 		{ id: 'room', label: 'Ruang', hint: 'Pilih ruang yang tersedia.' },
 		{ id: 'review', label: 'Tinjau', hint: 'Periksa sebelum disimpan.' }
 	] as const;
+	const PICKER_PAGE_SIZE = 24;
 
 	function headerAction(view: ViewId, role: AppRole | undefined) {
 		if (role === 'STUDENT') {
@@ -598,7 +705,7 @@
 		null
 	);
 	let calendarPlugins = $state<unknown[]>([]);
-	let calendarLoadPromise = $state<Promise<void> | null>(null);
+	let calendarLoadPromise: Promise<void> | null = null;
 	let theme = $state<'light' | 'dark'>('light');
 	let activeView = $state<ViewId>('dashboard');
 	let builderStep = $state<BuilderStep>('participant');
@@ -606,20 +713,47 @@
 	let pendingDelete = $state<DeleteIntent | null>(null);
 	let feedback = $state<Feedback>(null);
 	let appLoading = $state(false);
+	let viewRefreshLoading = $state(false);
+	let initialViewHydrated = $state(false);
 	let loadedForUserId = $state<string | null>(null);
 	let viewRestored = $state(!browser);
 	let collectionIssues = $state<Partial<Record<DataCollectionKey, string>>>({});
 	let collectionPagination = $state<Record<DataCollectionKey, CollectionPaginationState>>(
 		createCollectionPaginationState()
 	);
-	let pendingRefreshTimer = $state<number | null>(null);
+	let collectionLoaded = $state<CollectionLoadedState>(createCollectionLoadedState());
+	let schedulePreviewLoaded = $state(false);
+	let conflictAudit = $state<Awaited<ReturnType<typeof getEnrollmentConflictAudit>> | null>(null);
+	let conflictAuditLoading = $state(false);
+	let conflictAuditIssue = $state<string | null>(null);
+	let pendingRefreshTimer: number | null = null;
 	let collectionRefreshTimers: Partial<Record<DataCollectionKey, number>> = {};
+	let conflictAuditRefreshTimer: number | null = null;
 	let studentPickerSearch = $state('');
 	let coursePickerSearch = $state('');
 	let studentPickerOpen = $state(false);
 	let coursePickerOpen = $state(false);
+	let studentPickerOptions = $state<SelectStudentsResult[]>([]);
+	let coursePickerOptions = $state<SelectCoursesResult[]>([]);
+	let studentPickerLoading = $state(false);
+	let coursePickerLoading = $state(false);
+	let studentPickerIssue = $state<string | null>(null);
+	let coursePickerIssue = $state<string | null>(null);
+	let studentPickerHasMore = $state(false);
+	let coursePickerHasMore = $state(false);
+	let studentPickerNextCursor = $state<string | null>(null);
+	let coursePickerNextCursor = $state<string | null>(null);
+	let studentPickerRefreshTimer: number | null = null;
+	let coursePickerRefreshTimer: number | null = null;
+	let studentPickerRequestToken = 0;
+	let coursePickerRequestToken = 0;
+	let roomPickerSearch = $state('');
+	let roomPickerOpen = $state(false);
+	let roomPickerPage = $state(0);
 
 	let classrooms = $state<SelectClassRoomsResult[]>([]);
+	let builderClassrooms = $state<SelectClassRoomsResult[]>([]);
+	let builderClassroomsLoaded = $state(false);
 	let courses = $state<SelectCoursesResult[]>([]);
 	let students = $state<SelectStudentsResult[]>([]);
 	let lecturers = $state<SelectLecturersResult[]>([]);
@@ -653,6 +787,27 @@
 	let scheduleCourseFilter = $state('');
 	let scheduleRoomFilter = $state('');
 	let scheduleLecturerFilter = $state('');
+	let scheduleCourseFilterSearch = $state('');
+	let scheduleRoomFilterSearch = $state('');
+	let scheduleLecturerFilterSearch = $state('');
+	let scheduleCourseFilterOpen = $state(false);
+	let scheduleRoomFilterOpen = $state(false);
+	let scheduleLecturerFilterOpen = $state(false);
+	let scheduleCourseFilterOptions = $state<SelectCoursesResult[]>([]);
+	let scheduleLecturerFilterOptions = $state<SelectLecturersResult[]>([]);
+	let scheduleCourseFilterLoading = $state(false);
+	let scheduleLecturerFilterLoading = $state(false);
+	let scheduleCourseFilterIssue = $state<string | null>(null);
+	let scheduleLecturerFilterIssue = $state<string | null>(null);
+	let scheduleCourseFilterHasMore = $state(false);
+	let scheduleLecturerFilterHasMore = $state(false);
+	let scheduleCourseFilterNextCursor = $state<string | null>(null);
+	let scheduleLecturerFilterNextCursor = $state<string | null>(null);
+	let scheduleCourseFilterRefreshTimer: number | null = null;
+	let scheduleLecturerFilterRefreshTimer: number | null = null;
+	let scheduleCourseFilterRequestToken = 0;
+	let scheduleLecturerFilterRequestToken = 0;
+	let scheduleRoomFilterPage = $state(0);
 	let scheduleDayFilter = $state('');
 	let scheduleSemesterFilter = $state('');
 	let scheduleAcademicYearFilter = $state('');
@@ -725,6 +880,20 @@
 		};
 	}
 
+	function createCollectionLoadedState(): CollectionLoadedState {
+		return {
+			classrooms: false,
+			courses: false,
+			students: false,
+			lecturers: false,
+			faculties: false,
+			studyPrograms: false,
+			enrollments: false,
+			grades: false,
+			users: false
+		};
+	}
+
 	function setCollectionPagination(
 		key: DataCollectionKey,
 		patch: Partial<CollectionPaginationState>
@@ -745,6 +914,26 @@
 		assign(result.items);
 	}
 
+	async function resolveRemoteQuery<T>(query: Promise<T> | { run: () => Promise<T> }): Promise<T> {
+		try {
+			return await (query as Promise<T>);
+		} catch (error) {
+			if (
+				typeof query === 'object' &&
+				query != null &&
+				'run' in query &&
+				typeof query.run === 'function' &&
+				(error as Error)?.message?.includes(
+					'This query was not created in a reactive context and is limited to calling `.run`, `.refresh`, and `.set`.'
+				)
+			) {
+				return await query.run();
+			}
+
+			throw error;
+		}
+	}
+
 	function errorMessage(error: unknown, fallback: string) {
 		return (
 			(error as { body?: { message?: string }; message?: string })?.body?.message ||
@@ -756,6 +945,207 @@
 	function normalizedSearchValue(value: string) {
 		const trimmed = value.trim();
 		return trimmed.length > 0 ? trimmed : undefined;
+	}
+
+	function mergeItemsById<T extends { id?: string }>(current: T[], next: T[]) {
+		const itemsById = new Map<string, T>();
+		const anonymousItems: T[] = [];
+		for (const item of [...current, ...next]) {
+			if (!item.id) {
+				anonymousItems.push(item);
+				continue;
+			}
+			itemsById.set(item.id, item);
+		}
+		return [...itemsById.values(), ...anonymousItems];
+	}
+
+	async function refreshStudentPickerOptions(cursor: string | null = null) {
+		const token = ++studentPickerRequestToken;
+		const append = cursor != null;
+		studentPickerLoading = true;
+		studentPickerIssue = null;
+		try {
+			const q = normalizedSearchValue(studentPickerSearch);
+			const result = q
+				? await resolveRemoteQuery(searchStudents({ q, cursor: cursor ?? undefined }))
+				: await resolveRemoteQuery(getStudents({ cursor: cursor ?? undefined }));
+			if (token !== studentPickerRequestToken) return;
+			studentPickerOptions = append
+				? mergeItemsById(studentPickerOptions, result.items)
+				: result.items;
+			studentPickerHasMore = result.hasMore;
+			studentPickerNextCursor = result.nextCursor;
+		} catch (error) {
+			if (token !== studentPickerRequestToken) return;
+			studentPickerIssue = errorMessage(error, 'Daftar mahasiswa gagal dimuat.');
+		} finally {
+			if (token === studentPickerRequestToken) {
+				studentPickerLoading = false;
+			}
+		}
+	}
+
+	async function refreshCoursePickerOptions(cursor: string | null = null) {
+		const token = ++coursePickerRequestToken;
+		const append = cursor != null;
+		coursePickerLoading = true;
+		coursePickerIssue = null;
+		try {
+			const q = normalizedSearchValue(coursePickerSearch);
+			const result = q
+				? await resolveRemoteQuery(searchCourses({ q, cursor: cursor ?? undefined }))
+				: await resolveRemoteQuery(getCourses({ cursor: cursor ?? undefined }));
+			if (token !== coursePickerRequestToken) return;
+			coursePickerOptions = append ? mergeItemsById(coursePickerOptions, result.items) : result.items;
+			coursePickerHasMore = result.hasMore;
+			coursePickerNextCursor = result.nextCursor;
+		} catch (error) {
+			if (token !== coursePickerRequestToken) return;
+			coursePickerIssue = errorMessage(error, 'Daftar mata kuliah gagal dimuat.');
+		} finally {
+			if (token === coursePickerRequestToken) {
+				coursePickerLoading = false;
+			}
+		}
+	}
+
+	async function refreshScheduleCourseFilterOptions(cursor: string | null = null) {
+		const token = ++scheduleCourseFilterRequestToken;
+		const append = cursor != null;
+		scheduleCourseFilterLoading = true;
+		scheduleCourseFilterIssue = null;
+		try {
+			const q = normalizedSearchValue(scheduleCourseFilterSearch);
+			const result = q
+				? await resolveRemoteQuery(searchCourses({ q, cursor: cursor ?? undefined }))
+				: await resolveRemoteQuery(getCourses({ cursor: cursor ?? undefined }));
+			if (token !== scheduleCourseFilterRequestToken) return;
+			scheduleCourseFilterOptions = append
+				? mergeItemsById(scheduleCourseFilterOptions, result.items)
+				: result.items;
+			scheduleCourseFilterHasMore = result.hasMore;
+			scheduleCourseFilterNextCursor = result.nextCursor;
+		} catch (error) {
+			if (token !== scheduleCourseFilterRequestToken) return;
+			scheduleCourseFilterIssue = errorMessage(error, 'Daftar mata kuliah gagal dimuat.');
+		} finally {
+			if (token === scheduleCourseFilterRequestToken) {
+				scheduleCourseFilterLoading = false;
+			}
+		}
+	}
+
+	async function refreshScheduleLecturerFilterOptions(cursor: string | null = null) {
+		const token = ++scheduleLecturerFilterRequestToken;
+		const append = cursor != null;
+		scheduleLecturerFilterLoading = true;
+		scheduleLecturerFilterIssue = null;
+		try {
+			const q = normalizedSearchValue(scheduleLecturerFilterSearch);
+			const result = q
+				? await resolveRemoteQuery(searchLecturers({ q, cursor: cursor ?? undefined }))
+				: await resolveRemoteQuery(getLecturers({ cursor: cursor ?? undefined }));
+			if (token !== scheduleLecturerFilterRequestToken) return;
+			scheduleLecturerFilterOptions = append
+				? mergeItemsById(scheduleLecturerFilterOptions, result.items)
+				: result.items;
+			scheduleLecturerFilterHasMore = result.hasMore;
+			scheduleLecturerFilterNextCursor = result.nextCursor;
+		} catch (error) {
+			if (token !== scheduleLecturerFilterRequestToken) return;
+			scheduleLecturerFilterIssue = errorMessage(error, 'Daftar dosen gagal dimuat.');
+		} finally {
+			if (token === scheduleLecturerFilterRequestToken) {
+				scheduleLecturerFilterLoading = false;
+			}
+		}
+	}
+
+	function queueStudentPickerRefresh(delay = 120) {
+		if (!browser) {
+			void refreshStudentPickerOptions(null);
+			return;
+		}
+		if (studentPickerRefreshTimer != null) {
+			window.clearTimeout(studentPickerRefreshTimer);
+		}
+		studentPickerRefreshTimer = window.setTimeout(() => {
+			studentPickerRefreshTimer = null;
+			void refreshStudentPickerOptions(null);
+		}, delay);
+	}
+
+	function queueCoursePickerRefresh(delay = 120) {
+		if (!browser) {
+			void refreshCoursePickerOptions(null);
+			return;
+		}
+		if (coursePickerRefreshTimer != null) {
+			window.clearTimeout(coursePickerRefreshTimer);
+		}
+		coursePickerRefreshTimer = window.setTimeout(() => {
+			coursePickerRefreshTimer = null;
+			void refreshCoursePickerOptions(null);
+		}, delay);
+	}
+
+	function queueScheduleCourseFilterRefresh(delay = 120) {
+		if (!browser) {
+			void refreshScheduleCourseFilterOptions(null);
+			return;
+		}
+		if (scheduleCourseFilterRefreshTimer != null) {
+			window.clearTimeout(scheduleCourseFilterRefreshTimer);
+		}
+		scheduleCourseFilterRefreshTimer = window.setTimeout(() => {
+			scheduleCourseFilterRefreshTimer = null;
+			void refreshScheduleCourseFilterOptions(null);
+		}, delay);
+	}
+
+	function queueScheduleLecturerFilterRefresh(delay = 120) {
+		if (!browser) {
+			void refreshScheduleLecturerFilterOptions(null);
+			return;
+		}
+		if (scheduleLecturerFilterRefreshTimer != null) {
+			window.clearTimeout(scheduleLecturerFilterRefreshTimer);
+		}
+		scheduleLecturerFilterRefreshTimer = window.setTimeout(() => {
+			scheduleLecturerFilterRefreshTimer = null;
+			void refreshScheduleLecturerFilterOptions(null);
+		}, delay);
+	}
+
+	function loadMoreStudentPickerOptions() {
+		if (studentPickerLoading || !studentPickerHasMore || !studentPickerNextCursor) return;
+		void refreshStudentPickerOptions(studentPickerNextCursor);
+	}
+
+	function loadMoreCoursePickerOptions() {
+		if (coursePickerLoading || !coursePickerHasMore || !coursePickerNextCursor) return;
+		void refreshCoursePickerOptions(coursePickerNextCursor);
+	}
+
+	function loadMoreScheduleCourseFilterOptions() {
+		if (
+			scheduleCourseFilterLoading ||
+			!scheduleCourseFilterHasMore ||
+			!scheduleCourseFilterNextCursor
+		)
+			return;
+		void refreshScheduleCourseFilterOptions(scheduleCourseFilterNextCursor);
+	}
+
+	function loadMoreScheduleLecturerFilterOptions() {
+		if (
+			scheduleLecturerFilterLoading ||
+			!scheduleLecturerFilterHasMore ||
+			!scheduleLecturerFilterNextCursor
+		)
+			return;
+		void refreshScheduleLecturerFilterOptions(scheduleLecturerFilterNextCursor);
 	}
 
 	function scheduleFiltersMatch(item: SelectEnrollmentsResult) {
@@ -786,14 +1176,32 @@
 		);
 	}
 
+	function roomOptionMatches(item: SelectClassRoomsResult, query: string) {
+		if (!query) return true;
+		return (
+			matchesText(item.name, query) ||
+			matchesText(item.id, query) ||
+			matchesText(beautifyRoomType(item.class_room_type), query) ||
+			matchesText(item.capacity != null ? String(item.capacity) : '', query)
+		);
+	}
+
 	function resetScheduleFilters() {
 		enrollmentSearch = '';
 		scheduleCourseFilter = '';
 		scheduleRoomFilter = '';
 		scheduleLecturerFilter = '';
+		scheduleCourseFilterSearch = '';
+		scheduleRoomFilterSearch = '';
+		scheduleLecturerFilterSearch = '';
+		scheduleCourseFilterOpen = false;
+		scheduleRoomFilterOpen = false;
+		scheduleLecturerFilterOpen = false;
+		scheduleRoomFilterPage = 0;
 		scheduleDayFilter = '';
 		scheduleSemesterFilter = '';
 		scheduleAcademicYearFilter = '';
+		builderConflictOnly = false;
 		selectedConflictGroupId = null;
 		queueCollectionRefresh('enrollments', 0);
 	}
@@ -848,6 +1256,8 @@
 
 	function resetCollections() {
 		classrooms = [];
+		builderClassrooms = [];
+		builderClassroomsLoaded = false;
 		courses = [];
 		students = [];
 		lecturers = [];
@@ -857,6 +1267,11 @@
 		grades = [];
 		users = [];
 		schedulePreview = { items: [], hasMore: false, loading: false };
+		schedulePreviewLoaded = false;
+		conflictAudit = null;
+		conflictAuditIssue = null;
+		conflictAuditLoading = false;
+		initialViewHydrated = false;
 		selectedRoomRecord = null;
 		selectedCourseRecord = null;
 		selectedStudentRecord = null;
@@ -868,12 +1283,57 @@
 		selectedUserRecord = null;
 		collectionIssues = {};
 		collectionPagination = createCollectionPaginationState();
+		collectionLoaded = createCollectionLoadedState();
 		if (browser) {
 			for (const timer of Object.values(collectionRefreshTimers)) {
 				if (timer != null) window.clearTimeout(timer);
 			}
+			if (conflictAuditRefreshTimer != null) window.clearTimeout(conflictAuditRefreshTimer);
+			if (studentPickerRefreshTimer != null) window.clearTimeout(studentPickerRefreshTimer);
+			if (coursePickerRefreshTimer != null) window.clearTimeout(coursePickerRefreshTimer);
+			if (scheduleCourseFilterRefreshTimer != null) {
+				window.clearTimeout(scheduleCourseFilterRefreshTimer);
+			}
+			if (scheduleLecturerFilterRefreshTimer != null) {
+				window.clearTimeout(scheduleLecturerFilterRefreshTimer);
+			}
 		}
 		collectionRefreshTimers = {};
+		conflictAuditRefreshTimer = null;
+		studentPickerRefreshTimer = null;
+		coursePickerRefreshTimer = null;
+		scheduleCourseFilterRefreshTimer = null;
+		scheduleLecturerFilterRefreshTimer = null;
+		studentPickerOptions = [];
+		coursePickerOptions = [];
+		scheduleCourseFilterOptions = [];
+		scheduleLecturerFilterOptions = [];
+		studentPickerLoading = false;
+		coursePickerLoading = false;
+		scheduleCourseFilterLoading = false;
+		scheduleLecturerFilterLoading = false;
+		studentPickerIssue = null;
+		coursePickerIssue = null;
+		scheduleCourseFilterIssue = null;
+		scheduleLecturerFilterIssue = null;
+		studentPickerHasMore = false;
+		coursePickerHasMore = false;
+		scheduleCourseFilterHasMore = false;
+		scheduleLecturerFilterHasMore = false;
+		studentPickerNextCursor = null;
+		coursePickerNextCursor = null;
+		scheduleCourseFilterNextCursor = null;
+		scheduleLecturerFilterNextCursor = null;
+		roomPickerSearch = '';
+		roomPickerOpen = false;
+		roomPickerPage = 0;
+		scheduleCourseFilterSearch = '';
+		scheduleRoomFilterSearch = '';
+		scheduleLecturerFilterSearch = '';
+		scheduleCourseFilterOpen = false;
+		scheduleRoomFilterOpen = false;
+		scheduleLecturerFilterOpen = false;
+		scheduleRoomFilterPage = 0;
 	}
 
 	async function loadCollection(
@@ -892,13 +1352,17 @@
 	async function loadCollectionPage<T>(
 		key: DataCollectionKey,
 		cursor: string | null,
-		request: (cursor: string | null) => Promise<LimitedCollectionResponse<T>>,
+		request: (
+			cursor: string | null
+		) =>
+			| Promise<LimitedCollectionResponse<T>>
+			| { run: () => Promise<LimitedCollectionResponse<T>> },
 		assign: (items: T[]) => void,
 		meta?: { history?: Array<string | null>; pageNumber?: number }
 	) {
 		setCollectionPagination(key, { loading: true });
 		try {
-			const result = await request(cursor);
+			const result = await resolveRemoteQuery(request(cursor));
 
 			applyLimitedCollection(result, assign);
 			const nextHistory =
@@ -915,6 +1379,7 @@
 				loading: false,
 				itemCount: result.items.length
 			});
+			collectionLoaded = { ...collectionLoaded, [key]: true };
 		} catch (error) {
 			setCollectionPagination(key, { loading: false });
 			throw error;
@@ -937,43 +1402,43 @@
 	function requestClassroomsPage(cursor: string | null) {
 		const q = normalizedSearchValue(roomSearch);
 		return q
-			? searchClassRooms({ cursor: cursor ?? undefined, q }).run()
-			: getClassRooms({ cursor: cursor ?? undefined }).run();
+			? searchClassRooms({ cursor: cursor ?? undefined, q })
+			: getClassRooms({ cursor: cursor ?? undefined });
 	}
 
 	function requestCoursesPage(cursor: string | null) {
 		const q = normalizedSearchValue(courseSearch);
 		return q
-			? searchCourses({ cursor: cursor ?? undefined, q }).run()
-			: getCourses({ cursor: cursor ?? undefined }).run();
+			? searchCourses({ cursor: cursor ?? undefined, q })
+			: getCourses({ cursor: cursor ?? undefined });
 	}
 
 	function requestStudentsPage(cursor: string | null) {
 		const q = normalizedSearchValue(studentSearch);
 		return q
-			? searchStudents({ cursor: cursor ?? undefined, q }).run()
-			: getStudents({ cursor: cursor ?? undefined }).run();
+			? searchStudents({ cursor: cursor ?? undefined, q })
+			: getStudents({ cursor: cursor ?? undefined });
 	}
 
 	function requestLecturersPage(cursor: string | null) {
 		const q = normalizedSearchValue(lecturerSearch);
 		return q
-			? searchLecturers({ cursor: cursor ?? undefined, q }).run()
-			: getLecturers({ cursor: cursor ?? undefined }).run();
+			? searchLecturers({ cursor: cursor ?? undefined, q })
+			: getLecturers({ cursor: cursor ?? undefined });
 	}
 
 	function requestFacultiesPage(cursor: string | null) {
 		const q = normalizedSearchValue(facultySearch);
 		return q
-			? searchFaculties({ cursor: cursor ?? undefined, q }).run()
-			: getFaculties({ cursor: cursor ?? undefined }).run();
+			? searchFaculties({ cursor: cursor ?? undefined, q })
+			: getFaculties({ cursor: cursor ?? undefined });
 	}
 
 	function requestStudyProgramsPage(cursor: string | null) {
 		const q = normalizedSearchValue(studyProgramSearch);
 		return q
-			? searchStudyPrograms({ cursor: cursor ?? undefined, q }).run()
-			: getStudyPrograms({ cursor: cursor ?? undefined }).run();
+			? searchStudyPrograms({ cursor: cursor ?? undefined, q })
+			: getStudyPrograms({ cursor: cursor ?? undefined });
 	}
 
 	function requestEnrollmentsPage(cursor: string | null) {
@@ -981,23 +1446,21 @@
 		const hasFilters = Object.entries(params).some(
 			([key, value]) => key !== 'cursor' && value != null
 		);
-		return hasFilters
-			? searchEnrollments(params).run()
-			: getEnrollments({ cursor: cursor ?? undefined }).run();
+		return hasFilters ? searchEnrollments(params) : getEnrollments({ cursor: cursor ?? undefined });
 	}
 
 	function requestGradesPage(cursor: string | null) {
 		const q = normalizedSearchValue(gradeSearch);
 		return q
-			? searchGrades({ cursor: cursor ?? undefined, q }).run()
-			: getGrades({ cursor: cursor ?? undefined }).run();
+			? searchGrades({ cursor: cursor ?? undefined, q })
+			: getGrades({ cursor: cursor ?? undefined });
 	}
 
 	function requestUsersPage(cursor: string | null) {
 		const q = normalizedSearchValue(userSearch);
 		return q
-			? searchUsers({ cursor: cursor ?? undefined, q }).run()
-			: getUsers({ cursor: cursor ?? undefined }).run();
+			? searchUsers({ cursor: cursor ?? undefined, q })
+			: getUsers({ cursor: cursor ?? undefined });
 	}
 
 	async function refreshSchedulePreview() {
@@ -1006,17 +1469,64 @@
 			const params = buildEnrollmentSearchParams(null);
 			const hasFilters = Object.values(params).some((value) => value != null);
 			const result = hasFilters
-				? await searchEnrollments(params).run()
-				: await getEnrollments().run();
+				? await resolveRemoteQuery(searchEnrollments({ ...params, preview: true }))
+				: await resolveRemoteQuery(getSchedulePreview());
 			schedulePreview = {
 				items: result.items,
 				hasMore: result.hasMore,
 				loading: false
 			};
+			schedulePreviewLoaded = true;
 		} catch (error) {
 			schedulePreview = { ...schedulePreview, loading: false };
 			throw error;
 		}
+	}
+
+	function buildConflictAuditFilters() {
+		return {
+			limitGroups: 1000
+		};
+	}
+
+	async function refreshConflictAudit() {
+		if (!loadedForUserId) {
+			conflictAudit = null;
+			conflictAuditIssue = null;
+			conflictAuditLoading = false;
+			return;
+		}
+
+		conflictAuditLoading = true;
+		conflictAuditIssue = null;
+		try {
+			const baseFilters = buildConflictAuditFilters();
+			const [roomAudit, studentAudit, lecturerAudit] = await Promise.all([
+				resolveRemoteQuery(getEnrollmentConflictAudit({ ...baseFilters, conflictType: 'room' })),
+				resolveRemoteQuery(getEnrollmentConflictAudit({ ...baseFilters, conflictType: 'student' })),
+				resolveRemoteQuery(getEnrollmentConflictAudit({ ...baseFilters, conflictType: 'lecturer' }))
+			]);
+			conflictAudit = mergeConflictAudits([roomAudit, studentAudit, lecturerAudit]);
+		} catch (error) {
+			conflictAudit = null;
+			conflictAuditIssue = errorMessage(error, 'Audit bentrok gagal dimuat.');
+		} finally {
+			conflictAuditLoading = false;
+		}
+	}
+
+	function queueConflictAuditRefresh(delay = 120) {
+		if (!browser) {
+			void refreshConflictAudit();
+			return;
+		}
+		if (conflictAuditRefreshTimer != null) {
+			window.clearTimeout(conflictAuditRefreshTimer);
+		}
+		conflictAuditRefreshTimer = window.setTimeout(() => {
+			conflictAuditRefreshTimer = null;
+			void refreshConflictAudit();
+		}, delay);
 	}
 
 	async function refreshClassrooms(cursor = collectionPagination.classrooms.currentCursor) {
@@ -1026,6 +1536,11 @@
 			requestClassroomsPage,
 			(items) => (classrooms = items)
 		);
+	}
+
+	async function refreshBuilderClassrooms() {
+		builderClassrooms = await resolveRemoteQuery(getAllClassRooms());
+		builderClassroomsLoaded = true;
 	}
 
 	async function refreshCourses(cursor = collectionPagination.courses.currentCursor) {
@@ -1097,6 +1612,200 @@
 		return 'Data akun gagal dimuat.';
 	}
 
+	function scheduleDrivenView(view: ViewId) {
+		return ['dashboard', 'calendar', 'builder'].includes(view);
+	}
+
+	function viewDataPlan(view: ViewId, role: AppRole | undefined): ViewDataPlan {
+		if (view === 'dashboard') {
+			return {
+				collections:
+					role === 'STUDENT'
+						? (['enrollments', 'grades'] as DataCollectionKey[])
+						: (['classrooms'] as DataCollectionKey[]),
+				requiresSchedulePreview: true,
+				requiresBuilderClassrooms: false
+			};
+		}
+		if (view === 'calendar') {
+			return {
+				collections: ['courses', 'classrooms', 'lecturers'] as DataCollectionKey[],
+				requiresSchedulePreview: true,
+				requiresBuilderClassrooms: false
+			};
+		}
+		if (view === 'builder') {
+			return {
+				collections: ['courses', 'classrooms', 'lecturers', 'enrollments'] as DataCollectionKey[],
+				requiresSchedulePreview: true,
+				requiresBuilderClassrooms: true
+			};
+		}
+		if (view === 'classrooms') {
+			return {
+				collections: ['classrooms'] as DataCollectionKey[],
+				requiresSchedulePreview: false,
+				requiresBuilderClassrooms: false
+			};
+		}
+		if (view === 'courses') {
+			return {
+				collections: ['courses', 'studyPrograms', 'lecturers'] as DataCollectionKey[],
+				requiresSchedulePreview: false,
+				requiresBuilderClassrooms: false
+			};
+		}
+		if (view === 'students') {
+			return {
+				collections: ['students', 'studyPrograms'] as DataCollectionKey[],
+				requiresSchedulePreview: false,
+				requiresBuilderClassrooms: false
+			};
+		}
+		if (view === 'lecturers') {
+			return {
+				collections: ['lecturers'] as DataCollectionKey[],
+				requiresSchedulePreview: false,
+				requiresBuilderClassrooms: false
+			};
+		}
+		if (view === 'faculties') {
+			return {
+				collections: ['faculties'] as DataCollectionKey[],
+				requiresSchedulePreview: false,
+				requiresBuilderClassrooms: false
+			};
+		}
+		if (view === 'studyPrograms') {
+			return {
+				collections: ['studyPrograms', 'faculties'] as DataCollectionKey[],
+				requiresSchedulePreview: false,
+				requiresBuilderClassrooms: false
+			};
+		}
+		if (view === 'enrollments') {
+			return {
+				collections: ['enrollments', 'courses', 'classrooms', 'lecturers'] as DataCollectionKey[],
+				requiresSchedulePreview: false,
+				requiresBuilderClassrooms: false
+			};
+		}
+		if (view === 'grades') {
+			return {
+				collections: ['grades', 'enrollments'] as DataCollectionKey[],
+				requiresSchedulePreview: false,
+				requiresBuilderClassrooms: false
+			};
+		}
+		return {
+			collections: ['users'] as DataCollectionKey[],
+			requiresSchedulePreview: false,
+			requiresBuilderClassrooms: false
+		};
+	}
+
+	async function ensureViewData(view: ViewId, force = false) {
+		const role = currentUser.current?.role as AppRole | undefined;
+		const plan = viewDataPlan(view, role);
+		const tasks: Promise<unknown>[] = [];
+		const shouldBlockUi = !initialViewHydrated;
+
+		if (plan.requiresSchedulePreview && (force || !schedulePreviewLoaded)) {
+			tasks.push(
+				refreshSchedulePreview().catch((error) => {
+					setCollectionIssue('enrollments', errorMessage(error, 'Pratinjau jadwal gagal dimuat.'));
+				})
+			);
+		}
+
+		if (plan.requiresBuilderClassrooms && (force || !builderClassroomsLoaded)) {
+			tasks.push(
+				refreshBuilderClassrooms().catch((error) => {
+					setCollectionIssue('classrooms', errorMessage(error, 'Daftar ruang kelas gagal dimuat.'));
+				})
+			);
+		}
+
+		for (const key of plan.collections) {
+			if (!force && collectionLoaded[key]) continue;
+			tasks.push(
+				loadCollection(key, () => collectionRefresher(key)(null), collectionFallbackMessage(key))
+			);
+		}
+
+		if (!tasks.length) return;
+		if (shouldBlockUi) {
+			appLoading = true;
+		}
+		await Promise.all(tasks);
+		if (shouldBlockUi) {
+			initialViewHydrated = true;
+			appLoading = false;
+		}
+	}
+
+	async function refreshCollectionData(key: DataCollectionKey, force = false) {
+		if (!force && !collectionLoaded[key]) return;
+		await loadCollection(key, () => collectionRefresher(key)(), collectionFallbackMessage(key));
+	}
+
+	async function refreshSchedulePreviewData(force = false) {
+		if (!force && !schedulePreviewLoaded) return;
+		try {
+			await refreshSchedulePreview();
+			clearCollectionIssue('enrollments');
+		} catch (error) {
+			setCollectionIssue('enrollments', errorMessage(error, 'Pratinjau jadwal gagal dimuat.'));
+			throw error;
+		}
+	}
+
+	async function refreshBuilderClassroomsData(force = false) {
+		if (!force && !builderClassroomsLoaded) return;
+		try {
+			await refreshBuilderClassrooms();
+			clearCollectionIssue('classrooms');
+		} catch (error) {
+			setCollectionIssue('classrooms', errorMessage(error, 'Daftar ruang kelas gagal dimuat.'));
+			throw error;
+		}
+	}
+
+	async function refreshDependencies({
+		collections = [],
+		includeSchedulePreview = false,
+		includeBuilderClassrooms = false,
+		includeConflictAudit = false,
+		forceCollections = false
+	}: RefreshDependencies) {
+		const tasks: Promise<unknown>[] = [];
+		for (const key of new Set(collections)) {
+			tasks.push(refreshCollectionData(key, forceCollections));
+		}
+		if (includeBuilderClassrooms) {
+			tasks.push(refreshBuilderClassroomsData(forceCollections));
+		}
+		if (includeSchedulePreview) {
+			tasks.push(refreshSchedulePreviewData(forceCollections));
+		}
+		await Promise.all(tasks);
+		if (includeConflictAudit) {
+			await refreshConflictAudit();
+		}
+	}
+
+	async function refreshViewData(view: ViewId) {
+		const role = currentUser.current?.role as AppRole | undefined;
+		const plan = viewDataPlan(view, role);
+		await refreshDependencies({
+			collections: plan.collections,
+			includeSchedulePreview: plan.requiresSchedulePreview,
+			includeBuilderClassrooms: plan.requiresBuilderClassrooms,
+			includeConflictAudit: true,
+			forceCollections: true
+		});
+	}
+
 	function collectionRefresher(key: DataCollectionKey) {
 		const refreshers: Record<DataCollectionKey, (cursor?: string | null) => Promise<void>> = {
 			classrooms: refreshClassrooms,
@@ -1145,7 +1854,7 @@
 		}
 		collectionRefreshTimers[key] = window.setTimeout(() => {
 			delete collectionRefreshTimers[key];
-			if (key === 'enrollments') {
+			if (key === 'enrollments' && ['dashboard', 'calendar', 'builder'].includes(activeView)) {
 				void refreshSchedulePreview().catch((error) => {
 					setCollectionIssue('enrollments', errorMessage(error, 'Pratinjau jadwal gagal dimuat.'));
 				});
@@ -1196,35 +1905,10 @@
 		);
 	}
 
-	async function refreshAll() {
-		if (!currentUser.current) return;
-		appLoading = true;
-		const role = currentUser.current.role;
-		const schedulePreviewTask = refreshSchedulePreview().catch((error) => {
-			setCollectionIssue('enrollments', errorMessage(error, 'Pratinjau jadwal gagal dimuat.'));
-		});
-		await Promise.all([
-			schedulePreviewTask,
-			loadCollection('classrooms', () => refreshClassrooms(), 'Ruang kelas gagal dimuat.'),
-			loadCollection('courses', () => refreshCourses(), 'Mata kuliah gagal dimuat.'),
-			loadCollection('lecturers', () => refreshLecturers(), 'Data dosen gagal dimuat.'),
-			loadCollection('faculties', () => refreshFaculties(), 'Data fakultas gagal dimuat.'),
-			loadCollection('studyPrograms', () => refreshStudyPrograms(), 'Program studi gagal dimuat.'),
-			loadCollection('enrollments', () => refreshEnrollments(), 'Data KRS gagal dimuat.'),
-			loadCollection('grades', () => refreshGrades(), 'Data nilai gagal dimuat.'),
-			...(role === 'ADMIN' || role === 'LECTURER'
-				? [loadCollection('students', () => refreshStudents(), 'Data mahasiswa gagal dimuat.')]
-				: []),
-			...(role === 'ADMIN'
-				? [loadCollection('users', () => refreshUsers(), 'Data akun gagal dimuat.')]
-				: [])
-		]);
-		appLoading = false;
-	}
-
-	function scheduleRefreshAll() {
+	function scheduleViewRefresh(force = false) {
 		if (!browser) {
-			void refreshAll();
+			const view = activeView;
+			void untrack(() => ensureViewData(view, force));
 			return;
 		}
 		if (pendingRefreshTimer != null) {
@@ -1232,9 +1916,24 @@
 		}
 		pendingRefreshTimer = window.setTimeout(() => {
 			pendingRefreshTimer = null;
-			void refreshAll();
+			const view = activeView;
+			void untrack(() => ensureViewData(view, force));
 		}, 0);
 	}
+
+	$effect(() => {
+		const maxPage = Math.max(roomPickerPageCount - 1, 0);
+		if (roomPickerPage > maxPage) {
+			roomPickerPage = maxPage;
+		}
+	});
+
+	$effect(() => {
+		const maxPage = Math.max(scheduleRoomFilterPageCount - 1, 0);
+		if (scheduleRoomFilterPage > maxPage) {
+			scheduleRoomFilterPage = maxPage;
+		}
+	});
 
 	$effect(() => {
 		if (currentUser.loading || !currentUser.current) return;
@@ -1248,6 +1947,28 @@
 	$effect(() => {
 		if (!currentUser.current || !viewRestored) return;
 		writeViewToUrl(activeView);
+	});
+
+	$effect(() => {
+		const view = activeView;
+		const userId = currentUser.current?.id ?? null;
+		if (!userId || !viewRestored || loadedForUserId !== userId) return;
+		void untrack(() => ensureViewData(view));
+	});
+
+	$effect(() => {
+		const userId = currentUser.current?.id ?? null;
+		const view = activeView;
+		if (!userId || !['dashboard', 'calendar', 'builder'].includes(view)) return;
+		if (!schedulePreviewLoaded || schedulePreview.loading) return;
+		scheduleAcademicYearFilter;
+		scheduleSemesterFilter;
+		scheduleDayFilter;
+		scheduleCourseFilter;
+		scheduleRoomFilter;
+		scheduleLecturerFilter;
+		schedulePreview.items.length;
+		queueConflictAuditRefresh();
 	});
 
 	$effect(() => {
@@ -1281,11 +2002,98 @@
 			return;
 		}
 		if (loadedForUserId === userId) return;
+		if (loadedForUserId) {
+			resetCollections();
+		}
 		loadedForUserId = userId;
-		scheduleRefreshAll();
 	});
 
-	const scheduleCards = $derived(buildScheduleCards(schedulePreview.items, timezone));
+	const blocksViewRendering = $derived(appLoading && !initialViewHydrated);
+
+	const localScheduleCards = $derived(buildScheduleCards(schedulePreview.items, timezone));
+	const conflictAuditGroupsById = $derived.by(() => {
+		const groups: Record<
+			string,
+			{
+				count: number;
+				courses: string;
+				lecturers: string;
+				rooms: string;
+				students: string;
+				tone: number;
+			}
+		> = {};
+		for (const [index, group] of (conflictAudit?.groups ?? []).entries()) {
+			groups[`audit-conflict-${index + 1}`] = {
+				count: group.memberCount,
+				courses: summarizeDistinctValues(group.members.map((item) => item.courseName)),
+				lecturers: summarizeDistinctValues(group.members.map((item) => item.lecturerName)),
+				rooms: summarizeDistinctValues(group.members.map((item) => item.classRoomName)),
+				students: summarizeDistinctValues(group.members.map((item) => item.studentName)),
+				tone: index
+			};
+		}
+		return groups;
+	});
+	const conflictAuditMembershipByEnrollmentId = $derived.by(() => {
+		const membership: Record<string, { groupId: string; tone: number }> = {};
+		for (const [index, group] of (conflictAudit?.groups ?? []).entries()) {
+			const groupId = `audit-conflict-${index + 1}`;
+			for (const member of group.members) {
+				membership[member.enrollmentId] = { groupId, tone: index };
+			}
+		}
+		return membership;
+	});
+	const auditConflictCardMap = $derived.by(() => {
+		const cards: Record<string, ScheduleCard> = {};
+		for (const [index, group] of (conflictAudit?.groups ?? []).entries()) {
+			const groupId = `audit-conflict-${index + 1}`;
+			for (const member of group.members) {
+				cards[member.enrollmentId] = scheduleCardFromConflictMember(member, groupId, index);
+			}
+		}
+		return cards;
+	});
+	const auditConflictGroups = $derived.by(() =>
+		(conflictAudit?.groups ?? [])
+			.map((group, index) => {
+				const groupId = `audit-conflict-${index + 1}`;
+				const representative = group.members[0];
+				return {
+					id: groupId,
+					tone: index,
+					representative: representative
+						? scheduleCardFromConflictMember(representative, groupId, index)
+						: null,
+					details: conflictAuditGroupsById[groupId] ?? null,
+					count: group.memberCount,
+					selected: selectedConflictGroupId === groupId,
+					label: representative
+						? `${DAY_LABELS[representative.day]} ${formatDateTime(representative.startTime, 'time', timezone)}`
+						: groupId,
+					course: representative?.courseName ?? '-'
+				};
+			})
+			.filter((group): group is NonNullable<typeof group> & { representative: ScheduleCard } =>
+				Boolean(group.representative)
+			)
+	);
+	const scheduleCards = $derived.by(() => {
+		const membership = conflictAuditMembershipByEnrollmentId;
+		if (!Object.keys(membership).length) {
+			return localScheduleCards;
+		}
+		return localScheduleCards.map((card) => {
+			const match = membership[card.id];
+			return {
+				...card,
+				hasConflict: Boolean(match),
+				conflictGroupId: match?.groupId ?? null,
+				conflictTone: match?.tone ?? null
+			};
+		});
+	});
 	const scheduleAnalyticsCards = $derived(schedulePreview.hasMore ? [] : scheduleCards);
 	const filteredScheduleCards = $derived(
 		scheduleCards.filter(
@@ -1345,28 +2153,12 @@
 			return true;
 		});
 	});
-	const conflictGroupSizeById = $derived.by(() => {
-		const sizes: Record<string, number> = {};
-		for (const card of filteredConflictCards) {
-			if (!card.conflictGroupId) continue;
-			sizes[card.conflictGroupId] = (sizes[card.conflictGroupId] ?? 0) + 1;
-		}
-		return sizes;
-	});
-	const calendarConflictLegend = $derived.by(() =>
-		filteredConflictGroups.map((card) => ({
-			id: card.conflictGroupId ?? card.id,
-			label: `${DAY_LABELS[card.day]} ${card.startLabel}`,
-			course: card.course,
-			details: card.conflictGroupId
-				? (conflictGroupDetailsById[card.conflictGroupId] ?? null)
-				: null,
-			count: card.conflictGroupId ? (conflictGroupSizeById[card.conflictGroupId] ?? 1) : 1,
-			tone: card.conflictTone,
-			selected: selectedConflictGroupId === (card.conflictGroupId ?? card.id),
-			representative: card
-		}))
+	const conflictGroupSizeById = $derived.by(() =>
+		Object.fromEntries(
+			Object.entries(conflictAuditGroupsById).map(([groupId, group]) => [groupId, group.count])
+		)
 	);
+	const calendarConflictLegend = $derived(auditConflictGroups);
 	const effectiveSelectedScheduleId = $derived.by(() => {
 		if (
 			selectedScheduleId &&
@@ -1460,7 +2252,9 @@
 		}
 	}));
 	const selectedSchedule = $derived(
-		filteredScheduleCards.find((item) => item.id === effectiveSelectedScheduleId) ?? null
+		filteredScheduleCards.find((item) => item.id === effectiveSelectedScheduleId) ??
+			auditConflictCardMap[effectiveSelectedScheduleId ?? ''] ??
+			null
 	);
 	const calendarDetailSchedule = $derived.by(() => {
 		if (calendarCanRender) {
@@ -1501,7 +2295,7 @@
 	const selectedUser = $derived(
 		users.find((item) => item.id === selectedUserId) ?? selectedUserRecord ?? null
 	);
-	const conflictCards = $derived(scheduleAnalyticsCards.filter((item) => item.hasConflict));
+	const conflictCards = $derived(auditConflictGroups.map((group) => group.representative));
 	const conflictGroupCardsById = $derived.by(() => {
 		const groups: Record<string, ScheduleCard[]> = {};
 		for (const card of scheduleAnalyticsCards) {
@@ -1513,44 +2307,43 @@
 
 		return groups;
 	});
-	const conflictGroupDetailsById = $derived.by(() => {
-		const details: Record<
-			string,
-			{
-				count: number;
-				courses: string;
-				lecturers: string;
-				rooms: string;
-				students: string;
-			}
-		> = {};
-
-		for (const [groupId, groupCards] of Object.entries(conflictGroupCardsById)) {
-			details[groupId] = {
-				count: groupCards.length,
-				courses: summarizeDistinctValues(groupCards.map((card) => card.course)),
-				lecturers: summarizeDistinctValues(groupCards.map((card) => card.lecturer)),
-				rooms: summarizeDistinctValues(groupCards.map((card) => card.room)),
-				students: summarizeDistinctValues(groupCards.map((card) => card.student))
-			};
-		}
-
-		return details;
-	});
-	const conflictGroups = $derived.by(() => {
-		const seen: Record<string, true> = {};
-		return scheduleAnalyticsCards.filter((item) => {
-			if (!item.hasConflict) return false;
-			const key = item.conflictGroupId ?? item.id;
-			if (seen[key]) return false;
-			seen[key] = true;
-			return true;
-		});
-	});
-	const primaryConflict = $derived(conflictGroups[0] ?? null);
-	const conflictCount = $derived(conflictCards.length);
+	const conflictGroupDetailsById = $derived.by(() =>
+		Object.fromEntries(
+			Object.entries(conflictAuditGroupsById).map(([groupId, group]) => [
+				groupId,
+				{
+					count: group.count,
+					courses: group.courses,
+					lecturers: group.lecturers,
+					rooms: group.rooms,
+					students: group.students
+				}
+			])
+		)
+	);
+	const primaryConflict = $derived(auditConflictGroups[0]?.representative ?? null);
+	const conflictCount = $derived(auditConflictGroups.length);
 	const additionalConflictCount = $derived(Math.max(conflictCount - 1, 0));
+	const auditConflictPeersByCardId = $derived.by(() => {
+		const peers: Record<string, ScheduleCard[]> = {};
+		for (const group of auditConflictGroups) {
+			const details = conflictAudit?.groups?.find(
+				(_item, index) => `audit-conflict-${index + 1}` === group.id
+			);
+			if (!details) continue;
+			const memberCards = details.members.map((member, index) =>
+				scheduleCardFromConflictMember(member, group.id, group.representative.conflictTone ?? index)
+			);
+			for (const card of memberCards) {
+				peers[card.id] = memberCards.filter((peer) => peer.id !== card.id);
+			}
+		}
+		return peers;
+	});
 	const conflictPeersByCardId = $derived.by(() => {
+		if (Object.keys(auditConflictPeersByCardId).length) {
+			return auditConflictPeersByCardId;
+		}
 		const byCardId: Record<string, ScheduleCard[]> = {};
 		for (const group of Object.values(conflictGroupCardsById)) {
 			for (const card of group) {
@@ -1564,7 +2357,7 @@
 		const summaries: Record<string, string> = {};
 		for (const [id, peers] of Object.entries(conflictPeersByCardId)) {
 			if (!peers.length) continue;
-			const card = scheduleAnalyticsCards.find((item) => item.id === id);
+			const card = scheduleCardMap[id] ?? auditConflictCardMap[id];
 			const details = card?.conflictGroupId ? conflictGroupDetailsById[card.conflictGroupId] : null;
 			if (details) {
 				summaries[id] =
@@ -1582,23 +2375,7 @@
 		}
 		return summaries;
 	});
-	const builderConflictCards = $derived.by(() =>
-		conflictGroups.map((card) => {
-			const groupId = card.conflictGroupId ?? card.id;
-			return {
-				id: groupId,
-				label: `${DAY_LABELS[card.day]} ${card.startLabel}`,
-				representative: card,
-				details: card.conflictGroupId
-					? (conflictGroupDetailsById[card.conflictGroupId] ?? null)
-					: null,
-				count: card.conflictGroupId
-					? (conflictGroupCardsById[card.conflictGroupId]?.length ?? 1)
-					: 1,
-				selected: selectedConflictGroupId === groupId
-			};
-		})
-	);
+	const builderConflictCards = $derived(auditConflictGroups);
 	const overlapPeersByCardId = $derived.by(() => {
 		const peers: Record<string, ScheduleCard[]> = {};
 		for (const card of scheduleAnalyticsCards) {
@@ -1609,72 +2386,38 @@
 		return peers;
 	});
 	const nextSchedule = $derived(scheduleAnalyticsCards[0] ?? null);
-	const underusedRooms = $derived(
-		classrooms.filter((item) => (item.schedule_count ?? 0) === 0).length
-	);
+	const underusedRooms = $derived.by(() => {
+		const occupiedRoomIds = new Set(
+			scheduleAnalyticsCards.map((card) => card.original.class_room_id).filter(Boolean)
+		);
+		return classrooms.filter((item) => !item.id || !occupiedRoomIds.has(item.id)).length;
+	});
 	const studentGradeHighlights = $derived(grades.slice(0, 3));
 
-	const filteredClassrooms = $derived(
-		classrooms.filter(
-			(item) =>
-				matchesText(item.name, roomSearch) ||
-				matchesText(beautifyRoomType(item.class_room_type), roomSearch)
-		)
-	);
-	const filteredCourses = $derived(
-		courses.filter(
-			(item) =>
-				matchesText(item.id, courseSearch) ||
-				matchesText(item.name, courseSearch) ||
-				matchesText(item.lecturer_name, courseSearch)
-		)
-	);
-	const filteredStudents = $derived(
-		students.filter(
-			(item) =>
-				matchesText(item.id, studentSearch) ||
-				matchesText(item.name, studentSearch) ||
-				matchesText(item.study_program_name, studentSearch)
-		)
-	);
-	const filteredLecturers = $derived(
-		lecturers.filter(
-			(item) =>
-				matchesText(item.id, lecturerSearch) ||
-				matchesText(item.name, lecturerSearch) ||
-				matchesText(item.email, lecturerSearch)
-		)
-	);
-	const filteredFaculties = $derived(
-		faculties.filter(
-			(item) => matchesText(item.id, facultySearch) || matchesText(item.name, facultySearch)
-		)
-	);
-	const filteredStudyPrograms = $derived(
-		studyPrograms.filter(
-			(item) =>
-				matchesText(item.id, studyProgramSearch) ||
-				matchesText(item.name, studyProgramSearch) ||
-				matchesText(item.faculty_name, studyProgramSearch)
-		)
-	);
-	const filteredEnrollments = $derived(
-		enrollments.filter((item) => scheduleFiltersMatch(item) && scheduleSearchMatches(item))
-	);
+	const filteredClassrooms = $derived(classrooms);
+	const filteredCourses = $derived(courses);
+	const filteredStudents = $derived(students);
+	const filteredLecturers = $derived(lecturers);
+	const filteredFaculties = $derived(faculties);
+	const filteredStudyPrograms = $derived(studyPrograms);
+	const filteredEnrollments = $derived(enrollments);
 	const filteredBuilderEnrollments = $derived(
 		filteredEnrollments.filter((item) => {
 			if (!builderConflictOnly) return true;
-			return Boolean(item.id && scheduleCardMap[item.id]?.hasConflict);
+			return Boolean(item.id && (scheduleCardMap[item.id] ?? auditConflictCardMap[item.id])?.hasConflict);
 		})
+	);
+	const scheduleFilterSource = $derived(
+		activeView === 'enrollments' ? enrollments : schedulePreview.items
 	);
 	const scheduleSemesterOptions = $derived.by(() =>
 		Array.from(
-			new Set(schedulePreview.items.map((item) => item.semester).filter(Boolean) as string[])
+			new Set(scheduleFilterSource.map((item) => item.semester).filter(Boolean) as string[])
 		).sort((left, right) => left.localeCompare(right))
 	);
 	const scheduleAcademicYearOptions = $derived.by(() =>
 		Array.from(
-			new Set(schedulePreview.items.map((item) => item.academic_year).filter(Boolean) as string[])
+			new Set(scheduleFilterSource.map((item) => item.academic_year).filter(Boolean) as string[])
 		).sort((left, right) => right.localeCompare(left))
 	);
 	const scheduleActiveFilterCount = $derived(
@@ -1696,65 +2439,115 @@
 		return 'Data jadwal terlalu besar untuk dimuat penuh. Gunakan pencarian atau filter agar dashboard, kalender, dan penjadwalan menampilkan hasil yang akurat.';
 	});
 	const calendarNeedsFilters = $derived(scheduleActiveFilterCount === 0);
-	const calendarHasTooMuchData = $derived(
-		schedulePreview.hasMore ||
-			(scheduleActiveFilterCount > 0 &&
-				filteredScheduleCards.length > CALENDAR_MAX_VISIBLE_SCHEDULES)
+	const calendarHasMoreResults = $derived(schedulePreview.hasMore);
+	const calendarExceedsVisibleLimit = $derived(
+		scheduleActiveFilterCount > 0 && filteredScheduleCards.length > CALENDAR_MAX_VISIBLE_SCHEDULES
 	);
 	const calendarCanRender = $derived(
-		!calendarNeedsFilters && !calendarHasTooMuchData && filteredScheduleCards.length > 0
+		!calendarNeedsFilters && !calendarExceedsVisibleLimit && filteredScheduleCards.length > 0
 	);
-	const filteredStudentsForPicker = $derived(
-		students
-			.filter(
-				(item) =>
-					!studentPickerSearch ||
-					matchesText(item.name, studentPickerSearch) ||
-					matchesText(item.id, studentPickerSearch)
-			)
-			.slice(0, 24)
-	);
-	const filteredCoursesForPicker = $derived(
-		courses
-			.filter(
-				(item) =>
-					!coursePickerSearch ||
-					matchesText(item.name, coursePickerSearch) ||
-					matchesText(item.id, coursePickerSearch) ||
-					matchesText(item.lecturer_name, coursePickerSearch)
-			)
-			.slice(0, 24)
-	);
-	const filteredGrades = $derived(
-		grades.filter(
-			(item) =>
-				matchesText(item.student_name, gradeSearch) ||
-				matchesText(item.course_name, gradeSearch) ||
-				matchesText(item.letter_grade, gradeSearch)
-		)
-	);
-	const filteredUsers = $derived(
-		users.filter(
-			(item) =>
-				matchesText(item.email, userSearch) ||
-				matchesText(item.student_name, userSearch) ||
-				matchesText(item.lecturer_name, userSearch)
-		)
-	);
+	const studentPickerLookup = $derived.by(() => {
+		const lookup = new Map<string, SelectStudentsResult>();
+		for (const item of students) {
+			if (item.id) lookup.set(item.id, item);
+		}
+		for (const item of studentPickerOptions) {
+			if (item.id) lookup.set(item.id, item);
+		}
+		return lookup;
+	});
+	const coursePickerLookup = $derived.by(() => {
+		const lookup = new Map<string, SelectCoursesResult>();
+		for (const item of courses) {
+			if (item.id) lookup.set(item.id, item);
+		}
+		for (const item of coursePickerOptions) {
+			if (item.id) lookup.set(item.id, item);
+		}
+		return lookup;
+	});
+	const roomPickerLookup = $derived.by(() => {
+		const lookup = new Map<string, SelectClassRoomsResult>();
+		for (const item of builderClassroomsLoaded ? builderClassrooms : classrooms) {
+			if (item.id) lookup.set(item.id, item);
+		}
+		return lookup;
+	});
+	const scheduleCourseFilterLookup = $derived.by(() => {
+		const lookup = new Map<string, SelectCoursesResult>();
+		for (const item of courses) {
+			if (item.id) lookup.set(item.id, item);
+		}
+		for (const item of scheduleCourseFilterOptions) {
+			if (item.id) lookup.set(item.id, item);
+		}
+		return lookup;
+	});
+	const scheduleLecturerFilterLookup = $derived.by(() => {
+		const lookup = new Map<string, SelectLecturersResult>();
+		for (const item of lecturers) {
+			if (item.id) lookup.set(item.id, item);
+		}
+		for (const item of scheduleLecturerFilterOptions) {
+			if (item.id) lookup.set(item.id, item);
+		}
+		return lookup;
+	});
+	const filteredStudentsForPicker = $derived(studentPickerOptions);
+	const filteredCoursesForPicker = $derived(coursePickerOptions);
+	const filteredGrades = $derived(grades);
+	const filteredUsers = $derived(users);
 
 	const availableRoomOptions = $derived.by(() => {
-		if (!enrollmentDraft.startTime || !enrollmentDraft.endTime) return classrooms;
+		const roomOptions = builderClassroomsLoaded ? builderClassrooms : classrooms;
+		if (!enrollmentDraft.startTime || !enrollmentDraft.endTime) return roomOptions;
 		const startMinutes = toMinutes(parseISO(enrollmentDraft.startTime, timezone), timezone);
 		const endMinutes = toMinutes(parseISO(enrollmentDraft.endTime, timezone), timezone);
-		return availableRoomsForSlot(
-			classrooms,
+		const availableRooms = availableRoomsForSlot(
+			roomOptions,
 			scheduleCards,
 			enrollmentDraft.day,
 			startMinutes,
 			endMinutes,
 			selectedEnrollmentId
 		);
+		if (!selectedEnrollmentId || !enrollmentDraft.classRoomId) return availableRooms;
+
+		const availableRoomIds = new Set(availableRooms.map((room) => room.id));
+		return roomOptions.filter(
+			(room) => room.id === enrollmentDraft.classRoomId || availableRoomIds.has(room.id)
+		);
 	});
+	const filteredRoomsForPicker = $derived.by(() =>
+		availableRoomOptions.filter((item) => roomOptionMatches(item, roomPickerSearch))
+	);
+	const pagedRoomOptionsForPicker = $derived.by(() =>
+		filteredRoomsForPicker.slice(
+			roomPickerPage * PICKER_PAGE_SIZE,
+			(roomPickerPage + 1) * PICKER_PAGE_SIZE
+		)
+	);
+	const roomPickerPageCount = $derived(Math.max(1, Math.ceil(filteredRoomsForPicker.length / PICKER_PAGE_SIZE)));
+	const roomPickerHasPreviousPage = $derived(roomPickerPage > 0);
+	const roomPickerHasNextPage = $derived(roomPickerPage + 1 < roomPickerPageCount);
+	const filteredScheduleRoomFilterOptions = $derived.by(() =>
+		(builderClassroomsLoaded ? builderClassrooms : classrooms).filter((item) =>
+			roomOptionMatches(item, scheduleRoomFilterSearch)
+		)
+	);
+	const pagedScheduleRoomFilterOptions = $derived.by(() =>
+		filteredScheduleRoomFilterOptions.slice(
+			scheduleRoomFilterPage * PICKER_PAGE_SIZE,
+			(scheduleRoomFilterPage + 1) * PICKER_PAGE_SIZE
+		)
+	);
+	const scheduleRoomFilterPageCount = $derived(
+		Math.max(1, Math.ceil(filteredScheduleRoomFilterOptions.length / PICKER_PAGE_SIZE))
+	);
+	const scheduleRoomFilterHasPreviousPage = $derived(scheduleRoomFilterPage > 0);
+	const scheduleRoomFilterHasNextPage = $derived(
+		scheduleRoomFilterPage + 1 < scheduleRoomFilterPageCount
+	);
 	const participantStepReady = $derived(
 		Boolean(enrollmentDraft.studentId && enrollmentDraft.courseId)
 	);
@@ -1770,22 +2563,31 @@
 	const roomStepReady = $derived(Boolean(enrollmentDraft.classRoomId));
 	const builderTaskMode = $derived(Boolean(selectedEnrollmentId || builderStep !== 'participant'));
 	const selectedDraftStudent = $derived(
-		students.find((item) => item.id === enrollmentDraft.studentId)?.name ??
+		studentPickerLookup.get(enrollmentDraft.studentId)?.name ??
 			selectedStudentRecord?.name ??
 			selectedEnrollmentRecord?.student_name ??
 			'Belum dipilih'
 	);
 	const selectedDraftCourse = $derived(
-		courses.find((item) => item.id === enrollmentDraft.courseId)?.name ??
+		coursePickerLookup.get(enrollmentDraft.courseId)?.name ??
 			selectedCourseRecord?.name ??
 			selectedEnrollmentRecord?.course_name ??
 			'Belum dipilih'
 	);
 	const selectedDraftRoom = $derived(
-		classrooms.find((item) => item.id === enrollmentDraft.classRoomId)?.name ??
+		roomPickerLookup.get(enrollmentDraft.classRoomId)?.name ??
 			selectedRoomRecord?.name ??
 			selectedEnrollmentRecord?.class_room_name ??
 			'Belum dipilih'
+	);
+	const selectedScheduleCourseFilterLabel = $derived(
+		scheduleCourseFilterLookup.get(scheduleCourseFilter)?.name ?? 'Semua mata kuliah'
+	);
+	const selectedScheduleRoomFilterLabel = $derived(
+		roomPickerLookup.get(scheduleRoomFilter)?.name ?? 'Semua ruang'
+	);
+	const selectedScheduleLecturerFilterLabel = $derived(
+		scheduleLecturerFilterLookup.get(scheduleLecturerFilter)?.name ?? 'Semua dosen'
 	);
 	const draftTimeSummary = $derived.by(() => {
 		if (!timeStepReady) return 'Belum ditetapkan';
@@ -1857,6 +2659,21 @@
 			hasProjector: Boolean(item.has_projector),
 			hasAC: Boolean(item.has_ac)
 		};
+		if (item.id) {
+			void getClassRoom(item.id)
+				.run()
+				.then((full) => {
+					if (selectedRoomId !== item.id) return;
+					selectedRoomRecord = full;
+					classroomDraft = {
+						name: full.name ?? '',
+						classRoomType: full.class_room_type ?? 'REGULER',
+						capacity: full.capacity ?? 30,
+						hasProjector: Boolean(full.has_projector),
+						hasAC: Boolean(full.has_ac)
+					};
+				});
+		}
 	}
 
 	function pickCourse(item: SelectCoursesResult) {
@@ -1871,6 +2688,14 @@
 			studyProgramId: item.study_program_id ?? '',
 			lecturerId: item.lecturer_id ?? ''
 		};
+		if (item.id) {
+			void getCourse(item.id)
+				.run()
+				.then((full) => {
+					if (selectedCourseId !== item.id) return;
+					selectedCourseRecord = full;
+				});
+		}
 	}
 
 	function pickStudent(item: SelectStudentsResult) {
@@ -1886,6 +2711,22 @@
 			yearAdmitted: item.year_admitted ?? 2024,
 			studyProgramId: item.study_program_id ?? ''
 		};
+		if (item.id) {
+			void getStudent(item.id)
+				.run()
+				.then((full) => {
+					if (selectedStudentId !== item.id) return;
+					selectedStudentRecord = full;
+					studentDraft = {
+						name: full.name ?? '',
+						email: full.email ?? '',
+						phone: full.phone ?? '',
+						address: full.address ?? '',
+						yearAdmitted: full.year_admitted ?? 2024,
+						studyProgramId: full.study_program_id ?? ''
+					};
+				});
+		}
 	}
 
 	function pickLecturer(item: SelectLecturersResult) {
@@ -1900,6 +2741,21 @@
 			phone: item.phone ?? '',
 			address: item.address ?? ''
 		};
+		if (item.id) {
+			void getLecturer(item.id)
+				.run()
+				.then((full) => {
+					if (selectedLecturerId !== item.id) return;
+					selectedLecturerRecord = full;
+					lecturerDraft = {
+						id: full.id ?? '',
+						name: full.name ?? '',
+						email: full.email ?? '',
+						phone: full.phone ?? '',
+						address: full.address ?? ''
+					};
+				});
+		}
 	}
 
 	function pickFaculty(item: SelectFacultiesResult) {
@@ -1908,6 +2764,14 @@
 		selectedFacultyId = item.id ?? null;
 		selectedFacultyRecord = item;
 		facultyDraft = { id: item.id ?? '', name: item.name ?? '' };
+		if (item.id) {
+			void getFaculty(item.id)
+				.run()
+				.then((full) => {
+					if (selectedFacultyId !== item.id) return;
+					selectedFacultyRecord = full;
+				});
+		}
 	}
 
 	function pickStudyProgram(item: SelectStudyProgramsResult) {
@@ -1921,6 +2785,20 @@
 			head: item.head ?? '',
 			facultyId: item.faculty_id ?? ''
 		};
+		if (item.id) {
+			void getStudyProgram(item.id)
+				.run()
+				.then((full) => {
+					if (selectedStudyProgramId !== item.id) return;
+					selectedStudyProgramRecord = full;
+					studyProgramDraft = {
+						id: full.id ?? '',
+						name: full.name ?? '',
+						head: full.head ?? '',
+						facultyId: full.faculty_id ?? ''
+					};
+				});
+		}
 	}
 
 	function pickEnrollment(item: SelectEnrollmentsResult) {
@@ -1942,8 +2820,8 @@
 			academicYear: item.academic_year ?? '2025/2026',
 			timezone
 		};
-		const pickedStudent = students.find((s) => s.id === item.student_id);
-		const pickedCourse = courses.find((c) => c.id === item.course_id);
+		const pickedStudent = item.student_id ? studentPickerLookup.get(item.student_id) : undefined;
+		const pickedCourse = item.course_id ? coursePickerLookup.get(item.course_id) : undefined;
 		studentPickerSearch = pickedStudent
 			? `${pickedStudent.name} • ${pickedStudent.id}`
 			: item.student_name
@@ -1954,8 +2832,49 @@
 			: item.course_name
 				? `${item.course_name} • ${item.lecturer_name ?? ''}`
 				: '';
+		roomPickerSearch = '';
 		studentPickerOpen = false;
 		coursePickerOpen = false;
+		roomPickerOpen = false;
+		roomPickerPage = 0;
+	}
+
+	async function findEnrollmentSelection(id: string) {
+		const localMatch =
+			enrollments.find((item) => item.id === id) ??
+			schedulePreview.items.find((item) => item.id === id) ??
+			null;
+		if (localMatch) return localMatch;
+
+		try {
+			const result = await resolveRemoteQuery(searchEnrollments({ id, preview: true }));
+			return result.items.find((item) => item.id === id) ?? null;
+		} catch {
+			return null;
+		}
+	}
+
+	async function syncBuilderSelection(preferredId = selectedEnrollmentId, fallbackToFirst = false) {
+		if (preferredId) {
+			const exactMatch = await findEnrollmentSelection(preferredId);
+			if (exactMatch) {
+				pickEnrollment(exactMatch);
+				return;
+			}
+		}
+
+		if (fallbackToFirst) {
+			const fallback =
+				enrollments.find((item) => item.id && item.id !== preferredId) ??
+				schedulePreview.items.find((item) => item.id && item.id !== preferredId) ??
+				null;
+			if (fallback) {
+				pickEnrollment(fallback);
+				return;
+			}
+		}
+
+		clearSelection('builder');
 	}
 
 	function pickGrade(item: SelectGradesResult) {
@@ -2026,8 +2945,19 @@
 			builderStep = 'participant';
 			studentPickerSearch = '';
 			coursePickerSearch = '';
+			roomPickerSearch = '';
 			studentPickerOpen = false;
 			coursePickerOpen = false;
+			roomPickerOpen = false;
+			studentPickerOptions = [];
+			coursePickerOptions = [];
+			studentPickerHasMore = false;
+			coursePickerHasMore = false;
+			studentPickerNextCursor = null;
+			coursePickerNextCursor = null;
+			studentPickerIssue = null;
+			coursePickerIssue = null;
+			roomPickerPage = 0;
 		}
 		if (view === 'grades') {
 			selectedGradeId = null;
@@ -2041,15 +2971,31 @@
 		}
 	}
 
+	async function ensureGradeEditorData() {
+		if (currentUser.current?.role === 'STUDENT') return;
+		if (collectionLoaded.enrollments || collectionPagination.enrollments.loading) return;
+		await loadCollection(
+			'enrollments',
+			() => refreshEnrollments(null),
+			collectionFallbackMessage('enrollments')
+		);
+	}
+
 	function beginCreate(view: EditableView) {
 		clearSelection(view);
 		pendingDelete = null;
 		editorView = view;
+		if (view === 'grades') {
+			void ensureGradeEditorData();
+		}
 	}
 
 	function beginEdit(view: EditableView) {
 		pendingDelete = null;
 		editorView = view;
+		if (view === 'grades') {
+			void ensureGradeEditorData();
+		}
 	}
 
 	function stopEditing(view?: EditableView) {
@@ -2208,99 +3154,155 @@
 	);
 
 	const createClassRoomEnhance = createEnhancer(createClassRoom, async () => {
-		await refreshClassrooms();
+		await refreshDependencies({
+			collections: ['classrooms', 'enrollments'],
+			includeSchedulePreview: true,
+			includeBuilderClassrooms: true,
+			includeConflictAudit: true
+		});
 		clearSelection('classrooms');
 		stopEditing('classrooms');
 		setFeedback('success', 'Ruang kelas baru berhasil ditambahkan.');
 	});
 	const updateClassRoomEnhance = createEnhancer(updateClassRoom, async () => {
-		await refreshClassrooms();
+		await refreshDependencies({
+			collections: ['classrooms', 'enrollments'],
+			includeSchedulePreview: true,
+			includeBuilderClassrooms: true,
+			includeConflictAudit: true
+		});
 		stopEditing('classrooms');
 		setFeedback('success', 'Data ruang kelas berhasil diperbarui.');
 	});
 	const createCourseEnhance = createEnhancer(createCourse, async () => {
-		await refreshCourses();
+		await refreshDependencies({
+			collections: ['courses', 'enrollments', 'grades'],
+			includeSchedulePreview: true,
+			includeConflictAudit: true
+		});
 		clearSelection('courses');
 		stopEditing('courses');
 		setFeedback('success', 'Mata kuliah baru berhasil ditambahkan.');
 	});
 	const updateCourseEnhance = createEnhancer(updateCourse, async () => {
-		await refreshCourses();
+		await refreshDependencies({
+			collections: ['courses', 'enrollments', 'grades'],
+			includeSchedulePreview: true,
+			includeConflictAudit: true
+		});
 		stopEditing('courses');
 		setFeedback('success', 'Mata kuliah berhasil diperbarui.');
 	});
 	const createStudentEnhance = createEnhancer(createStudent, async () => {
-		await refreshStudents();
+		await refreshDependencies({
+			collections: ['students', 'enrollments', 'grades', 'users'],
+			includeSchedulePreview: true,
+			includeConflictAudit: true
+		});
 		clearSelection('students');
 		stopEditing('students');
 		setFeedback('success', 'Mahasiswa baru berhasil ditambahkan.');
 	});
 	const updateStudentEnhance = createEnhancer(updateStudent, async () => {
-		await refreshStudents();
+		await refreshDependencies({
+			collections: ['students', 'enrollments', 'grades', 'users'],
+			includeSchedulePreview: true,
+			includeConflictAudit: true
+		});
 		stopEditing('students');
 		setFeedback('success', 'Profil mahasiswa berhasil diperbarui.');
 	});
 	const createLecturerEnhance = createEnhancer(createLecturer, async () => {
-		await refreshLecturers();
+		await refreshDependencies({
+			collections: ['lecturers', 'courses', 'enrollments', 'users'],
+			includeSchedulePreview: true,
+			includeConflictAudit: true
+		});
 		clearSelection('lecturers');
 		stopEditing('lecturers');
 		setFeedback('success', 'Dosen baru berhasil ditambahkan.');
 	});
 	const updateLecturerEnhance = createEnhancer(updateLecturer, async () => {
-		await refreshLecturers();
+		await refreshDependencies({
+			collections: ['lecturers', 'courses', 'enrollments', 'users'],
+			includeSchedulePreview: true,
+			includeConflictAudit: true
+		});
 		stopEditing('lecturers');
 		setFeedback('success', 'Profil dosen berhasil diperbarui.');
 	});
 	const createFacultyEnhance = createEnhancer(createFaculty, async () => {
-		await refreshFaculties();
+		await refreshDependencies({
+			collections: ['faculties', 'studyPrograms', 'students']
+		});
 		clearSelection('faculties');
 		stopEditing('faculties');
 		setFeedback('success', 'Fakultas baru berhasil ditambahkan.');
 	});
 	const updateFacultyEnhance = createEnhancer(updateFaculty, async () => {
-		await refreshFaculties();
+		await refreshDependencies({
+			collections: ['faculties', 'studyPrograms', 'students']
+		});
 		stopEditing('faculties');
 		setFeedback('success', 'Data fakultas berhasil diperbarui.');
 	});
 	const createStudyProgramEnhance = createEnhancer(createStudyProgram, async () => {
-		await refreshStudyPrograms();
+		await refreshDependencies({
+			collections: ['studyPrograms', 'students', 'courses', 'enrollments', 'grades'],
+			includeSchedulePreview: true,
+			includeConflictAudit: true
+		});
 		clearSelection('studyPrograms');
 		stopEditing('studyPrograms');
 		setFeedback('success', 'Program studi baru berhasil ditambahkan.');
 	});
 	const updateStudyProgramEnhance = createEnhancer(updateStudyProgram, async () => {
-		await refreshStudyPrograms();
+		await refreshDependencies({
+			collections: ['studyPrograms', 'students', 'courses', 'enrollments', 'grades'],
+			includeSchedulePreview: true,
+			includeConflictAudit: true
+		});
 		stopEditing('studyPrograms');
 		setFeedback('success', 'Program studi berhasil diperbarui.');
 	});
 	const createEnrollmentEnhance = createEnhancer(createEnrollment, async () => {
-		await refreshEnrollments();
-		clearSelection('builder');
+		const createdId = (createEnrollment.result as { id?: string } | undefined)?.id ?? null;
+		await refreshDependencies({
+			collections: ['enrollments', 'grades'],
+			includeSchedulePreview: true,
+			includeConflictAudit: true
+		});
+		await syncBuilderSelection(createdId, true);
 		setFeedback(
 			'success',
 			'Jadwal dan KRS tersimpan. Lanjutkan hanya bila ruang dan jam sudah sesuai.'
 		);
 	});
 	const updateEnrollmentEnhance = createEnhancer(updateEnrollment, async () => {
-		await refreshEnrollments();
+		await refreshDependencies({
+			collections: ['enrollments', 'grades'],
+			includeSchedulePreview: true,
+			includeConflictAudit: true
+		});
+		await syncBuilderSelection();
 		setFeedback(
 			'success',
 			'Jadwal diperbarui. Periksa kembali konflik dan kecocokan ruang sebelum menutup halaman.'
 		);
 	});
 	const createGradeEnhance = createEnhancer(createGrade, async () => {
-		await refreshGrades();
+		await refreshDependencies({ collections: ['grades'] });
 		clearSelection('grades');
 		stopEditing('grades');
 		setFeedback('success', 'Nilai baru berhasil disimpan.');
 	});
 	const updateGradeEnhance = createEnhancer(updateGrade, async () => {
-		await refreshGrades();
+		await refreshDependencies({ collections: ['grades'] });
 		stopEditing('grades');
 		setFeedback('success', 'Nilai berhasil diperbarui.');
 	});
 	const updateUserEnhance = createEnhancer(updateUser, async () => {
-		await refreshUsers();
+		await refreshDependencies({ collections: ['users'] });
 		stopEditing('users');
 		setFeedback('success', 'Akun diperbarui. Perubahan akses akan dipakai pada sesi berikutnya.');
 	});
@@ -2310,48 +3312,75 @@
 		try {
 			if (kind === 'classroom') {
 				await deleteClassRoom(id);
-				await refreshClassrooms();
+				await refreshDependencies({
+					collections: ['classrooms', 'enrollments'],
+					includeSchedulePreview: true,
+					includeBuilderClassrooms: true,
+					includeConflictAudit: true
+				});
 				clearSelection('classrooms');
 				stopEditing('classrooms');
 			}
 			if (kind === 'course') {
 				await deleteCourse(id);
-				await refreshCourses();
+				await refreshDependencies({
+					collections: ['courses', 'enrollments', 'grades'],
+					includeSchedulePreview: true,
+					includeConflictAudit: true
+				});
 				clearSelection('courses');
 				stopEditing('courses');
 			}
 			if (kind === 'student') {
 				await deleteStudent(id);
-				await refreshStudents();
+				await refreshDependencies({
+					collections: ['students', 'enrollments', 'grades', 'users'],
+					includeSchedulePreview: true,
+					includeConflictAudit: true
+				});
 				clearSelection('students');
 				stopEditing('students');
 			}
 			if (kind === 'lecturer') {
 				await deleteLecturer(id);
-				await refreshLecturers();
+				await refreshDependencies({
+					collections: ['lecturers', 'courses', 'enrollments', 'users'],
+					includeSchedulePreview: true,
+					includeConflictAudit: true
+				});
 				clearSelection('lecturers');
 				stopEditing('lecturers');
 			}
 			if (kind === 'faculty') {
 				await deleteFaculty(id);
-				await refreshFaculties();
+				await refreshDependencies({
+					collections: ['faculties', 'studyPrograms', 'students']
+				});
 				clearSelection('faculties');
 				stopEditing('faculties');
 			}
 			if (kind === 'studyProgram') {
 				await deleteStudyProgram(id);
-				await refreshStudyPrograms();
+				await refreshDependencies({
+					collections: ['studyPrograms', 'students', 'courses', 'enrollments', 'grades'],
+					includeSchedulePreview: true,
+					includeConflictAudit: true
+				});
 				clearSelection('studyPrograms');
 				stopEditing('studyPrograms');
 			}
 			if (kind === 'enrollment') {
 				await deleteEnrollment(id);
-				await refreshEnrollments();
-				clearSelection('builder');
+				await refreshDependencies({
+					collections: ['enrollments', 'grades'],
+					includeSchedulePreview: true,
+					includeConflictAudit: true
+				});
+				await syncBuilderSelection(id, true);
 			}
 			if (kind === 'grade') {
 				await deleteGrade(id);
-				await refreshGrades();
+				await refreshDependencies({ collections: ['grades'] });
 				clearSelection('grades');
 				stopEditing('grades');
 			}
@@ -2363,42 +3392,36 @@
 		}
 	}
 
+	async function handleRefreshCurrentView() {
+		if (viewRefreshLoading) return;
+		viewRefreshLoading = true;
+		try {
+			await refreshViewData(activeView);
+			setFeedback('success', `${pageHeading(activeView)} berhasil dimuat ulang.`);
+		} catch (error) {
+			setFeedback(
+				'danger',
+				errorMessage(error, `${pageHeading(activeView)} belum bisa dimuat ulang.`)
+			);
+		} finally {
+			viewRefreshLoading = false;
+		}
+	}
+
 	const navigationGroups = $derived(
 		navigationGroupsForRole(currentUser.current?.role as AppRole | undefined)
 	);
 	const currentHeaderAction = $derived(
 		headerAction(activeView, currentUser.current?.role as AppRole | undefined)
 	);
+	const currentViewPlan = $derived(viewDataPlan(activeView, currentUser.current?.role as AppRole | undefined));
 	const activeViewIssues = $derived.by(() => {
-		const role = currentUser.current?.role as AppRole | undefined;
-		const keys: DataCollectionKey[] =
-			activeView === 'dashboard'
-				? role === 'STUDENT'
-					? ['enrollments', 'grades']
-					: ['enrollments', 'classrooms']
-				: activeView === 'calendar'
-					? ['enrollments']
-					: activeView === 'builder'
-						? ['enrollments', 'students', 'courses', 'classrooms']
-						: activeView === 'classrooms'
-							? ['classrooms']
-							: activeView === 'courses'
-								? ['courses', 'studyPrograms', 'lecturers']
-								: activeView === 'students'
-									? ['students', 'studyPrograms']
-									: activeView === 'lecturers'
-										? ['lecturers']
-										: activeView === 'faculties'
-											? ['faculties']
-											: activeView === 'studyPrograms'
-												? ['studyPrograms', 'faculties']
-												: activeView === 'enrollments'
-													? ['enrollments']
-													: activeView === 'grades'
-														? ['grades', 'enrollments']
-														: ['users'];
+		const keys = new Set<DataCollectionKey>(currentViewPlan.collections);
+		if (currentViewPlan.requiresSchedulePreview) {
+			keys.add('enrollments');
+		}
 
-		return keys
+		return Array.from(keys)
 			.map((key) => collectionIssues[key])
 			.filter((message): message is string => Boolean(message));
 	});
@@ -2412,7 +3435,10 @@
 	const studyProgramEditorBlocked = $derived(
 		Boolean(collectionIssues.faculties) && !faculties.length
 	);
-	const gradeEditorBlocked = $derived(Boolean(collectionIssues.enrollments) && !enrollments.length);
+	const gradeEditorBlocked = $derived(
+		(Boolean(collectionIssues.enrollments) && !enrollments.length) ||
+			(collectionPagination.enrollments.loading && !enrollments.length)
+	);
 	const scheduleCardMap = $derived.by(
 		() =>
 			Object.fromEntries(scheduleAnalyticsCards.map((card) => [card.id, card])) as Record<
@@ -2435,7 +3461,11 @@
 		selectedSchedule ? (overlapPeersByCardId[selectedSchedule.id] ?? []) : []
 	);
 	const selectedEnrollmentScheduleCard = $derived(
-		selectedEnrollmentId ? (scheduleCardMap[selectedEnrollmentId] ?? null) : null
+		selectedEnrollmentId
+			? (scheduleCardMap[selectedEnrollmentId] ??
+					auditConflictCardMap[selectedEnrollmentId] ??
+					null)
+			: null
 	);
 	const selectedEnrollmentConflictSummary = $derived(
 		selectedEnrollmentId ? (conflictSummaryByCardId[selectedEnrollmentId] ?? null) : null
@@ -2543,6 +3573,17 @@
 					{/if}
 
 					<Button
+						class="header-action"
+						variant="outline"
+						size="sm"
+						onclick={handleRefreshCurrentView}
+						disabled={viewRefreshLoading}
+					>
+						<RotateCw size={16} />
+						<span>{viewRefreshLoading ? 'Memuat...' : 'Refresh'}</span>
+					</Button>
+
+					<Button
 						class="theme-switch"
 						variant="outline"
 						size="sm"
@@ -2576,7 +3617,7 @@
 				</div>
 			{/if}
 
-			{#if appLoading}
+			{#if blocksViewRendering}
 				<div class="loading-panel">
 					<div class="skeleton-rows">
 						<div class="skeleton skeleton-title"></div>
@@ -2588,12 +3629,15 @@
 				</div>
 			{/if}
 
-			{#if !appLoading && activeViewIssues.length}
+			{#if !blocksViewRendering && activeViewIssues.length}
 				<section class="support-warning">
 					<div class="support-warning-head">
 						<p class="warning-title">Sebagian data pendukung belum tersedia</p>
-						<Button variant="ghost" size="sm" class="ghost-button" onclick={() => void refreshAll()}
-							>Coba lagi</Button
+						<Button
+							variant="ghost"
+							size="sm"
+							class="ghost-button"
+							onclick={() => void ensureViewData(activeView, true)}>Coba lagi</Button
 						>
 					</div>
 					<ul class="support-warning-list">
@@ -2604,7 +3648,7 @@
 				</section>
 			{/if}
 
-			{#if !appLoading && schedulePreviewNotice && ['dashboard', 'calendar', 'builder'].includes(activeView)}
+			{#if !blocksViewRendering && schedulePreviewNotice && ['dashboard', 'calendar', 'builder'].includes(activeView)}
 				<section class="support-warning compact-warning">
 					<div class="support-warning-head">
 						<p class="warning-title">Pratinjau jadwal dibatasi</p>
@@ -2613,7 +3657,7 @@
 				</section>
 			{/if}
 
-			{#if !appLoading}
+			{#if !blocksViewRendering}
 				{#if activeView === 'dashboard'}
 					<div class="dashboard-stack">
 						{#if currentUser.current.role === 'STUDENT'}
@@ -2831,12 +3875,16 @@
 												bind:value={enrollmentSearch}
 												aria-label="Cari jadwal kalender"
 												placeholder="Cari mahasiswa, mata kuliah, ruang, atau dosen"
+												oninput={() => queueCollectionRefresh('enrollments')}
 											/>
 										</div>
 									</label>
 									<label>
 										<span>Hari</span>
-										<select bind:value={scheduleDayFilter}>
+										<select
+											bind:value={scheduleDayFilter}
+											onchange={() => queueCollectionRefresh('enrollments', 0)}
+										>
 											<option value="">Semua hari</option>
 											{#each days as day (day)}
 												<option value={day}>{DAY_LABELS[day]}</option>
@@ -2845,7 +3893,10 @@
 									</label>
 									<label>
 										<span>Mata kuliah</span>
-										<select bind:value={scheduleCourseFilter}>
+										<select
+											bind:value={scheduleCourseFilter}
+											onchange={() => queueCollectionRefresh('enrollments', 0)}
+										>
 											<option value="">Semua mata kuliah</option>
 											{#each courses as item (item.id)}
 												<option value={item.id}>{item.name}</option>
@@ -2854,7 +3905,10 @@
 									</label>
 									<label>
 										<span>Ruang</span>
-										<select bind:value={scheduleRoomFilter}>
+										<select
+											bind:value={scheduleRoomFilter}
+											onchange={() => queueCollectionRefresh('enrollments', 0)}
+										>
 											<option value="">Semua ruang</option>
 											{#each classrooms as item (item.id)}
 												<option value={item.id}>{item.name}</option>
@@ -2863,7 +3917,10 @@
 									</label>
 									<label>
 										<span>Dosen</span>
-										<select bind:value={scheduleLecturerFilter}>
+										<select
+											bind:value={scheduleLecturerFilter}
+											onchange={() => queueCollectionRefresh('enrollments', 0)}
+										>
 											<option value="">Semua dosen</option>
 											{#each lecturers as item (item.id)}
 												<option value={item.id}>{item.name}</option>
@@ -2872,7 +3929,10 @@
 									</label>
 									<label>
 										<span>Semester</span>
-										<select bind:value={scheduleSemesterFilter}>
+										<select
+											bind:value={scheduleSemesterFilter}
+											onchange={() => queueCollectionRefresh('enrollments', 0)}
+										>
 											<option value="">Semua semester</option>
 											{#each scheduleSemesterOptions as item (item)}
 												<option value={item}>{item}</option>
@@ -2881,7 +3941,10 @@
 									</label>
 									<label>
 										<span>Tahun akademik</span>
-										<select bind:value={scheduleAcademicYearFilter}>
+										<select
+											bind:value={scheduleAcademicYearFilter}
+											onchange={() => queueCollectionRefresh('enrollments', 0)}
+										>
 											<option value="">Semua tahun</option>
 											{#each scheduleAcademicYearOptions as item (item)}
 												<option value={item}>{item}</option>
@@ -2951,7 +4014,7 @@
 										atau tahun akademik untuk menampilkan jadwal yang ingin dilihat.
 									</p>
 								</section>
-							{:else if calendarHasTooMuchData}
+							{:else if calendarExceedsVisibleLimit}
 								<section class="calendar-empty-state support-warning">
 									<h3>Persempit hasil sebelum membuka kalender</h3>
 									<p>
@@ -3120,7 +4183,7 @@
 									Kalender mingguan akan tampil setelah filter dipilih. Gunakan daftar bentrok di
 									atas untuk mulai memeriksa jadwal yang bentrok.
 								</p>
-							{:else if calendarHasTooMuchData}
+							{:else if calendarExceedsVisibleLimit}
 								<p class="empty-copy">
 									Terlalu banyak jadwal untuk ditampilkan sekaligus. Tambahkan filter sampai
 									hasilnya maksimal {CALENDAR_MAX_VISIBLE_SCHEDULES} jadwal, atau pilih salah satu grup
@@ -3187,39 +4250,306 @@
 								</label>
 								<label>
 									<span>Mata kuliah</span>
-									<select
-										bind:value={scheduleCourseFilter}
-										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									<div
+										class="combobox-wrap"
+										onfocusout={(e) => {
+											if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+												scheduleCourseFilterOpen = false;
+											}
+										}}
 									>
-										<option value="">Semua mata kuliah</option>
-										{#each courses as item (item.id)}
-											<option value={item.id}>{item.name}</option>
-										{/each}
-									</select>
+										<input
+											type="text"
+											class="combobox-input"
+											placeholder="Cari mata kuliah filter..."
+											value={scheduleCourseFilter
+												? selectedScheduleCourseFilterLabel
+												: scheduleCourseFilterSearch}
+											oninput={(e) => {
+												scheduleCourseFilterSearch = (e.currentTarget as HTMLInputElement).value;
+												if (scheduleCourseFilter) {
+													scheduleCourseFilter = '';
+													queueCollectionRefresh('enrollments', 0);
+												}
+												scheduleCourseFilterOpen = true;
+												queueScheduleCourseFilterRefresh();
+											}}
+											onfocus={() => {
+												scheduleCourseFilterOpen = true;
+												queueScheduleCourseFilterRefresh(0);
+											}}
+										/>
+										{#if scheduleCourseFilterIssue}
+											<p class="combobox-error">{scheduleCourseFilterIssue}</p>
+										{:else if scheduleCourseFilterOpen && scheduleCourseFilterLoading && !scheduleCourseFilterOptions.length}
+											<p class="combobox-empty">Memuat mata kuliah...</p>
+										{:else if scheduleCourseFilterOpen}
+											<div class="combobox-dropdown" role="listbox">
+												<button
+													type="button"
+													role="option"
+													aria-selected={!scheduleCourseFilter}
+													class="combobox-option"
+													class:active={!scheduleCourseFilter}
+													onmousedown={(e) => {
+														e.preventDefault();
+														scheduleCourseFilter = '';
+														scheduleCourseFilterSearch = '';
+														scheduleCourseFilterOpen = false;
+														queueCollectionRefresh('enrollments', 0);
+													}}
+												>
+													<strong>Semua mata kuliah</strong>
+													<span>Hapus filter mata kuliah</span>
+												</button>
+												{#each scheduleCourseFilterOptions as item (item.id)}
+													<button
+														type="button"
+														role="option"
+														aria-selected={scheduleCourseFilter === item.id}
+														class="combobox-option"
+														class:active={scheduleCourseFilter === item.id}
+														onmousedown={(e) => {
+															e.preventDefault();
+															scheduleCourseFilter = item.id ?? '';
+															scheduleCourseFilterSearch = '';
+															scheduleCourseFilterOpen = false;
+															queueCollectionRefresh('enrollments', 0);
+														}}
+													>
+														<strong>{item.name}</strong>
+														<span>{item.id} • {item.lecturer_name}</span>
+													</button>
+												{/each}
+												{#if !scheduleCourseFilterOptions.length && !scheduleCourseFilterLoading}
+													<p class="combobox-empty">Mata kuliah tidak ditemukan.</p>
+												{/if}
+												{#if scheduleCourseFilterHasMore || scheduleCourseFilterLoading}
+													<div class="combobox-footer">
+														<span class="combobox-meta">
+															{scheduleCourseFilterOptions.length} opsi dimuat
+														</span>
+														<button
+															type="button"
+															class="combobox-more"
+															disabled={!scheduleCourseFilterHasMore || scheduleCourseFilterLoading}
+															onmousedown={(e) => {
+																e.preventDefault();
+																loadMoreScheduleCourseFilterOptions();
+															}}
+														>
+															{scheduleCourseFilterLoading ? 'Memuat...' : 'Muat lebih banyak'}
+														</button>
+													</div>
+												{/if}
+											</div>
+										{/if}
+									</div>
 								</label>
 								<label>
 									<span>Ruang</span>
-									<select
-										bind:value={scheduleRoomFilter}
-										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									<div
+										class="combobox-wrap"
+										onfocusout={(e) => {
+											if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+												scheduleRoomFilterOpen = false;
+											}
+										}}
 									>
-										<option value="">Semua ruang</option>
-										{#each classrooms as item (item.id)}
-											<option value={item.id}>{item.name}</option>
-										{/each}
-									</select>
+										<input
+											type="text"
+											class="combobox-input"
+											placeholder="Cari ruang filter..."
+											value={scheduleRoomFilter ? selectedScheduleRoomFilterLabel : scheduleRoomFilterSearch}
+											oninput={(e) => {
+												scheduleRoomFilterSearch = (e.currentTarget as HTMLInputElement).value;
+												scheduleRoomFilterPage = 0;
+												if (scheduleRoomFilter) {
+													scheduleRoomFilter = '';
+													queueCollectionRefresh('enrollments', 0);
+												}
+												scheduleRoomFilterOpen = true;
+											}}
+											onfocus={() => {
+												scheduleRoomFilterOpen = true;
+												scheduleRoomFilterPage = 0;
+											}}
+										/>
+										{#if scheduleRoomFilterOpen}
+											<div class="combobox-dropdown" role="listbox">
+												<button
+													type="button"
+													role="option"
+													aria-selected={!scheduleRoomFilter}
+													class="combobox-option"
+													class:active={!scheduleRoomFilter}
+													onmousedown={(e) => {
+														e.preventDefault();
+														scheduleRoomFilter = '';
+														scheduleRoomFilterSearch = '';
+														scheduleRoomFilterOpen = false;
+														scheduleRoomFilterPage = 0;
+														queueCollectionRefresh('enrollments', 0);
+													}}
+												>
+													<strong>Semua ruang</strong>
+													<span>Hapus filter ruang</span>
+												</button>
+												{#each pagedScheduleRoomFilterOptions as item (item.id)}
+													<button
+														type="button"
+														role="option"
+														aria-selected={scheduleRoomFilter === item.id}
+														class="combobox-option"
+														class:active={scheduleRoomFilter === item.id}
+														onmousedown={(e) => {
+															e.preventDefault();
+															scheduleRoomFilter = item.id ?? '';
+															scheduleRoomFilterSearch = '';
+															scheduleRoomFilterOpen = false;
+															scheduleRoomFilterPage = 0;
+															queueCollectionRefresh('enrollments', 0);
+														}}
+													>
+														<strong>{item.name}</strong>
+														<span>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span>
+													</button>
+												{/each}
+												{#if !pagedScheduleRoomFilterOptions.length}
+													<p class="combobox-empty">Ruang tidak ditemukan.</p>
+												{/if}
+												{#if filteredScheduleRoomFilterOptions.length > PICKER_PAGE_SIZE}
+													<div class="combobox-footer">
+														<span class="combobox-meta">
+															Halaman {scheduleRoomFilterPage + 1} dari {scheduleRoomFilterPageCount}
+														</span>
+														<div class="combobox-pagination">
+															<button
+																type="button"
+																class="combobox-more"
+																disabled={!scheduleRoomFilterHasPreviousPage}
+																onmousedown={(e) => {
+																	e.preventDefault();
+																	scheduleRoomFilterPage = Math.max(scheduleRoomFilterPage - 1, 0);
+																}}
+															>
+																Sebelumnya
+															</button>
+															<button
+																type="button"
+																class="combobox-more"
+																disabled={!scheduleRoomFilterHasNextPage}
+																onmousedown={(e) => {
+																	e.preventDefault();
+																	scheduleRoomFilterPage += 1;
+																}}
+															>
+																Berikutnya
+															</button>
+														</div>
+													</div>
+												{/if}
+											</div>
+										{/if}
+									</div>
 								</label>
 								<label>
 									<span>Dosen</span>
-									<select
-										bind:value={scheduleLecturerFilter}
-										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									<div
+										class="combobox-wrap"
+										onfocusout={(e) => {
+											if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+												scheduleLecturerFilterOpen = false;
+											}
+										}}
 									>
-										<option value="">Semua dosen</option>
-										{#each lecturers as item (item.id)}
-											<option value={item.id}>{item.name}</option>
-										{/each}
-									</select>
+										<input
+											type="text"
+											class="combobox-input"
+											placeholder="Cari dosen filter..."
+											value={scheduleLecturerFilter
+												? selectedScheduleLecturerFilterLabel
+												: scheduleLecturerFilterSearch}
+											oninput={(e) => {
+												scheduleLecturerFilterSearch = (e.currentTarget as HTMLInputElement).value;
+												if (scheduleLecturerFilter) {
+													scheduleLecturerFilter = '';
+													queueCollectionRefresh('enrollments', 0);
+												}
+												scheduleLecturerFilterOpen = true;
+												queueScheduleLecturerFilterRefresh();
+											}}
+											onfocus={() => {
+												scheduleLecturerFilterOpen = true;
+												queueScheduleLecturerFilterRefresh(0);
+											}}
+										/>
+										{#if scheduleLecturerFilterIssue}
+											<p class="combobox-error">{scheduleLecturerFilterIssue}</p>
+										{:else if scheduleLecturerFilterOpen && scheduleLecturerFilterLoading && !scheduleLecturerFilterOptions.length}
+											<p class="combobox-empty">Memuat dosen...</p>
+										{:else if scheduleLecturerFilterOpen}
+											<div class="combobox-dropdown" role="listbox">
+												<button
+													type="button"
+													role="option"
+													aria-selected={!scheduleLecturerFilter}
+													class="combobox-option"
+													class:active={!scheduleLecturerFilter}
+													onmousedown={(e) => {
+														e.preventDefault();
+														scheduleLecturerFilter = '';
+														scheduleLecturerFilterSearch = '';
+														scheduleLecturerFilterOpen = false;
+														queueCollectionRefresh('enrollments', 0);
+													}}
+												>
+													<strong>Semua dosen</strong>
+													<span>Hapus filter dosen</span>
+												</button>
+												{#each scheduleLecturerFilterOptions as item (item.id)}
+													<button
+														type="button"
+														role="option"
+														aria-selected={scheduleLecturerFilter === item.id}
+														class="combobox-option"
+														class:active={scheduleLecturerFilter === item.id}
+														onmousedown={(e) => {
+															e.preventDefault();
+															scheduleLecturerFilter = item.id ?? '';
+															scheduleLecturerFilterSearch = '';
+															scheduleLecturerFilterOpen = false;
+															queueCollectionRefresh('enrollments', 0);
+														}}
+													>
+														<strong>{item.name}</strong>
+														<span>{item.id} • {item.email}</span>
+													</button>
+												{/each}
+												{#if !scheduleLecturerFilterOptions.length && !scheduleLecturerFilterLoading}
+													<p class="combobox-empty">Dosen tidak ditemukan.</p>
+												{/if}
+												{#if scheduleLecturerFilterHasMore || scheduleLecturerFilterLoading}
+													<div class="combobox-footer">
+														<span class="combobox-meta">
+															{scheduleLecturerFilterOptions.length} opsi dimuat
+														</span>
+														<button
+															type="button"
+															class="combobox-more"
+															disabled={!scheduleLecturerFilterHasMore || scheduleLecturerFilterLoading}
+															onmousedown={(e) => {
+																e.preventDefault();
+																loadMoreScheduleLecturerFilterOptions();
+															}}
+														>
+															{scheduleLecturerFilterLoading ? 'Memuat...' : 'Muat lebih banyak'}
+														</button>
+													</div>
+												{/if}
+											</div>
+										{/if}
+									</div>
 								</label>
 								<label>
 									<span>Semester</span>
@@ -3258,13 +4588,13 @@
 									{#if builderConflictOnly}
 										<Badge variant="secondary">Bentrok saja</Badge>
 									{/if}
-									<Badge variant="secondary">{scheduleActiveFilterCount} filter aktif</Badge>
+									<Badge variant="secondary">{scheduleActiveFilterCount + Number(builderConflictOnly)} filter aktif</Badge>
 									<Button
 										class="ghost-button"
 										variant="ghost"
 										size="sm"
 										onclick={resetScheduleFilters}
-										disabled={scheduleActiveFilterCount === 0}
+										disabled={scheduleActiveFilterCount === 0 && !builderConflictOnly}
 									>
 										Hapus filter
 									</Button>
@@ -3273,7 +4603,8 @@
 
 							<div class="list-stack">
 								{#each filteredBuilderEnrollments as item (item.id)}
-									{@const scheduleCard = item.id ? scheduleCardMap[item.id] : null}
+									{@const scheduleCard =
+										item.id ? (scheduleCardMap[item.id] ?? auditConflictCardMap[item.id]) : null}
 									<button
 										type="button"
 										class:selected={selectedEnrollmentId === item.id}
@@ -3392,15 +4723,13 @@
 										type="hidden"
 										{...selectedEnrollmentId
 											? updateEnrollment.fields.timezone.as('text')
-											: createEnrollment.fields.timezone.as('text')}
-										bind:value={enrollmentDraft.timezone}
+											: createEnrollment.fields.timezone.as('text')} value={enrollmentDraft.timezone}
 									/>
 
 									{#if selectedEnrollmentId}
 										<input
 											type="hidden"
-											{...updateEnrollment.fields.id.as('text')}
-											bind:value={enrollmentDraft.id}
+											{...updateEnrollment.fields.id.as('text')} value={enrollmentDraft.id}
 										/>
 									{/if}
 
@@ -3488,8 +4817,7 @@
 													type="hidden"
 													{...selectedEnrollmentId
 														? updateEnrollment.fields.studentId.as('text')
-														: createEnrollment.fields.studentId.as('text')}
-													bind:value={enrollmentDraft.studentId}
+														: createEnrollment.fields.studentId.as('text')} value={enrollmentDraft.studentId}
 												/>
 												<div
 													class="combobox-wrap"
@@ -3504,19 +4832,25 @@
 														class="combobox-input"
 														placeholder="Cari mahasiswa..."
 														value={enrollmentDraft.studentId
-															? `${students.find((s) => s.id === enrollmentDraft.studentId)?.name ?? ''} • ${enrollmentDraft.studentId}`
+															? `${selectedDraftStudent} • ${enrollmentDraft.studentId}`
 															: studentPickerSearch}
 														oninput={(e) => {
 															studentPickerSearch = (e.currentTarget as HTMLInputElement).value;
 															if (enrollmentDraft.studentId) enrollmentDraft.studentId = '';
 															studentPickerOpen = true;
+															queueStudentPickerRefresh();
 														}}
-														onfocus={() => (studentPickerOpen = true)}
+														onfocus={() => {
+															studentPickerOpen = true;
+															queueStudentPickerRefresh(0);
+														}}
 													/>
-													{#if collectionIssues.students && !students.length}
-														<p class="combobox-error">{collectionIssues.students}</p>
-													{:else if studentPickerOpen && filteredStudentsForPicker.length}
-														<div class="combobox-dropdown" role="listbox">
+													{#if studentPickerIssue}
+													<p class="combobox-error">{studentPickerIssue}</p>
+												{:else if studentPickerOpen && studentPickerLoading && !filteredStudentsForPicker.length}
+													<p class="combobox-empty">Memuat mahasiswa...</p>
+												{:else if studentPickerOpen && filteredStudentsForPicker.length}
+													<div class="combobox-dropdown" role="listbox">
 															{#each filteredStudentsForPicker as item (item.id)}
 																<button
 																	type="button"
@@ -3532,10 +4866,30 @@
 																	}}
 																>
 																	<strong>{item.name}</strong>
-																	<span>{item.id}</span>
+															<span>{item.id}</span>
+														</button>
+													{/each}
+														{#if studentPickerHasMore || studentPickerLoading}
+															<div class="combobox-footer">
+																<span class="combobox-meta">
+																	{studentPickerOptions.length} mahasiswa dimuat
+																</span>
+																<button
+																	type="button"
+																	class="combobox-more"
+																	disabled={!studentPickerHasMore || studentPickerLoading}
+																	onmousedown={(e) => {
+																		e.preventDefault();
+																		loadMoreStudentPickerOptions();
+																	}}
+																>
+																	{studentPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
 																</button>
-															{/each}
-														</div>
+															</div>
+														{/if}
+													</div>
+												{:else if studentPickerOpen}
+													<p class="combobox-empty">Mahasiswa tidak ditemukan.</p>
 													{/if}
 												</div>
 											</label>
@@ -3546,8 +4900,7 @@
 													type="hidden"
 													{...selectedEnrollmentId
 														? updateEnrollment.fields.courseId.as('text')
-														: createEnrollment.fields.courseId.as('text')}
-													bind:value={enrollmentDraft.courseId}
+														: createEnrollment.fields.courseId.as('text')} value={enrollmentDraft.courseId}
 												/>
 												<div
 													class="combobox-wrap"
@@ -3562,17 +4915,23 @@
 														class="combobox-input"
 														placeholder="Cari mata kuliah..."
 														value={enrollmentDraft.courseId
-															? `${courses.find((c) => c.id === enrollmentDraft.courseId)?.name ?? ''} • ${courses.find((c) => c.id === enrollmentDraft.courseId)?.lecturer_name ?? ''}`
+															? `${selectedDraftCourse} • ${coursePickerLookup.get(enrollmentDraft.courseId)?.lecturer_name ?? selectedEnrollmentRecord?.lecturer_name ?? ''}`
 															: coursePickerSearch}
 														oninput={(e) => {
 															coursePickerSearch = (e.currentTarget as HTMLInputElement).value;
 															if (enrollmentDraft.courseId) enrollmentDraft.courseId = '';
 															coursePickerOpen = true;
+															queueCoursePickerRefresh();
 														}}
-														onfocus={() => (coursePickerOpen = true)}
+														onfocus={() => {
+															coursePickerOpen = true;
+															queueCoursePickerRefresh(0);
+														}}
 													/>
-													{#if collectionIssues.courses && !courses.length}
-														<p class="combobox-error">{collectionIssues.courses}</p>
+													{#if coursePickerIssue}
+														<p class="combobox-error">{coursePickerIssue}</p>
+												{:else if coursePickerOpen && coursePickerLoading && !filteredCoursesForPicker.length}
+														<p class="combobox-empty">Memuat mata kuliah...</p>
 													{:else if coursePickerOpen && filteredCoursesForPicker.length}
 														<div class="combobox-dropdown" role="listbox">
 															{#each filteredCoursesForPicker as item (item.id)}
@@ -3590,10 +4949,30 @@
 																	}}
 																>
 																	<strong>{item.name}</strong>
-																	<span>{item.id} • {item.lecturer_name}</span>
+															<span>{item.id} • {item.lecturer_name}</span>
+														</button>
+													{/each}
+														{#if coursePickerHasMore || coursePickerLoading}
+															<div class="combobox-footer">
+																<span class="combobox-meta">
+																	{coursePickerOptions.length} mata kuliah dimuat
+																</span>
+																<button
+																	type="button"
+																	class="combobox-more"
+																	disabled={!coursePickerHasMore || coursePickerLoading}
+																	onmousedown={(e) => {
+																		e.preventDefault();
+																		loadMoreCoursePickerOptions();
+																	}}
+																>
+																	{coursePickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
 																</button>
-															{/each}
-														</div>
+															</div>
+														{/if}
+													</div>
+												{:else if coursePickerOpen}
+													<p class="combobox-empty">Mata kuliah tidak ditemukan.</p>
 													{/if}
 												</div>
 											</label>
@@ -3624,8 +5003,7 @@
 												<select
 													{...selectedEnrollmentId
 														? updateEnrollment.fields.day.as('select')
-														: createEnrollment.fields.day.as('select')}
-													bind:value={enrollmentDraft.day}
+														: createEnrollment.fields.day.as('select')} value={enrollmentDraft.day}
 												>
 													{#each days as day (day)}
 														<option value={day}>{DAY_LABELS[day]}</option>
@@ -3639,8 +5017,7 @@
 													type="datetime-local"
 													{...selectedEnrollmentId
 														? updateEnrollment.fields.startTime.as('text')
-														: createEnrollment.fields.startTime.as('text')}
-													bind:value={enrollmentDraft.startTime}
+														: createEnrollment.fields.startTime.as('text')} value={enrollmentDraft.startTime}
 												/>
 											</label>
 
@@ -3650,8 +5027,7 @@
 													type="datetime-local"
 													{...selectedEnrollmentId
 														? updateEnrollment.fields.endTime.as('text')
-														: createEnrollment.fields.endTime.as('text')}
-													bind:value={enrollmentDraft.endTime}
+														: createEnrollment.fields.endTime.as('text')} value={enrollmentDraft.endTime}
 												/>
 											</label>
 
@@ -3660,8 +5036,7 @@
 												<input
 													{...selectedEnrollmentId
 														? updateEnrollment.fields.semester.as('text')
-														: createEnrollment.fields.semester.as('text')}
-													bind:value={enrollmentDraft.semester}
+														: createEnrollment.fields.semester.as('text')} value={enrollmentDraft.semester}
 												/>
 											</label>
 
@@ -3670,8 +5045,7 @@
 												<input
 													{...selectedEnrollmentId
 														? updateEnrollment.fields.academicYear.as('text')
-														: createEnrollment.fields.academicYear.as('text')}
-													bind:value={enrollmentDraft.academicYear}
+														: createEnrollment.fields.academicYear.as('text')} value={enrollmentDraft.academicYear}
 												/>
 											</label>
 										</div>
@@ -3704,39 +5078,139 @@
 												tinjau.
 											</p>
 										</div>
-										<div class="builder-room-stage">
-											<div class="editor-grid builder-room-grid">
-												<label>
-													<span>Ruang</span>
-													<select
-														{...selectedEnrollmentId
-															? updateEnrollment.fields.classRoomId.as('select')
-															: createEnrollment.fields.classRoomId.as('select')}
-														bind:value={enrollmentDraft.classRoomId}
-													>
-														<option value="">Pilih ruang</option>
-														{#each availableRoomOptions as room (room.id)}
-															<option value={room.id}>{room.name} • {room.capacity}</option>
-														{/each}
-													</select>
-												</label>
-											</div>
-
-											<section class="support-panel builder-support">
-												<h4>{availableRoomOptions.length} ruang tersedia untuk slot ini</h4>
-												<div class="support-list">
-													{#if availableRoomOptions.length}
-														{#each availableRoomOptions.slice(0, 4) as room (room.id)}
-															<div>
-																<strong>{room.name}</strong>
-																<span
-																	>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span
+									<div class="builder-room-stage">
+										<div class="editor-grid builder-room-grid">
+											<label>
+												<span>Ruang</span>
+												<input
+													type="hidden"
+													{...selectedEnrollmentId
+														? updateEnrollment.fields.classRoomId.as('text')
+														: createEnrollment.fields.classRoomId.as('text')} value={enrollmentDraft.classRoomId}
+												/>
+												<div
+													class="combobox-wrap"
+													onfocusout={(e) => {
+														if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+															roomPickerOpen = false;
+														}
+													}}
+												>
+													<input
+														type="text"
+														class="combobox-input"
+														placeholder="Cari ruang tersedia..."
+														value={enrollmentDraft.classRoomId ? selectedDraftRoom : roomPickerSearch}
+														oninput={(e) => {
+															roomPickerSearch = (e.currentTarget as HTMLInputElement).value;
+															roomPickerPage = 0;
+															if (enrollmentDraft.classRoomId) enrollmentDraft.classRoomId = '';
+															roomPickerOpen = true;
+														}}
+														onfocus={() => {
+															roomPickerOpen = true;
+															roomPickerPage = 0;
+														}}
+													/>
+													{#if roomPickerOpen && pagedRoomOptionsForPicker.length}
+														<div class="combobox-dropdown" role="listbox">
+															{#each pagedRoomOptionsForPicker as room (room.id)}
+																<button
+																	type="button"
+																	role="option"
+																	aria-selected={enrollmentDraft.classRoomId === room.id}
+																	class="combobox-option"
+																	class:active={enrollmentDraft.classRoomId === room.id}
+																	onmousedown={(e) => {
+																		e.preventDefault();
+																		enrollmentDraft.classRoomId = room.id ?? '';
+																		roomPickerSearch = '';
+																		roomPickerOpen = false;
+																	}}
 																>
+																	<strong>{room.name}</strong>
+																	<span>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span>
+																</button>
+															{/each}
+															{#if filteredRoomsForPicker.length > PICKER_PAGE_SIZE}
+																<div class="combobox-footer">
+																	<span class="combobox-meta">
+																		Halaman {roomPickerPage + 1} dari {roomPickerPageCount}
+																	</span>
+																	<div class="combobox-pagination">
+																		<button
+																			type="button"
+																			class="combobox-more"
+																			disabled={!roomPickerHasPreviousPage}
+																			onmousedown={(e) => {
+																				e.preventDefault();
+																				roomPickerPage = Math.max(roomPickerPage - 1, 0);
+																			}}
+																		>
+																			Sebelumnya
+																		</button>
+																		<button
+																			type="button"
+																			class="combobox-more"
+																			disabled={!roomPickerHasNextPage}
+																			onmousedown={(e) => {
+																				e.preventDefault();
+																				roomPickerPage += 1;
+																			}}
+																		>
+																			Berikutnya
+																		</button>
+																	</div>
+																</div>
+															{/if}
+														</div>
+													{:else if roomPickerOpen}
+														<p class="combobox-empty">Ruang tidak ditemukan untuk slot ini.</p>
+													{/if}
+												</div>
+											</label>
+										</div>
+
+										<section class="support-panel builder-support">
+											<h4>{availableRoomOptions.length} ruang tersedia untuk slot ini</h4>
+											<div class="support-list">
+												{#if pagedRoomOptionsForPicker.length}
+													{#each pagedRoomOptionsForPicker as room (room.id)}
+														<div>
+															<strong>{room.name}</strong>
+															<span
+																>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span
+															>
+														</div>
+													{/each}
+													{#if filteredRoomsForPicker.length > PICKER_PAGE_SIZE}
+														<div class="combobox-footer support-footer">
+															<span class="combobox-meta">
+																Halaman {roomPickerPage + 1} dari {roomPickerPageCount}
+															</span>
+															<div class="combobox-pagination">
+																<button
+																	type="button"
+																	class="combobox-more"
+																	disabled={!roomPickerHasPreviousPage}
+																	onclick={() => (roomPickerPage = Math.max(roomPickerPage - 1, 0))}
+																>
+																	Sebelumnya
+																</button>
+																<button
+																	type="button"
+																	class="combobox-more"
+																	disabled={!roomPickerHasNextPage}
+																	onclick={() => (roomPickerPage += 1)}
+																>
+																	Berikutnya
+																</button>
 															</div>
-														{/each}
-													{:else}
-														<p class="empty-copy">
-															Belum ada ruang yang tersedia untuk slot ini. Ubah jadwal atau pilih
+														</div>
+													{/if}
+												{:else}
+													<p class="empty-copy">
+														Belum ada ruang yang tersedia untuk slot ini. Ubah jadwal atau pilih
 															slot lain.
 														</p>
 													{/if}
@@ -3860,7 +5334,7 @@
 												>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
 											>
 										</div>
-										<small>{item.schedule_count ?? 0} jadwal</small>
+										<small>{beautifyRoomType(item.class_room_type)}</small>
 									</button>
 								{/each}
 							</div>
@@ -3957,23 +5431,20 @@
 								>
 									{#if selectedRoomId}<input
 											type="hidden"
-											{...updateClassRoom.fields.id.as('text')}
-											bind:value={selectedRoomId}
+											{...updateClassRoom.fields.id.as('text')} value={selectedRoomId}
 										/>{/if}
 									<label
 										><span>Nama ruang</span><input
 											{...selectedRoomId
 												? updateClassRoom.fields.name.as('text')
-												: createClassRoom.fields.name.as('text')}
-											bind:value={classroomDraft.name}
+												: createClassRoom.fields.name.as('text')} value={classroomDraft.name}
 										/></label
 									>
 									<label
 										><span>Tipe ruang</span><select
 											{...selectedRoomId
 												? updateClassRoom.fields.classRoomType.as('select')
-												: createClassRoom.fields.classRoomType.as('select')}
-											bind:value={classroomDraft.classRoomType}
+												: createClassRoom.fields.classRoomType.as('select')} value={classroomDraft.classRoomType}
 											>{#each classRoomTypes as type (type)}<option value={type}
 													>{beautifyRoomType(type)}</option
 												>{/each}</select
@@ -3984,8 +5455,7 @@
 											min="1"
 											{...selectedRoomId
 												? updateClassRoom.fields.capacity.as('number')
-												: createClassRoom.fields.capacity.as('number')}
-											bind:value={classroomDraft.capacity}
+												: createClassRoom.fields.capacity.as('number')} value={classroomDraft.capacity}
 										/></label
 									>
 									<label class="check-row"
@@ -4152,16 +5622,14 @@
 								>
 									{#if selectedCourseId}<input
 											type="hidden"
-											{...updateCourse.fields.id.as('text')}
-											bind:value={courseDraft.id}
+											{...updateCourse.fields.id.as('text')} value={courseDraft.id}
 										/>{:else}<p class="editor-note">
 											Kode mata kuliah dibuat otomatis saat data disimpan.
 										</p>{/if}<label
 										><span>Nama mata kuliah</span><input
 											{...selectedCourseId
 												? updateCourse.fields.name.as('text')
-												: createCourse.fields.name.as('text')}
-											bind:value={courseDraft.name}
+												: createCourse.fields.name.as('text')} value={courseDraft.name}
 										/></label
 									><label
 										><span>SKS</span><input
@@ -4169,15 +5637,13 @@
 											max="6"
 											{...selectedCourseId
 												? updateCourse.fields.credits.as('number')
-												: createCourse.fields.credits.as('number')}
-											bind:value={courseDraft.credits}
+												: createCourse.fields.credits.as('number')} value={courseDraft.credits}
 										/></label
 									><label
 										><span>Program studi</span><select
 											{...selectedCourseId
 												? updateCourse.fields.studyProgramId.as('select')
-												: createCourse.fields.studyProgramId.as('select')}
-											bind:value={courseDraft.studyProgramId}
+												: createCourse.fields.studyProgramId.as('select')} value={courseDraft.studyProgramId}
 											><option value="">Pilih program studi</option
 											>{#if collectionIssues.studyPrograms && !studyPrograms.length}<option
 													value=""
@@ -4191,8 +5657,7 @@
 										><span>Dosen pengampu</span><select
 											{...selectedCourseId
 												? updateCourse.fields.lecturerId.as('select')
-												: createCourse.fields.lecturerId.as('select')}
-											bind:value={courseDraft.lecturerId}
+												: createCourse.fields.lecturerId.as('select')} value={courseDraft.lecturerId}
 											><option value="">Pilih dosen</option
 											>{#if collectionIssues.lecturers && !lecturers.length}<option
 													value=""
@@ -4255,7 +5720,7 @@
 										><div>
 											<strong>{item.name}</strong><span>{item.id} • {item.study_program_name}</span>
 										</div>
-										<small>{item.enrollment_count ?? 0} KRS</small></button
+										<small>{item.year_admitted}</small></button
 									>{/each}
 							</div>
 							<CollectionPagination
@@ -4344,49 +5809,42 @@
 								>
 									{#if selectedStudentId}<input
 											type="hidden"
-											{...updateStudent.fields.id.as('text')}
-											bind:value={selectedStudentId}
+											{...updateStudent.fields.id.as('text')} value={selectedStudentId}
 										/>{/if}<label
 										><span>Nama</span><input
 											{...selectedStudentId
 												? updateStudent.fields.name.as('text')
-												: createStudent.fields.name.as('text')}
-											bind:value={studentDraft.name}
+												: createStudent.fields.name.as('text')} value={studentDraft.name}
 										/></label
 									><label
 										><span>Email</span><input
 											{...selectedStudentId
 												? updateStudent.fields.email.as('email')
-												: createStudent.fields.email.as('email')}
-											bind:value={studentDraft.email}
+												: createStudent.fields.email.as('email')} value={studentDraft.email}
 										/></label
 									><label
 										><span>Telepon</span><input
 											{...selectedStudentId
 												? updateStudent.fields.phone.as('text')
-												: createStudent.fields.phone.as('text')}
-											bind:value={studentDraft.phone}
+												: createStudent.fields.phone.as('text')} value={studentDraft.phone}
 										/></label
 									><label
 										><span>Alamat</span><input
 											{...selectedStudentId
 												? updateStudent.fields.address.as('text')
-												: createStudent.fields.address.as('text')}
-											bind:value={studentDraft.address}
+												: createStudent.fields.address.as('text')} value={studentDraft.address}
 										/></label
 									><label
 										><span>Angkatan</span><input
 											{...selectedStudentId
 												? updateStudent.fields.yearAdmitted.as('number')
-												: createStudent.fields.yearAdmitted.as('number')}
-											bind:value={studentDraft.yearAdmitted}
+												: createStudent.fields.yearAdmitted.as('number')} value={studentDraft.yearAdmitted}
 										/></label
 									><label
 										><span>Program studi</span><select
 											{...selectedStudentId
 												? updateStudent.fields.studyProgramId.as('select')
-												: createStudent.fields.studyProgramId.as('select')}
-											bind:value={studentDraft.studyProgramId}
+												: createStudent.fields.studyProgramId.as('select')} value={studentDraft.studyProgramId}
 											><option value="">Pilih program studi</option
 											>{#if collectionIssues.studyPrograms && !studyPrograms.length}<option
 													value=""
@@ -4448,7 +5906,7 @@
 										class="list-row"
 										onclick={() => pickLecturer(item)}
 										><div><strong>{item.name}</strong><span>{item.id} • {item.email}</span></div>
-										<small>{item.schedule_count ?? 0} jadwal</small></button
+										<small>{item.email}</small></button
 									>{/each}
 							</div>
 							<CollectionPagination
@@ -4538,37 +5996,32 @@
 								>
 									{#if selectedLecturerId}<input
 											type="hidden"
-											{...updateLecturer.fields.id.as('text')}
-											bind:value={lecturerDraft.id}
+											{...updateLecturer.fields.id.as('text')} value={lecturerDraft.id}
 										/>{:else}<p class="editor-note">
 											ID dosen dibuat otomatis saat data disimpan.
 										</p>{/if}<label
 										><span>Nama</span><input
 											{...selectedLecturerId
 												? updateLecturer.fields.name.as('text')
-												: createLecturer.fields.name.as('text')}
-											bind:value={lecturerDraft.name}
+												: createLecturer.fields.name.as('text')} value={lecturerDraft.name}
 										/></label
 									><label
 										><span>Email</span><input
 											{...selectedLecturerId
 												? updateLecturer.fields.email.as('email')
-												: createLecturer.fields.email.as('email')}
-											bind:value={lecturerDraft.email}
+												: createLecturer.fields.email.as('email')} value={lecturerDraft.email}
 										/></label
 									><label
 										><span>Telepon</span><input
 											{...selectedLecturerId
 												? updateLecturer.fields.phone.as('text')
-												: createLecturer.fields.phone.as('text')}
-											bind:value={lecturerDraft.phone}
+												: createLecturer.fields.phone.as('text')} value={lecturerDraft.phone}
 										/></label
 									><label
 										><span>Alamat</span><input
 											{...selectedLecturerId
 												? updateLecturer.fields.address.as('text')
-												: createLecturer.fields.address.as('text')}
-											bind:value={lecturerDraft.address}
+												: createLecturer.fields.address.as('text')} value={lecturerDraft.address}
 										/></label
 									><Button type="submit" class="primary-button"
 										>{selectedLecturerId ? 'Simpan perubahan' : 'Tambah dosen'}</Button
@@ -4617,7 +6070,7 @@
 										class="list-row"
 										onclick={() => pickFaculty(item)}
 										><div><strong>{item.name}</strong><span>{item.id}</span></div>
-										<small>{item.study_program_count ?? 0} prodi</small></button
+										<small>{item.id}</small></button
 									>{/each}
 							</div>
 							<CollectionPagination
@@ -4705,16 +6158,14 @@
 								>
 									{#if selectedFacultyId}<input
 											type="hidden"
-											{...updateFaculty.fields.id.as('text')}
-											bind:value={facultyDraft.id}
+											{...updateFaculty.fields.id.as('text')} value={facultyDraft.id}
 										/>{:else}<p class="editor-note">
 											ID fakultas dibuat otomatis saat data disimpan.
 										</p>{/if}<label
 										><span>Nama fakultas</span><input
 											{...selectedFacultyId
 												? updateFaculty.fields.name.as('text')
-												: createFaculty.fields.name.as('text')}
-											bind:value={facultyDraft.name}
+												: createFaculty.fields.name.as('text')} value={facultyDraft.name}
 										/></label
 									><Button type="submit" class="primary-button"
 										>{selectedFacultyId ? 'Simpan perubahan' : 'Tambah fakultas'}</Button
@@ -4765,7 +6216,7 @@
 										><div>
 											<strong>{item.name}</strong><span>{item.id} • {item.faculty_name}</span>
 										</div>
-										<small>{item.student_count ?? 0} mahasiswa</small></button
+										<small>{item.head ?? item.faculty_name}</small></button
 									>{/each}
 							</div>
 							<CollectionPagination
@@ -4864,30 +6315,26 @@
 								>
 									{#if selectedStudyProgramId}<input
 											type="hidden"
-											{...updateStudyProgram.fields.id.as('text')}
-											bind:value={studyProgramDraft.id}
+											{...updateStudyProgram.fields.id.as('text')} value={studyProgramDraft.id}
 										/>{:else}<p class="editor-note">
 											ID program studi dibuat otomatis saat data disimpan.
 										</p>{/if}<label
 										><span>Nama prodi</span><input
 											{...selectedStudyProgramId
 												? updateStudyProgram.fields.name.as('text')
-												: createStudyProgram.fields.name.as('text')}
-											bind:value={studyProgramDraft.name}
+												: createStudyProgram.fields.name.as('text')} value={studyProgramDraft.name}
 										/></label
 									><label
 										><span>Ketua prodi</span><input
 											{...selectedStudyProgramId
 												? updateStudyProgram.fields.head.as('text')
-												: createStudyProgram.fields.head.as('text')}
-											bind:value={studyProgramDraft.head}
+												: createStudyProgram.fields.head.as('text')} value={studyProgramDraft.head}
 										/></label
 									><label
 										><span>Fakultas</span><select
 											{...selectedStudyProgramId
 												? updateStudyProgram.fields.facultyId.as('select')
-												: createStudyProgram.fields.facultyId.as('select')}
-											bind:value={studyProgramDraft.facultyId}
+												: createStudyProgram.fields.facultyId.as('select')} value={studyProgramDraft.facultyId}
 											><option value="">Pilih fakultas</option
 											>{#if collectionIssues.faculties && !faculties.length}<option
 													value=""
@@ -5244,14 +6691,12 @@
 								>
 									{#if selectedGradeId}<input
 											type="hidden"
-											{...updateGrade.fields.id.as('text')}
-											bind:value={gradeDraft.id}
+											{...updateGrade.fields.id.as('text')} value={gradeDraft.id}
 										/>{/if}<label
 										><span>KRS</span><select
 											{...selectedGradeId
 												? updateGrade.fields.enrollmentId.as('select')
-												: createGrade.fields.enrollmentId.as('select')}
-											bind:value={gradeDraft.enrollmentId}
+												: createGrade.fields.enrollmentId.as('select')} value={gradeDraft.enrollmentId}
 											><option value="">Pilih KRS</option
 											>{#if collectionIssues.enrollments && !enrollments.length}<option
 													value=""
@@ -5266,8 +6711,7 @@
 											max="100"
 											{...selectedGradeId
 												? updateGrade.fields.assignmentScore.as('number')
-												: createGrade.fields.assignmentScore.as('number')}
-											bind:value={gradeDraft.assignmentScore}
+												: createGrade.fields.assignmentScore.as('number')} value={gradeDraft.assignmentScore}
 										/></label
 									><label
 										><span>UTS</span><input
@@ -5275,8 +6719,7 @@
 											max="100"
 											{...selectedGradeId
 												? updateGrade.fields.midtermScore.as('number')
-												: createGrade.fields.midtermScore.as('number')}
-											bind:value={gradeDraft.midtermScore}
+												: createGrade.fields.midtermScore.as('number')} value={gradeDraft.midtermScore}
 										/></label
 									><label
 										><span>UAS</span><input
@@ -5284,8 +6727,7 @@
 											max="100"
 											{...selectedGradeId
 												? updateGrade.fields.finalScore.as('number')
-												: createGrade.fields.finalScore.as('number')}
-											bind:value={gradeDraft.finalScore}
+												: createGrade.fields.finalScore.as('number')} value={gradeDraft.finalScore}
 										/></label
 									>{#if gradeEditorBlocked}<p class="editor-note">
 											Data KRS harus tersedia sebelum nilai bisa disimpan.
@@ -5398,37 +6840,31 @@
 									</p>
 									<input
 										type="hidden"
-										{...updateUser.fields.id.as('text')}
-										bind:value={userDraft.id}
+										{...updateUser.fields.id.as('text')} value={userDraft.id}
 									/><label
 										><span>Email</span><input
 											{...updateUser.fields.email.as('email')}
-											autocomplete="email"
-											bind:value={userDraft.email}
+											autocomplete="email" value={userDraft.email}
 										/></label
 									><label
 										><span>Password baru</span><input
 											{...updateUser.fields.password.as('password')}
-											autocomplete="new-password"
-											bind:value={userDraft.password}
+											autocomplete="new-password" value={userDraft.password}
 											placeholder="Biarkan kosong jika password lama tetap dipakai"
 										/></label
 									><label
 										><span>Peran akses</span><select
-											{...updateUser.fields.role.as('select')}
-											bind:value={userDraft.role}
+											{...updateUser.fields.role.as('select')} value={userDraft.role}
 											><option value="ADMIN">ADMIN</option><option value="STUDENT">STUDENT</option
 											><option value="LECTURER">LECTURER</option></select
 										></label
 									><label
 										><span>ID mahasiswa terkait</span><input
-											{...updateUser.fields.studentId.as('text')}
-											bind:value={userDraft.studentId}
+											{...updateUser.fields.studentId.as('text')} value={userDraft.studentId}
 										/></label
 									><label
 										><span>ID dosen terkait</span><input
-											{...updateUser.fields.lecturerId.as('text')}
-											bind:value={userDraft.lecturerId}
+											{...updateUser.fields.lecturerId.as('text')} value={userDraft.lecturerId}
 										/></label
 									><Button type="submit" class="primary-button">Simpan akun</Button>
 								</form>{:else}<p class="empty-copy">
@@ -5444,6 +6880,12 @@
 	<div class="login-shell">
 		<Card.Root class="login-panel">
 			<Card.Header>
+				<div class="topbar-tools">
+					<Button type="button" variant="outline" size="sm" onclick={() => window.location.reload()}>
+						<RotateCw size={16} />
+						<span>Refresh</span>
+					</Button>
+				</div>
 				<Card.Title class="login-title">
 					<p class="kicker">Watum</p>
 					Masuk
@@ -6979,9 +8421,10 @@
 
 	.builder-shell {
 		grid-template-columns: minmax(18rem, 0.72fr) minmax(0, 1.28fr);
-		height: auto;
+		height: clamp(32rem, calc(100dvh - 9.5rem), 56rem);
 		min-height: 0;
 		align-items: stretch;
+		overflow: hidden;
 	}
 
 	.workspace-list,
@@ -7011,6 +8454,7 @@
 		display: grid;
 		grid-template-rows: auto auto auto minmax(0, 1fr);
 		gap: 0.8rem;
+		height: 100%;
 		min-height: 0;
 	}
 
@@ -7019,9 +8463,12 @@
 		min-height: 0;
 		overflow: auto;
 		padding-right: 0.1rem;
+		scrollbar-gutter: stable;
+		overscroll-behavior: contain;
 	}
 
 	.builder-detail {
+		height: 100%;
 		min-height: 0;
 		overflow: auto;
 		border-color: color-mix(in oklch, var(--color-accent-strong) 18%, var(--color-border) 82%);
@@ -7257,6 +8704,14 @@
 
 	.builder-support {
 		padding: 0.95rem;
+	}
+
+	.builder-support .support-list {
+		max-height: clamp(11rem, 30dvh, 18rem);
+		overflow: auto;
+		padding-right: 0.1rem;
+		scrollbar-gutter: stable;
+		overscroll-behavior: contain;
 	}
 
 	.builder-review-grid {
@@ -7660,7 +9115,7 @@
 		}
 
 		.workspace-list .list-stack {
-			max-height: 18rem;
+			max-height: clamp(14rem, 36dvh, 22rem);
 			overflow: auto;
 		}
 	}
@@ -7734,8 +9189,10 @@
 		top: calc(100% + 0.35rem);
 		left: 0;
 		right: 0;
-		max-height: 15rem;
+		max-height: clamp(12rem, 34dvh, 20rem);
 		overflow-y: auto;
+		scrollbar-gutter: stable;
+		overscroll-behavior: contain;
 		border: 1px solid var(--color-border);
 		border-radius: 0.8rem;
 		background: var(--color-panel);
@@ -7778,6 +9235,51 @@
 		margin: 0.35rem 0 0;
 		font-size: 0.86rem;
 		color: var(--color-danger);
+	}
+
+	.combobox-empty {
+		margin: 0.35rem 0 0;
+		font-size: 0.86rem;
+		color: var(--color-muted-foreground);
+	}
+
+	.combobox-footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.6rem;
+		padding: 0.45rem 0.35rem 0.2rem;
+		border-top: 1px solid color-mix(in oklch, var(--color-border) 88%, transparent 12%);
+	}
+
+	.combobox-meta {
+		font-size: 0.78rem;
+		color: var(--color-muted-foreground);
+	}
+
+	.combobox-more {
+		border: 1px solid var(--color-border);
+		border-radius: 999px;
+		padding: 0.3rem 0.7rem;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		font-size: 0.78rem;
+		cursor: pointer;
+	}
+
+	.combobox-more:disabled {
+		opacity: 0.48;
+		cursor: default;
+	}
+
+	.combobox-pagination {
+		display: flex;
+		gap: 0.45rem;
+	}
+
+	.support-footer {
+		padding-inline: 0;
 	}
 
 	/* --- Feedback dismiss --- */

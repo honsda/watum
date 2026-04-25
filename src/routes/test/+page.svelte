@@ -440,7 +440,16 @@
 </script>
 
 <div class="container mx-auto max-w-4xl p-4">
-	<h1 class="mb-4 text-2xl font-bold">Remote Functions Test</h1>
+	<div class="mb-4 flex items-center justify-between gap-3">
+		<h1 class="text-2xl font-bold">Remote Functions Test</h1>
+		<button
+			type="button"
+			class="rounded border border-gray-300 px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-100"
+			onclick={() => window.location.reload()}
+		>
+			Refresh
+		</button>
+	</div>
 
 	<div class="mb-4 rounded border p-3">
 		<h3 class="font-semibold">Auth Session</h3>
@@ -600,14 +609,12 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createCourse.fields.name.as('text')}
-						bind:value={createCourseData.name}
 						placeholder="Name"
 						required
 					/>
 					<input
 						class="w-24 rounded border px-2 py-1 text-sm"
 						{...createCourse.fields.credits.as('number')}
-						bind:value={createCourseData.credits}
 						min="1"
 						max="6"
 						required
@@ -615,14 +622,12 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createCourse.fields.studyProgramId.as('text')}
-						bind:value={createCourseData.studyProgramId}
 						placeholder="Study Program ID"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createCourse.fields.lecturerId.as('text')}
-						bind:value={createCourseData.lecturerId}
 						placeholder="Lecturer ID"
 						required
 					/>
@@ -638,21 +643,18 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateCourse.fields.id.as('text')}
-						bind:value={updateCourseData.id}
 						placeholder="ID"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateCourse.fields.name.as('text')}
-						bind:value={updateCourseData.name}
 						placeholder="Name"
 						required
 					/>
 					<input
 						class="w-24 rounded border px-2 py-1 text-sm"
 						{...updateCourse.fields.credits.as('number')}
-						bind:value={updateCourseData.credits}
 						min="1"
 						max="6"
 						required
@@ -660,14 +662,12 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateCourse.fields.studyProgramId.as('text')}
-						bind:value={updateCourseData.studyProgramId}
 						placeholder="Study Program ID"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateCourse.fields.lecturerId.as('text')}
-						bind:value={updateCourseData.lecturerId}
 						placeholder="Lecturer ID"
 						required
 					/>
@@ -804,14 +804,12 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createClassRoom.fields.name.as('text')}
-						bind:value={createClassRoomData.name}
 						placeholder="Name"
 						required
 					/>
 					<select
 						class="rounded border px-2 py-1 text-sm"
 						{...createClassRoom.fields.classRoomType.as('select')}
-						bind:value={createClassRoomData.classRoomType}
 					>
 						{#each classRoomTypeOptions as type (type)}
 							<option value={type}>{type}</option>
@@ -820,7 +818,6 @@
 					<input
 						class="w-24 rounded border px-2 py-1 text-sm"
 						{...createClassRoom.fields.capacity.as('number')}
-						bind:value={createClassRoomData.capacity}
 						min="1"
 						required
 					/>
@@ -842,21 +839,18 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateClassRoom.fields.id.as('text')}
-						bind:value={updateClassRoomData.id}
 						placeholder="ID"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateClassRoom.fields.name.as('text')}
-						bind:value={updateClassRoomData.name}
 						placeholder="Name"
 						required
 					/>
 					<select
 						class="rounded border px-2 py-1 text-sm"
 						{...updateClassRoom.fields.classRoomType.as('select')}
-						bind:value={updateClassRoomData.classRoomType}
 					>
 						{#each classRoomTypeOptions as type (type)}
 							<option value={type}>{type}</option>
@@ -865,7 +859,6 @@
 					<input
 						class="w-24 rounded border px-2 py-1 text-sm"
 						{...updateClassRoom.fields.capacity.as('number')}
-						bind:value={updateClassRoomData.capacity}
 						min="1"
 						required
 					/>
@@ -1005,39 +998,33 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createStudent.fields.name.as('text')}
-						bind:value={createStudentData.name}
 						placeholder="Name"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createStudent.fields.email.as('email')}
-						bind:value={createStudentData.email}
 						placeholder="Email"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createStudent.fields.phone.as('text')}
-						bind:value={createStudentData.phone}
 						placeholder="Phone"
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createStudent.fields.address.as('text')}
-						bind:value={createStudentData.address}
 						placeholder="Address"
 					/>
 					<input
 						class="w-24 rounded border px-2 py-1 text-sm"
 						{...createStudent.fields.yearAdmitted.as('number')}
-						bind:value={createStudentData.yearAdmitted}
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createStudent.fields.studyProgramId.as('text')}
-						bind:value={createStudentData.studyProgramId}
 						placeholder="Study Program ID"
 						required
 					/>
@@ -1053,46 +1040,39 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateStudent.fields.id.as('text')}
-						bind:value={updateStudentData.id}
 						placeholder="NRP"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateStudent.fields.name.as('text')}
-						bind:value={updateStudentData.name}
 						placeholder="Name"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateStudent.fields.email.as('email')}
-						bind:value={updateStudentData.email}
 						placeholder="Email"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateStudent.fields.phone.as('text')}
-						bind:value={updateStudentData.phone}
 						placeholder="Phone"
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateStudent.fields.address.as('text')}
-						bind:value={updateStudentData.address}
 						placeholder="Address"
 					/>
 					<input
 						class="w-24 rounded border px-2 py-1 text-sm"
 						{...updateStudent.fields.yearAdmitted.as('number')}
-						bind:value={updateStudentData.yearAdmitted}
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateStudent.fields.studyProgramId.as('text')}
-						bind:value={updateStudentData.studyProgramId}
 						placeholder="Study Program ID"
 						required
 					/>
@@ -1212,27 +1192,23 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createLecturer.fields.name.as('text')}
-						bind:value={createLecturerData.name}
 						placeholder="Name"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createLecturer.fields.email.as('email')}
-						bind:value={createLecturerData.email}
 						placeholder="Email"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createLecturer.fields.phone.as('text')}
-						bind:value={createLecturerData.phone}
 						placeholder="Phone"
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createLecturer.fields.address.as('text')}
-						bind:value={createLecturerData.address}
 						placeholder="Address"
 					/>
 					<button
@@ -1247,34 +1223,29 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateLecturer.fields.id.as('text')}
-						bind:value={updateLecturerData.id}
 						placeholder="NIM"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateLecturer.fields.name.as('text')}
-						bind:value={updateLecturerData.name}
 						placeholder="Name"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateLecturer.fields.email.as('email')}
-						bind:value={updateLecturerData.email}
 						placeholder="Email"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateLecturer.fields.phone.as('text')}
-						bind:value={updateLecturerData.phone}
 						placeholder="Phone"
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateLecturer.fields.address.as('text')}
-						bind:value={updateLecturerData.address}
 						placeholder="Address"
 					/>
 					<button
@@ -1375,7 +1346,6 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createFaculty.fields.name.as('text')}
-						bind:value={createFacultyData.name}
 						placeholder="Name"
 						required
 					/>
@@ -1391,14 +1361,12 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateFaculty.fields.id.as('text')}
-						bind:value={updateFacultyData.id}
 						placeholder="ID"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateFaculty.fields.name.as('text')}
-						bind:value={updateFacultyData.name}
 						placeholder="Name"
 						required
 					/>
@@ -1521,21 +1489,18 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createStudyProgram.fields.name.as('text')}
-						bind:value={createStudyProgramData.name}
 						placeholder="Name"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createStudyProgram.fields.head.as('text')}
-						bind:value={createStudyProgramData.head}
 						placeholder="Head"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createStudyProgram.fields.facultyId.as('text')}
-						bind:value={createStudyProgramData.facultyId}
 						placeholder="Faculty ID"
 						required
 					/>
@@ -1554,28 +1519,24 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateStudyProgram.fields.id.as('text')}
-						bind:value={updateStudyProgramData.id}
 						placeholder="ID"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateStudyProgram.fields.name.as('text')}
-						bind:value={updateStudyProgramData.name}
 						placeholder="Name"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateStudyProgram.fields.head.as('text')}
-						bind:value={updateStudyProgramData.head}
 						placeholder="Head"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateStudyProgram.fields.facultyId.as('text')}
-						bind:value={updateStudyProgramData.facultyId}
 						placeholder="Faculty ID"
 						required
 					/>
@@ -1737,33 +1698,28 @@
 					<input
 						type="hidden"
 						{...createEnrollment.fields.timezone.as('text')}
-						bind:value={createEnrollmentData.timezone}
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createEnrollment.fields.studentId.as('text')}
-						bind:value={createEnrollmentData.studentId}
 						placeholder="Student ID"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createEnrollment.fields.courseId.as('text')}
-						bind:value={createEnrollmentData.courseId}
 						placeholder="Course ID"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createEnrollment.fields.classRoomId.as('text')}
-						bind:value={createEnrollmentData.classRoomId}
 						placeholder="ClassRoom ID"
 						required
 					/>
 					<select
 						class="rounded border px-2 py-1 text-sm"
 						{...createEnrollment.fields.day.as('select')}
-						bind:value={createEnrollmentData.day}
 					>
 						<option value="SENIN">SENIN</option>
 						<option value="SELASA">SELASA</option>
@@ -1776,27 +1732,23 @@
 						class="rounded border px-2 py-1 text-sm"
 						type="datetime-local"
 						{...createEnrollment.fields.startTime.as('text')}
-						bind:value={createEnrollmentData.startTime}
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						type="datetime-local"
 						{...createEnrollment.fields.endTime.as('text')}
-						bind:value={createEnrollmentData.endTime}
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createEnrollment.fields.semester.as('text')}
-						bind:value={createEnrollmentData.semester}
 						placeholder="Semester"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createEnrollment.fields.academicYear.as('text')}
-						bind:value={createEnrollmentData.academicYear}
 						placeholder="Academic Year"
 						required
 					/>
@@ -1812,40 +1764,34 @@
 					<input
 						type="hidden"
 						{...updateEnrollment.fields.timezone.as('text')}
-						bind:value={updateEnrollmentData.timezone}
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateEnrollment.fields.id.as('text')}
-						bind:value={updateEnrollmentData.id}
 						placeholder="Enrollment ID"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateEnrollment.fields.studentId.as('text')}
-						bind:value={updateEnrollmentData.studentId}
 						placeholder="Student ID"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateEnrollment.fields.courseId.as('text')}
-						bind:value={updateEnrollmentData.courseId}
 						placeholder="Course ID"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateEnrollment.fields.classRoomId.as('text')}
-						bind:value={updateEnrollmentData.classRoomId}
 						placeholder="ClassRoom ID"
 						required
 					/>
 					<select
 						class="rounded border px-2 py-1 text-sm"
 						{...updateEnrollment.fields.day.as('select')}
-						bind:value={updateEnrollmentData.day}
 					>
 						<option value="SENIN">SENIN</option>
 						<option value="SELASA">SELASA</option>
@@ -1858,27 +1804,23 @@
 						class="rounded border px-2 py-1 text-sm"
 						type="datetime-local"
 						{...updateEnrollment.fields.startTime.as('text')}
-						bind:value={updateEnrollmentData.startTime}
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						type="datetime-local"
 						{...updateEnrollment.fields.endTime.as('text')}
-						bind:value={updateEnrollmentData.endTime}
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateEnrollment.fields.semester.as('text')}
-						bind:value={updateEnrollmentData.semester}
 						placeholder="Semester"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateEnrollment.fields.academicYear.as('text')}
-						bind:value={updateEnrollmentData.academicYear}
 						placeholder="Academic Year"
 						required
 					/>
@@ -2056,14 +1998,12 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createGrade.fields.enrollmentId.as('text')}
-						bind:value={createGradeData.enrollmentId}
 						placeholder="Enrollment ID"
 						required
 					/>
 					<input
 						class="w-24 rounded border px-2 py-1 text-sm"
 						{...createGrade.fields.assignmentScore.as('number')}
-						bind:value={createGradeData.assignmentScore}
 						min="0"
 						max="100"
 						required
@@ -2071,7 +2011,6 @@
 					<input
 						class="w-24 rounded border px-2 py-1 text-sm"
 						{...createGrade.fields.midtermScore.as('number')}
-						bind:value={createGradeData.midtermScore}
 						min="0"
 						max="100"
 						required
@@ -2079,7 +2018,6 @@
 					<input
 						class="w-24 rounded border px-2 py-1 text-sm"
 						{...createGrade.fields.finalScore.as('number')}
-						bind:value={createGradeData.finalScore}
 						min="0"
 						max="100"
 						required
@@ -2096,21 +2034,18 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateGrade.fields.id.as('text')}
-						bind:value={updateGradeData.id}
 						placeholder="Grade ID"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateGrade.fields.enrollmentId.as('text')}
-						bind:value={updateGradeData.enrollmentId}
 						placeholder="Enrollment ID"
 						required
 					/>
 					<input
 						class="w-24 rounded border px-2 py-1 text-sm"
 						{...updateGrade.fields.assignmentScore.as('number')}
-						bind:value={updateGradeData.assignmentScore}
 						min="0"
 						max="100"
 						required
@@ -2118,7 +2053,6 @@
 					<input
 						class="w-24 rounded border px-2 py-1 text-sm"
 						{...updateGrade.fields.midtermScore.as('number')}
-						bind:value={updateGradeData.midtermScore}
 						min="0"
 						max="100"
 						required
@@ -2126,7 +2060,6 @@
 					<input
 						class="w-24 rounded border px-2 py-1 text-sm"
 						{...updateGrade.fields.finalScore.as('number')}
-						bind:value={updateGradeData.finalScore}
 						min="0"
 						max="100"
 						required
@@ -2329,28 +2262,24 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateUser.fields.id.as('text')}
-						bind:value={updateUserData.id}
 						placeholder="User ID"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateUser.fields.email.as('email')}
-						bind:value={updateUserData.email}
 						placeholder="Email"
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateUser.fields.password.as('password')}
-						autocomplete="new-password"
-						bind:value={updateUserData.password}
+						autocomplete="new-password" value={updateUserData.password}
 						placeholder="Leave blank to keep existing"
 					/>
 					<select
 						class="rounded border px-2 py-1 text-sm"
 						{...updateUser.fields.role.as('select')}
-						bind:value={updateUserData.role}
 					>
 						<option value="ADMIN">ADMIN</option>
 						<option value="STUDENT">STUDENT</option>
@@ -2360,7 +2289,6 @@
 						<input
 							class="rounded border px-2 py-1 text-sm"
 							{...updateUser.fields.studentId.as('text')}
-							bind:value={updateUserData.studentId}
 							placeholder="Student ID"
 							required
 						/>
@@ -2369,7 +2297,6 @@
 						<input
 							class="rounded border px-2 py-1 text-sm"
 							{...updateUser.fields.lecturerId.as('text')}
-							bind:value={updateUserData.lecturerId}
 							placeholder="Lecturer ID"
 							required
 						/>
