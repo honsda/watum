@@ -521,7 +521,7 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 		]);
 		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
 		if (!courseIds.length) {
-			return toLimitedListResult([], limit, (item) => item.id ?? null);
+			return toLimitedListResult([] as SelectEnrollmentsResult[], limit, (item) => item.id ?? null);
 		}
 		if (courseIds.length === 1) {
 			where.push(['course_id', '=', courseIds[0]!]);
@@ -540,7 +540,7 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 		]);
 		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
 		if (!courseIds.length) {
-			return toLimitedListResult([], limit, (item) => item.id ?? null);
+			return toLimitedListResult([] as SelectEnrollmentsResult[], limit, (item) => item.id ?? null);
 		}
 		if (courseIds.length === 1) {
 			where.push(['course_id', '=', courseIds[0]!]);

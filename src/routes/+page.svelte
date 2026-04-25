@@ -785,6 +785,8 @@
 	let scheduleAcademicYearFilter = $state('');
 	let builderConflictOnly = $state(false);
 	let gradeSearch = $state('');
+	let gradeLetterFilter = $state('');
+	let gradeCourseFilter = $state('');
 	let userSearch = $state('');
 
 	let selectedScheduleId = $state<string | null>(null);
@@ -1423,8 +1425,11 @@
 
 	function requestGradesPage(cursor: string | null) {
 		const q = normalizedSearchValue(gradeSearch);
-		return q
-			? searchGrades({ cursor: cursor ?? undefined, q })
+		const letterGrade = gradeLetterFilter || undefined;
+		const courseId = gradeCourseFilter || undefined;
+		const hasFilters = q || letterGrade || courseId;
+		return hasFilters
+			? searchGrades({ cursor: cursor ?? undefined, q, letterGrade, courseId })
 			: getGrades({ cursor: cursor ?? undefined });
 	}
 
@@ -1658,7 +1663,7 @@
 		}
 		if (view === 'grades') {
 			return {
-				collections: ['grades', 'enrollments'] as DataCollectionKey[],
+				collections: ['grades', 'enrollments', 'courses'] as DataCollectionKey[],
 				requiresSchedulePreview: false,
 				requiresBuilderClassrooms: false
 			};
@@ -2929,6 +2934,8 @@
 			selectedGradeId = null;
 			selectedGradeRecord = null;
 			gradeDraft = emptyGradeDraft();
+			gradeLetterFilter = '';
+			gradeCourseFilter = '';
 		}
 		if (view === 'users') {
 			selectedUserId = null;
@@ -6538,21 +6545,49 @@
 										onclick={() => beginCreate('grades')}>Tambah</Button
 									>{/if}
 							</div>
-							<label class="search-box"
-								><Search size={16} /><input
-									bind:value={gradeSearch}
-									oninput={() => queueCollectionRefresh('grades')}
-									aria-label="Cari data nilai"
-									placeholder="Cari mahasiswa, mata kuliah, atau nilai huruf"
-								/>{#if gradeSearch}<button
-										type="button"
-										class="search-clear"
-										onclick={() => {
-											gradeSearch = '';
-											queueCollectionRefresh('grades', 0);
-										}}><X size={14} /></button
-									>{/if}</label
-							>
+							<div class="filter-bar">
+								<label class="search-box grow"
+									><Search size={16} /><input
+										bind:value={gradeSearch}
+										oninput={() => queueCollectionRefresh('grades')}
+										aria-label="Cari data nilai"
+										placeholder="Cari mahasiswa, mata kuliah, atau nilai huruf"
+									/>{#if gradeSearch}<button
+											type="button"
+											class="search-clear"
+											onclick={() => {
+												gradeSearch = '';
+												queueCollectionRefresh('grades', 0);
+											}}><X size={14} /></button
+										>{/if}</label
+								>
+								<label class="filter-select">
+									<span>Nilai</span>
+									<select
+										bind:value={gradeLetterFilter}
+										onchange={() => queueCollectionRefresh('grades', 0)}
+									>
+										<option value="">Semua</option>
+										<option value="A">A</option>
+										<option value="B">B</option>
+										<option value="C">C</option>
+										<option value="D">D</option>
+										<option value="E">E</option>
+									</select>
+								</label>
+								<label class="filter-select">
+									<span>Mata kuliah</span>
+									<select
+										bind:value={gradeCourseFilter}
+										onchange={() => queueCollectionRefresh('grades', 0)}
+									>
+										<option value="">Semua</option>
+										{#each courses as item (item.id)}
+											<option value={item.id}>{item.name}</option>
+										{/each}
+									</select>
+								</label>
+							</div>
 							<div class="list-stack">
 								{#each filteredGrades as item (item.id)}<button
 										type="button"
@@ -7291,6 +7326,29 @@
 		justify-content: flex-end;
 		align-items: center;
 		flex-wrap: wrap;
+	}
+
+	.filter-bar {
+		display: flex;
+		gap: 0.6rem;
+		align-items: end;
+		padding: 0 0 0.35rem;
+	}
+
+	.filter-bar .grow {
+		flex: 1 1 0;
+	}
+
+	.filter-select {
+		display: grid;
+		gap: 0.35rem;
+		min-width: 8rem;
+	}
+
+	.filter-select span {
+		font-size: 0.8rem;
+		font-weight: 500;
+		color: var(--color-muted-foreground);
 	}
 
 	.filter-toggle-row {

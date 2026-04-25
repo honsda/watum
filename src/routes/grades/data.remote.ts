@@ -347,7 +347,7 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 		]);
 		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
 		if (!courseIds.length) {
-			return toLimitedListResult([], limit, (item) => item.id ?? null);
+			return toLimitedListResult([] as SelectGradesResult[], limit, (item) => item.id ?? null);
 		}
 		if (courseIds.length === 1) {
 			where.push(['course_id', '=', courseIds[0]!]);
@@ -375,7 +375,7 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 		]);
 		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
 		if (!courseIds.length) {
-			return toLimitedListResult([], limit, (item) => item.id ?? null);
+			return toLimitedListResult([] as SelectGradesResult[], limit, (item) => item.id ?? null);
 		}
 		if (courseIds.length === 1) {
 			where.push(['course_id', '=', courseIds[0]!]);
@@ -394,9 +394,24 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 	const afterId = getListQueryCursor(filters.cursor);
 	const q = filters.q?.trim();
 	if (q) {
+		const queryLimit = limit + 1;
+		// Short-circuit: single-character grade-letter searches are overwhelmingly
+		// grade-letter queries, not name/email searches. Skip expensive FULLTEXT
+		// scans that would match almost every row.
+		const validGradeLetters = ['A', 'B', 'C', 'D', 'E'];
+		if (q.length === 1 && validGradeLetters.includes(q.toUpperCase())) {
+			return toLimitedListResult(
+				await selectGrades(getPool(), {
+					select: gradeListSelect,
+					where: [...where, ['letter_grade', '=', q.toUpperCase()]],
+					params: { afterId, limit: queryLimit }
+				}),
+				limit,
+				(item) => item.id ?? null
+			);
+		}
 		const qPrefix = prefixSearchPattern(q)!;
 		const qWordPrefix = wordPrefixSearchPattern(q)!;
-		const queryLimit = limit + 1;
 		const resultSets = await Promise.all([
 			selectGrades(getPool(), {
 				select: gradeListSelect,
