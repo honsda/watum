@@ -14,6 +14,7 @@ import { auditEnrollmentConflicts, invalidateConflictAuditCache } from '$lib/ser
 import { requireRole, requireUser } from '$lib/server/auth';
 import {
 	containsSearchPattern,
+	fulltextSearchPattern,
 	prefixSearchPattern,
 	wordPrefixSearchPattern
 } from '$lib/server/search';
@@ -403,28 +404,28 @@ async function prefetchEnrollmentSearchResults(
 	}
 	if (filters.studentName) {
 		ensureStudents();
-		whereParts.push('s.name LIKE ?');
-		values.push(containsSearchPattern(filters.studentName)!);
+		whereParts.push('MATCH(s.name) AGAINST(? IN BOOLEAN MODE)');
+		values.push(fulltextSearchPattern(filters.studentName)!);
 	}
 	if (filters.studyProgramName) {
 		ensureStudyPrograms();
-		whereParts.push('sp.name LIKE ?');
-		values.push(containsSearchPattern(filters.studyProgramName)!);
+		whereParts.push('MATCH(sp.name) AGAINST(? IN BOOLEAN MODE)');
+		values.push(fulltextSearchPattern(filters.studyProgramName)!);
 	}
 	if (filters.courseName) {
 		ensureCourses();
-		whereParts.push('c.name LIKE ?');
-		values.push(containsSearchPattern(filters.courseName)!);
+		whereParts.push('MATCH(c.name) AGAINST(? IN BOOLEAN MODE)');
+		values.push(fulltextSearchPattern(filters.courseName)!);
 	}
 	if (filters.lecturerName) {
 		ensureLecturers();
-		whereParts.push('l.name LIKE ?');
-		values.push(containsSearchPattern(filters.lecturerName)!);
+		whereParts.push('MATCH(l.name) AGAINST(? IN BOOLEAN MODE)');
+		values.push(fulltextSearchPattern(filters.lecturerName)!);
 	}
 	if (filters.classRoomName) {
 		ensureClassRooms();
-		whereParts.push('cr.name LIKE ?');
-		values.push(containsSearchPattern(filters.classRoomName)!);
+		whereParts.push('MATCH(cr.name) AGAINST(? IN BOOLEAN MODE)');
+		values.push(fulltextSearchPattern(filters.classRoomName)!);
 	}
 	if (filters.scheduleDay) {
 		whereParts.push('e.schedule_day = ?');
@@ -499,15 +500,15 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 	if (filters.academicYear)
 		where.push(['academic_year', 'LIKE', containsSearchPattern(filters.academicYear)!]);
 	if (filters.studentName)
-		where.push(['student_name', 'LIKE', containsSearchPattern(filters.studentName)!]);
+		where.push(['student_name', 'FULLTEXT', fulltextSearchPattern(filters.studentName)!]);
 	if (filters.studyProgramName)
-		where.push(['study_program_name', 'LIKE', containsSearchPattern(filters.studyProgramName)!]);
+		where.push(['study_program_name', 'FULLTEXT', fulltextSearchPattern(filters.studyProgramName)!]);
 	if (filters.courseName)
-		where.push(['course_name', 'LIKE', containsSearchPattern(filters.courseName)!]);
+		where.push(['course_name', 'FULLTEXT', fulltextSearchPattern(filters.courseName)!]);
 	if (filters.lecturerName)
-		where.push(['lecturer_name', 'LIKE', containsSearchPattern(filters.lecturerName)!]);
+		where.push(['lecturer_name', 'FULLTEXT', fulltextSearchPattern(filters.lecturerName)!]);
 	if (filters.classRoomName)
-		where.push(['class_room_name', 'LIKE', containsSearchPattern(filters.classRoomName)!]);
+		where.push(['class_room_name', 'FULLTEXT', fulltextSearchPattern(filters.classRoomName)!]);
 	if (filters.scheduleDay) where.push(['schedule_day', '=', filters.scheduleDay]);
 	if (filters.letterGrade) where.push(['letter_grade', '=', filters.letterGrade]);
 	const limit = getListQueryLimit(filters.preview ? 60 : 40);
@@ -525,7 +526,7 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 			}),
 			prefetchEnrollmentSearchResults(
 				'students',
-				'(s.name LIKE ? OR s.name LIKE ?)',
+				'(MATCH(s.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(s.name) AGAINST(? IN BOOLEAN MODE))',
 				[qPrefix, qWordPrefix],
 				filters,
 				user,
@@ -534,7 +535,7 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 			),
 			prefetchEnrollmentSearchResults(
 				'courses',
-				'(c.name LIKE ? OR c.name LIKE ?)',
+				'(MATCH(c.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(c.name) AGAINST(? IN BOOLEAN MODE))',
 				[qPrefix, qWordPrefix],
 				filters,
 				user,
@@ -543,7 +544,7 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 			),
 			prefetchEnrollmentSearchResults(
 				'lecturers',
-				'(l.name LIKE ? OR l.name LIKE ?)',
+				'(MATCH(l.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(l.name) AGAINST(? IN BOOLEAN MODE))',
 				[qPrefix, qWordPrefix],
 				filters,
 				user,
@@ -552,7 +553,7 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 			),
 			prefetchEnrollmentSearchResults(
 				'enrollments',
-				'(cr.name LIKE ? OR cr.name LIKE ?)',
+				'(MATCH(cr.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(cr.name) AGAINST(? IN BOOLEAN MODE))',
 				[qPrefix, qWordPrefix],
 				filters,
 				user,
@@ -600,8 +601,8 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 		return toLimitedListResult(
 			await prefetchEnrollmentSearchResults(
 				'enrollments',
-				's.name LIKE ?',
-				[containsSearchPattern(filters.studentName)!],
+				'MATCH(s.name) AGAINST(? IN BOOLEAN MODE)',
+				[fulltextSearchPattern(filters.studentName)!],
 				filters,
 				user,
 				limit,
@@ -616,8 +617,8 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 		return toLimitedListResult(
 			await prefetchEnrollmentSearchResults(
 				'enrollments',
-				'sp.name LIKE ?',
-				[containsSearchPattern(filters.studyProgramName)!],
+				'MATCH(sp.name) AGAINST(? IN BOOLEAN MODE)',
+				[fulltextSearchPattern(filters.studyProgramName)!],
 				filters,
 				user,
 				limit,
@@ -632,8 +633,8 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 		return toLimitedListResult(
 			await prefetchEnrollmentSearchResults(
 				'courses',
-				'c.name LIKE ?',
-				[containsSearchPattern(filters.courseName)!],
+				'MATCH(c.name) AGAINST(? IN BOOLEAN MODE)',
+				[fulltextSearchPattern(filters.courseName)!],
 				filters,
 				user,
 				limit,
@@ -647,8 +648,8 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 		return toLimitedListResult(
 			await prefetchEnrollmentSearchResults(
 				'lecturers',
-				'l.name LIKE ?',
-				[containsSearchPattern(filters.lecturerName)!],
+				'MATCH(l.name) AGAINST(? IN BOOLEAN MODE)',
+				[fulltextSearchPattern(filters.lecturerName)!],
 				filters,
 				user,
 				limit,
@@ -662,8 +663,8 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 		return toLimitedListResult(
 			await prefetchEnrollmentSearchResults(
 				'enrollments',
-				'cr.name LIKE ?',
-				[containsSearchPattern(filters.classRoomName)!],
+				'MATCH(cr.name) AGAINST(? IN BOOLEAN MODE)',
+				[fulltextSearchPattern(filters.classRoomName)!],
 				filters,
 				user,
 				limit,

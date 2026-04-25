@@ -12,6 +12,7 @@ import { invalidateConflictAuditCache } from '$lib/server/conflict-audit';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
 	containsSearchPattern,
+	fulltextSearchPattern,
 	decodeKeysetCursor,
 	encodeKeysetCursor,
 	prefixSearchPattern,
@@ -74,9 +75,9 @@ export const searchCourses = query(searchCoursesSchema, async (filters) => {
 	if (filters.studyProgramId) where.push(['study_program_id', '=', filters.studyProgramId]);
 	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
 	if (filters.lecturerName)
-		where.push(['lecturer_name', 'LIKE', containsSearchPattern(filters.lecturerName)!]);
+		where.push(['lecturer_name', 'FULLTEXT', fulltextSearchPattern(filters.lecturerName)!]);
 	if (filters.studyProgramName)
-		where.push(['study_program_name', 'LIKE', containsSearchPattern(filters.studyProgramName)!]);
+		where.push(['study_program_name', 'FULLTEXT', fulltextSearchPattern(filters.studyProgramName)!]);
 	if (filters.minCredits != null && filters.maxCredits != null) {
 		where.push(['credits', 'BETWEEN', filters.minCredits, filters.maxCredits]);
 	} else if (filters.minCredits != null) {

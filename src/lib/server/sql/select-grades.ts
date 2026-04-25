@@ -74,7 +74,7 @@ const selectFragments = {
 
 const NumericOperatorList = ['=', '<>', '>', '<', '>=', '<='] as const;
 type NumericOperator = typeof NumericOperatorList[number];
-type StringOperator = '=' | '<>' | '>' | '<' | '>=' | '<=' | 'LIKE';
+type StringOperator = '=' | '<>' | '>' | '<' | '>=' | '<=' | 'LIKE' | 'FULLTEXT';
 type SetOperator = 'IN' | 'NOT IN';
 type BetweenOperator = 'BETWEEN';
 
@@ -347,6 +347,13 @@ function whereCondition(condition: SelectGradesWhere): WhereConditionResult | un
     if (operator == 'LIKE') {
         return {
             sql: `${selectFragment} LIKE ?`,
+            hasValue: condition[2] != null,
+            values: [condition[2]]
+        }
+    }
+    if (operator == 'FULLTEXT') {
+        return {
+            sql: `MATCH(${selectFragment}) AGAINST(? IN BOOLEAN MODE)`,
             hasValue: condition[2] != null,
             values: [condition[2]]
         }

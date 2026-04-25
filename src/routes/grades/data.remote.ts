@@ -14,6 +14,7 @@ import {
 import { requireRole, requireUser } from '$lib/server/auth';
 import {
 	containsSearchPattern,
+	fulltextSearchPattern,
 	prefixSearchPattern,
 	wordPrefixSearchPattern
 } from '$lib/server/search';
@@ -296,8 +297,8 @@ async function prefetchGradeSearchResults(
 	}
 	if (filters.studentName) {
 		ensureStudents();
-		whereParts.push('s.name LIKE ?');
-		values.push(containsSearchPattern(filters.studentName)!);
+		whereParts.push('MATCH(s.name) AGAINST(? IN BOOLEAN MODE)');
+		values.push(fulltextSearchPattern(filters.studentName)!);
 	}
 	if (filters.studentEmail) {
 		ensureStudents();
@@ -306,8 +307,8 @@ async function prefetchGradeSearchResults(
 	}
 	if (filters.studyProgramName) {
 		ensureStudyPrograms();
-		whereParts.push('sp.name LIKE ?');
-		values.push(containsSearchPattern(filters.studyProgramName)!);
+		whereParts.push('MATCH(sp.name) AGAINST(? IN BOOLEAN MODE)');
+		values.push(fulltextSearchPattern(filters.studyProgramName)!);
 	}
 	if (filters.courseId) {
 		ensureEnrollments();
@@ -316,8 +317,8 @@ async function prefetchGradeSearchResults(
 	}
 	if (filters.courseName) {
 		ensureCourses();
-		whereParts.push('c.name LIKE ?');
-		values.push(containsSearchPattern(filters.courseName)!);
+		whereParts.push('MATCH(c.name) AGAINST(? IN BOOLEAN MODE)');
+		values.push(fulltextSearchPattern(filters.courseName)!);
 	}
 	if (filters.lecturerId) {
 		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
@@ -372,14 +373,14 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 	if (filters.enrollmentId) where.push(['enrollment_id', '=', filters.enrollmentId]);
 	if (filters.studentId) where.push(['student_id', '=', filters.studentId]);
 	if (filters.studentName)
-		where.push(['student_name', 'LIKE', containsSearchPattern(filters.studentName)!]);
+		where.push(['student_name', 'FULLTEXT', fulltextSearchPattern(filters.studentName)!]);
 	if (filters.studentEmail)
 		where.push(['student_email', 'LIKE', containsSearchPattern(filters.studentEmail)!]);
 	if (filters.studyProgramName)
-		where.push(['study_program_name', 'LIKE', containsSearchPattern(filters.studyProgramName)!]);
+		where.push(['study_program_name', 'FULLTEXT', fulltextSearchPattern(filters.studyProgramName)!]);
 	if (filters.courseId) where.push(['course_id', '=', filters.courseId]);
 	if (filters.courseName)
-		where.push(['course_name', 'LIKE', containsSearchPattern(filters.courseName)!]);
+		where.push(['course_name', 'FULLTEXT', fulltextSearchPattern(filters.courseName)!]);
 	if (filters.lecturerId) {
 		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
 			filters.lecturerId
@@ -417,7 +418,7 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 			}),
 			prefetchGradeSearchResults(
 				'grades',
-				'(s.name LIKE ? OR s.name LIKE ?)',
+				'(MATCH(s.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(s.name) AGAINST(? IN BOOLEAN MODE))',
 				[qPrefix, qWordPrefix],
 				filters,
 				user,
@@ -479,8 +480,8 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 		return toLimitedListResult(
 			await prefetchGradeSearchResults(
 				'grades',
-				's.name LIKE ?',
-				[containsSearchPattern(filters.studentName)!],
+				'MATCH(s.name) AGAINST(? IN BOOLEAN MODE)',
+				[fulltextSearchPattern(filters.studentName)!],
 				filters,
 				user,
 				limit,
@@ -496,8 +497,8 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 		return toLimitedListResult(
 			await prefetchGradeSearchResults(
 				'grades',
-				'sp.name LIKE ?',
-				[containsSearchPattern(filters.studyProgramName)!],
+				'MATCH(sp.name) AGAINST(? IN BOOLEAN MODE)',
+				[fulltextSearchPattern(filters.studyProgramName)!],
 				filters,
 				user,
 				limit,

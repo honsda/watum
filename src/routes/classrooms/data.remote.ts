@@ -14,6 +14,7 @@ import { requireRole } from '$lib/server/auth';
 import { invalidateConflictAuditCache } from '$lib/server/conflict-audit';
 import {
 	containsSearchPattern,
+	fulltextSearchPattern,
 	prefixSearchPattern,
 	wordPrefixSearchPattern
 } from '$lib/server/search';

@@ -12,6 +12,7 @@ import { requireRole } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
 	containsSearchPattern,
+	fulltextSearchPattern,
 	prefixSearchPattern,
 	wordPrefixSearchPattern
 } from '$lib/server/search';
@@ -68,7 +69,7 @@ export const searchStudyPrograms = query(searchStudyProgramsSchema, async (filte
 	if (filters.head) where.push(['head', 'LIKE', containsSearchPattern(filters.head)!]);
 	if (filters.facultyId) where.push(['faculty_id', '=', filters.facultyId]);
 	if (filters.facultyName)
-		where.push(['faculty_name', 'LIKE', containsSearchPattern(filters.facultyName)!]);
+		where.push(['faculty_name', 'FULLTEXT', fulltextSearchPattern(filters.facultyName)!]);
 	if (filters.minStudentCount != null && filters.maxStudentCount != null) {
 		where.push(['student_count', 'BETWEEN', filters.minStudentCount, filters.maxStudentCount]);
 	} else if (filters.minStudentCount != null) {

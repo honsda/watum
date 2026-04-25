@@ -16,6 +16,7 @@ import { invalidateConflictAuditCache } from '$lib/server/conflict-audit';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
 	containsSearchPattern,
+	fulltextSearchPattern,
 	prefixSearchPattern,
 	wordPrefixSearchPattern
 } from '$lib/server/search';

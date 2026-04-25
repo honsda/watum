@@ -16,6 +16,7 @@ import { invalidateConflictAuditCache } from '$lib/server/conflict-audit';
 import { generateNRP } from '$lib/server/NRP-generator';
 import {
 	containsSearchPattern,
+	fulltextSearchPattern,
 	decodeKeysetCursor,
 	encodeKeysetCursor,
 	prefixSearchPattern
@@ -83,10 +84,10 @@ export const searchStudents = query(searchStudentsSchema, async (filters) => {
 	if (filters.email) where.push(['email', 'LIKE', containsSearchPattern(filters.email)!]);
 	if (filters.studyProgramId) where.push(['study_program_id', '=', filters.studyProgramId]);
 	if (filters.studyProgramName)
-		where.push(['study_program_name', 'LIKE', containsSearchPattern(filters.studyProgramName)!]);
+		where.push(['study_program_name', 'FULLTEXT', fulltextSearchPattern(filters.studyProgramName)!]);
 	if (filters.facultyId) where.push(['faculty_id', '=', filters.facultyId]);
 	if (filters.facultyName)
-		where.push(['faculty_name', 'LIKE', containsSearchPattern(filters.facultyName)!]);
+		where.push(['faculty_name', 'FULLTEXT', fulltextSearchPattern(filters.facultyName)!]);
 	if (filters.minYearAdmitted != null && filters.maxYearAdmitted != null) {
 		where.push(['year_admitted', 'BETWEEN', filters.minYearAdmitted, filters.maxYearAdmitted]);
 	} else if (filters.minYearAdmitted != null) {

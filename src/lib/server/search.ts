@@ -16,6 +16,20 @@ export function containsSearchPattern(value: string | null | undefined): string 
 	return `%${trimmed}%`;
 }
 
+/**
+ * Build a MariaDB FULLTEXT boolean-mode search string.
+ * Splits on whitespace and appends * to each word for prefix matching.
+ * Example: "John Doe" -> "John* Doe*"
+ */
+export function fulltextSearchPattern(value: string | null | undefined): string | undefined {
+	const trimmed = value?.trim();
+	if (!trimmed) return undefined;
+	return trimmed
+		.split(/\s+/)
+		.map((w) => w + '*')
+		.join(' ');
+}
+
 type KeysetCursorPayload = {
 	kind: string;
 	value: string;
