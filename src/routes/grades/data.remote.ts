@@ -156,6 +156,16 @@ function resolveOptimalGradeBase(filters: GradeSearchFilters): GradePrefetchBase
 	return 'grades';
 }
 
+async function hydrateGradesByIds(ids: string[]) {
+	if (!ids.length) return [];
+	const rows = await selectGrades(getPool(), {
+		select: gradeListSelect,
+		where: [['id', 'IN', ids]]
+	});
+	const rowsById = new Map(rows.map((row) => [row.id, row]));
+	return ids.map((id) => rowsById.get(id)).filter((row): row is SelectGradesResult => Boolean(row));
+}
+
 async function prefetchGradeSearchResults(
 	base: GradePrefetchBase,
 	predicateSql: string,
