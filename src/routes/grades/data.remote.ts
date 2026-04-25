@@ -51,17 +51,27 @@ async function selectGradeListRows(
 	].join(' ');
 
 	if (user.role === 'STUDENT') {
+		// Pre-query enrollment IDs to avoid scanning all 1.9M grades rows
+		// and joining enrollments for every row.
+		const [enrollmentRows] = await getPool().query(
+			'SELECT id FROM enrollments WHERE student_id = ? ORDER BY id ASC',
+			[user.studentId!]
+		);
+		const enrollmentIds = (enrollmentRows as Array<{ id: string }>).map((row) => row.id);
+		if (!enrollmentIds.length) return [];
 		const sql = [
 			selectSql,
-			'FROM grades g FORCE INDEX (PRIMARY)',
+			'FROM grades g',
 			'INNER JOIN enrollments e ON g.enrollment_id = e.id',
 			'INNER JOIN students s ON e.student_id = s.id',
 			'INNER JOIN courses c ON e.course_id = c.id',
-			`WHERE e.student_id = ?${afterId ? ' AND g.id > ?' : ''}`,
+			`WHERE g.enrollment_id IN (?)${afterId ? ' AND g.id > ?' : ''}`,
 			'ORDER BY g.id ASC',
 			'LIMIT ?'
 		].join(' ');
-		const values = afterId ? [user.studentId!, afterId, limit + 1] : [user.studentId!, limit + 1];
+		const values = afterId
+			? [enrollmentIds, afterId, limit + 1]
+			: [enrollmentIds, limit + 1];
 		const [rows] = await getPool().query(sql, values);
 		return rows as SelectGradesResult[];
 	}

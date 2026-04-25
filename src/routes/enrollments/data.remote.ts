@@ -460,7 +460,20 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 	if (user.role === 'STUDENT') {
 		where.push(['student_id', '=', user.studentId!]);
 	} else if (user.role === 'LECTURER') {
-		where.push(['lecturer_id', '=', user.lecturerId!]);
+		// Same optimization as filters.lecturerId: pre-query courses to avoid
+		// a slow c.lecturer_id join filter on 2M+ rows.
+		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
+			user.lecturerId!
+		]);
+		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
+		if (!courseIds.length) {
+			return toLimitedListResult([], limit, (item) => item.id ?? null);
+		}
+		if (courseIds.length === 1) {
+			where.push(['course_id', '=', courseIds[0]!]);
+		} else {
+			where.push(['course_id', 'IN', courseIds]);
+		}
 	}
 	if (filters.id) where.push(['id', '=', filters.id]);
 	if (filters.studentId) where.push(['student_id', '=', filters.studentId]);
