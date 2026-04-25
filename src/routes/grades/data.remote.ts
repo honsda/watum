@@ -392,7 +392,15 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 				true,
 				['students']
 			),
-			prefetchGradesByCourseNamePrefix(filters, user, qPrefix, qWordPrefix, limit, afterId),
+			prefetchGradeSearchResults(
+				'courses',
+				'(MATCH(c.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(c.name) AGAINST(? IN BOOLEAN MODE))',
+				[qPrefix, qWordPrefix],
+				filters,
+				user,
+				limit,
+				afterId
+			),
 			prefetchGradeSearchResults(
 				'students',
 				's.email LIKE ?',
@@ -409,20 +417,6 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 			})
 		]);
 		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
-	}
-	if (filters.courseName) {
-		return toLimitedListResult(
-			await prefetchGradesByCourseNamePrefix(
-				filters,
-				user,
-				containsSearchPattern(filters.courseName)!,
-				containsSearchPattern(filters.courseName)!,
-				limit,
-				afterId
-			),
-			limit,
-			(item) => item.id ?? null
-		);
 	}
 	if (filters.studentEmail) {
 		return toLimitedListResult(
