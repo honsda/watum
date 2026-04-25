@@ -237,7 +237,7 @@ function mapArrayToSelectStudentsResult(data: any, select?: SelectStudentsSelect
 }
 
 function appendSelect(sql: string, selectField: string) {
-    if (sql == 'SELECT') {
+    if (!sql.includes(',')) {
         return sql + EOL + selectField;
     }
     else {
