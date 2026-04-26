@@ -3,22 +3,22 @@ import type { Connection } from 'mysql2/promise';
 export type SelectSchedulesConflictParams = {
     classRoomId: string;
     day: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
-    startTime: Date;
-    endTime: Date;
+    startTime: Date | string;
+    endTime: Date | string;
     excludeScheduleId?: string;
 }
 
 export type SelectSchedulesConflictResult = {
     id: string;
-    start_time: Date;
-    end_time: Date;
+    start_time: string;
+    end_time: string;
 }
 
 export async function selectSchedulesConflict(connection: Connection, params: SelectSchedulesConflictParams): Promise<SelectSchedulesConflictResult[]> {
     let sql = `
     SELECT id, start_time, end_time FROM schedules
     WHERE class_room_id = ? AND day = ?
-    AND TIME(start_time) < TIME(?) AND TIME(end_time) > TIME(?)
+    AND start_time < ? AND end_time > ?
     `
     const values: unknown[] = [params.classRoomId, params.day, params.endTime, params.startTime];
 
@@ -27,7 +27,7 @@ export async function selectSchedulesConflict(connection: Connection, params: Se
         values.push(params.excludeScheduleId);
     }
 
-    sql += ` ORDER BY TIME(start_time) ASC`;
+    sql += ` ORDER BY start_time ASC`;
 
     return connection.query({sql, rowsAsArray: true}, values)
         .then(res => res[0] as any[])

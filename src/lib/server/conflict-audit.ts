@@ -12,6 +12,7 @@ export type ConflictAuditFilters = {
 	day?: ConflictAuditMember['day'];
 	focusEnrollmentIds?: string[];
 	limitGroups?: number;
+	memberSampleSize?: number;
 };
 
 export type ConflictAuditMember = {
@@ -28,8 +29,8 @@ export type ConflictAuditMember = {
 	semester: string;
 	academicYear: string;
 	day: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
-	startTime: Date;
-	endTime: Date;
+	startTime: string;
+	endTime: string;
 };
 
 export type ConflictAuditGroup = {
@@ -56,29 +57,36 @@ export type ConflictAuditResult = {
 
 type AuditScanRow = {
 	enrollment_id: string;
+	schedule_id: string;
+	student_id: string;
+	student_name: string;
+	course_id: string;
+	course_name: string;
+	lecturer_id: string;
+	lecturer_name: string;
+	class_room_id: string;
+	class_room_name: string;
+	semester: string;
+	academic_year: string;
 	schedule_audit_sk: number;
 	resource_id: number;
 	academic_year_start: number;
 	semester_sort: number;
 	day: ConflictAuditMember['day'];
-	start_time: Date;
-	end_time: Date;
+	start_time: string;
+	end_time: string;
 };
 
 type ConflictAuditGroupSeed = {
 	conflictType: ConflictAuditType;
 	resourceId: string;
+	academicYearStart: number;
+	semesterSort: number;
 	day: ConflictAuditMember['day'];
+	startTime: string;
+	endTime: string;
+	memberCount: number;
 	memberRows: AuditScanRow[];
-};
-
-const DAY_RANK: Record<ConflictAuditMember['day'], number> = {
-	SENIN: 1,
-	SELASA: 2,
-	RABU: 3,
-	KAMIS: 4,
-	JUMAT: 5,
-	SABTU: 6
 };
 
 type HydratedMemberRow = {
@@ -95,8 +103,8 @@ type HydratedMemberRow = {
 	semester: string;
 	academic_year: string;
 	day: ConflictAuditMember['day'];
-	start_time: Date;
-	end_time: Date;
+	start_time: string;
+	end_time: string;
 };
 
 type CacheEntry = {
@@ -106,6 +114,8 @@ type CacheEntry = {
 };
 
 const AUDIT_CACHE_TTL_MS = 60_000;
+const DEFAULT_HYDRATED_MEMBERS_PER_GROUP = 40;
+const MAX_HYDRATED_MEMBERS_PER_GROUP = 40;
 const auditCache = new Map<string, CacheEntry>();
 const inFlightAudits = new Map<string, Promise<ConflictAuditResult>>();
 let auditCacheVersion = 0;
@@ -120,8 +130,15 @@ function createAuditCacheKey(filters: ConflictAuditFilters) {
 		classRoomId: filters.classRoomId ?? null,
 		day: filters.day ?? null,
 		focusEnrollmentIds: [...(filters.focusEnrollmentIds ?? [])].sort(),
-		limitGroups: filters.limitGroups ?? 200
+		limitGroups: filters.limitGroups ?? null,
+		memberSampleSize: filters.memberSampleSize ?? null
 	});
+}
+
+function getMemberSampleSize(filters: ConflictAuditFilters) {
+	if (filters.memberSampleSize == null) return null;
+	const requested = filters.memberSampleSize;
+	return Math.min(Math.max(Math.floor(requested), 1), MAX_HYDRATED_MEMBERS_PER_GROUP);
 }
 
 export function invalidateConflictAuditCache() {
@@ -156,43 +173,6 @@ function mapHydratedMember(row: HydratedMemberRow): ConflictAuditMember {
 		startTime: row.start_time,
 		endTime: row.end_time
 	};
-}
-
-function buildWhere(filters: ConflictAuditFilters, resourceKind: ConflictAuditType) {
-	const whereParts = ['1 = 1'];
-	const values: unknown[] = [];
-
-	if (filters.academicYear) {
-		whereParts.push('e.academic_year = ?');
-		values.push(filters.academicYear);
-	}
-	if (filters.semester) {
-		whereParts.push('e.semester = ?');
-		values.push(filters.semester);
-	}
-	if (filters.courseId) {
-		whereParts.push('e.course_id = ?');
-		values.push(filters.courseId);
-	}
-	if (filters.classRoomId) {
-		whereParts.push('e.class_room_id = ?');
-		values.push(filters.classRoomId);
-	}
-	if (filters.day) {
-		whereParts.push('e.schedule_day = ?');
-		values.push(filters.day);
-	}
-	if (filters.lecturerId) {
-		if (resourceKind === 'lecturer') {
-			whereParts.push('c.lecturer_id = ?');
-			values.push(filters.lecturerId);
-		} else {
-			whereParts.push('e.course_id IN (SELECT id FROM courses WHERE lecturer_id = ?)');
-			values.push(filters.lecturerId);
-		}
-	}
-
-	return { whereSql: whereParts.join(' AND '), values };
 }
 
 function buildEnrollmentOnlyWhere(filters: ConflictAuditFilters) {
@@ -232,96 +212,36 @@ function buildEnrollmentOnlyWhere(filters: ConflictAuditFilters) {
 	return { whereSql: whereParts.join(' AND '), values };
 }
 
-function finalizePartition(
-	rows: AuditScanRow[],
-	conflictType: ConflictAuditType,
-	seeds: ConflictAuditGroupSeed[]
+function getConflictResourceColumn(conflictType: ConflictAuditType) {
+	return conflictType === 'room'
+		? 'e.class_room_audit_sk'
+		: conflictType === 'student'
+			? 'e.student_audit_sk'
+			: 'e.lecturer_audit_sk';
+}
+
+function getConflictForceIndex(conflictType: ConflictAuditType) {
+	return conflictType === 'room'
+		? 'idx_enrollments_room_conflict'
+		: conflictType === 'student'
+			? 'idx_enrollments_student_conflict'
+			: 'idx_enrollments_lecturer_conflict';
+}
+
+function seedKey(
+	seed: Pick<
+		ConflictAuditGroupSeed,
+		'resourceId' | 'academicYearStart' | 'semesterSort' | 'day' | 'startTime' | 'endTime'
+	>
 ) {
-	if (rows.length < 2) return;
-	const sortedRows = [...rows].sort((left, right) => {
-		const dayDiff = DAY_RANK[left.day] - DAY_RANK[right.day];
-		if (dayDiff !== 0) return dayDiff;
-		const startDiff = timeToSeconds(left.start_time) - timeToSeconds(right.start_time);
-		if (startDiff !== 0) return startDiff;
-		const endDiff = timeToSeconds(left.end_time) - timeToSeconds(right.end_time);
-		if (endDiff !== 0) return endDiff;
-		return left.enrollment_id.localeCompare(right.enrollment_id);
-	});
-
-	const parents = sortedRows.map((_row, index) => index);
-	const ranks = sortedRows.map(() => 0);
-
-	const find = (index: number): number => {
-		if (parents[index] === index) return index;
-		parents[index] = find(parents[index]);
-		return parents[index];
-	};
-
-	const unite = (leftIndex: number, rightIndex: number) => {
-		const leftRoot = find(leftIndex);
-		const rightRoot = find(rightIndex);
-		if (leftRoot === rightRoot) return;
-		if ((ranks[leftRoot] ?? 0) < (ranks[rightRoot] ?? 0)) {
-			parents[leftRoot] = rightRoot;
-			return;
-		}
-		if ((ranks[leftRoot] ?? 0) > (ranks[rightRoot] ?? 0)) {
-			parents[rightRoot] = leftRoot;
-			return;
-		}
-		parents[rightRoot] = leftRoot;
-		ranks[leftRoot] = (ranks[leftRoot] ?? 0) + 1;
-	};
-
-	let active: number[] = [];
-	let activeDay: ConflictAuditMember['day'] | null = null;
-
-	for (let index = 0; index < sortedRows.length; index += 1) {
-		const row = sortedRows[index];
-		const currentStart = timeToSeconds(row.start_time);
-		const currentEnd = timeToSeconds(row.end_time);
-
-		if (row.day !== activeDay) {
-			activeDay = row.day;
-			active = [];
-		}
-
-		active = active.filter(
-			(activeIndex) => timeToSeconds(sortedRows[activeIndex].end_time) > currentStart
-		);
-
-		for (const activeIndex of active) {
-			const activeRow = sortedRows[activeIndex];
-			if (
-				timeToSeconds(activeRow.start_time) < currentEnd &&
-				timeToSeconds(activeRow.end_time) > currentStart
-			) {
-				unite(activeIndex, index);
-			}
-		}
-
-		active.push(index);
-	}
-
-	const groupsByRoot = new Map<number, AuditScanRow[]>();
-	for (let index = 0; index < sortedRows.length; index += 1) {
-		const root = find(index);
-		const group = groupsByRoot.get(root) ?? [];
-		group.push(sortedRows[index]);
-		groupsByRoot.set(root, group);
-	}
-
-	for (const memberRows of groupsByRoot.values()) {
-		if (memberRows.length < 2) continue;
-		const [firstRow] = memberRows;
-		if (!firstRow) continue;
-		seeds.push({
-			conflictType,
-			resourceId: String(firstRow.resource_id),
-			day: firstRow.day,
-			memberRows
-		});
-	}
+	return [
+		seed.resourceId,
+		seed.academicYearStart,
+		seed.semesterSort,
+		seed.day,
+		seed.startTime,
+		seed.endTime
+	].join(':');
 }
 
 async function collectConflictGroupSeeds(
@@ -330,20 +250,8 @@ async function collectConflictGroupSeeds(
 	filters: ConflictAuditFilters
 ) {
 	const { whereSql, values } = buildEnrollmentOnlyWhere(filters);
-
-	const resourceCol =
-		conflictType === 'room'
-			? 'e.class_room_audit_sk'
-			: conflictType === 'student'
-				? 'e.student_audit_sk'
-				: 'e.lecturer_audit_sk';
-
-	const forceIndex =
-		conflictType === 'room'
-			? 'idx_enrollments_room_conflict'
-			: conflictType === 'student'
-				? 'idx_enrollments_student_conflict'
-				: 'idx_enrollments_lecturer_conflict';
+	const resourceCol = getConflictResourceColumn(conflictType);
+	const forceIndex = getConflictForceIndex(conflictType);
 
 	// Fast index-only aggregation using denormalized schedule columns.
 	// The covering index (idx_enrollments_*_conflict) lets MySQL satisfy
@@ -359,12 +267,12 @@ async function collectConflictGroupSeeds(
 	const hasExtraFilters = whereSql !== '1 = 1';
 	const groupSql = [
 		`SELECT ${resourceCol} AS resource_id, e.academic_year_start, e.semester_sort,`,
-		`  e.schedule_day AS day, MIN(e.schedule_start_time) AS start_time, MIN(e.schedule_end_time) AS end_time,`,
+		`  e.schedule_day AS day, e.schedule_start_time AS start_time, e.schedule_end_time AS end_time,`,
 		`  COUNT(DISTINCT e.course_id) AS distinct_courses, COUNT(*) AS member_count`,
 		`FROM enrollments e${hasExtraFilters ? '' : ` FORCE INDEX (${forceIndex})`}`,
 		`WHERE ${whereSql}`,
 		`GROUP BY ${resourceCol}, e.academic_year_start, e.semester_sort,`,
-		`  e.schedule_day, TIME(e.schedule_start_time), TIME(e.schedule_end_time)`,
+		`  e.schedule_day, e.schedule_start_time, e.schedule_end_time`,
 		`HAVING COUNT(DISTINCT e.course_id) > 1`
 	].join(' ');
 
@@ -374,8 +282,8 @@ async function collectConflictGroupSeeds(
 		academic_year_start: number;
 		semester_sort: number;
 		day: ConflictAuditMember['day'];
-		start_time: Date;
-		end_time: Date;
+		start_time: string;
+		end_time: string;
 		member_count: number;
 	}>;
 
@@ -383,87 +291,224 @@ async function collectConflictGroupSeeds(
 		return [] as ConflictAuditGroupSeed[];
 	}
 
-	// Fetch member rows for all conflict groups in one batched query.
-	// Batch into chunks to avoid excessively long OR chains.
-	const BATCH_SIZE = 500;
-	const allMemberRows: AuditScanRow[] = [];
-
-	for (let i = 0; i < groups.length; i += BATCH_SIZE) {
-		const batch = groups.slice(i, i + BATCH_SIZE);
-		const conditions = batch
-			.map(
-				() =>
-					`(${resourceCol} = ? AND e.academic_year_start = ? AND e.semester_sort = ? AND e.schedule_day = ? AND TIME(e.schedule_start_time) = TIME(?) AND TIME(e.schedule_end_time) = TIME(?))`
-			)
-			.join(' OR ');
-		const memberValues = batch.flatMap((g) => [
-			g.resource_id,
-			g.academic_year_start,
-			g.semester_sort,
-			g.day,
-			g.start_time,
-			g.end_time
-		]);
-
-		const memberSql = [
-			`SELECT e.id AS enrollment_id, e.schedule_audit_sk, ${resourceCol} AS resource_id,`,
-			`  e.academic_year_start, e.semester_sort, e.schedule_day AS day,`,
-			`  e.schedule_start_time AS start_time, e.schedule_end_time AS end_time`,
-			`FROM enrollments e FORCE INDEX (${forceIndex})`,
-			`WHERE ${conditions}`
-		].join(' ');
-
-		const [memberRows] = await pool.query(memberSql, memberValues);
-		allMemberRows.push(...(memberRows as AuditScanRow[]));
-	}
-
-	// Group by partition and run finalizePartition (handles exact-match & overlap)
-	const rowsByPartition = new Map<string, AuditScanRow[]>();
-	for (const row of allMemberRows) {
-		const partitionKey = `${row.resource_id}:${row.academic_year_start}:${row.semester_sort}`;
-		const arr = rowsByPartition.get(partitionKey) ?? [];
-		arr.push(row);
-		rowsByPartition.set(partitionKey, arr);
-	}
-
-	const seeds: ConflictAuditGroupSeed[] = [];
-	for (const partitionRows of rowsByPartition.values()) {
-		finalizePartition(partitionRows, conflictType, seeds);
-	}
-
-	return seeds;
+	return groups.map((group) => ({
+		conflictType,
+		resourceId: String(group.resource_id),
+		academicYearStart: group.academic_year_start,
+		semesterSort: group.semester_sort,
+		day: group.day,
+		startTime: group.start_time,
+		endTime: group.end_time,
+		memberCount: group.member_count,
+		memberRows: []
+	}));
 }
 
-async function hydrateConflictGroupSeeds(pool: Pool, groups: ConflictAuditGroupSeed[]) {
+async function loadMemberRowsForSeeds(
+	pool: Pool,
+	seeds: ConflictAuditGroupSeed[],
+	focusSet = new Set<string>(),
+	memberSampleSize: number | null = DEFAULT_HYDRATED_MEMBERS_PER_GROUP
+) {
+	if (!seeds.length) return seeds;
+
+	const BATCH_SIZE = 40;
+	const rowsBySeedKey = new Map<string, AuditScanRow[]>();
+	const focusIds = [...focusSet];
+	const addRows = (memberRows: AuditScanRow[]) => {
+		for (const row of memberRows) {
+			const key = seedKey({
+				resourceId: String(row.resource_id),
+				academicYearStart: row.academic_year_start,
+				semesterSort: row.semester_sort,
+				day: row.day,
+				startTime: row.start_time,
+				endTime: row.end_time
+			});
+			const rows = rowsBySeedKey.get(key) ?? [];
+			if (!rows.some((existing) => existing.enrollment_id === row.enrollment_id)) {
+				rows.push(row);
+			}
+			rowsBySeedKey.set(key, rows);
+		}
+	};
+
+	for (const conflictType of ['room', 'student', 'lecturer'] as ConflictAuditType[]) {
+		const typedSeeds = seeds.filter((seed) => seed.conflictType === conflictType);
+		if (!typedSeeds.length) continue;
+
+		const resourceCol = getConflictResourceColumn(conflictType);
+		const forceIndex = getConflictForceIndex(conflictType);
+
+		for (let i = 0; i < typedSeeds.length; i += BATCH_SIZE) {
+			const batch = typedSeeds.slice(i, i + BATCH_SIZE);
+			const conditions = batch
+				.map(
+					() =>
+						`(${resourceCol} = ? AND e.academic_year_start = ? AND e.semester_sort = ? AND e.schedule_day = ? AND e.schedule_start_time = ? AND e.schedule_end_time = ?)`
+				)
+				.join(' OR ');
+			const seedValues = batch.flatMap((seed) => [
+				seed.resourceId,
+				seed.academicYearStart,
+				seed.semesterSort,
+				seed.day,
+				seed.startTime,
+				seed.endTime
+			]);
+
+			if (focusIds.length) {
+				const focusSql = [
+					`SELECT e.id AS enrollment_id, e.schedule_id, e.student_id, s.name AS student_name,`,
+					`  e.course_id, c.name AS course_name, c.lecturer_id, l.name AS lecturer_name,`,
+					`  e.class_room_id, cr.name AS class_room_name, e.semester, e.academic_year,`,
+					`  e.schedule_audit_sk, ${resourceCol} AS resource_id,`,
+					`  e.academic_year_start, e.semester_sort, e.schedule_day AS day,`,
+					`  e.schedule_start_time AS start_time, e.schedule_end_time AS end_time`,
+					`FROM enrollments e FORCE INDEX (${forceIndex})`,
+					'INNER JOIN students s ON e.student_id = s.id',
+					'INNER JOIN courses c ON e.course_id = c.id',
+					'INNER JOIN lecturers l ON c.lecturer_id = l.id',
+					'INNER JOIN class_rooms cr ON e.class_room_id = cr.id',
+					`WHERE e.id IN (?) AND (${conditions})`
+				].join(' ');
+
+				const [focusRows] = await pool.query(focusSql, [focusIds, ...seedValues]);
+				addRows(focusRows as AuditScanRow[]);
+			}
+
+			const memberOrderSql = memberSampleSize == null ? '' : 'ORDER BY e.audit_sk';
+			const memberLimitSql = memberSampleSize == null ? '' : `LIMIT ${memberSampleSize}`;
+			const memberSql = batch
+				.map(() =>
+					[
+						`(SELECT e.id AS enrollment_id, e.schedule_id, e.student_id, s.name AS student_name,`,
+						`  e.course_id, c.name AS course_name, c.lecturer_id, l.name AS lecturer_name,`,
+						`  e.class_room_id, cr.name AS class_room_name, e.semester, e.academic_year,`,
+						`  e.schedule_audit_sk, ${resourceCol} AS resource_id,`,
+						`  e.academic_year_start, e.semester_sort, e.schedule_day AS day,`,
+						`  e.schedule_start_time AS start_time, e.schedule_end_time AS end_time`,
+						`FROM enrollments e FORCE INDEX (${forceIndex})`,
+						'INNER JOIN students s ON e.student_id = s.id',
+						'INNER JOIN courses c ON e.course_id = c.id',
+						'INNER JOIN lecturers l ON c.lecturer_id = l.id',
+						'INNER JOIN class_rooms cr ON e.class_room_id = cr.id',
+						`WHERE ${resourceCol} = ?`,
+						'  AND e.academic_year_start = ?',
+						'  AND e.semester_sort = ?',
+						'  AND e.schedule_day = ?',
+						'  AND e.schedule_start_time = ?',
+						'  AND e.schedule_end_time = ?',
+						memberOrderSql,
+						`${memberLimitSql})`
+					].join(' ')
+				)
+				.join(' UNION ALL ');
+
+			const [memberRows] = await pool.query(memberSql, seedValues);
+			addRows(memberRows as AuditScanRow[]);
+		}
+	}
+
+	return seeds.map((seed) => ({
+		...seed,
+		memberRows: rowsBySeedKey.get(seedKey(seed)) ?? []
+	}));
+}
+
+async function filterSeedsByFocus(
+	pool: Pool,
+	seeds: ConflictAuditGroupSeed[],
+	focusSet: Set<string>
+) {
+	if (!focusSet.size || !seeds.length) return seeds;
+
+	const focusIds = [...focusSet];
+	const FOCUS_BATCH = 1000;
+	const focusedSeedKeys = new Set<string>();
+
+	for (let i = 0; i < focusIds.length; i += FOCUS_BATCH) {
+		const batch = focusIds.slice(i, i + FOCUS_BATCH);
+		const [rows] = await pool.query(
+			[
+				'SELECT e.class_room_audit_sk, e.student_audit_sk, e.lecturer_audit_sk,',
+				'e.academic_year_start, e.semester_sort, e.schedule_day AS day,',
+				'e.schedule_start_time AS start_time, e.schedule_end_time AS end_time',
+				'FROM enrollments e',
+				'WHERE e.id IN (?)'
+			].join(' '),
+			[batch]
+		);
+
+		for (const row of rows as Array<{
+			class_room_audit_sk: number;
+			student_audit_sk: number;
+			lecturer_audit_sk: number;
+			academic_year_start: number;
+			semester_sort: number;
+			day: ConflictAuditMember['day'];
+			start_time: string;
+			end_time: string;
+		}>) {
+			const base = {
+				academicYearStart: row.academic_year_start,
+				semesterSort: row.semester_sort,
+				day: row.day,
+				startTime: row.start_time,
+				endTime: row.end_time
+			};
+			focusedSeedKeys.add(
+				`room:${seedKey({ ...base, resourceId: String(row.class_room_audit_sk) })}`
+			);
+			focusedSeedKeys.add(
+				`student:${seedKey({ ...base, resourceId: String(row.student_audit_sk) })}`
+			);
+			focusedSeedKeys.add(
+				`lecturer:${seedKey({ ...base, resourceId: String(row.lecturer_audit_sk) })}`
+			);
+		}
+	}
+
+	return seeds.filter((seed) => focusedSeedKeys.has(`${seed.conflictType}:${seedKey(seed)}`));
+}
+
+function sampleGroupMembers(
+	group: ConflictAuditGroupSeed,
+	focusSet: Set<string>,
+	memberSampleSize: number | null = DEFAULT_HYDRATED_MEMBERS_PER_GROUP
+) {
+	if (memberSampleSize == null) return group.memberRows;
+	if (group.memberRows.length <= memberSampleSize) return group.memberRows;
+
+	const selected = new Map<string, AuditScanRow>();
+	for (const row of group.memberRows) {
+		if (focusSet.has(row.enrollment_id)) {
+			selected.set(row.enrollment_id, row);
+		}
+	}
+
+	for (const row of group.memberRows) {
+		if (selected.size >= memberSampleSize) break;
+		selected.set(row.enrollment_id, row);
+	}
+
+	return [...selected.values()];
+}
+
+function hydrateConflictGroupSeeds(
+	groups: ConflictAuditGroupSeed[],
+	focusSet = new Set<string>(),
+	memberSampleSize: number | null = DEFAULT_HYDRATED_MEMBERS_PER_GROUP
+) {
 	if (!groups.length) return [] as ConflictAuditGroup[];
 
-	const enrollmentIds = [
-		...new Set(groups.flatMap((group) => group.memberRows.map((row) => row.enrollment_id)))
-	];
-	const [rows] = await pool.query(
-		[
-			'SELECT e.id AS enrollment_id, e.schedule_id, e.student_id, s.name AS student_name,',
-			'e.course_id, c.name AS course_name, c.lecturer_id, l.name AS lecturer_name,',
-			'e.class_room_id, cr.name AS class_room_name, e.semester, e.academic_year,',
-			'e.schedule_day AS day, e.schedule_start_time AS start_time, e.schedule_end_time AS end_time',
-			'FROM enrollments e',
-			'INNER JOIN students s ON e.student_id = s.id',
-			'INNER JOIN courses c ON e.course_id = c.id',
-			'INNER JOIN lecturers l ON c.lecturer_id = l.id',
-			'INNER JOIN class_rooms cr ON e.class_room_id = cr.id',
-			'WHERE e.id IN (?)'
-		].join(' '),
-		[enrollmentIds]
+	const sampledRowsByGroup = groups.map((group) =>
+		sampleGroupMembers(group, focusSet, memberSampleSize)
 	);
 
-	const hydratedByEnrollmentId = new Map(
-		(rows as HydratedMemberRow[]).map((row) => [row.enrollment_id, row])
-	);
-
-	return groups.map((group) => {
-		const members = group.memberRows
-			.map((row) => hydratedByEnrollmentId.get(row.enrollment_id))
-			.filter((row): row is HydratedMemberRow => Boolean(row))
+	return groups.map((group, index) => {
+		const members = sampledRowsByGroup[index]
+			.filter((row): row is AuditScanRow & HydratedMemberRow => Boolean(row.student_id))
 			.map(mapHydratedMember)
 			.sort((left, right) => timeToSeconds(left.startTime) - timeToSeconds(right.startTime));
 		const firstMember = members[0];
@@ -479,7 +524,7 @@ async function hydrateConflictGroupSeeds(pool: Pool, groups: ConflictAuditGroupS
 			resourceId: group.resourceId,
 			resourceName,
 			day: group.day,
-			memberCount: group.memberRows.length,
+			memberCount: group.memberCount,
 			members
 		} satisfies ConflictAuditGroup;
 	});
@@ -502,8 +547,8 @@ async function computeAudit(pool: Pool, filters: ConflictAuditFilters) {
 	const lecturerSeeds = seedResults.find((entry) => entry.type === 'lecturer')?.seeds ?? [];
 
 	const allSeeds = [...roomSeeds, ...studentSeeds, ...lecturerSeeds].sort((left, right) => {
-		if (right.memberRows.length !== left.memberRows.length) {
-			return right.memberRows.length - left.memberRows.length;
+		if (right.memberCount !== left.memberCount) {
+			return right.memberCount - left.memberCount;
 		}
 		return `${left.conflictType}:${left.resourceId}`.localeCompare(
 			`${right.conflictType}:${right.resourceId}`
@@ -512,18 +557,32 @@ async function computeAudit(pool: Pool, filters: ConflictAuditFilters) {
 
 	const focusEnrollmentIds = filters.focusEnrollmentIds?.filter(Boolean) ?? [];
 	const focusSet = new Set(focusEnrollmentIds);
+	const memberSampleSize = getMemberSampleSize(filters);
 	const relevantSeeds = focusSet.size
-		? allSeeds.filter((group) =>
-				group.memberRows.some((member) => focusSet.has(member.enrollment_id))
-			)
+		? await filterSeedsByFocus(pool, allSeeds, focusSet)
 		: allSeeds;
 
-	const limitGroups = filters.limitGroups ?? 200;
-	const selectedSeeds = relevantSeeds.slice(0, limitGroups);
-	const groups = await hydrateConflictGroupSeeds(pool, selectedSeeds);
-	const conflictedEnrollments = new Set(
-		relevantSeeds.flatMap((group) => group.memberRows.map((member) => member.enrollment_id))
+	const selectedSeedInputs = filters.limitGroups
+		? relevantSeeds.slice(0, filters.limitGroups)
+		: relevantSeeds;
+	const selectedSeeds = await loadMemberRowsForSeeds(
+		pool,
+		selectedSeedInputs,
+		focusSet,
+		memberSampleSize
 	);
+	const groups = hydrateConflictGroupSeeds(selectedSeeds, focusSet, memberSampleSize);
+	const conflictedEnrollments = relevantSeeds.reduce(
+		(total, group) => total + group.memberCount,
+		0
+	);
+	const roomGroupCount = relevantSeeds.filter((group) => group.conflictType === 'room').length;
+	const studentGroupCount = relevantSeeds.filter(
+		(group) => group.conflictType === 'student'
+	).length;
+	const lecturerGroupCount = relevantSeeds.filter(
+		(group) => group.conflictType === 'lecturer'
+	).length;
 
 	return {
 		filters: {
@@ -533,10 +592,10 @@ async function computeAudit(pool: Pool, filters: ConflictAuditFilters) {
 		},
 		summary: {
 			totalGroups: relevantSeeds.length,
-			roomGroups: roomSeeds.length,
-			studentGroups: studentSeeds.length,
-			lecturerGroups: lecturerSeeds.length,
-			conflictedEnrollments: conflictedEnrollments.size
+			roomGroups: roomGroupCount,
+			studentGroups: studentGroupCount,
+			lecturerGroups: lecturerGroupCount,
+			conflictedEnrollments
 		},
 		truncated: relevantSeeds.length > selectedSeeds.length,
 		groups

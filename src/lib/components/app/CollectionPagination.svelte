@@ -6,6 +6,7 @@
 		label = 'data',
 		pageNumber = 1,
 		canPrevious = false,
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		limit = 0,
 		itemCount = 0,
 		hasMore = false,

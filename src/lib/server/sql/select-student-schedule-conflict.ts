@@ -3,15 +3,15 @@ import type { Connection } from 'mysql2/promise';
 export type SelectStudentScheduleConflictParams = {
 	studentId: string;
 	day: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
-	startTime: Date;
-	endTime: Date;
+	startTime: Date | string;
+	endTime: Date | string;
 	excludeEnrollmentId?: string;
 };
 
 export type SelectStudentScheduleConflictResult = {
 	id: string;
-	start_time: Date;
-	end_time: Date;
+	start_time: string;
+	end_time: string;
 	course_name: string;
 };
 
@@ -20,14 +20,13 @@ export async function selectStudentScheduleConflict(
 	params: SelectStudentScheduleConflictParams
 ): Promise<SelectStudentScheduleConflictResult[]> {
 	let sql = `
-	SELECT e.id, sch.start_time, sch.end_time, c.name AS course_name
+	SELECT e.id, e.schedule_start_time AS start_time, e.schedule_end_time AS end_time, c.name AS course_name
 	FROM enrollments e
-	INNER JOIN schedules sch ON e.schedule_id = sch.id
 	INNER JOIN courses c ON e.course_id = c.id
 	WHERE e.student_id = ?
-	AND sch.day = ?
-	AND TIME(sch.start_time) < TIME(?)
-	AND TIME(sch.end_time) > TIME(?)
+	AND e.schedule_day = ?
+	AND e.schedule_start_time < ?
+	AND e.schedule_end_time > ?
 	`;
 	const values: unknown[] = [params.studentId, params.day, params.endTime, params.startTime];
 
@@ -36,7 +35,7 @@ export async function selectStudentScheduleConflict(
 		values.push(params.excludeEnrollmentId);
 	}
 
-	sql += ` ORDER BY sch.start_time ASC`;
+	sql += ` ORDER BY e.schedule_start_time ASC`;
 
 	return connection
 		.query({ sql, rowsAsArray: true }, values)

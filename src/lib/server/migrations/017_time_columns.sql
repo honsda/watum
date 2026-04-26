@@ -1,32 +1,17 @@
--- Add denormalized schedule columns to enrollments for fast conflict detection.
--- These columns mirror schedules.day, schedules.start_time, schedules.end_time
--- so that conflict queries can run as pure index-only scans on enrollments
--- without joining the schedules table.
+-- Convert schedule time columns from DATETIME(3) to TIME.
+-- Academic scheduling only needs day-of-week + time-of-day, not exact dates.
+-- This makes conflict detection index-friendly and eliminates the need
+-- for TIME() function wrappers in every query.
+
+ALTER TABLE schedules
+  MODIFY COLUMN start_time TIME NOT NULL COMMENT 'Time of day (UTC)',
+  MODIFY COLUMN end_time TIME NOT NULL COMMENT 'Time of day (UTC)';
 
 ALTER TABLE enrollments
-  ADD COLUMN schedule_day ENUM('SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU') NULL AFTER schedule_audit_sk,
-  ADD COLUMN schedule_start_time TIME NULL AFTER schedule_day,
-  ADD COLUMN schedule_end_time TIME NULL AFTER schedule_start_time;
+  MODIFY COLUMN schedule_start_time TIME NULL,
+  MODIFY COLUMN schedule_end_time TIME NULL;
 
--- Populate existing rows from schedules
-UPDATE enrollments e
-JOIN schedules s ON s.audit_sk = e.schedule_audit_sk
-SET e.schedule_day = s.day,
-    e.schedule_start_time = s.start_time,
-    e.schedule_end_time = s.end_time
-WHERE e.schedule_day IS NULL;
-
--- Covering indexes for fast conflict aggregation (index-only scans)
-CREATE INDEX idx_enrollments_room_conflict
-ON enrollments(class_room_audit_sk, academic_year_start, semester_sort, schedule_day, schedule_start_time, schedule_end_time, course_id, audit_sk, schedule_audit_sk);
-
-CREATE INDEX idx_enrollments_student_conflict
-ON enrollments(student_audit_sk, academic_year_start, semester_sort, schedule_day, schedule_start_time, schedule_end_time, course_id, audit_sk, schedule_audit_sk);
-
-CREATE INDEX idx_enrollments_lecturer_conflict
-ON enrollments(lecturer_audit_sk, academic_year_start, semester_sort, schedule_day, schedule_start_time, schedule_end_time, course_id, audit_sk, schedule_audit_sk);
-
--- Update triggers to keep denormalized columns in sync
+-- Update triggers to copy TIME values directly
 DROP TRIGGER IF EXISTS enrollments_bi_audit_keys;
 DROP TRIGGER IF EXISTS enrollments_bu_audit_keys;
 
@@ -73,3 +58,17 @@ BEGIN
 END //
 
 DELIMITER ;
+
+-- Rebuild conflict audit indexes with TIME columns for optimal performance
+DROP INDEX idx_enrollments_room_conflict ON enrollments;
+DROP INDEX idx_enrollments_student_conflict ON enrollments;
+DROP INDEX idx_enrollments_lecturer_conflict ON enrollments;
+
+CREATE INDEX idx_enrollments_room_conflict
+ON enrollments(class_room_audit_sk, academic_year_start, semester_sort, schedule_day, schedule_start_time, schedule_end_time, course_id, audit_sk, schedule_audit_sk);
+
+CREATE INDEX idx_enrollments_student_conflict
+ON enrollments(student_audit_sk, academic_year_start, semester_sort, schedule_day, schedule_start_time, schedule_end_time, course_id, audit_sk, schedule_audit_sk);
+
+CREATE INDEX idx_enrollments_lecturer_conflict
+ON enrollments(lecturer_audit_sk, academic_year_start, semester_sort, schedule_day, schedule_start_time, schedule_end_time, course_id, audit_sk, schedule_audit_sk);

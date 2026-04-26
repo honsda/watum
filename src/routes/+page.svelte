@@ -40,6 +40,7 @@
 		matchesText,
 		toMinutes,
 		type AppRole,
+		type RoomMetric,
 		type ScheduleCard
 	} from '$lib/app/academic';
 	import { formatDateTime, formatDateTimeInput, parseISO } from '$lib/time-helpers';
@@ -54,12 +55,14 @@
 	import { getCurrentUser, loginUser, logoutUser } from './auth/data.remote';
 	import {
 		getClassRooms,
-		getAllClassRooms,
 		getClassRoom,
+		getClassRoomDashboardMetrics,
+		getClassRoomDashboardSummary,
 		searchClassRooms,
 		createClassRoom,
 		updateClassRoom,
-		deleteClassRoom
+		deleteClassRoom,
+		type RoomDashboardSummary
 	} from './classrooms/data.remote';
 	import {
 		getCourses,
@@ -213,12 +216,10 @@
 	type ViewDataPlan = {
 		collections: DataCollectionKey[];
 		requiresSchedulePreview: boolean;
-		requiresBuilderClassrooms: boolean;
 	};
 	type RefreshDependencies = {
 		collections?: DataCollectionKey[];
 		includeSchedulePreview?: boolean;
-		includeBuilderClassrooms?: boolean;
 		includeConflictAudit?: boolean;
 		forceCollections?: boolean;
 	};
@@ -562,8 +563,6 @@
 		{ id: 'room', label: 'Ruang', hint: 'Pilih ruang yang tersedia.' },
 		{ id: 'review', label: 'Tinjau', hint: 'Periksa sebelum disimpan.' }
 	] as const;
-	const PICKER_PAGE_SIZE = 24;
-
 	function headerAction(view: ViewId, role: AppRole | undefined) {
 		if (role === 'STUDENT') {
 			if (view === 'dashboard') return { label: 'Buka kalender', target: 'calendar' as ViewId };
@@ -696,8 +695,18 @@
 	let collectionLoaded = $state<CollectionLoadedState>(createCollectionLoadedState());
 	let schedulePreviewLoaded = $state(false);
 	let conflictAudit = $state<Awaited<ReturnType<typeof getEnrollmentConflictAudit>> | null>(null);
-	let conflictAuditLoading = $state(false);
-	let conflictAuditIssue = $state<string | null>(null);
+	let classRoomDashboardSummary = $state<RoomDashboardSummary | null>(null);
+	let classRoomDashboardMetrics = $state<{
+		items: RoomMetric[];
+		pageSize: number;
+		hasMore: boolean;
+		nextCursor: string | null;
+	} | null>(null);
+	let classRoomDashboardPagination = $state<CollectionPaginationState>(
+		emptyCollectionPaginationState()
+	);
+	let classRoomDashboardLoaded = $state(false);
+	let classRoomDashboardRequestToken = 0;
 	let pendingRefreshTimer: number | null = null;
 	let collectionRefreshTimers: Partial<Record<DataCollectionKey, number>> = {};
 	let conflictAuditRefreshTimer: number | null = null;
@@ -721,11 +730,15 @@
 	let coursePickerRequestToken = 0;
 	let roomPickerSearch = $state('');
 	let roomPickerOpen = $state(false);
-	let roomPickerPage = $state(0);
+	let roomPickerOptions = $state<SelectClassRoomsResult[]>([]);
+	let roomPickerLoading = $state(false);
+	let roomPickerIssue = $state<string | null>(null);
+	let roomPickerHasMore = $state(false);
+	let roomPickerNextCursor = $state<string | null>(null);
+	let roomPickerRefreshTimer: number | null = null;
+	let roomPickerRequestToken = 0;
 
 	let classrooms = $state<SelectClassRoomsResult[]>([]);
-	let builderClassrooms = $state<SelectClassRoomsResult[]>([]);
-	let builderClassroomsLoaded = $state(false);
 	let courses = $state<SelectCoursesResult[]>([]);
 	let students = $state<SelectStudentsResult[]>([]);
 	let lecturers = $state<SelectLecturersResult[]>([]);
@@ -779,7 +792,13 @@
 	let scheduleLecturerFilterRefreshTimer: number | null = null;
 	let scheduleCourseFilterRequestToken = 0;
 	let scheduleLecturerFilterRequestToken = 0;
-	let scheduleRoomFilterPage = $state(0);
+	let scheduleRoomFilterOptions = $state<SelectClassRoomsResult[]>([]);
+	let scheduleRoomFilterLoading = $state(false);
+	let scheduleRoomFilterIssue = $state<string | null>(null);
+	let scheduleRoomFilterHasMore = $state(false);
+	let scheduleRoomFilterNextCursor = $state<string | null>(null);
+	let scheduleRoomFilterRefreshTimer: number | null = null;
+	let scheduleRoomFilterRequestToken = 0;
 	let scheduleDayFilter = $state('');
 	let scheduleSemesterFilter = $state('');
 	let scheduleAcademicYearFilter = $state('');
@@ -802,6 +821,15 @@
 	let selectedEnrollmentId = $state<string | null>(null);
 	let selectedGradeId = $state<string | null>(null);
 	let selectedUserId = $state<string | null>(null);
+
+	const emptyRoomDashboardSummary: RoomDashboardSummary = {
+		totalRooms: 0,
+		availableNowCount: 0,
+		occupiedRoomCount: 0,
+		lowUtilizationRoomCount: 0,
+		averageUtilization: 0,
+		conflictedCount: 0
+	};
 
 	let classroomDraft = $state(emptyClassRoomDraft());
 	let courseDraft = $state(emptyCourseDraft());
@@ -922,6 +950,7 @@
 	}
 
 	function mergeItemsById<T extends { id?: string }>(current: T[], next: T[]) {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
 		const itemsById = new Map<string, T>();
 		const anonymousItems: T[] = [];
 		for (const item of [...current, ...next]) {
@@ -971,7 +1000,9 @@
 				? await resolveRemoteQuery(searchCourses({ q, cursor: cursor ?? undefined }))
 				: await resolveRemoteQuery(getCourses({ cursor: cursor ?? undefined }));
 			if (token !== coursePickerRequestToken) return;
-			coursePickerOptions = append ? mergeItemsById(coursePickerOptions, result.items) : result.items;
+			coursePickerOptions = append
+				? mergeItemsById(coursePickerOptions, result.items)
+				: result.items;
 			coursePickerHasMore = result.hasMore;
 			coursePickerNextCursor = result.nextCursor;
 		} catch (error) {
@@ -1150,16 +1181,6 @@
 		);
 	}
 
-	function roomOptionMatches(item: SelectClassRoomsResult, query: string) {
-		if (!query) return true;
-		return (
-			matchesText(item.name, query) ||
-			matchesText(item.id, query) ||
-			matchesText(beautifyRoomType(item.class_room_type), query) ||
-			matchesText(item.capacity != null ? String(item.capacity) : '', query)
-		);
-	}
-
 	function resetScheduleFilters() {
 		enrollmentSearch = '';
 		scheduleCourseFilter = '';
@@ -1171,7 +1192,6 @@
 		scheduleCourseFilterOpen = false;
 		scheduleRoomFilterOpen = false;
 		scheduleLecturerFilterOpen = false;
-		scheduleRoomFilterPage = 0;
 		scheduleDayFilter = '';
 		scheduleSemesterFilter = '';
 		scheduleAcademicYearFilter = '';
@@ -1230,8 +1250,6 @@
 
 	function resetCollections() {
 		classrooms = [];
-		builderClassrooms = [];
-		builderClassroomsLoaded = false;
 		courses = [];
 		students = [];
 		lecturers = [];
@@ -1243,8 +1261,10 @@
 		schedulePreview = { items: [], hasMore: false, loading: false };
 		schedulePreviewLoaded = false;
 		conflictAudit = null;
-		conflictAuditIssue = null;
-		conflictAuditLoading = false;
+		classRoomDashboardSummary = null;
+		classRoomDashboardMetrics = null;
+		classRoomDashboardPagination = emptyCollectionPaginationState();
+		classRoomDashboardLoaded = false;
 		initialViewHydrated = false;
 		selectedRoomRecord = null;
 		selectedCourseRecord = null;
@@ -1258,6 +1278,16 @@
 		collectionIssues = {};
 		collectionPagination = createCollectionPaginationState();
 		collectionLoaded = createCollectionLoadedState();
+		roomPickerOptions = [];
+		roomPickerLoading = false;
+		roomPickerIssue = null;
+		roomPickerHasMore = false;
+		roomPickerNextCursor = null;
+		scheduleRoomFilterOptions = [];
+		scheduleRoomFilterLoading = false;
+		scheduleRoomFilterIssue = null;
+		scheduleRoomFilterHasMore = false;
+		scheduleRoomFilterNextCursor = null;
 		if (browser) {
 			for (const timer of Object.values(collectionRefreshTimers)) {
 				if (timer != null) window.clearTimeout(timer);
@@ -1270,6 +1300,10 @@
 			}
 			if (scheduleLecturerFilterRefreshTimer != null) {
 				window.clearTimeout(scheduleLecturerFilterRefreshTimer);
+			}
+			if (roomPickerRefreshTimer != null) window.clearTimeout(roomPickerRefreshTimer);
+			if (scheduleRoomFilterRefreshTimer != null) {
+				window.clearTimeout(scheduleRoomFilterRefreshTimer);
 			}
 		}
 		collectionRefreshTimers = {};
@@ -1300,14 +1334,12 @@
 		scheduleLecturerFilterNextCursor = null;
 		roomPickerSearch = '';
 		roomPickerOpen = false;
-		roomPickerPage = 0;
 		scheduleCourseFilterSearch = '';
 		scheduleRoomFilterSearch = '';
 		scheduleLecturerFilterSearch = '';
 		scheduleCourseFilterOpen = false;
 		scheduleRoomFilterOpen = false;
 		scheduleLecturerFilterOpen = false;
-		scheduleRoomFilterPage = 0;
 	}
 
 	async function loadCollection(
@@ -1469,20 +1501,15 @@
 	async function refreshConflictAudit() {
 		if (!loadedForUserId) {
 			conflictAudit = null;
-			conflictAuditIssue = null;
-			conflictAuditLoading = false;
 			return;
 		}
 
-		conflictAuditLoading = true;
-		conflictAuditIssue = null;
 		try {
-			conflictAudit = await resolveRemoteQuery(getEnrollmentConflictAudit(buildConflictAuditFilters()));
-		} catch (error) {
+			conflictAudit = await resolveRemoteQuery(
+				getEnrollmentConflictAudit(buildConflictAuditFilters())
+			);
+		} catch {
 			conflictAudit = null;
-			conflictAuditIssue = errorMessage(error, 'Audit bentrok gagal dimuat.');
-		} finally {
-			conflictAuditLoading = false;
 		}
 	}
 
@@ -1509,9 +1536,145 @@
 		);
 	}
 
-	async function refreshBuilderClassrooms() {
-		builderClassrooms = await resolveRemoteQuery(getAllClassRooms());
-		builderClassroomsLoaded = true;
+	async function refreshClassRoomDashboard(
+		cursor: string | null = classRoomDashboardPagination.currentCursor,
+		meta?: { history?: Array<string | null>; pageNumber?: number; refreshSummary?: boolean }
+	) {
+		const token = ++classRoomDashboardRequestToken;
+		classRoomDashboardPagination = { ...classRoomDashboardPagination, loading: true };
+		try {
+			const shouldRefreshSummary = meta?.refreshSummary ?? !classRoomDashboardSummary;
+			const [summary, metrics] = await Promise.all([
+				shouldRefreshSummary
+					? resolveRemoteQuery(getClassRoomDashboardSummary({ timezone }))
+					: Promise.resolve(classRoomDashboardSummary),
+				resolveRemoteQuery(getClassRoomDashboardMetrics({ timezone, cursor: cursor ?? undefined }))
+			]);
+			if (token !== classRoomDashboardRequestToken) return;
+			classRoomDashboardSummary = summary;
+			classRoomDashboardMetrics = metrics;
+			classRoomDashboardPagination = {
+				currentCursor: cursor,
+				nextCursor: metrics.nextCursor,
+				history: meta?.history ?? (cursor == null ? [] : classRoomDashboardPagination.history),
+				pageNumber:
+					meta?.pageNumber ?? (cursor == null ? 1 : classRoomDashboardPagination.pageNumber),
+				limit: metrics.pageSize,
+				hasMore: metrics.hasMore,
+				loading: false,
+				itemCount: metrics.items.length
+			};
+			classRoomDashboardLoaded = true;
+		} catch (error) {
+			if (token === classRoomDashboardRequestToken) {
+				classRoomDashboardPagination = { ...classRoomDashboardPagination, loading: false };
+			}
+			throw error;
+		}
+	}
+
+	function changeClassRoomDashboardPage(direction: 'previous' | 'next') {
+		const pageState = classRoomDashboardPagination;
+		if (direction === 'next') {
+			if (!pageState.nextCursor) return;
+			void refreshClassRoomDashboard(pageState.nextCursor, {
+				history: [...pageState.history, pageState.currentCursor],
+				pageNumber: pageState.pageNumber + 1
+			});
+			return;
+		}
+
+		const previousCursor = pageState.history.at(-1);
+		if (previousCursor === undefined) return;
+		void refreshClassRoomDashboard(previousCursor, {
+			history: pageState.history.slice(0, -1),
+			pageNumber: Math.max(1, pageState.pageNumber - 1)
+		});
+	}
+
+	async function refreshRoomPickerOptions(cursor: string | null = null) {
+		const token = ++roomPickerRequestToken;
+		const append = cursor != null;
+		roomPickerLoading = true;
+		roomPickerIssue = null;
+		try {
+			const q = normalizedSearchValue(roomPickerSearch);
+			const result = await resolveRemoteQuery(searchClassRooms({ q, cursor: cursor ?? undefined }));
+			if (token !== roomPickerRequestToken) return;
+			roomPickerOptions = append ? mergeItemsById(roomPickerOptions, result.items) : result.items;
+			roomPickerHasMore = result.hasMore;
+			roomPickerNextCursor = result.nextCursor;
+		} catch (error) {
+			if (token !== roomPickerRequestToken) return;
+			roomPickerIssue = errorMessage(error, 'Daftar ruang kelas gagal dimuat.');
+		} finally {
+			if (token === roomPickerRequestToken) {
+				roomPickerLoading = false;
+			}
+		}
+	}
+
+	async function refreshScheduleRoomFilterOptions(cursor: string | null = null) {
+		const token = ++scheduleRoomFilterRequestToken;
+		const append = cursor != null;
+		scheduleRoomFilterLoading = true;
+		scheduleRoomFilterIssue = null;
+		try {
+			const q = normalizedSearchValue(scheduleRoomFilterSearch);
+			const result = await resolveRemoteQuery(searchClassRooms({ q, cursor: cursor ?? undefined }));
+			if (token !== scheduleRoomFilterRequestToken) return;
+			scheduleRoomFilterOptions = append
+				? mergeItemsById(scheduleRoomFilterOptions, result.items)
+				: result.items;
+			scheduleRoomFilterHasMore = result.hasMore;
+			scheduleRoomFilterNextCursor = result.nextCursor;
+		} catch (error) {
+			if (token !== scheduleRoomFilterRequestToken) return;
+			scheduleRoomFilterIssue = errorMessage(error, 'Daftar ruang kelas gagal dimuat.');
+		} finally {
+			if (token === scheduleRoomFilterRequestToken) {
+				scheduleRoomFilterLoading = false;
+			}
+		}
+	}
+
+	function loadMoreRoomPickerOptions() {
+		if (roomPickerLoading || !roomPickerHasMore || !roomPickerNextCursor) return;
+		void refreshRoomPickerOptions(roomPickerNextCursor);
+	}
+
+	function loadMoreScheduleRoomFilterOptions() {
+		if (scheduleRoomFilterLoading || !scheduleRoomFilterHasMore || !scheduleRoomFilterNextCursor)
+			return;
+		void refreshScheduleRoomFilterOptions(scheduleRoomFilterNextCursor);
+	}
+
+	function queueRoomPickerRefresh(delay = 120) {
+		if (!browser) {
+			void refreshRoomPickerOptions(null);
+			return;
+		}
+		if (roomPickerRefreshTimer != null) {
+			window.clearTimeout(roomPickerRefreshTimer);
+		}
+		roomPickerRefreshTimer = window.setTimeout(() => {
+			roomPickerRefreshTimer = null;
+			void refreshRoomPickerOptions(null);
+		}, delay);
+	}
+
+	function queueScheduleRoomFilterRefresh(delay = 120) {
+		if (!browser) {
+			void refreshScheduleRoomFilterOptions(null);
+			return;
+		}
+		if (scheduleRoomFilterRefreshTimer != null) {
+			window.clearTimeout(scheduleRoomFilterRefreshTimer);
+		}
+		scheduleRoomFilterRefreshTimer = window.setTimeout(() => {
+			scheduleRoomFilterRefreshTimer = null;
+			void refreshScheduleRoomFilterOptions(null);
+		}, delay);
 	}
 
 	async function refreshCourses(cursor = collectionPagination.courses.currentCursor) {
@@ -1583,10 +1746,6 @@
 		return 'Data akun gagal dimuat.';
 	}
 
-	function scheduleDrivenView(view: ViewId) {
-		return ['dashboard', 'calendar', 'builder'].includes(view);
-	}
-
 	function viewDataPlan(view: ViewId, role: AppRole | undefined): ViewDataPlan {
 		if (view === 'dashboard') {
 			return {
@@ -1594,84 +1753,72 @@
 					role === 'STUDENT'
 						? (['enrollments', 'grades'] as DataCollectionKey[])
 						: (['classrooms'] as DataCollectionKey[]),
-				requiresSchedulePreview: true,
-				requiresBuilderClassrooms: false
+				requiresSchedulePreview: true
 			};
 		}
 		if (view === 'calendar') {
 			return {
 				collections: ['courses', 'classrooms', 'lecturers'] as DataCollectionKey[],
-				requiresSchedulePreview: true,
-				requiresBuilderClassrooms: false
+				requiresSchedulePreview: true
 			};
 		}
 		if (view === 'builder') {
 			return {
 				collections: ['courses', 'classrooms', 'lecturers', 'enrollments'] as DataCollectionKey[],
-				requiresSchedulePreview: true,
-				requiresBuilderClassrooms: true
+				requiresSchedulePreview: true
 			};
 		}
 		if (view === 'classrooms') {
 			return {
 				collections: ['classrooms'] as DataCollectionKey[],
-				requiresSchedulePreview: false,
-				requiresBuilderClassrooms: false
+				requiresSchedulePreview: false
 			};
 		}
 		if (view === 'courses') {
 			return {
 				collections: ['courses', 'studyPrograms', 'lecturers'] as DataCollectionKey[],
-				requiresSchedulePreview: false,
-				requiresBuilderClassrooms: false
+				requiresSchedulePreview: false
 			};
 		}
 		if (view === 'students') {
 			return {
 				collections: ['students', 'studyPrograms'] as DataCollectionKey[],
-				requiresSchedulePreview: false,
-				requiresBuilderClassrooms: false
+				requiresSchedulePreview: false
 			};
 		}
 		if (view === 'lecturers') {
 			return {
 				collections: ['lecturers'] as DataCollectionKey[],
-				requiresSchedulePreview: false,
-				requiresBuilderClassrooms: false
+				requiresSchedulePreview: false
 			};
 		}
 		if (view === 'faculties') {
 			return {
 				collections: ['faculties'] as DataCollectionKey[],
-				requiresSchedulePreview: false,
-				requiresBuilderClassrooms: false
+				requiresSchedulePreview: false
 			};
 		}
 		if (view === 'studyPrograms') {
 			return {
 				collections: ['studyPrograms', 'faculties'] as DataCollectionKey[],
-				requiresSchedulePreview: false,
-				requiresBuilderClassrooms: false
+				requiresSchedulePreview: false
 			};
 		}
 		if (view === 'enrollments') {
 			return {
 				collections: ['enrollments', 'courses', 'classrooms', 'lecturers'] as DataCollectionKey[],
-				requiresSchedulePreview: false,
-				requiresBuilderClassrooms: false
+				requiresSchedulePreview: false
 			};
 		}
 		if (view === 'grades') {
 			return {
 				collections: ['grades', 'enrollments', 'courses'] as DataCollectionKey[],
-				requiresSchedulePreview: false,
-				requiresBuilderClassrooms: false
+				requiresSchedulePreview: false
 			};
 		}
 		return {
 			collections: ['users'] as DataCollectionKey[],
-			requiresSchedulePreview: false,
-			requiresBuilderClassrooms: false
+			requiresSchedulePreview: false
 		};
 	}
 
@@ -1689,10 +1836,10 @@
 			);
 		}
 
-		if (plan.requiresBuilderClassrooms && (force || !builderClassroomsLoaded)) {
+		if (view === 'dashboard' && role !== 'STUDENT' && (force || !classRoomDashboardLoaded)) {
 			tasks.push(
-				refreshBuilderClassrooms().catch((error) => {
-					setCollectionIssue('classrooms', errorMessage(error, 'Daftar ruang kelas gagal dimuat.'));
+				refreshClassRoomDashboard().catch((error) => {
+					setCollectionIssue('classrooms', errorMessage(error, 'Dashboard ruang gagal dimuat.'));
 				})
 			);
 		}
@@ -1731,30 +1878,15 @@
 		}
 	}
 
-	async function refreshBuilderClassroomsData(force = false) {
-		if (!force && !builderClassroomsLoaded) return;
-		try {
-			await refreshBuilderClassrooms();
-			clearCollectionIssue('classrooms');
-		} catch (error) {
-			setCollectionIssue('classrooms', errorMessage(error, 'Daftar ruang kelas gagal dimuat.'));
-			throw error;
-		}
-	}
-
 	async function refreshDependencies({
 		collections = [],
 		includeSchedulePreview = false,
-		includeBuilderClassrooms = false,
 		includeConflictAudit = false,
 		forceCollections = false
 	}: RefreshDependencies) {
 		const tasks: Promise<unknown>[] = [];
 		for (const key of new Set(collections)) {
 			tasks.push(refreshCollectionData(key, forceCollections));
-		}
-		if (includeBuilderClassrooms) {
-			tasks.push(refreshBuilderClassroomsData(forceCollections));
 		}
 		if (includeSchedulePreview) {
 			tasks.push(refreshSchedulePreviewData(forceCollections));
@@ -1771,10 +1903,16 @@
 		await refreshDependencies({
 			collections: plan.collections,
 			includeSchedulePreview: plan.requiresSchedulePreview,
-			includeBuilderClassrooms: plan.requiresBuilderClassrooms,
 			includeConflictAudit: true,
 			forceCollections: true
 		});
+		if (view === 'dashboard' && role !== 'STUDENT') {
+			await refreshClassRoomDashboard(null, {
+				history: [],
+				pageNumber: 1,
+				refreshSummary: true
+			});
+		}
 	}
 
 	function collectionRefresher(key: DataCollectionKey) {
@@ -1876,36 +2014,6 @@
 		);
 	}
 
-	function scheduleViewRefresh(force = false) {
-		if (!browser) {
-			const view = activeView;
-			void untrack(() => ensureViewData(view, force));
-			return;
-		}
-		if (pendingRefreshTimer != null) {
-			window.clearTimeout(pendingRefreshTimer);
-		}
-		pendingRefreshTimer = window.setTimeout(() => {
-			pendingRefreshTimer = null;
-			const view = activeView;
-			void untrack(() => ensureViewData(view, force));
-		}, 0);
-	}
-
-	$effect(() => {
-		const maxPage = Math.max(roomPickerPageCount - 1, 0);
-		if (roomPickerPage > maxPage) {
-			roomPickerPage = maxPage;
-		}
-	});
-
-	$effect(() => {
-		const maxPage = Math.max(scheduleRoomFilterPageCount - 1, 0);
-		if (scheduleRoomFilterPage > maxPage) {
-			scheduleRoomFilterPage = maxPage;
-		}
-	});
-
 	$effect(() => {
 		if (currentUser.loading || !currentUser.current) return;
 		const role = currentUser.current?.role as AppRole | undefined;
@@ -1932,13 +2040,16 @@
 		const view = activeView;
 		if (!userId || !['dashboard', 'calendar', 'builder'].includes(view)) return;
 		if (!schedulePreviewLoaded || schedulePreview.loading) return;
-		scheduleAcademicYearFilter;
-		scheduleSemesterFilter;
-		scheduleDayFilter;
-		scheduleCourseFilter;
-		scheduleRoomFilter;
-		scheduleLecturerFilter;
-		schedulePreview.items.length;
+		const _deps = [
+			scheduleAcademicYearFilter,
+			scheduleSemesterFilter,
+			scheduleDayFilter,
+			scheduleCourseFilter,
+			scheduleRoomFilter,
+			scheduleLecturerFilter,
+			schedulePreview.items.length
+		];
+		void _deps;
 		queueConflictAuditRefresh();
 	});
 
@@ -2114,21 +2225,6 @@
 			extendedProps: { card }
 		}))
 	);
-	const filteredConflictCards = $derived(filteredScheduleCards.filter((item) => item.hasConflict));
-	const filteredConflictGroups = $derived.by(() => {
-		const seen: Record<string, true> = {};
-		return filteredConflictCards.filter((item) => {
-			const key = item.conflictGroupId ?? item.id;
-			if (seen[key]) return false;
-			seen[key] = true;
-			return true;
-		});
-	});
-	const conflictGroupSizeById = $derived.by(() =>
-		Object.fromEntries(
-			Object.entries(conflictAuditGroupsById).map(([groupId, group]) => [groupId, group.count])
-		)
-	);
 	const calendarConflictLegend = $derived(auditConflictGroups);
 	const effectiveSelectedScheduleId = $derived.by(() => {
 		if (
@@ -2266,7 +2362,6 @@
 	const selectedUser = $derived(
 		users.find((item) => item.id === selectedUserId) ?? selectedUserRecord ?? null
 	);
-	const conflictCards = $derived(auditConflictGroups.map((group) => group.representative));
 	const conflictGroupCardsById = $derived.by(() => {
 		const groups: Record<string, ScheduleCard[]> = {};
 		for (const card of scheduleAnalyticsCards) {
@@ -2375,7 +2470,9 @@
 	const filteredBuilderEnrollments = $derived(
 		filteredEnrollments.filter((item) => {
 			if (!builderConflictOnly) return true;
-			return Boolean(item.id && (scheduleCardMap[item.id] ?? auditConflictCardMap[item.id])?.hasConflict);
+			return Boolean(
+				item.id && (scheduleCardMap[item.id] ?? auditConflictCardMap[item.id])?.hasConflict
+			);
 		})
 	);
 	const scheduleFilterSource = $derived(
@@ -2410,7 +2507,6 @@
 		return 'Data jadwal terlalu besar untuk dimuat penuh. Gunakan pencarian atau filter agar dashboard, kalender, dan penjadwalan menampilkan hasil yang akurat.';
 	});
 	const calendarNeedsFilters = $derived(scheduleActiveFilterCount === 0);
-	const calendarHasMoreResults = $derived(schedulePreview.hasMore);
 	const calendarExceedsVisibleLimit = $derived(
 		scheduleActiveFilterCount > 0 && filteredScheduleCards.length > CALENDAR_MAX_VISIBLE_SCHEDULES
 	);
@@ -2418,6 +2514,7 @@
 		!calendarNeedsFilters && !calendarExceedsVisibleLimit && filteredScheduleCards.length > 0
 	);
 	const studentPickerLookup = $derived.by(() => {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
 		const lookup = new Map<string, SelectStudentsResult>();
 		for (const item of students) {
 			if (item.id) lookup.set(item.id, item);
@@ -2428,6 +2525,7 @@
 		return lookup;
 	});
 	const coursePickerLookup = $derived.by(() => {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
 		const lookup = new Map<string, SelectCoursesResult>();
 		for (const item of courses) {
 			if (item.id) lookup.set(item.id, item);
@@ -2438,13 +2536,21 @@
 		return lookup;
 	});
 	const roomPickerLookup = $derived.by(() => {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
 		const lookup = new Map<string, SelectClassRoomsResult>();
-		for (const item of builderClassroomsLoaded ? builderClassrooms : classrooms) {
+		for (const item of classrooms) {
+			if (item.id) lookup.set(item.id, item);
+		}
+		for (const item of roomPickerOptions) {
+			if (item.id) lookup.set(item.id, item);
+		}
+		for (const item of scheduleRoomFilterOptions) {
 			if (item.id) lookup.set(item.id, item);
 		}
 		return lookup;
 	});
 	const scheduleCourseFilterLookup = $derived.by(() => {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
 		const lookup = new Map<string, SelectCoursesResult>();
 		for (const item of courses) {
 			if (item.id) lookup.set(item.id, item);
@@ -2455,6 +2561,7 @@
 		return lookup;
 	});
 	const scheduleLecturerFilterLookup = $derived.by(() => {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
 		const lookup = new Map<string, SelectLecturersResult>();
 		for (const item of lecturers) {
 			if (item.id) lookup.set(item.id, item);
@@ -2470,7 +2577,7 @@
 	const filteredUsers = $derived(users);
 
 	const availableRoomOptions = $derived.by(() => {
-		const roomOptions = builderClassroomsLoaded ? builderClassrooms : classrooms;
+		const roomOptions = roomPickerOptions;
 		if (!enrollmentDraft.startTime || !enrollmentDraft.endTime) return roomOptions;
 		const startMinutes = toMinutes(parseISO(enrollmentDraft.startTime, timezone), timezone);
 		const endMinutes = toMinutes(parseISO(enrollmentDraft.endTime, timezone), timezone);
@@ -2489,36 +2596,8 @@
 			(room) => room.id === enrollmentDraft.classRoomId || availableRoomIds.has(room.id)
 		);
 	});
-	const filteredRoomsForPicker = $derived.by(() =>
-		availableRoomOptions.filter((item) => roomOptionMatches(item, roomPickerSearch))
-	);
-	const pagedRoomOptionsForPicker = $derived.by(() =>
-		filteredRoomsForPicker.slice(
-			roomPickerPage * PICKER_PAGE_SIZE,
-			(roomPickerPage + 1) * PICKER_PAGE_SIZE
-		)
-	);
-	const roomPickerPageCount = $derived(Math.max(1, Math.ceil(filteredRoomsForPicker.length / PICKER_PAGE_SIZE)));
-	const roomPickerHasPreviousPage = $derived(roomPickerPage > 0);
-	const roomPickerHasNextPage = $derived(roomPickerPage + 1 < roomPickerPageCount);
-	const filteredScheduleRoomFilterOptions = $derived.by(() =>
-		(builderClassroomsLoaded ? builderClassrooms : classrooms).filter((item) =>
-			roomOptionMatches(item, scheduleRoomFilterSearch)
-		)
-	);
-	const pagedScheduleRoomFilterOptions = $derived.by(() =>
-		filteredScheduleRoomFilterOptions.slice(
-			scheduleRoomFilterPage * PICKER_PAGE_SIZE,
-			(scheduleRoomFilterPage + 1) * PICKER_PAGE_SIZE
-		)
-	);
-	const scheduleRoomFilterPageCount = $derived(
-		Math.max(1, Math.ceil(filteredScheduleRoomFilterOptions.length / PICKER_PAGE_SIZE))
-	);
-	const scheduleRoomFilterHasPreviousPage = $derived(scheduleRoomFilterPage > 0);
-	const scheduleRoomFilterHasNextPage = $derived(
-		scheduleRoomFilterPage + 1 < scheduleRoomFilterPageCount
-	);
+	const filteredRoomsForPicker = $derived(availableRoomOptions);
+	const filteredScheduleRoomFilterOptions = $derived(scheduleRoomFilterOptions);
 	const participantStepReady = $derived(
 		Boolean(enrollmentDraft.studentId && enrollmentDraft.courseId)
 	);
@@ -2807,7 +2886,6 @@
 		studentPickerOpen = false;
 		coursePickerOpen = false;
 		roomPickerOpen = false;
-		roomPickerPage = 0;
 	}
 
 	async function findEnrollmentSelection(id: string) {
@@ -2928,7 +3006,6 @@
 			coursePickerNextCursor = null;
 			studentPickerIssue = null;
 			coursePickerIssue = null;
-			roomPickerPage = 0;
 		}
 		if (view === 'grades') {
 			selectedGradeId = null;
@@ -3130,7 +3207,6 @@
 		await refreshDependencies({
 			collections: ['classrooms', 'enrollments'],
 			includeSchedulePreview: true,
-			includeBuilderClassrooms: true,
 			includeConflictAudit: true
 		});
 		clearSelection('classrooms');
@@ -3141,7 +3217,6 @@
 		await refreshDependencies({
 			collections: ['classrooms', 'enrollments'],
 			includeSchedulePreview: true,
-			includeBuilderClassrooms: true,
 			includeConflictAudit: true
 		});
 		stopEditing('classrooms');
@@ -3288,7 +3363,6 @@
 				await refreshDependencies({
 					collections: ['classrooms', 'enrollments'],
 					includeSchedulePreview: true,
-					includeBuilderClassrooms: true,
 					includeConflictAudit: true
 				});
 				clearSelection('classrooms');
@@ -3387,8 +3461,11 @@
 	const currentHeaderAction = $derived(
 		headerAction(activeView, currentUser.current?.role as AppRole | undefined)
 	);
-	const currentViewPlan = $derived(viewDataPlan(activeView, currentUser.current?.role as AppRole | undefined));
+	const currentViewPlan = $derived(
+		viewDataPlan(activeView, currentUser.current?.role as AppRole | undefined)
+	);
 	const activeViewIssues = $derived.by(() => {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
 		const keys = new Set<DataCollectionKey>(currentViewPlan.collections);
 		if (currentViewPlan.requiresSchedulePreview) {
 			keys.add('enrollments');
@@ -3786,11 +3863,18 @@
 
 							<ClassroomDashboard
 								role={currentUser.current.role as AppRole}
-								{classrooms}
-								cards={scheduleCards}
-								{timezone}
+								summary={classRoomDashboardSummary ?? emptyRoomDashboardSummary}
+								metrics={classRoomDashboardMetrics?.items ?? []}
+								page={classRoomDashboardPagination.pageNumber}
+								pageSize={classRoomDashboardPagination.limit || 10}
+								total={classRoomDashboardSummary?.totalRooms ?? 0}
+								hasMore={classRoomDashboardPagination.hasMore}
+								loading={classRoomDashboardPagination.loading}
+								canPrevious={classRoomDashboardPagination.history.length > 0}
 								{selectedRoomId}
 								onPickRoom={(id) => (selectedRoomId = id)}
+								onPreviousPage={() => changeClassRoomDashboardPage('previous')}
+								onNextPage={() => changeClassRoomDashboardPage('next')}
 							/>
 						{/if}
 					</div>
@@ -3878,15 +3962,105 @@
 									</label>
 									<label>
 										<span>Ruang</span>
-										<select
-											bind:value={scheduleRoomFilter}
-											onchange={() => queueCollectionRefresh('enrollments', 0)}
+										<div
+											class="combobox-wrap"
+											onfocusout={(e) => {
+												if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+													scheduleRoomFilterOpen = false;
+												}
+											}}
 										>
-											<option value="">Semua ruang</option>
-											{#each classrooms as item (item.id)}
-												<option value={item.id}>{item.name}</option>
-											{/each}
-										</select>
+											<input
+												type="text"
+												class="combobox-input"
+												placeholder="Cari ruang filter..."
+												value={scheduleRoomFilter
+													? selectedScheduleRoomFilterLabel
+													: scheduleRoomFilterSearch}
+												oninput={(e) => {
+													scheduleRoomFilterSearch = (e.currentTarget as HTMLInputElement).value;
+													if (scheduleRoomFilter) {
+														scheduleRoomFilter = '';
+														queueCollectionRefresh('enrollments', 0);
+													}
+													queueScheduleRoomFilterRefresh();
+													scheduleRoomFilterOpen = true;
+												}}
+												onfocus={() => {
+													scheduleRoomFilterOpen = true;
+													if (!scheduleRoomFilterOptions.length) {
+														queueScheduleRoomFilterRefresh(0);
+													}
+												}}
+											/>
+											{#if scheduleRoomFilterIssue}
+												<p class="combobox-error">{scheduleRoomFilterIssue}</p>
+											{:else if scheduleRoomFilterOpen && scheduleRoomFilterLoading && !scheduleRoomFilterOptions.length}
+												<p class="combobox-empty">Memuat ruang kelas...</p>
+											{:else if scheduleRoomFilterOpen}
+												<div class="combobox-dropdown" role="listbox">
+													<button
+														type="button"
+														role="option"
+														aria-selected={!scheduleRoomFilter}
+														class="combobox-option"
+														class:active={!scheduleRoomFilter}
+														onmousedown={(e) => {
+															e.preventDefault();
+															scheduleRoomFilter = '';
+															scheduleRoomFilterSearch = '';
+															scheduleRoomFilterOpen = false;
+															queueCollectionRefresh('enrollments', 0);
+														}}
+													>
+														<strong>Semua ruang</strong>
+														<span>Hapus filter ruang</span>
+													</button>
+													{#each filteredScheduleRoomFilterOptions as item (item.id)}
+														<button
+															type="button"
+															role="option"
+															aria-selected={scheduleRoomFilter === item.id}
+															class="combobox-option"
+															class:active={scheduleRoomFilter === item.id}
+															onmousedown={(e) => {
+																e.preventDefault();
+																scheduleRoomFilter = item.id ?? '';
+																scheduleRoomFilterSearch = '';
+																scheduleRoomFilterOpen = false;
+																queueCollectionRefresh('enrollments', 0);
+															}}
+														>
+															<strong>{item.name}</strong>
+															<span
+																>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
+															>
+														</button>
+													{/each}
+													{#if !filteredScheduleRoomFilterOptions.length && !scheduleRoomFilterLoading}
+														<p class="combobox-empty">Ruang tidak ditemukan.</p>
+													{/if}
+													{#if scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
+														<div class="combobox-footer">
+															<span class="combobox-meta">
+																{scheduleRoomFilterOptions.length} opsi dimuat
+															</span>
+															<button
+																type="button"
+																class="combobox-more"
+																disabled={!scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
+																onmousedown={(e) => {
+																	e.preventDefault();
+																	loadMoreScheduleRoomFilterOptions();
+																}}
+															>
+																{scheduleRoomFilterLoading ? 'Memuat...' : 'Muat lebih banyak'}
+															</button>
+														</div>
+													{/if}
+												</div>
+											{/if}
+										</div>
 									</label>
 									<label>
 										<span>Dosen</span>
@@ -4333,22 +4507,30 @@
 											type="text"
 											class="combobox-input"
 											placeholder="Cari ruang filter..."
-											value={scheduleRoomFilter ? selectedScheduleRoomFilterLabel : scheduleRoomFilterSearch}
+											value={scheduleRoomFilter
+												? selectedScheduleRoomFilterLabel
+												: scheduleRoomFilterSearch}
 											oninput={(e) => {
 												scheduleRoomFilterSearch = (e.currentTarget as HTMLInputElement).value;
-												scheduleRoomFilterPage = 0;
 												if (scheduleRoomFilter) {
 													scheduleRoomFilter = '';
 													queueCollectionRefresh('enrollments', 0);
 												}
+												queueScheduleRoomFilterRefresh();
 												scheduleRoomFilterOpen = true;
 											}}
 											onfocus={() => {
 												scheduleRoomFilterOpen = true;
-												scheduleRoomFilterPage = 0;
+												if (!scheduleRoomFilterOptions.length) {
+													queueScheduleRoomFilterRefresh(0);
+												}
 											}}
 										/>
-										{#if scheduleRoomFilterOpen}
+										{#if scheduleRoomFilterIssue}
+											<p class="combobox-error">{scheduleRoomFilterIssue}</p>
+										{:else if scheduleRoomFilterOpen && scheduleRoomFilterLoading && !scheduleRoomFilterOptions.length}
+											<p class="combobox-empty">Memuat ruang kelas...</p>
+										{:else if scheduleRoomFilterOpen}
 											<div class="combobox-dropdown" role="listbox">
 												<button
 													type="button"
@@ -4361,14 +4543,13 @@
 														scheduleRoomFilter = '';
 														scheduleRoomFilterSearch = '';
 														scheduleRoomFilterOpen = false;
-														scheduleRoomFilterPage = 0;
 														queueCollectionRefresh('enrollments', 0);
 													}}
 												>
 													<strong>Semua ruang</strong>
 													<span>Hapus filter ruang</span>
 												</button>
-												{#each pagedScheduleRoomFilterOptions as item (item.id)}
+												{#each filteredScheduleRoomFilterOptions as item (item.id)}
 													<button
 														type="button"
 														role="option"
@@ -4380,46 +4561,34 @@
 															scheduleRoomFilter = item.id ?? '';
 															scheduleRoomFilterSearch = '';
 															scheduleRoomFilterOpen = false;
-															scheduleRoomFilterPage = 0;
 															queueCollectionRefresh('enrollments', 0);
 														}}
 													>
 														<strong>{item.name}</strong>
-														<span>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span>
+														<span
+															>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
+														>
 													</button>
 												{/each}
-												{#if !pagedScheduleRoomFilterOptions.length}
+												{#if !filteredScheduleRoomFilterOptions.length && !scheduleRoomFilterLoading}
 													<p class="combobox-empty">Ruang tidak ditemukan.</p>
 												{/if}
-												{#if filteredScheduleRoomFilterOptions.length > PICKER_PAGE_SIZE}
+												{#if scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
 													<div class="combobox-footer">
 														<span class="combobox-meta">
-															Halaman {scheduleRoomFilterPage + 1} dari {scheduleRoomFilterPageCount}
+															{scheduleRoomFilterOptions.length} opsi dimuat
 														</span>
-														<div class="combobox-pagination">
-															<button
-																type="button"
-																class="combobox-more"
-																disabled={!scheduleRoomFilterHasPreviousPage}
-																onmousedown={(e) => {
-																	e.preventDefault();
-																	scheduleRoomFilterPage = Math.max(scheduleRoomFilterPage - 1, 0);
-																}}
-															>
-																Sebelumnya
-															</button>
-															<button
-																type="button"
-																class="combobox-more"
-																disabled={!scheduleRoomFilterHasNextPage}
-																onmousedown={(e) => {
-																	e.preventDefault();
-																	scheduleRoomFilterPage += 1;
-																}}
-															>
-																Berikutnya
-															</button>
-														</div>
+														<button
+															type="button"
+															class="combobox-more"
+															disabled={!scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
+															onmousedown={(e) => {
+																e.preventDefault();
+																loadMoreScheduleRoomFilterOptions();
+															}}
+														>
+															{scheduleRoomFilterLoading ? 'Memuat...' : 'Muat lebih banyak'}
+														</button>
 													</div>
 												{/if}
 											</div>
@@ -4510,7 +4679,8 @@
 														<button
 															type="button"
 															class="combobox-more"
-															disabled={!scheduleLecturerFilterHasMore || scheduleLecturerFilterLoading}
+															disabled={!scheduleLecturerFilterHasMore ||
+																scheduleLecturerFilterLoading}
 															onmousedown={(e) => {
 																e.preventDefault();
 																loadMoreScheduleLecturerFilterOptions();
@@ -4561,7 +4731,9 @@
 									{#if builderConflictOnly}
 										<Badge variant="secondary">Bentrok saja</Badge>
 									{/if}
-									<Badge variant="secondary">{scheduleActiveFilterCount + Number(builderConflictOnly)} filter aktif</Badge>
+									<Badge variant="secondary"
+										>{scheduleActiveFilterCount + Number(builderConflictOnly)} filter aktif</Badge
+									>
 									<Button
 										class="ghost-button"
 										variant="ghost"
@@ -4576,8 +4748,9 @@
 
 							<div class="list-stack">
 								{#each filteredBuilderEnrollments as item (item.id)}
-									{@const scheduleCard =
-										item.id ? (scheduleCardMap[item.id] ?? auditConflictCardMap[item.id]) : null}
+									{@const scheduleCard = item.id
+										? (scheduleCardMap[item.id] ?? auditConflictCardMap[item.id])
+										: null}
 									<button
 										type="button"
 										class:selected={selectedEnrollmentId === item.id}
@@ -4696,13 +4869,15 @@
 										type="hidden"
 										{...selectedEnrollmentId
 											? updateEnrollment.fields.timezone.as('text')
-											: createEnrollment.fields.timezone.as('text')} value={enrollmentDraft.timezone}
+											: createEnrollment.fields.timezone.as('text')}
+										value={enrollmentDraft.timezone}
 									/>
 
 									{#if selectedEnrollmentId}
 										<input
 											type="hidden"
-											{...updateEnrollment.fields.id.as('text')} value={enrollmentDraft.id}
+											{...updateEnrollment.fields.id.as('text')}
+											value={enrollmentDraft.id}
 										/>
 									{/if}
 
@@ -4725,17 +4900,16 @@
 									</section>
 
 									{#if builderConflictCards.length}
-										<section class="support-panel builder-conflict-panel">
-											<div class="pane-head compact">
+										<details class="support-panel builder-conflict-panel">
+											<summary class="builder-conflict-summary">
 												<div>
 													<h4>Daftar bentrok</h4>
 													<p class="detail-hint">
-														Pilih bentrok untuk langsung membuka jadwal terkait di penjadwalan atau
-														kalender.
+														Buka daftar hanya saat perlu meninjau grup bentrok.
 													</p>
 												</div>
 												<Badge variant="secondary">{builderConflictCards.length} grup</Badge>
-											</div>
+											</summary>
 											<div class="builder-conflict-list">
 												{#each builderConflictCards as group (group.id)}
 													<article
@@ -4770,7 +4944,7 @@
 													</article>
 												{/each}
 											</div>
-										</section>
+										</details>
 									{/if}
 
 									<section
@@ -4790,7 +4964,8 @@
 													type="hidden"
 													{...selectedEnrollmentId
 														? updateEnrollment.fields.studentId.as('text')
-														: createEnrollment.fields.studentId.as('text')} value={enrollmentDraft.studentId}
+														: createEnrollment.fields.studentId.as('text')}
+													value={enrollmentDraft.studentId}
 												/>
 												<div
 													class="combobox-wrap"
@@ -4819,11 +4994,11 @@
 														}}
 													/>
 													{#if studentPickerIssue}
-													<p class="combobox-error">{studentPickerIssue}</p>
-												{:else if studentPickerOpen && studentPickerLoading && !filteredStudentsForPicker.length}
-													<p class="combobox-empty">Memuat mahasiswa...</p>
-												{:else if studentPickerOpen && filteredStudentsForPicker.length}
-													<div class="combobox-dropdown" role="listbox">
+														<p class="combobox-error">{studentPickerIssue}</p>
+													{:else if studentPickerOpen && studentPickerLoading && !filteredStudentsForPicker.length}
+														<p class="combobox-empty">Memuat mahasiswa...</p>
+													{:else if studentPickerOpen && filteredStudentsForPicker.length}
+														<div class="combobox-dropdown" role="listbox">
 															{#each filteredStudentsForPicker as item (item.id)}
 																<button
 																	type="button"
@@ -4839,30 +5014,30 @@
 																	}}
 																>
 																	<strong>{item.name}</strong>
-															<span>{item.id}</span>
-														</button>
-													{/each}
-														{#if studentPickerHasMore || studentPickerLoading}
-															<div class="combobox-footer">
-																<span class="combobox-meta">
-																	{studentPickerOptions.length} mahasiswa dimuat
-																</span>
-																<button
-																	type="button"
-																	class="combobox-more"
-																	disabled={!studentPickerHasMore || studentPickerLoading}
-																	onmousedown={(e) => {
-																		e.preventDefault();
-																		loadMoreStudentPickerOptions();
-																	}}
-																>
-																	{studentPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
+																	<span>{item.id}</span>
 																</button>
-															</div>
-														{/if}
-													</div>
-												{:else if studentPickerOpen}
-													<p class="combobox-empty">Mahasiswa tidak ditemukan.</p>
+															{/each}
+															{#if studentPickerHasMore || studentPickerLoading}
+																<div class="combobox-footer">
+																	<span class="combobox-meta">
+																		{studentPickerOptions.length} mahasiswa dimuat
+																	</span>
+																	<button
+																		type="button"
+																		class="combobox-more"
+																		disabled={!studentPickerHasMore || studentPickerLoading}
+																		onmousedown={(e) => {
+																			e.preventDefault();
+																			loadMoreStudentPickerOptions();
+																		}}
+																	>
+																		{studentPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
+																	</button>
+																</div>
+															{/if}
+														</div>
+													{:else if studentPickerOpen}
+														<p class="combobox-empty">Mahasiswa tidak ditemukan.</p>
 													{/if}
 												</div>
 											</label>
@@ -4873,7 +5048,8 @@
 													type="hidden"
 													{...selectedEnrollmentId
 														? updateEnrollment.fields.courseId.as('text')
-														: createEnrollment.fields.courseId.as('text')} value={enrollmentDraft.courseId}
+														: createEnrollment.fields.courseId.as('text')}
+													value={enrollmentDraft.courseId}
 												/>
 												<div
 													class="combobox-wrap"
@@ -4903,7 +5079,7 @@
 													/>
 													{#if coursePickerIssue}
 														<p class="combobox-error">{coursePickerIssue}</p>
-												{:else if coursePickerOpen && coursePickerLoading && !filteredCoursesForPicker.length}
+													{:else if coursePickerOpen && coursePickerLoading && !filteredCoursesForPicker.length}
 														<p class="combobox-empty">Memuat mata kuliah...</p>
 													{:else if coursePickerOpen && filteredCoursesForPicker.length}
 														<div class="combobox-dropdown" role="listbox">
@@ -4922,30 +5098,30 @@
 																	}}
 																>
 																	<strong>{item.name}</strong>
-															<span>{item.id} • {item.lecturer_name}</span>
-														</button>
-													{/each}
-														{#if coursePickerHasMore || coursePickerLoading}
-															<div class="combobox-footer">
-																<span class="combobox-meta">
-																	{coursePickerOptions.length} mata kuliah dimuat
-																</span>
-																<button
-																	type="button"
-																	class="combobox-more"
-																	disabled={!coursePickerHasMore || coursePickerLoading}
-																	onmousedown={(e) => {
-																		e.preventDefault();
-																		loadMoreCoursePickerOptions();
-																	}}
-																>
-																	{coursePickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
+																	<span>{item.id} • {item.lecturer_name}</span>
 																</button>
-															</div>
-														{/if}
-													</div>
-												{:else if coursePickerOpen}
-													<p class="combobox-empty">Mata kuliah tidak ditemukan.</p>
+															{/each}
+															{#if coursePickerHasMore || coursePickerLoading}
+																<div class="combobox-footer">
+																	<span class="combobox-meta">
+																		{coursePickerOptions.length} mata kuliah dimuat
+																	</span>
+																	<button
+																		type="button"
+																		class="combobox-more"
+																		disabled={!coursePickerHasMore || coursePickerLoading}
+																		onmousedown={(e) => {
+																			e.preventDefault();
+																			loadMoreCoursePickerOptions();
+																		}}
+																	>
+																		{coursePickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
+																	</button>
+																</div>
+															{/if}
+														</div>
+													{:else if coursePickerOpen}
+														<p class="combobox-empty">Mata kuliah tidak ditemukan.</p>
 													{/if}
 												</div>
 											</label>
@@ -4976,7 +5152,8 @@
 												<select
 													{...selectedEnrollmentId
 														? updateEnrollment.fields.day.as('select')
-														: createEnrollment.fields.day.as('select')} value={enrollmentDraft.day}
+														: createEnrollment.fields.day.as('select')}
+													value={enrollmentDraft.day}
 												>
 													{#each days as day (day)}
 														<option value={day}>{DAY_LABELS[day]}</option>
@@ -4990,7 +5167,8 @@
 													type="datetime-local"
 													{...selectedEnrollmentId
 														? updateEnrollment.fields.startTime.as('text')
-														: createEnrollment.fields.startTime.as('text')} value={enrollmentDraft.startTime}
+														: createEnrollment.fields.startTime.as('text')}
+													value={enrollmentDraft.startTime}
 												/>
 											</label>
 
@@ -5000,7 +5178,8 @@
 													type="datetime-local"
 													{...selectedEnrollmentId
 														? updateEnrollment.fields.endTime.as('text')
-														: createEnrollment.fields.endTime.as('text')} value={enrollmentDraft.endTime}
+														: createEnrollment.fields.endTime.as('text')}
+													value={enrollmentDraft.endTime}
 												/>
 											</label>
 
@@ -5009,7 +5188,8 @@
 												<input
 													{...selectedEnrollmentId
 														? updateEnrollment.fields.semester.as('text')
-														: createEnrollment.fields.semester.as('text')} value={enrollmentDraft.semester}
+														: createEnrollment.fields.semester.as('text')}
+													value={enrollmentDraft.semester}
 												/>
 											</label>
 
@@ -5018,7 +5198,8 @@
 												<input
 													{...selectedEnrollmentId
 														? updateEnrollment.fields.academicYear.as('text')
-														: createEnrollment.fields.academicYear.as('text')} value={enrollmentDraft.academicYear}
+														: createEnrollment.fields.academicYear.as('text')}
+													value={enrollmentDraft.academicYear}
 												/>
 											</label>
 										</div>
@@ -5051,141 +5232,141 @@
 												tinjau.
 											</p>
 										</div>
-									<div class="builder-room-stage">
-										<div class="editor-grid builder-room-grid">
-											<label>
-												<span>Ruang</span>
-												<input
-													type="hidden"
-													{...selectedEnrollmentId
-														? updateEnrollment.fields.classRoomId.as('text')
-														: createEnrollment.fields.classRoomId.as('text')} value={enrollmentDraft.classRoomId}
-												/>
-												<div
-													class="combobox-wrap"
-													onfocusout={(e) => {
-														if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-															roomPickerOpen = false;
-														}
-													}}
-												>
+										<div class="builder-room-stage">
+											<div class="editor-grid builder-room-grid">
+												<label>
+													<span>Ruang</span>
 													<input
-														type="text"
-														class="combobox-input"
-														placeholder="Cari ruang tersedia..."
-														value={enrollmentDraft.classRoomId ? selectedDraftRoom : roomPickerSearch}
-														oninput={(e) => {
-															roomPickerSearch = (e.currentTarget as HTMLInputElement).value;
-															roomPickerPage = 0;
-															if (enrollmentDraft.classRoomId) enrollmentDraft.classRoomId = '';
-															roomPickerOpen = true;
-														}}
-														onfocus={() => {
-															roomPickerOpen = true;
-															roomPickerPage = 0;
-														}}
+														type="hidden"
+														{...selectedEnrollmentId
+															? updateEnrollment.fields.classRoomId.as('text')
+															: createEnrollment.fields.classRoomId.as('text')}
+														value={enrollmentDraft.classRoomId}
 													/>
-													{#if roomPickerOpen && pagedRoomOptionsForPicker.length}
-														<div class="combobox-dropdown" role="listbox">
-															{#each pagedRoomOptionsForPicker as room (room.id)}
-																<button
-																	type="button"
-																	role="option"
-																	aria-selected={enrollmentDraft.classRoomId === room.id}
-																	class="combobox-option"
-																	class:active={enrollmentDraft.classRoomId === room.id}
-																	onmousedown={(e) => {
-																		e.preventDefault();
-																		enrollmentDraft.classRoomId = room.id ?? '';
-																		roomPickerSearch = '';
-																		roomPickerOpen = false;
-																	}}
-																>
-																	<strong>{room.name}</strong>
-																	<span>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span>
-																</button>
-															{/each}
-															{#if filteredRoomsForPicker.length > PICKER_PAGE_SIZE}
-																<div class="combobox-footer">
-																	<span class="combobox-meta">
-																		Halaman {roomPickerPage + 1} dari {roomPickerPageCount}
-																	</span>
-																	<div class="combobox-pagination">
+													<div
+														class="combobox-wrap"
+														onfocusout={(e) => {
+															if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+																roomPickerOpen = false;
+															}
+														}}
+													>
+														<input
+															type="text"
+															class="combobox-input"
+															placeholder="Cari ruang tersedia..."
+															value={enrollmentDraft.classRoomId
+																? selectedDraftRoom
+																: roomPickerSearch}
+															oninput={(e) => {
+																roomPickerSearch = (e.currentTarget as HTMLInputElement).value;
+																if (enrollmentDraft.classRoomId) enrollmentDraft.classRoomId = '';
+																queueRoomPickerRefresh();
+																roomPickerOpen = true;
+															}}
+															onfocus={() => {
+																roomPickerOpen = true;
+																if (!roomPickerOptions.length) {
+																	queueRoomPickerRefresh(0);
+																}
+															}}
+														/>
+														{#if roomPickerIssue}
+															<p class="combobox-error">{roomPickerIssue}</p>
+														{:else if roomPickerOpen && roomPickerLoading && !roomPickerOptions.length}
+															<p class="combobox-empty">Memuat ruang kelas...</p>
+														{:else if roomPickerOpen}
+															<div class="combobox-dropdown" role="listbox">
+																{#each filteredRoomsForPicker as room (room.id)}
+																	<button
+																		type="button"
+																		role="option"
+																		aria-selected={enrollmentDraft.classRoomId === room.id}
+																		class="combobox-option"
+																		class:active={enrollmentDraft.classRoomId === room.id}
+																		onmousedown={(e) => {
+																			e.preventDefault();
+																			enrollmentDraft.classRoomId = room.id ?? '';
+																			roomPickerSearch = '';
+																			roomPickerOpen = false;
+																		}}
+																	>
+																		<strong>{room.name}</strong>
+																		<span
+																			>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span
+																		>
+																	</button>
+																{/each}
+																{#if !filteredRoomsForPicker.length && !roomPickerLoading}
+																	<p class="combobox-empty">
+																		Ruang tidak ditemukan untuk slot ini.
+																	</p>
+																{/if}
+																{#if roomPickerHasMore || roomPickerLoading}
+																	<div class="combobox-footer">
+																		<span class="combobox-meta">
+																			{filteredRoomsForPicker.length} ruang dimuat
+																		</span>
 																		<button
 																			type="button"
 																			class="combobox-more"
-																			disabled={!roomPickerHasPreviousPage}
+																			disabled={!roomPickerHasMore || roomPickerLoading}
 																			onmousedown={(e) => {
 																				e.preventDefault();
-																				roomPickerPage = Math.max(roomPickerPage - 1, 0);
+																				loadMoreRoomPickerOptions();
 																			}}
 																		>
-																			Sebelumnya
-																		</button>
-																		<button
-																			type="button"
-																			class="combobox-more"
-																			disabled={!roomPickerHasNextPage}
-																			onmousedown={(e) => {
-																				e.preventDefault();
-																				roomPickerPage += 1;
-																			}}
-																		>
-																			Berikutnya
+																			{roomPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
 																		</button>
 																	</div>
-																</div>
-															{/if}
-														</div>
-													{:else if roomPickerOpen}
-														<p class="combobox-empty">Ruang tidak ditemukan untuk slot ini.</p>
-													{/if}
-												</div>
-											</label>
-										</div>
+																{/if}
+															</div>
+														{/if}
+													</div>
+												</label>
+											</div>
 
-										<section class="support-panel builder-support">
-											<h4>{availableRoomOptions.length} ruang tersedia untuk slot ini</h4>
-											<div class="support-list">
-												{#if pagedRoomOptionsForPicker.length}
-													{#each pagedRoomOptionsForPicker as room (room.id)}
-														<div>
-															<strong>{room.name}</strong>
-															<span
-																>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span
-															>
-														</div>
-													{/each}
-													{#if filteredRoomsForPicker.length > PICKER_PAGE_SIZE}
-														<div class="combobox-footer support-footer">
-															<span class="combobox-meta">
-																Halaman {roomPickerPage + 1} dari {roomPickerPageCount}
-															</span>
-															<div class="combobox-pagination">
+											<section class="support-panel builder-support">
+												<h4>Ruang tersedia untuk slot ini</h4>
+												<div class="support-list">
+													{#if filteredRoomsForPicker.length}
+														{#each filteredRoomsForPicker as room (room.id)}
+															<div>
+																<strong>{room.name}</strong>
+																<span
+																	>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span
+																>
+															</div>
+														{/each}
+														{#if roomPickerHasMore || roomPickerLoading}
+															<div class="combobox-footer support-footer">
 																<button
 																	type="button"
 																	class="combobox-more"
-																	disabled={!roomPickerHasPreviousPage}
-																	onclick={() => (roomPickerPage = Math.max(roomPickerPage - 1, 0))}
+																	disabled={!roomPickerHasMore || roomPickerLoading}
+																	onclick={() => loadMoreRoomPickerOptions()}
 																>
-																	Sebelumnya
-																</button>
-																<button
-																	type="button"
-																	class="combobox-more"
-																	disabled={!roomPickerHasNextPage}
-																	onclick={() => (roomPickerPage += 1)}
-																>
-																	Berikutnya
+																	{roomPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
 																</button>
 															</div>
-														</div>
-													{/if}
-												{:else}
-													<p class="empty-copy">
-														Belum ada ruang yang tersedia untuk slot ini. Ubah jadwal atau pilih
+														{/if}
+													{:else}
+														<p class="empty-copy">
+															Belum ada ruang yang tersedia untuk slot ini. Ubah jadwal atau pilih
 															slot lain.
 														</p>
+														{#if roomPickerHasMore || roomPickerLoading}
+															<div class="combobox-footer support-footer">
+																<button
+																	type="button"
+																	class="combobox-more"
+																	disabled={!roomPickerHasMore || roomPickerLoading}
+																	onclick={() => loadMoreRoomPickerOptions()}
+																>
+																	{roomPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
+																</button>
+															</div>
+														{/if}
 													{/if}
 												</div>
 											</section>
@@ -5404,20 +5585,23 @@
 								>
 									{#if selectedRoomId}<input
 											type="hidden"
-											{...updateClassRoom.fields.id.as('text')} value={selectedRoomId}
+											{...updateClassRoom.fields.id.as('text')}
+											value={selectedRoomId}
 										/>{/if}
 									<label
 										><span>Nama ruang</span><input
 											{...selectedRoomId
 												? updateClassRoom.fields.name.as('text')
-												: createClassRoom.fields.name.as('text')} value={classroomDraft.name}
+												: createClassRoom.fields.name.as('text')}
+											value={classroomDraft.name}
 										/></label
 									>
 									<label
 										><span>Tipe ruang</span><select
 											{...selectedRoomId
 												? updateClassRoom.fields.classRoomType.as('select')
-												: createClassRoom.fields.classRoomType.as('select')} value={classroomDraft.classRoomType}
+												: createClassRoom.fields.classRoomType.as('select')}
+											value={classroomDraft.classRoomType}
 											>{#each classRoomTypes as type (type)}<option value={type}
 													>{beautifyRoomType(type)}</option
 												>{/each}</select
@@ -5428,7 +5612,8 @@
 											min="1"
 											{...selectedRoomId
 												? updateClassRoom.fields.capacity.as('number')
-												: createClassRoom.fields.capacity.as('number')} value={classroomDraft.capacity}
+												: createClassRoom.fields.capacity.as('number')}
+											value={classroomDraft.capacity}
 										/></label
 									>
 									<label class="check-row"
@@ -5595,14 +5780,16 @@
 								>
 									{#if selectedCourseId}<input
 											type="hidden"
-											{...updateCourse.fields.id.as('text')} value={courseDraft.id}
+											{...updateCourse.fields.id.as('text')}
+											value={courseDraft.id}
 										/>{:else}<p class="editor-note">
 											Kode mata kuliah dibuat otomatis saat data disimpan.
 										</p>{/if}<label
 										><span>Nama mata kuliah</span><input
 											{...selectedCourseId
 												? updateCourse.fields.name.as('text')
-												: createCourse.fields.name.as('text')} value={courseDraft.name}
+												: createCourse.fields.name.as('text')}
+											value={courseDraft.name}
 										/></label
 									><label
 										><span>SKS</span><input
@@ -5610,13 +5797,15 @@
 											max="6"
 											{...selectedCourseId
 												? updateCourse.fields.credits.as('number')
-												: createCourse.fields.credits.as('number')} value={courseDraft.credits}
+												: createCourse.fields.credits.as('number')}
+											value={courseDraft.credits}
 										/></label
 									><label
 										><span>Program studi</span><select
 											{...selectedCourseId
 												? updateCourse.fields.studyProgramId.as('select')
-												: createCourse.fields.studyProgramId.as('select')} value={courseDraft.studyProgramId}
+												: createCourse.fields.studyProgramId.as('select')}
+											value={courseDraft.studyProgramId}
 											><option value="">Pilih program studi</option
 											>{#if collectionIssues.studyPrograms && !studyPrograms.length}<option
 													value=""
@@ -5630,7 +5819,8 @@
 										><span>Dosen pengampu</span><select
 											{...selectedCourseId
 												? updateCourse.fields.lecturerId.as('select')
-												: createCourse.fields.lecturerId.as('select')} value={courseDraft.lecturerId}
+												: createCourse.fields.lecturerId.as('select')}
+											value={courseDraft.lecturerId}
 											><option value="">Pilih dosen</option
 											>{#if collectionIssues.lecturers && !lecturers.length}<option
 													value=""
@@ -5782,42 +5972,49 @@
 								>
 									{#if selectedStudentId}<input
 											type="hidden"
-											{...updateStudent.fields.id.as('text')} value={selectedStudentId}
+											{...updateStudent.fields.id.as('text')}
+											value={selectedStudentId}
 										/>{/if}<label
 										><span>Nama</span><input
 											{...selectedStudentId
 												? updateStudent.fields.name.as('text')
-												: createStudent.fields.name.as('text')} value={studentDraft.name}
+												: createStudent.fields.name.as('text')}
+											value={studentDraft.name}
 										/></label
 									><label
 										><span>Email</span><input
 											{...selectedStudentId
 												? updateStudent.fields.email.as('email')
-												: createStudent.fields.email.as('email')} value={studentDraft.email}
+												: createStudent.fields.email.as('email')}
+											value={studentDraft.email}
 										/></label
 									><label
 										><span>Telepon</span><input
 											{...selectedStudentId
 												? updateStudent.fields.phone.as('text')
-												: createStudent.fields.phone.as('text')} value={studentDraft.phone}
+												: createStudent.fields.phone.as('text')}
+											value={studentDraft.phone}
 										/></label
 									><label
 										><span>Alamat</span><input
 											{...selectedStudentId
 												? updateStudent.fields.address.as('text')
-												: createStudent.fields.address.as('text')} value={studentDraft.address}
+												: createStudent.fields.address.as('text')}
+											value={studentDraft.address}
 										/></label
 									><label
 										><span>Angkatan</span><input
 											{...selectedStudentId
 												? updateStudent.fields.yearAdmitted.as('number')
-												: createStudent.fields.yearAdmitted.as('number')} value={studentDraft.yearAdmitted}
+												: createStudent.fields.yearAdmitted.as('number')}
+											value={studentDraft.yearAdmitted}
 										/></label
 									><label
 										><span>Program studi</span><select
 											{...selectedStudentId
 												? updateStudent.fields.studyProgramId.as('select')
-												: createStudent.fields.studyProgramId.as('select')} value={studentDraft.studyProgramId}
+												: createStudent.fields.studyProgramId.as('select')}
+											value={studentDraft.studyProgramId}
 											><option value="">Pilih program studi</option
 											>{#if collectionIssues.studyPrograms && !studyPrograms.length}<option
 													value=""
@@ -5969,32 +6166,37 @@
 								>
 									{#if selectedLecturerId}<input
 											type="hidden"
-											{...updateLecturer.fields.id.as('text')} value={lecturerDraft.id}
+											{...updateLecturer.fields.id.as('text')}
+											value={lecturerDraft.id}
 										/>{:else}<p class="editor-note">
 											ID dosen dibuat otomatis saat data disimpan.
 										</p>{/if}<label
 										><span>Nama</span><input
 											{...selectedLecturerId
 												? updateLecturer.fields.name.as('text')
-												: createLecturer.fields.name.as('text')} value={lecturerDraft.name}
+												: createLecturer.fields.name.as('text')}
+											value={lecturerDraft.name}
 										/></label
 									><label
 										><span>Email</span><input
 											{...selectedLecturerId
 												? updateLecturer.fields.email.as('email')
-												: createLecturer.fields.email.as('email')} value={lecturerDraft.email}
+												: createLecturer.fields.email.as('email')}
+											value={lecturerDraft.email}
 										/></label
 									><label
 										><span>Telepon</span><input
 											{...selectedLecturerId
 												? updateLecturer.fields.phone.as('text')
-												: createLecturer.fields.phone.as('text')} value={lecturerDraft.phone}
+												: createLecturer.fields.phone.as('text')}
+											value={lecturerDraft.phone}
 										/></label
 									><label
 										><span>Alamat</span><input
 											{...selectedLecturerId
 												? updateLecturer.fields.address.as('text')
-												: createLecturer.fields.address.as('text')} value={lecturerDraft.address}
+												: createLecturer.fields.address.as('text')}
+											value={lecturerDraft.address}
 										/></label
 									><Button type="submit" class="primary-button"
 										>{selectedLecturerId ? 'Simpan perubahan' : 'Tambah dosen'}</Button
@@ -6131,14 +6333,16 @@
 								>
 									{#if selectedFacultyId}<input
 											type="hidden"
-											{...updateFaculty.fields.id.as('text')} value={facultyDraft.id}
+											{...updateFaculty.fields.id.as('text')}
+											value={facultyDraft.id}
 										/>{:else}<p class="editor-note">
 											ID fakultas dibuat otomatis saat data disimpan.
 										</p>{/if}<label
 										><span>Nama fakultas</span><input
 											{...selectedFacultyId
 												? updateFaculty.fields.name.as('text')
-												: createFaculty.fields.name.as('text')} value={facultyDraft.name}
+												: createFaculty.fields.name.as('text')}
+											value={facultyDraft.name}
 										/></label
 									><Button type="submit" class="primary-button"
 										>{selectedFacultyId ? 'Simpan perubahan' : 'Tambah fakultas'}</Button
@@ -6288,26 +6492,30 @@
 								>
 									{#if selectedStudyProgramId}<input
 											type="hidden"
-											{...updateStudyProgram.fields.id.as('text')} value={studyProgramDraft.id}
+											{...updateStudyProgram.fields.id.as('text')}
+											value={studyProgramDraft.id}
 										/>{:else}<p class="editor-note">
 											ID program studi dibuat otomatis saat data disimpan.
 										</p>{/if}<label
 										><span>Nama prodi</span><input
 											{...selectedStudyProgramId
 												? updateStudyProgram.fields.name.as('text')
-												: createStudyProgram.fields.name.as('text')} value={studyProgramDraft.name}
+												: createStudyProgram.fields.name.as('text')}
+											value={studyProgramDraft.name}
 										/></label
 									><label
 										><span>Ketua prodi</span><input
 											{...selectedStudyProgramId
 												? updateStudyProgram.fields.head.as('text')
-												: createStudyProgram.fields.head.as('text')} value={studyProgramDraft.head}
+												: createStudyProgram.fields.head.as('text')}
+											value={studyProgramDraft.head}
 										/></label
 									><label
 										><span>Fakultas</span><select
 											{...selectedStudyProgramId
 												? updateStudyProgram.fields.facultyId.as('select')
-												: createStudyProgram.fields.facultyId.as('select')} value={studyProgramDraft.facultyId}
+												: createStudyProgram.fields.facultyId.as('select')}
+											value={studyProgramDraft.facultyId}
 											><option value="">Pilih fakultas</option
 											>{#if collectionIssues.faculties && !faculties.length}<option
 													value=""
@@ -6383,15 +6591,105 @@
 								</label>
 								<label>
 									<span>Ruang</span>
-									<select
-										bind:value={scheduleRoomFilter}
-										onchange={() => queueCollectionRefresh('enrollments', 0)}
+									<div
+										class="combobox-wrap"
+										onfocusout={(e) => {
+											if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+												scheduleRoomFilterOpen = false;
+											}
+										}}
 									>
-										<option value="">Semua ruang</option>
-										{#each classrooms as item (item.id)}
-											<option value={item.id}>{item.name}</option>
-										{/each}
-									</select>
+										<input
+											type="text"
+											class="combobox-input"
+											placeholder="Cari ruang filter..."
+											value={scheduleRoomFilter
+												? selectedScheduleRoomFilterLabel
+												: scheduleRoomFilterSearch}
+											oninput={(e) => {
+												scheduleRoomFilterSearch = (e.currentTarget as HTMLInputElement).value;
+												if (scheduleRoomFilter) {
+													scheduleRoomFilter = '';
+													queueCollectionRefresh('enrollments', 0);
+												}
+												queueScheduleRoomFilterRefresh();
+												scheduleRoomFilterOpen = true;
+											}}
+											onfocus={() => {
+												scheduleRoomFilterOpen = true;
+												if (!scheduleRoomFilterOptions.length) {
+													queueScheduleRoomFilterRefresh(0);
+												}
+											}}
+										/>
+										{#if scheduleRoomFilterIssue}
+											<p class="combobox-error">{scheduleRoomFilterIssue}</p>
+										{:else if scheduleRoomFilterOpen && scheduleRoomFilterLoading && !scheduleRoomFilterOptions.length}
+											<p class="combobox-empty">Memuat ruang kelas...</p>
+										{:else if scheduleRoomFilterOpen}
+											<div class="combobox-dropdown" role="listbox">
+												<button
+													type="button"
+													role="option"
+													aria-selected={!scheduleRoomFilter}
+													class="combobox-option"
+													class:active={!scheduleRoomFilter}
+													onmousedown={(e) => {
+														e.preventDefault();
+														scheduleRoomFilter = '';
+														scheduleRoomFilterSearch = '';
+														scheduleRoomFilterOpen = false;
+														queueCollectionRefresh('enrollments', 0);
+													}}
+												>
+													<strong>Semua ruang</strong>
+													<span>Hapus filter ruang</span>
+												</button>
+												{#each filteredScheduleRoomFilterOptions as item (item.id)}
+													<button
+														type="button"
+														role="option"
+														aria-selected={scheduleRoomFilter === item.id}
+														class="combobox-option"
+														class:active={scheduleRoomFilter === item.id}
+														onmousedown={(e) => {
+															e.preventDefault();
+															scheduleRoomFilter = item.id ?? '';
+															scheduleRoomFilterSearch = '';
+															scheduleRoomFilterOpen = false;
+															queueCollectionRefresh('enrollments', 0);
+														}}
+													>
+														<strong>{item.name}</strong>
+														<span
+															>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
+														>
+													</button>
+												{/each}
+												{#if !filteredScheduleRoomFilterOptions.length && !scheduleRoomFilterLoading}
+													<p class="combobox-empty">Ruang tidak ditemukan.</p>
+												{/if}
+												{#if scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
+													<div class="combobox-footer">
+														<span class="combobox-meta">
+															{scheduleRoomFilterOptions.length} opsi dimuat
+														</span>
+														<button
+															type="button"
+															class="combobox-more"
+															disabled={!scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
+															onmousedown={(e) => {
+																e.preventDefault();
+																loadMoreScheduleRoomFilterOptions();
+															}}
+														>
+															{scheduleRoomFilterLoading ? 'Memuat...' : 'Muat lebih banyak'}
+														</button>
+													</div>
+												{/if}
+											</div>
+										{/if}
+									</div>
 								</label>
 								<label>
 									<span>Dosen</span>
@@ -6692,12 +6990,14 @@
 								>
 									{#if selectedGradeId}<input
 											type="hidden"
-											{...updateGrade.fields.id.as('text')} value={gradeDraft.id}
+											{...updateGrade.fields.id.as('text')}
+											value={gradeDraft.id}
 										/>{/if}<label
 										><span>KRS</span><select
 											{...selectedGradeId
 												? updateGrade.fields.enrollmentId.as('select')
-												: createGrade.fields.enrollmentId.as('select')} value={gradeDraft.enrollmentId}
+												: createGrade.fields.enrollmentId.as('select')}
+											value={gradeDraft.enrollmentId}
 											><option value="">Pilih KRS</option
 											>{#if collectionIssues.enrollments && !enrollments.length}<option
 													value=""
@@ -6712,7 +7012,8 @@
 											max="100"
 											{...selectedGradeId
 												? updateGrade.fields.assignmentScore.as('number')
-												: createGrade.fields.assignmentScore.as('number')} value={gradeDraft.assignmentScore}
+												: createGrade.fields.assignmentScore.as('number')}
+											value={gradeDraft.assignmentScore}
 										/></label
 									><label
 										><span>UTS</span><input
@@ -6720,7 +7021,8 @@
 											max="100"
 											{...selectedGradeId
 												? updateGrade.fields.midtermScore.as('number')
-												: createGrade.fields.midtermScore.as('number')} value={gradeDraft.midtermScore}
+												: createGrade.fields.midtermScore.as('number')}
+											value={gradeDraft.midtermScore}
 										/></label
 									><label
 										><span>UAS</span><input
@@ -6728,7 +7030,8 @@
 											max="100"
 											{...selectedGradeId
 												? updateGrade.fields.finalScore.as('number')
-												: createGrade.fields.finalScore.as('number')} value={gradeDraft.finalScore}
+												: createGrade.fields.finalScore.as('number')}
+											value={gradeDraft.finalScore}
 										/></label
 									>{#if gradeEditorBlocked}<p class="editor-note">
 											Data KRS harus tersedia sebelum nilai bisa disimpan.
@@ -6841,31 +7144,37 @@
 									</p>
 									<input
 										type="hidden"
-										{...updateUser.fields.id.as('text')} value={userDraft.id}
+										{...updateUser.fields.id.as('text')}
+										value={userDraft.id}
 									/><label
 										><span>Email</span><input
 											{...updateUser.fields.email.as('email')}
-											autocomplete="email" value={userDraft.email}
+											autocomplete="email"
+											value={userDraft.email}
 										/></label
 									><label
 										><span>Password baru</span><input
 											{...updateUser.fields.password.as('password')}
-											autocomplete="new-password" value={userDraft.password}
+											autocomplete="new-password"
+											value={userDraft.password}
 											placeholder="Biarkan kosong jika password lama tetap dipakai"
 										/></label
 									><label
 										><span>Peran akses</span><select
-											{...updateUser.fields.role.as('select')} value={userDraft.role}
+											{...updateUser.fields.role.as('select')}
+											value={userDraft.role}
 											><option value="ADMIN">ADMIN</option><option value="STUDENT">STUDENT</option
 											><option value="LECTURER">LECTURER</option></select
 										></label
 									><label
 										><span>ID mahasiswa terkait</span><input
-											{...updateUser.fields.studentId.as('text')} value={userDraft.studentId}
+											{...updateUser.fields.studentId.as('text')}
+											value={userDraft.studentId}
 										/></label
 									><label
 										><span>ID dosen terkait</span><input
-											{...updateUser.fields.lecturerId.as('text')} value={userDraft.lecturerId}
+											{...updateUser.fields.lecturerId.as('text')}
+											value={userDraft.lecturerId}
 										/></label
 									><Button type="submit" class="primary-button">Simpan akun</Button>
 								</form>{:else}<p class="empty-copy">
@@ -6882,7 +7191,12 @@
 		<Card.Root class="login-panel">
 			<Card.Header>
 				<div class="topbar-tools">
-					<Button type="button" variant="outline" size="sm" onclick={() => window.location.reload()}>
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						onclick={() => window.location.reload()}
+					>
 						<RotateCw size={16} />
 						<span>Refresh</span>
 					</Button>
@@ -8186,12 +8500,40 @@
 
 	.builder-conflict-panel {
 		display: grid;
-		gap: 0.85rem;
+		gap: 0.75rem;
+		padding: 0.75rem 0.85rem;
+	}
+
+	.builder-conflict-summary {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		cursor: pointer;
+		list-style: none;
+	}
+
+	.builder-conflict-summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.builder-conflict-summary::after {
+		content: 'Tampilkan';
+		font-size: 0.78rem;
+		font-weight: 700;
+		color: var(--color-accent-strong);
+	}
+
+	.builder-conflict-panel[open] .builder-conflict-summary::after {
+		content: 'Sembunyikan';
 	}
 
 	.builder-conflict-list {
 		display: grid;
 		gap: 0.75rem;
+		max-height: 18rem;
+		overflow: auto;
+		padding-right: 0.2rem;
 	}
 
 	.builder-conflict-card {

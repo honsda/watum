@@ -49,6 +49,10 @@ function hasExplicitTimezone(value: string): boolean {
 	return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
 }
 
+function isTimeOnly(value: string): boolean {
+	return /^\d{1,2}:\d{2}(?::\d{2})?$/.test(value);
+}
+
 export function parseISO(isoStr: string, sourceTimezone?: string): Date {
 	// Datetime-local values have no offset. Parse them in the browser timezone first,
 	// then convert to UTC so DB storage remains consistent.
@@ -63,11 +67,20 @@ export function parseISO(isoStr: string, sourceTimezone?: string): Date {
 }
 
 export function formatDateTime(
-	date: Date | dayjs.Dayjs,
+	value: Date | dayjs.Dayjs | string,
 	format: 'full' | 'date' | 'time' = 'full',
 	timezone: string = 'Asia/Jakarta'
 ): string {
-	const dayjsDate = dayjs(date).tz(timezone);
+	if (typeof value === 'string' && isTimeOnly(value)) {
+		const [hours = '00', minutes = '00'] = value.split(':');
+		const time = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+		return format === 'time' ? time : `2000-01-01 ${time}`;
+	}
+
+	const dayjsDate =
+		typeof value === 'string'
+			? dayjs.tz(`2000-01-01T${value}`, 'UTC').tz(timezone)
+			: dayjs(value).tz(timezone);
 
 	switch (format) {
 		case 'time':
@@ -81,10 +94,15 @@ export function formatDateTime(
 }
 
 export function formatDateTimeInput(
-	date: Date | dayjs.Dayjs,
+	value: Date | dayjs.Dayjs | string,
 	timezone: string = 'Asia/Jakarta'
 ): string {
-	return dayjs(date).tz(timezone).format('YYYY-MM-DDTHH:mm');
+	if (typeof value === 'string') {
+		// TIME string like 'HH:MM:SS' — return as datetime-local on a reference date
+		const [hours, minutes] = value.split(':');
+		return `2000-01-01T${hours}:${minutes}`;
+	}
+	return dayjs(value).tz(timezone).format('YYYY-MM-DDTHH:mm');
 }
 
 export function getDuration(

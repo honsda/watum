@@ -70,9 +70,7 @@ async function selectGradeListRows(
 			'ORDER BY g.id ASC',
 			'LIMIT ?'
 		].join(' ');
-		const values = afterId
-			? [enrollmentIds, afterId, limit + 1]
-			: [enrollmentIds, limit + 1];
+		const values = afterId ? [enrollmentIds, afterId, limit + 1] : [enrollmentIds, limit + 1];
 		const [rows] = await getPool().query(sql, values);
 		return rows as SelectGradesResult[];
 	}
@@ -365,7 +363,11 @@ export const searchGrades = query(searchGradesSchema, async (filters) => {
 	if (filters.studentEmail)
 		where.push(['student_email', 'LIKE', containsSearchPattern(filters.studentEmail)!]);
 	if (filters.studyProgramName)
-		where.push(['study_program_name', 'FULLTEXT', fulltextSearchPattern(filters.studyProgramName)!]);
+		where.push([
+			'study_program_name',
+			'FULLTEXT',
+			fulltextSearchPattern(filters.studyProgramName)!
+		]);
 	if (filters.courseId) where.push(['course_id', '=', filters.courseId]);
 	if (filters.courseName)
 		where.push(['course_name', 'FULLTEXT', fulltextSearchPattern(filters.courseName)!]);

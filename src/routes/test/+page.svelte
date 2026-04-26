@@ -197,65 +197,7 @@
 		lecturerName: ''
 	});
 
-	let createCourseData = $state({
-		id: '',
-		name: '',
-		credits: 3,
-		studyProgramId: '',
-		lecturerId: ''
-	});
-	let updateCourseData = $state({
-		id: '',
-		name: '',
-		credits: 3,
-		studyProgramId: '',
-		lecturerId: ''
-	});
-
 	const classRoomTypeOptions = ['REGULER', 'LAB_KOMPUTER', 'LAB_BAHASA', 'AUDITORIUM'] as const;
-
-	let createClassRoomData = $state({
-		name: '',
-		classRoomType: 'REGULER',
-		capacity: 30,
-		hasProjector: true,
-		hasAC: false
-	});
-	let updateClassRoomData = $state({
-		id: '',
-		name: '',
-		classRoomType: 'REGULER',
-		capacity: 30,
-		hasProjector: true,
-		hasAC: false
-	});
-
-	let createStudentData = $state({
-		name: '',
-		email: '',
-		phone: '',
-		address: '',
-		yearAdmitted: 2024,
-		studyProgramId: 'TI'
-	});
-	let updateStudentData = $state({
-		id: '',
-		name: '',
-		email: '',
-		phone: '',
-		address: '',
-		yearAdmitted: 2024,
-		studyProgramId: 'TI'
-	});
-
-	let createLecturerData = $state({ id: '', name: '', email: '', phone: '', address: '' });
-	let updateLecturerData = $state({ id: '', name: '', email: '', phone: '', address: '' });
-
-	let createFacultyData = $state({ id: '', name: '' });
-	let updateFacultyData = $state({ id: '', name: '' });
-
-	let createStudyProgramData = $state({ id: '', name: '', head: '', facultyId: 'FTI' });
-	let updateStudyProgramData = $state({ id: '', name: '', head: '', facultyId: 'FTI' });
 
 	let createEnrollmentData = $state({
 		studentId: '',
@@ -288,19 +230,6 @@
 		void ensureAccessToken();
 	});
 
-	let createGradeData = $state({
-		enrollmentId: '',
-		assignmentScore: 80,
-		midtermScore: 80,
-		finalScore: 80
-	});
-	let updateGradeData = $state({
-		id: '',
-		enrollmentId: '',
-		assignmentScore: 80,
-		midtermScore: 80,
-		finalScore: 80
-	});
 	let batchGradeData = $state({
 		enrollmentId: '',
 		assignmentScore: 80,
@@ -1695,10 +1624,7 @@
 			<div class="rounded border p-3">
 				<h3 class="font-semibold">createEnrollment</h3>
 				<form class="mt-2 flex flex-wrap gap-2" {...formBox('createEnrollment', createEnrollment)}>
-					<input
-						type="hidden"
-						{...createEnrollment.fields.timezone.as('text')}
-					/>
+					<input type="hidden" {...createEnrollment.fields.timezone.as('text')} />
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...createEnrollment.fields.studentId.as('text')}
@@ -1761,10 +1687,7 @@
 			<div class="rounded border p-3">
 				<h3 class="font-semibold">updateEnrollment</h3>
 				<form class="mt-2 flex flex-wrap gap-2" {...formBox('updateEnrollment', updateEnrollment)}>
-					<input
-						type="hidden"
-						{...updateEnrollment.fields.timezone.as('text')}
-					/>
+					<input type="hidden" {...updateEnrollment.fields.timezone.as('text')} />
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateEnrollment.fields.id.as('text')}
@@ -2274,13 +2197,11 @@
 					<input
 						class="rounded border px-2 py-1 text-sm"
 						{...updateUser.fields.password.as('password')}
-						autocomplete="new-password" value={updateUserData.password}
+						autocomplete="new-password"
+						value={updateUserData.password}
 						placeholder="Leave blank to keep existing"
 					/>
-					<select
-						class="rounded border px-2 py-1 text-sm"
-						{...updateUser.fields.role.as('select')}
-					>
+					<select class="rounded border px-2 py-1 text-sm" {...updateUser.fields.role.as('select')}>
 						<option value="ADMIN">ADMIN</option>
 						<option value="STUDENT">STUDENT</option>
 						<option value="LECTURER">LECTURER</option>

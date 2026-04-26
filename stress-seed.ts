@@ -1,10 +1,8 @@
 import 'dotenv/config';
 import { hash } from 'argon2';
 import { createReadStream } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { PassThrough } from 'node:stream';
 import { createConnection, type Connection } from 'mysql2/promise';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 const DEFAULT_STRESS_SEED_TARGET_ROWS = 10_000_000;
 const DEFAULT_INSERT_BATCH_SIZE = 10_000;
@@ -23,8 +21,9 @@ const CLASSROOM_ID_PREFIX = 'stress-room-';
 const SCHEDULE_ID_PREFIX = 'stress-sch-';
 const ENROLLMENT_ID_PREFIX = 'stress-enr-';
 const GRADE_ID_PREFIX = 'stress-grade-';
-const CONFLICTING_ENROLLMENT_COUNT = 8;
-const TARGET_CLASS_SIZE = 40;
+const INTENTIONAL_CONFLICT_GROUP_COUNT = 8;
+const INTENTIONAL_CONFLICT_MEMBERS_PER_GROUP = 2;
+
 const ACADEMIC_YEAR = '2025/2026';
 const SEMESTER = 'GENAP';
 
@@ -236,25 +235,29 @@ type ClassRoomSeedRow = [string, string, string, number, number, number, number]
 const ACADEMIC_YEAR_START = Number.parseInt(ACADEMIC_YEAR.slice(0, 4), 10);
 const SEMESTER_SORT = 2;
 
-async function createSeedConnection() {
-	return createConnection({
-		host: process.env.DB_HOST || 'localhost',
-		user: process.env.DB_USER || 'root',
-		password: process.env.DB_PASSWORD || '',
-		database: process.env.DB_NAME || 'akademik_db',
-		port: parseInt(process.env.DB_PORT || '3306', 10),
-		timezone: '+00:00',
-		charset: 'utf8mb4',
-		compress: true,
-		infileStreamFactory: (path) => createReadStream(path),
-		enableKeepAlive: true,
-		keepAliveInitialDelay: 10000,
-		connectTimeout: 30000
-	});
-}
+const streamRegistry = new Map<string, PassThrough>();
 
-async function createSeedConnections(count: number) {
-	return Promise.all(Array.from({ length: count }, () => createSeedConnection()));
+const baseSeedConfig = {
+	host: process.env.DB_HOST || 'localhost',
+	user: process.env.DB_USER || 'root',
+	password: process.env.DB_PASSWORD || '',
+	database: process.env.DB_NAME || 'akademik_db',
+	port: parseInt(process.env.DB_PORT || '3306', 10),
+	timezone: '+00:00',
+	charset: 'utf8mb4',
+	compress: true,
+	infileStreamFactory: (path: string) => {
+		const stream = streamRegistry.get(path);
+		if (stream) return stream;
+		return createReadStream(path);
+	},
+	enableKeepAlive: true,
+	keepAliveInitialDelay: 10000,
+	connectTimeout: 30000
+};
+
+async function createSeedConnection() {
+	return createConnection(baseSeedConfig);
 }
 
 async function configureSeedSession(conn: Connection) {
@@ -291,9 +294,11 @@ async function createConflictAuditTriggers(conn: Connection) {
 		BEFORE UPDATE ON courses
 		FOR EACH ROW
 		BEGIN
-		  SET NEW.lecturer_audit_sk = (
-		    SELECT l.audit_sk FROM lecturers l WHERE l.id = NEW.lecturer_id LIMIT 1
-		  );
+		  IF NOT (OLD.lecturer_id <=> NEW.lecturer_id) THEN
+		    SET NEW.lecturer_audit_sk = (
+		      SELECT l.audit_sk FROM lecturers l WHERE l.id = NEW.lecturer_id LIMIT 1
+		    );
+		  END IF;
 		END
 	`);
 	await conn.query(`
@@ -303,9 +308,9 @@ async function createConflictAuditTriggers(conn: Connection) {
 		BEGIN
 		  IF NOT (OLD.lecturer_audit_sk <=> NEW.lecturer_audit_sk) THEN
 		    UPDATE enrollments
-		    SET lecturer_audit_sk = NEW.lecturer_audit_sk,
-		        course_audit_sk = NEW.audit_sk
-		    WHERE course_id = NEW.id;
+		    SET lecturer_audit_sk = NEW.lecturer_audit_sk
+		    WHERE course_id = NEW.id
+		      AND lecturer_audit_sk <> NEW.lecturer_audit_sk;
 		  END IF;
 		END
 	`);
@@ -332,31 +337,39 @@ async function createConflictAuditTriggers(conn: Connection) {
 		BEFORE UPDATE ON enrollments
 		FOR EACH ROW
 		BEGIN
-		  SET NEW.student_audit_sk = (SELECT s.audit_sk FROM students s WHERE s.id = NEW.student_id LIMIT 1);
-		  SET NEW.course_audit_sk = (SELECT c.audit_sk FROM courses c WHERE c.id = NEW.course_id LIMIT 1);
-		  SET NEW.lecturer_audit_sk = (SELECT c.lecturer_audit_sk FROM courses c WHERE c.id = NEW.course_id LIMIT 1);
-		  SET NEW.class_room_audit_sk = (SELECT cr.audit_sk FROM class_rooms cr WHERE cr.id = NEW.class_room_id LIMIT 1);
-		  SET NEW.schedule_audit_sk = (SELECT sch.audit_sk FROM schedules sch WHERE sch.id = NEW.schedule_id LIMIT 1);
-		  SET NEW.academic_year_start = CAST(SUBSTRING(NEW.academic_year, 1, 4) AS UNSIGNED);
-		  SET NEW.semester_sort = CASE
-		    WHEN UPPER(NEW.semester) LIKE 'GAN%' THEN 1
-		    WHEN UPPER(NEW.semester) LIKE 'GEN%' THEN 2
-		    ELSE 9
-		  END;
+		  IF NOT (OLD.student_id <=> NEW.student_id) THEN
+		    SET NEW.student_audit_sk = (SELECT s.audit_sk FROM students s WHERE s.id = NEW.student_id LIMIT 1);
+		  END IF;
+
+		  IF NOT (OLD.course_id <=> NEW.course_id) THEN
+		    SET NEW.course_audit_sk = (SELECT c.audit_sk FROM courses c WHERE c.id = NEW.course_id LIMIT 1);
+		    SET NEW.lecturer_audit_sk = (SELECT c.lecturer_audit_sk FROM courses c WHERE c.id = NEW.course_id LIMIT 1);
+		  END IF;
+
+		  IF NOT (OLD.class_room_id <=> NEW.class_room_id) THEN
+		    SET NEW.class_room_audit_sk = (SELECT cr.audit_sk FROM class_rooms cr WHERE cr.id = NEW.class_room_id LIMIT 1);
+		  END IF;
+
+		  IF NOT (OLD.schedule_id <=> NEW.schedule_id) THEN
+		    SET NEW.schedule_audit_sk = (SELECT sch.audit_sk FROM schedules sch WHERE sch.id = NEW.schedule_id LIMIT 1);
+		    SET NEW.schedule_day = (SELECT sch.day FROM schedules sch WHERE sch.id = NEW.schedule_id LIMIT 1);
+		    SET NEW.schedule_start_time = (SELECT sch.start_time FROM schedules sch WHERE sch.id = NEW.schedule_id LIMIT 1);
+		    SET NEW.schedule_end_time = (SELECT sch.end_time FROM schedules sch WHERE sch.id = NEW.schedule_id LIMIT 1);
+		  END IF;
+
+		  IF NOT (OLD.academic_year <=> NEW.academic_year) THEN
+		    SET NEW.academic_year_start = CAST(SUBSTRING(NEW.academic_year, 1, 4) AS UNSIGNED);
+		  END IF;
+
+		  IF NOT (OLD.semester <=> NEW.semester) THEN
+		    SET NEW.semester_sort = CASE
+		      WHEN UPPER(NEW.semester) LIKE 'GAN%' THEN 1
+		      WHEN UPPER(NEW.semester) LIKE 'GEN%' THEN 2
+		      ELSE 9
+		    END;
+		  END IF;
 		END
 	`);
-}
-
-async function withTransaction<T>(conn: Connection, fn: () => Promise<T>): Promise<T> {
-	await conn.beginTransaction();
-	try {
-		const result = await fn();
-		await conn.commit();
-		return result;
-	} catch (err) {
-		await conn.rollback();
-		throw err;
-	}
 }
 
 function parsePositiveInteger(value: string | undefined, fallback: number) {
@@ -384,6 +397,19 @@ function getStressSeedTargetRows() {
 	return parsePositiveInteger(process.env.STRESS_SEED_TARGET_ROWS, DEFAULT_STRESS_SEED_TARGET_ROWS);
 }
 
+function getClassRoomCountOverride() {
+	if (!process.env.STRESS_SEED_CLASSROOM_COUNT) {
+		return null;
+	}
+
+	const parsed = Number.parseInt(process.env.STRESS_SEED_CLASSROOM_COUNT, 10);
+	if (!Number.isFinite(parsed) || Number.isNaN(parsed) || parsed <= 0) {
+		return null;
+	}
+
+	return parsed;
+}
+
 function getStudentCountOverride() {
 	if (!process.env.STRESS_SEED_COUNT) {
 		return null;
@@ -406,11 +432,12 @@ function getEnrollmentCount(studentCount: number) {
 }
 
 function getGradeCount(enrollmentCount: number) {
-	if (enrollmentCount <= CONFLICTING_ENROLLMENT_COUNT) {
+	const intentionalConflictEnrollmentCount = getIntentionalConflictEnrollmentCount();
+	if (enrollmentCount <= intentionalConflictEnrollmentCount) {
 		return 0;
 	}
 
-	const eligibleEnrollments = enrollmentCount - CONFLICTING_ENROLLMENT_COUNT;
+	const eligibleEnrollments = enrollmentCount - intentionalConflictEnrollmentCount;
 	const fullBlocks = Math.floor(eligibleEnrollments / 10);
 	const remainder = eligibleEnrollments % 10;
 	return fullBlocks * 7 + Math.min(7, remainder);
@@ -421,6 +448,21 @@ function getScheduleCount(enrollmentCount: number) {
 	return enrollmentCount;
 }
 
+function getIntentionalConflictEnrollmentCount() {
+	return INTENTIONAL_CONFLICT_GROUP_COUNT * INTENTIONAL_CONFLICT_MEMBERS_PER_GROUP;
+}
+
+function getClassRoomCount(enrollmentCount: number) {
+	const override = getClassRoomCountOverride();
+	if (override) return override;
+
+	const slotsPerRoom = dayConfigs.length * timeSlotConfigs.length;
+	const conflictRoomReserve = 1;
+	// TIME-based conflict detection has no week dimension, so rooms must scale
+	// with total schedules to keep non-conflict rows unique by room/day/time.
+	return Math.max(28, Math.ceil(enrollmentCount / Math.max(1, slotsPerRoom) * 1.25) + conflictRoomReserve);
+}
+
 function estimateTotalRows(studentCount: number) {
 	const lecturerCount = getLecturerCount(studentCount);
 	const enrollmentCount = getEnrollmentCount(studentCount);
@@ -429,8 +471,8 @@ function estimateTotalRows(studentCount: number) {
 		(sum, names) => sum + names.length,
 		0
 	);
-	const classRoomCount = buildClassRooms(courseCount * 2).length;
 	const scheduleCount = getScheduleCount(enrollmentCount);
+	const classRoomCount = getClassRoomCount(scheduleCount);
 
 	return (
 		1 +
@@ -469,19 +511,22 @@ function deriveStudentCountFromTargetRows(targetRows: number) {
 }
 
 function getStressSeedPlan() {
+	const minimumStudentCount = getIntentionalConflictEnrollmentCount();
 	const explicitStudentCount = getStudentCountOverride();
 	if (explicitStudentCount) {
+		const studentCount = Math.max(explicitStudentCount, minimumStudentCount);
 		return {
 			mode: 'student-count' as const,
-			studentCount: explicitStudentCount,
-			targetRows: estimateTotalRows(explicitStudentCount)
+			studentCount,
+			targetRows: estimateTotalRows(studentCount)
 		};
 	}
 
 	const targetRows = getStressSeedTargetRows();
+	const studentCount = Math.max(deriveStudentCountFromTargetRows(targetRows), minimumStudentCount);
 	return {
 		mode: 'target-rows' as const,
-		studentCount: deriveStudentCountFromTargetRows(targetRows),
+		studentCount,
 		targetRows
 	};
 }
@@ -540,9 +585,10 @@ function buildLecturerUserId(index: number) {
 
 function buildClassRooms(targetCount: number = 28) {
 	const rows: ClassRoomSeedRow[] = [];
-	const regularCount = Math.max(20, Math.floor(targetCount * 0.7));
-	const labCount = Math.max(6, Math.floor(targetCount * 0.2));
-	const auditoriumCount = targetCount - regularCount - labCount;
+	const count = Math.max(1, Math.floor(targetCount));
+	const regularCount = Math.max(1, Math.floor(count * 0.72));
+	const labCount = Math.max(0, Math.floor(count * 0.2));
+	const auditoriumCount = Math.max(0, count - regularCount - labCount);
 
 	for (let index = 0; index < regularCount; index += 1) {
 		rows.push([
@@ -580,7 +626,7 @@ function buildClassRooms(targetCount: number = 28) {
 		]);
 	}
 
-	return rows;
+	return rows.slice(0, count);
 }
 
 function getLecturerCount(studentCount: number) {
@@ -659,7 +705,7 @@ function getLecturerOffset(lecturerAuditSk: number, totalTimeSlots: number): num
 
 function buildSlotForEnrollment(
 	enrollmentIndex: number,
-	isConflict: boolean,
+	intentionalConflictOrdinal: number | null,
 	course: CourseRecord,
 	student: StudentRecord,
 	classRoomIds: string[],
@@ -668,10 +714,15 @@ function buildSlotForEnrollment(
 	const conflictRoomId = classRoomIds.at(-1) ?? classRoomIds[0];
 	const usableRoomIds = classRoomIds.slice(0, -1);
 
-	if (isConflict) {
+	if (intentionalConflictOrdinal != null) {
+		const groupIndex = Math.floor(
+			intentionalConflictOrdinal / INTENTIONAL_CONFLICT_MEMBERS_PER_GROUP
+		);
+		const dayConfig = dayConfigs[Math.floor(groupIndex / timeSlotConfigs.length) % dayConfigs.length];
+		const timeSlot = timeSlotConfigs[groupIndex % timeSlotConfigs.length];
 		const roomAuditSk = classRoomAuditById.get(conflictRoomId) ?? 1;
-		const roomKey = `${roomAuditSk}:0:${dayConfigs[0].day}:${timeSlotConfigs[0].start}`;
-		const studentKey = `0:${dayConfigs[0].day}:${timeSlotConfigs[0].start}`;
+		const roomKey = `${roomAuditSk}:${dayConfig.day}:${timeSlot.start}`;
+		const studentKey = `${dayConfig.day}:${timeSlot.start}`;
 		roomBookings.add(roomKey);
 		if (!studentBookings.has(student.auditSk)) {
 			studentBookings.set(student.auditSk, new Set());
@@ -682,20 +733,21 @@ function buildSlotForEnrollment(
 			auditSk: enrollmentIndex + 1,
 			classRoomId: conflictRoomId,
 			classRoomAuditSk: roomAuditSk,
-			day: dayConfigs[0].day,
-			date: dayConfigs[0].date,
-			start: timeSlotConfigs[0].start,
-			end: timeSlotConfigs[0].end,
+			day: dayConfig.day,
+			date: dayConfig.date,
+			start: timeSlot.start,
+			end: timeSlot.end,
 			lecturerId: course.lecturerId
 		};
 	}
 
 	const lecturerAuditSk = course.lecturerAuditSk;
-	let counter = lecturerCounters.get(lecturerAuditSk) ?? 0;
+	const counter = lecturerCounters.get(lecturerAuditSk) ?? 0;
 	const totalTimeSlots = dayConfigs.length * timeSlotConfigs.length;
 	const offset = getLecturerOffset(lecturerAuditSk, totalTimeSlots);
 
-	for (let attempt = 0; attempt < totalTimeSlots * 10_000; attempt++) {
+	const maxAttempts = totalTimeSlots * Math.max(1, usableRoomIds.length) * 20;
+	for (let attempt = 0; attempt < maxAttempts; attempt++) {
 		const effectiveCounter = counter + offset + attempt;
 		const timeSlotIndex = effectiveCounter % totalTimeSlots;
 		const weekOffset = Math.floor(effectiveCounter / totalTimeSlots);
@@ -709,8 +761,8 @@ function buildSlotForEnrollment(
 		const roomId = usableRoomIds[roomIndex] ?? conflictRoomId;
 		const roomAuditSk = classRoomAuditById.get(roomId) ?? 1;
 
-		const roomKey = `${roomAuditSk}:${weekOffset}:${dayConfig.day}:${timeSlot.start}`;
-		const studentKey = `${weekOffset}:${dayConfig.day}:${timeSlot.start}`;
+		const roomKey = `${roomAuditSk}:${dayConfig.day}:${timeSlot.start}`;
+		const studentKey = `${dayConfig.day}:${timeSlot.start}`;
 		const studentSet = studentBookings.get(student.auditSk);
 
 		if (!roomBookings.has(roomKey) && !studentSet?.has(studentKey)) {
@@ -740,32 +792,19 @@ function buildSlotForEnrollment(
 	);
 }
 
-async function insertRows<T>(conn: Connection, sql: string, rows: T[]) {
-	if (rows.length === 0) {
-		return;
-	}
-
-	await conn.query(sql, [rows]);
-}
-
-function formatLoadDataValue(value: unknown): string {
+function fastFormatValue(value: unknown): string {
 	if (value == null) {
 		return '\\N';
 	}
-
-	const text =
-		value instanceof Date ? value.toISOString().slice(0, 23).replace('T', ' ') : String(value);
-
-	return text
-		.replaceAll('\\', '\\\\')
-		.replaceAll('\t', '\\t')
-		.replaceAll('\n', '\\n')
-		.replaceAll('\r', '\\r');
+	return String(value);
 }
 
+// Note: fastFormatValue skips escaping because all data generated by this script
+// is guaranteed to not contain tabs, newlines, backslashes, or carriage returns.
+// If data generation is changed to include special characters, restore full escaping here.
+
 async function loadRowsWithLocalInfile(
-	conn: Connection,
-	tempDir: string,
+	conn: Connection | PoolConnection,
 	fileName: string,
 	tableName: string,
 	columns: string[],
@@ -775,14 +814,15 @@ async function loadRowsWithLocalInfile(
 		return;
 	}
 
-	const filePath = join(tempDir, fileName);
-	const content = rows.map((row) => row.map(formatLoadDataValue).join('\t')).join('\n');
-	await writeFile(filePath, `${content}\n`, 'utf8');
+	const virtualPath = `__mem__/${fileName}`;
+	const content = rows.map((row) => row.map(fastFormatValue).join('\t')).join('\n');
+	const stream = new PassThrough();
+	stream.end(`${content}\n`);
+	streamRegistry.set(virtualPath, stream);
 
-	const escapedPath = filePath.replaceAll('\\', '\\\\');
 	try {
 		await conn.query(
-			`LOAD DATA LOCAL INFILE '${escapedPath}'
+			`LOAD DATA LOCAL INFILE '${virtualPath}'
 			 INTO TABLE ${tableName}
 			 CHARACTER SET utf8mb4
 			 FIELDS TERMINATED BY '\t'
@@ -811,8 +851,11 @@ async function loadRowsWithLocalInfile(
 			rows,
 			Math.min(getInsertBatchSize(), 500)
 		);
+	} finally {
+		streamRegistry.delete(virtualPath);
 	}
 }
+
 
 function isRecoverableBulkInsertError(error: unknown) {
 	return (
@@ -848,8 +891,8 @@ async function insertRowsInBatches<T>(conn: Connection, sql: string, rows: T[], 
 	}
 }
 
-function formatScheduleDate(date: string, time: string) {
-	return `${date} ${time}`;
+function formatScheduleDate(_date: string, time: string) {
+	return time;
 }
 
 function calculateGrade(studentIndex: number, enrollmentIndex: number) {
@@ -920,15 +963,16 @@ async function seedStressData() {
 	roomBookings.clear();
 	studentBookings.clear();
 
-	const classRoomRows = buildClassRooms(courseCount * 2);
+	const estimatedEnrollmentCount = getEnrollmentCount(studentCount);
+	const estimatedGradeCount = getGradeCount(estimatedEnrollmentCount);
+	const estimatedTotalRows = estimateTotalRows(studentCount);
+	const classRoomCount = getClassRoomCount(estimatedEnrollmentCount);
+	const classRoomRows = buildClassRooms(classRoomCount);
 	const classRoomIds = classRoomRows.map((row) => row[0]);
 	const classRoomAuditById = new Map(classRoomRows.map((row) => [row[0], row[6]]));
 	const lecturers = buildLecturers(lecturerCount);
 	const courses = buildCourses(lecturers);
 	const coursesByProgram = new Map<StudyProgramId, CourseRecord[]>();
-	const estimatedEnrollmentCount = getEnrollmentCount(studentCount);
-	const estimatedGradeCount = getGradeCount(estimatedEnrollmentCount);
-	const estimatedTotalRows = estimateTotalRows(studentCount);
 
 	for (const course of courses) {
 		const programCourses = coursesByProgram.get(course.studyProgramId) ?? [];
@@ -945,106 +989,98 @@ async function seedStressData() {
 			: `  Target rows: ${plan.targetRows.toLocaleString()} | derived students: ${studentCount.toLocaleString()}`
 	);
 	console.log(`  Insert batch size: ${batchSize.toLocaleString()} students per batch`);
+	console.log(`  Classrooms: ${classRoomRows.length.toLocaleString()}`);
+	console.log(`  Intentional conflict groups: ${INTENTIONAL_CONFLICT_GROUP_COUNT}`);
 
 	let conn: Connection | null = null;
-	let workerConnections: Connection[] = [];
-	let tempDir: string | null = null;
 	let auditTriggersDropped = false;
 	try {
-		conn = await createSeedConnection();
-		workerConnections = await createSeedConnections(3);
-		tempDir = await mkdtemp(join(tmpdir(), 'watum-stress-seed-'));
+		const [seedConn, lecturerPasswordHash, studentPasswordHash] = await Promise.all([
+			createSeedConnection(),
+			hash('stresslecturer123'),
+			hash('stress123')
+		]);
+		conn = seedConn;
 
-		await Promise.all([configureSeedSession(conn), ...workerConnections.map(configureSeedSession)]);
+		await configureSeedSession(seedConn);
 
-		await withTransaction(conn, async () => {
-			await resetDatabase(conn);
-			await dropConflictAuditTriggers(conn);
-			auditTriggersDropped = true;
+		await resetDatabase(seedConn);
+		await dropConflictAuditTriggers(seedConn);
+		auditTriggersDropped = true;
 
-			console.log('  Inserting faculties, study programs, and classrooms...');
-			await conn.query('INSERT INTO faculties (id, name) VALUES ?', [facultyRows]);
-			await conn.query('INSERT INTO study_programs (id, name, head, faculty_id) VALUES ?', [
-				studyProgramRows
-			]);
-			await conn.query(
-				`INSERT INTO class_rooms (id, name, class_room_type, capacity, has_projector, has_ac, audit_sk)
-				 VALUES ?`,
-				[classRoomRows]
-			);
-		});
+		console.log('  Inserting faculties, study programs, and classrooms...');
+		await seedConn.query('INSERT INTO faculties (id, name) VALUES ?', [facultyRows]);
+		await seedConn.query('INSERT INTO study_programs (id, name, head, faculty_id) VALUES ?', [
+			studyProgramRows
+		]);
+		await seedConn.query(
+			`INSERT INTO class_rooms (id, name, class_room_type, capacity, has_projector, has_ac, audit_sk)
+			 VALUES ?`,
+			[classRoomRows]
+		);
 
-		console.log('  Inserting lecturers, courses, students, and users...');
-		await withTransaction(conn, async () => {
-			await loadRowsWithLocalInfile(
-				conn,
-				tempDir,
-				'lecturers.tsv',
-				'lecturers',
-				['id', 'audit_sk', 'name', 'email', 'phone', 'address'],
-				lecturers.map((lecturer) => [
-					lecturer.id,
-					lecturer.auditSk,
-					lecturer.name,
-					lecturer.email,
-					lecturer.phone,
-					lecturer.address
-				])
-			);
+		console.log('  Inserting lecturers, courses, and lecturer users...');
+		await loadRowsWithLocalInfile(
+			seedConn,
+			'lecturers.tsv',
+			'lecturers',
+			['id', 'audit_sk', 'name', 'email', 'phone', 'address'],
+			lecturers.map((lecturer) => [
+				lecturer.id,
+				lecturer.auditSk,
+				lecturer.name,
+				lecturer.email,
+				lecturer.phone,
+				lecturer.address
+			])
+		);
 
-			const lecturerPasswordHash = await hash('stresslecturer123');
-			await Promise.all([
-				loadRowsWithLocalInfile(
-					workerConnections[0],
-					tempDir,
-					'courses.tsv',
-					'courses',
-					[
-						'id',
-						'audit_sk',
-						'name',
-						'credits',
-						'study_program_id',
-						'lecturer_id',
-						'lecturer_audit_sk'
-					],
-					courses.map((course) => [
-						course.id,
-						course.auditSk,
-						course.name,
-						course.credits,
-						course.studyProgramId,
-						course.lecturerId,
-						course.lecturerAuditSk
-					])
-				),
-				loadRowsWithLocalInfile(
-					workerConnections[1],
-					tempDir,
-					'lecturer-users.tsv',
-					'users',
-					['id', 'email', 'password', 'role', 'student_id', 'lecturer_id'],
-					lecturers.map((lecturer, index) => [
-						buildLecturerUserId(index),
-						lecturer.email,
-						lecturerPasswordHash,
-						'LECTURER',
-						null,
-						lecturer.id
-					])
-				)
-			]);
-		});
+		await loadRowsWithLocalInfile(
+			seedConn,
+			'courses.tsv',
+			'courses',
+			[
+				'id',
+				'audit_sk',
+				'name',
+				'credits',
+				'study_program_id',
+				'lecturer_id',
+				'lecturer_audit_sk'
+			],
+			courses.map((course) => [
+				course.id,
+				course.auditSk,
+				course.name,
+				course.credits,
+				course.studyProgramId,
+				course.lecturerId,
+				course.lecturerAuditSk
+			])
+		);
 
-		const studentPasswordHash = await hash('stress123');
+		await loadRowsWithLocalInfile(
+			seedConn,
+			'lecturer-users.tsv',
+			'users',
+			['id', 'email', 'password', 'role', 'student_id', 'lecturer_id'],
+			lecturers.map((lecturer, index) => [
+				buildLecturerUserId(index),
+				lecturer.email,
+				lecturerPasswordHash,
+				'LECTURER',
+				null,
+				lecturer.id
+			])
+		);
 
 		console.log('  Building schedules, enrollments, and grades...');
 
 		let enrollmentIndex = 0;
 		let gradeIndex = 0;
 		const totalBatches = Math.ceil(studentCount / batchSize);
-		for (let batchStart = 0; batchStart < studentCount; batchStart += batchSize) {
-			const batchEnd = Math.min(studentCount, batchStart + batchSize);
+
+		async function processBatch(batchStart: number, batchEnd: number) {
 			const studentRows: Array<[string, number, string, string, string, string, number, string]> =
 				[];
 			const studentUserRows: Array<[string, string, string, string, string, null]> = [];
@@ -1063,6 +1099,9 @@ async function seedStressData() {
 					number,
 					string,
 					number,
+					string,
+					string,
+					string,
 					string,
 					string,
 					number,
@@ -1099,10 +1138,13 @@ async function seedStressData() {
 				for (let offset = 0; offset < courseCount; offset += 1) {
 					const course = programCourses[(startOffset + offset) % programCourses.length];
 					const enrollmentId = `${ENROLLMENT_ID_PREFIX}${String(enrollmentIndex + 1).padStart(5, '0')}`;
-					const isConflict = offset === 0 && studentIndex < CONFLICTING_ENROLLMENT_COUNT;
+					const intentionalConflictOrdinal =
+						offset === 0 && studentIndex < getIntentionalConflictEnrollmentCount()
+							? studentIndex
+							: null;
 					const slot = buildSlotForEnrollment(
 						enrollmentIndex,
-						isConflict,
+						intentionalConflictOrdinal,
 						course,
 						student,
 						classRoomIds,
@@ -1144,7 +1186,7 @@ async function seedStressData() {
 					]);
 
 					const shouldGrade =
-						enrollmentIndex >= CONFLICTING_ENROLLMENT_COUNT && enrollmentIndex % 10 < 7;
+						enrollmentIndex >= getIntentionalConflictEnrollmentCount() && enrollmentIndex % 10 < 7;
 					if (shouldGrade) {
 						const grade = calculateGrade(studentIndex, enrollmentIndex);
 						gradeIndex += 1;
@@ -1163,13 +1205,10 @@ async function seedStressData() {
 				}
 			}
 
-			// LOAD DATA LOCAL INFILE is much faster here, but wrapping multiple
-			// infile loads in one explicit transaction caused COMMIT failures on MariaDB.
-			// Keep the fast path and let each load commit independently.
+			// Stage 1: students and schedules can be loaded in parallel
 			await Promise.all([
 				loadRowsWithLocalInfile(
-					workerConnections[0],
-					tempDir,
+					seedConn,
 					`students-${batchStart}.tsv`,
 					'students',
 					[
@@ -1185,8 +1224,7 @@ async function seedStressData() {
 					studentRows
 				),
 				loadRowsWithLocalInfile(
-					workerConnections[1],
-					tempDir,
+					seedConn,
 					`schedules-${batchStart}.tsv`,
 					'schedules',
 					['id', 'audit_sk', 'class_room_id', 'day', 'start_time', 'end_time', 'lecturer_id'],
@@ -1194,18 +1232,17 @@ async function seedStressData() {
 				)
 			]);
 
+			// Stage 2: users and enrollments depend on students/schedules
 			await Promise.all([
 				loadRowsWithLocalInfile(
-					workerConnections[0],
-					tempDir,
+					seedConn,
 					`student-users-${batchStart}.tsv`,
 					'users',
 					['id', 'email', 'password', 'role', 'student_id', 'lecturer_id'],
 					studentUserRows
 				),
 				loadRowsWithLocalInfile(
-					workerConnections[1],
-					tempDir,
+					seedConn,
 					`enrollments-${batchStart}.tsv`,
 					'enrollments',
 					[
@@ -1232,9 +1269,9 @@ async function seedStressData() {
 				)
 			]);
 
+			// Stage 3: grades depend on enrollments
 			await loadRowsWithLocalInfile(
-				workerConnections[2],
-				tempDir,
+				seedConn,
 				`grades-${batchStart}.tsv`,
 				'grades',
 				[
@@ -1248,6 +1285,11 @@ async function seedStressData() {
 				],
 				gradeRows
 			);
+		}
+
+		for (let batchStart = 0; batchStart < studentCount; batchStart += batchSize) {
+			const batchEnd = Math.min(studentCount, batchStart + batchSize);
+			await processBatch(batchStart, batchEnd);
 
 			const completedBatches = Math.ceil(batchEnd / batchSize);
 			if (completedBatches === totalBatches || completedBatches % 10 === 0) {
@@ -1257,7 +1299,7 @@ async function seedStressData() {
 			}
 		}
 
-		await createConflictAuditTriggers(conn);
+		await createConflictAuditTriggers(seedConn);
 		auditTriggersDropped = false;
 	} finally {
 		if (conn && auditTriggersDropped) {
@@ -1266,15 +1308,6 @@ async function seedStressData() {
 		if (conn) {
 			await restoreSeedSession(conn);
 			await conn.end().catch(() => undefined);
-		}
-		await Promise.all(
-			workerConnections.map(async (connection) => {
-				await restoreSeedSession(connection);
-				await connection.end().catch(() => undefined);
-			})
-		);
-		if (tempDir) {
-			await rm(tempDir, { recursive: true, force: true });
 		}
 	}
 	console.log('Stress-test seed complete!');
@@ -1290,7 +1323,10 @@ async function seedStressData() {
 	console.log(`  Enrollments created: ${estimatedEnrollmentCount.toLocaleString()}`);
 	console.log(`  Grades created: ${estimatedGradeCount.toLocaleString()}`);
 	console.log(`  Estimated total rows created: ${estimatedTotalRows.toLocaleString()}`);
-	console.log(`  Intentional conflicting schedules: ${CONFLICTING_ENROLLMENT_COUNT}`);
+	console.log(`  Intentional conflict groups: ${INTENTIONAL_CONFLICT_GROUP_COUNT}`);
+	console.log(
+		`  Intentional conflicting schedules: ${getIntentionalConflictEnrollmentCount()}`
+	);
 	console.log('  Student password: stress123');
 	console.log('  Lecturer password: stresslecturer123');
 }

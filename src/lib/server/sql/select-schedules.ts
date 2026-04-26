@@ -16,8 +16,8 @@ export type SelectSchedulesResult = {
     id?: string;
     class_room_id?: string;
     day?: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
-    start_time?: Date;
-    end_time?: Date;
+    start_time?: string;
+    end_time?: string;
     lecturer_id?: string;
     course_name?: string;
 }
@@ -58,12 +58,12 @@ export type SelectSchedulesWhere =
     | ['day', StringOperator, 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU' | null]
     | ['day', SetOperator, 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU'[]]
     | ['day', BetweenOperator, 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU' | null, 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU' | null]
-    | ['start_time', NumericOperator, Date | null]
-    | ['start_time', SetOperator, Date[]]
-    | ['start_time', BetweenOperator, Date | null, Date | null]
-    | ['end_time', NumericOperator, Date | null]
-    | ['end_time', SetOperator, Date[]]
-    | ['end_time', BetweenOperator, Date | null, Date | null]
+    | ['start_time', StringOperator, string | null]
+    | ['start_time', SetOperator, string[]]
+    | ['start_time', BetweenOperator, string | null, string | null]
+    | ['end_time', StringOperator, string | null]
+    | ['end_time', SetOperator, string[]]
+    | ['end_time', BetweenOperator, string | null, string | null]
     | ['lecturer_id', StringOperator, string | null]
     | ['lecturer_id', SetOperator, string[]]
     | ['lecturer_id', BetweenOperator, string | null, string | null]

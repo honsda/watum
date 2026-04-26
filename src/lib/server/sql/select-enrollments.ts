@@ -28,8 +28,8 @@ export type SelectEnrollmentsResult = {
     lecturer_name?: string;
     class_room_name?: string;
     schedule_day?: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
-    schedule_start_time?: Date;
-    schedule_end_time?: Date;
+    schedule_start_time?: string;
+    schedule_end_time?: string;
     grade_id?: string;
     letter_grade?: string;
 }
@@ -130,12 +130,12 @@ export type SelectEnrollmentsWhere =
     | ['schedule_day', StringOperator, 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU' | null]
     | ['schedule_day', SetOperator, 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU'[]]
     | ['schedule_day', BetweenOperator, 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU' | null, 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU' | null]
-    | ['schedule_start_time', NumericOperator, Date | null]
-    | ['schedule_start_time', SetOperator, Date[]]
-    | ['schedule_start_time', BetweenOperator, Date | null, Date | null]
-    | ['schedule_end_time', NumericOperator, Date | null]
-    | ['schedule_end_time', SetOperator, Date[]]
-    | ['schedule_end_time', BetweenOperator, Date | null, Date | null]
+    | ['schedule_start_time', StringOperator, string | null]
+    | ['schedule_start_time', SetOperator, string[]]
+    | ['schedule_start_time', BetweenOperator, string | null, string | null]
+    | ['schedule_end_time', StringOperator, string | null]
+    | ['schedule_end_time', SetOperator, string[]]
+    | ['schedule_end_time', BetweenOperator, string | null, string | null]
     | ['grade_id', StringOperator, string | null]
     | ['grade_id', SetOperator, string[]]
     | ['grade_id', BetweenOperator, string | null, string | null]

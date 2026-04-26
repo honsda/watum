@@ -3,15 +3,15 @@ import type { Connection } from 'mysql2/promise';
 export type SelectLecturerScheduleConflictParams = {
 	lecturerId: string;
 	day: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
-	startTime: Date;
-	endTime: Date;
+	startTime: Date | string;
+	endTime: Date | string;
 	excludeScheduleId?: string;
 };
 
 export type SelectLecturerScheduleConflictResult = {
 	id: string;
-	start_time: Date;
-	end_time: Date;
+	start_time: string;
+	end_time: string;
 	course_name: string;
 };
 
@@ -24,10 +24,10 @@ export async function selectLecturerScheduleConflict(
 	FROM schedules sch
 	INNER JOIN enrollments e ON e.schedule_id = sch.id
 	INNER JOIN courses c ON e.course_id = c.id
-	WHERE c.lecturer_id = ?
+	WHERE sch.lecturer_id = ?
 	AND sch.day = ?
-	AND TIME(sch.start_time) < TIME(?)
-	AND TIME(sch.end_time) > TIME(?)
+	AND sch.start_time < ?
+	AND sch.end_time > ?
 	`;
 	const values: unknown[] = [params.lecturerId, params.day, params.endTime, params.startTime];
 

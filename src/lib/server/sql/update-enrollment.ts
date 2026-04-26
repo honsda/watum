@@ -5,8 +5,8 @@ export type UpdateEnrollmentData = {
     course_id: string;
     class_room_id: string;
     schedule_day: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
-    schedule_start_time: Date;
-    schedule_end_time: Date;
+    schedule_start_time: Date | string;
+    schedule_end_time: Date | string;
     semester: string;
     academic_year: string;
 }

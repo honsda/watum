@@ -1,0 +1,14 @@
+CREATE INDEX idx_study_programs_faculty ON study_programs(faculty_id);
+CREATE INDEX idx_courses_study_program ON courses(study_program_id);
+CREATE INDEX idx_courses_lecturer ON courses(lecturer_id);
+CREATE INDEX idx_schedules_class_room ON schedules(class_room_id);
+CREATE INDEX idx_schedules_lecturer ON schedules(lecturer_id);
+CREATE INDEX idx_schedules_day ON schedules(day);
+CREATE INDEX idx_enrollments_student ON enrollments(student_id);
+CREATE INDEX idx_enrollments_course ON enrollments(course_id);
+CREATE INDEX idx_enrollments_class_room ON enrollments(class_room_id);
+CREATE INDEX idx_enrollments_schedule ON enrollments(schedule_id);
+CREATE INDEX idx_grades_enrollment ON grades(enrollment_id);
+CREATE INDEX idx_users_student ON users(student_id);
+CREATE INDEX idx_users_lecturer ON users(lecturer_id);
+CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);

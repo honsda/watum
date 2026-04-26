@@ -1,42 +1,53 @@
 <script lang="ts">
 	import {
-		buildRoomMetrics,
 		formatMinutes,
 		occupancyCopy,
 		sortRoomsForRole,
 		type AppRole,
-		type ScheduleCard
+		type RoomMetric
 	} from '$lib/app/academic';
-	import type { SelectClassRoomsResult } from '$lib/server/sql/select-class-rooms';
 
 	let {
 		role,
-		classrooms = [],
-		cards = [],
-		timezone = 'Asia/Jakarta',
+		summary,
+		metrics = [],
+		page = 1,
+		pageSize = 10,
+		total = 0,
+		hasMore = false,
+		canPrevious = false,
+		loading = false,
 		onPickRoom,
+		onPreviousPage,
+		onNextPage,
 		selectedRoomId = null
 	}: {
 		role: AppRole;
-		classrooms?: SelectClassRoomsResult[];
-		cards?: ScheduleCard[];
-		timezone?: string;
+		summary: {
+			totalRooms: number;
+			availableNowCount: number;
+			averageUtilization: number;
+			conflictedCount: number;
+		};
+		metrics?: RoomMetric[];
+		page?: number;
+		pageSize?: number;
+		total?: number;
+		hasMore?: boolean;
+		canPrevious?: boolean;
+		loading?: boolean;
 		onPickRoom?: (id: string) => void;
+		onPreviousPage?: () => void;
+		onNextPage?: () => void;
 		selectedRoomId?: string | null;
 	} = $props();
 
 	const copy = $derived(occupancyCopy(role));
-	const metrics = $derived(sortRoomsForRole(buildRoomMetrics(classrooms, cards, timezone), role));
-	const availableNow = $derived(metrics.filter((room) => room.isAvailableNow));
-	const conflicted = $derived(metrics.filter((room) => room.conflictCount > 0));
-	const selectedRoom = $derived(metrics.find((room) => room.id === selectedRoomId) ?? null);
-	const averageUtilization = $derived(
-		metrics.length
-			? Math.round(
-					metrics.reduce((total, room) => total + room.utilizationPercent, 0) / metrics.length
-				)
-			: 0
-	);
+	const sortedMetrics = $derived(sortRoomsForRole(metrics, role));
+	const selectedRoom = $derived(sortedMetrics.find((room) => room.id === selectedRoomId) ?? null);
+	const pageCount = $derived(Math.ceil(total / pageSize));
+	const canGoPrevious = $derived(canPrevious || page > 1);
+	const canGoNext = $derived(hasMore);
 </script>
 
 <section class="dashboard-grid">
@@ -47,19 +58,19 @@
 
 		<div class="summary-stats">
 			<article>
-				<strong>{metrics.length}</strong>
+				<strong>{summary.totalRooms}</strong>
 				<span>ruang aktif</span>
 			</article>
-			<article class:stat-highlight={availableNow.length > 0}>
-				<strong>{availableNow.length}</strong>
+			<article class:stat-highlight={summary.availableNowCount > 0}>
+				<strong>{summary.availableNowCount}</strong>
 				<span>ruang kosong sekarang</span>
 			</article>
 			<article>
-				<strong>{averageUtilization}%</strong>
+				<strong>{summary.averageUtilization}%</strong>
 				<span>rata-rata utilisasi</span>
 			</article>
-			<article class:stat-alert={conflicted.length > 0}>
-				<strong>{conflicted.length}</strong>
+			<article class:stat-alert={summary.conflictedCount > 0}>
+				<strong>{summary.conflictedCount}</strong>
 				<span>ruang bentrok</span>
 			</article>
 		</div>
@@ -70,10 +81,31 @@
 			<div>
 				<h3>Ringkasan utilisasi mingguan</h3>
 			</div>
+			{#if pageCount > 1}
+				<div class="pagination-bar">
+					<button
+						type="button"
+						class="page-button"
+						disabled={loading || !canGoPrevious}
+						onclick={() => onPreviousPage?.()}
+					>
+						Sebelumnya
+					</button>
+					<span class="page-info">{loading ? 'Memuat...' : `Halaman ${page} / ${pageCount}`}</span>
+					<button
+						type="button"
+						class="page-button"
+						disabled={loading || !canGoNext}
+						onclick={() => onNextPage?.()}
+					>
+						Berikutnya
+					</button>
+				</div>
+			{/if}
 		</header>
 
 		<div class="room-list" role="list">
-			{#each metrics as room (room.id)}
+			{#each sortedMetrics as room (room.id)}
 				<button
 					type="button"
 					class:selected={selectedRoomId === room.id}
@@ -223,6 +255,42 @@
 		display: grid;
 		gap: 0.4rem;
 		margin-bottom: 1rem;
+	}
+
+	.table-panel header {
+		grid-template-columns: 1fr auto;
+		align-items: center;
+	}
+
+	.pagination-bar {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+
+	.page-button {
+		padding: 0.4rem 0.7rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		background: var(--color-surface);
+		font-size: 0.8rem;
+		color: var(--color-foreground);
+		cursor: pointer;
+	}
+
+	.page-button:hover:not(:disabled) {
+		border-color: var(--color-accent-strong);
+	}
+
+	.page-button:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.page-info {
+		font-size: 0.8rem;
+		color: var(--color-muted-foreground);
+		white-space: nowrap;
 	}
 
 	.room-list {

@@ -77,7 +77,11 @@ export const searchCourses = query(searchCoursesSchema, async (filters) => {
 	if (filters.lecturerName)
 		where.push(['lecturer_name', 'FULLTEXT', fulltextSearchPattern(filters.lecturerName)!]);
 	if (filters.studyProgramName)
-		where.push(['study_program_name', 'FULLTEXT', fulltextSearchPattern(filters.studyProgramName)!]);
+		where.push([
+			'study_program_name',
+			'FULLTEXT',
+			fulltextSearchPattern(filters.studyProgramName)!
+		]);
 	if (filters.minCredits != null && filters.maxCredits != null) {
 		where.push(['credits', 'BETWEEN', filters.minCredits, filters.maxCredits]);
 	} else if (filters.minCredits != null) {
@@ -199,6 +203,7 @@ export const updateCourse = form(courseSchema, async (data) => {
 	if (!lecturer) {
 		throw error(400, 'dosen tidak ditemukan');
 	}
+
 	await updateCourseDb(
 		getPool(),
 		{
@@ -209,6 +214,7 @@ export const updateCourse = form(courseSchema, async (data) => {
 		},
 		{ id: data.id }
 	);
+
 	invalidateConflictAuditCache();
 	await getCourses().refresh();
 	return { success: true, id: data.id };

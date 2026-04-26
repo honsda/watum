@@ -6,7 +6,6 @@ import { randomUUID } from 'crypto';
 import {
 	getListQueryLimit,
 	getListQueryCursor,
-	mergeLimitedListResult,
 	getPool,
 	toLimitedListResult,
 	withTransaction
@@ -84,7 +83,11 @@ export const searchStudents = query(searchStudentsSchema, async (filters) => {
 	if (filters.email) where.push(['email', 'LIKE', containsSearchPattern(filters.email)!]);
 	if (filters.studyProgramId) where.push(['study_program_id', '=', filters.studyProgramId]);
 	if (filters.studyProgramName)
-		where.push(['study_program_name', 'FULLTEXT', fulltextSearchPattern(filters.studyProgramName)!]);
+		where.push([
+			'study_program_name',
+			'FULLTEXT',
+			fulltextSearchPattern(filters.studyProgramName)!
+		]);
 	if (filters.facultyId) where.push(['faculty_id', '=', filters.facultyId]);
 	if (filters.facultyName)
 		where.push(['faculty_name', 'FULLTEXT', fulltextSearchPattern(filters.facultyName)!]);

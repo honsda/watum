@@ -36,9 +36,7 @@ const DEFAULT_THREADS = 200;
 const DEFAULT_RAMP_UP = 300;
 const DEFAULT_LOOPS = 3;
 const DEFAULT_THINK_TIME = 1000;
-const DEFAULT_WRITE_THREADS = 1;
-const DEFAULT_WRITE_RAMP_UP = 30;
-const DEFAULT_WRITE_LOOPS = 12;
+
 const DEFAULT_WRITE_THINK_TIME = 2000;
 
 // Admin write cycle course configs (matching JMeter)
@@ -47,8 +45,8 @@ const WRITE_CYCLES = [
     courseId: 'stress-course-ti-01',
     baseName: 'Algoritma dan Pemrograman',
     tempName: 'Algoritma dan Pemrograman [Bench]',
-    baseCredits: '2',
-    tempCredits: '3',
+    baseCredits: 2,
+    tempCredits: 3,
     baseLecturer: 'stress-lec-0001',
     tempLecturer: 'stress-lec-0002',
   },
@@ -56,8 +54,8 @@ const WRITE_CYCLES = [
     courseId: 'stress-course-ti-02',
     baseName: 'Struktur Data',
     tempName: 'Struktur Data [Bench 2]',
-    baseCredits: '3',
-    tempCredits: '2',
+    baseCredits: 3,
+    tempCredits: 2,
     baseLecturer: 'stress-lec-0002',
     tempLecturer: 'stress-lec-0003',
   },
@@ -65,8 +63,8 @@ const WRITE_CYCLES = [
     courseId: 'stress-course-ti-03',
     baseName: 'Basis Data',
     tempName: 'Basis Data [Bench 3]',
-    baseCredits: '3',
-    tempCredits: '2',
+    baseCredits: 3,
+    tempCredits: 2,
     baseLecturer: 'stress-lec-0003',
     tempLecturer: 'stress-lec-0004',
   },
@@ -130,23 +128,23 @@ class HttpClient {
             });
           }
 
-          let parsed = null;
-          try {
-            parsed = JSON.parse(data);
-            // Unwrap SvelteKit remote function devalue serialization
-            if (parsed && parsed.type === 'result' && parsed.result != null) {
-              try {
-                const devalueInput = typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result);
-                parsed = devalue.parse(devalueInput);
-                // Forms wrap their payload in a { submission, result } envelope
-                if (parsed && typeof parsed === 'object' && 'result' in parsed && 'submission' in parsed) {
-                  parsed = parsed.result;
-                }
-              } catch (devalErr) {
-                // leave as-is if devalue parsing fails
-              }
-            }
-          } catch {
+			let parsed;
+			try {
+				parsed = JSON.parse(data);
+				// Unwrap SvelteKit remote function devalue serialization
+				if (parsed && parsed.type === 'result' && parsed.result != null) {
+					try {
+						const devalueInput = typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result);
+						parsed = devalue.parse(devalueInput);
+						// Forms wrap their payload in a { submission, result } envelope
+						if (parsed && typeof parsed === 'object' && 'result' in parsed && 'submission' in parsed) {
+							parsed = parsed.result;
+						}
+					} catch {
+						// leave as-is if devalue parsing fails
+					}
+				}
+			} catch {
             parsed = data;
           }
 
@@ -345,9 +343,9 @@ async function runAdminWorker(loops, thinkTimeMs, rampUpDelayMs, collector, abor
         {
           id: cycle.courseId,
           name: cycle.tempName,
-          credits: cycle.tempCredits,
+          'n:credits': cycle.tempCredits,
           studyProgramId: STUDY_PROGRAM_ID,
-          lecturerId: cycle.tempLecturer,
+          lecturerId: cycle.baseLecturer,
         }
       );
       collector.add(`Update Course Temp ${cycle.courseId.slice(-2)}`, updateRes.status, updateRes.time);
@@ -368,7 +366,7 @@ async function runAdminWorker(loops, thinkTimeMs, rampUpDelayMs, collector, abor
         {
           id: cycle.courseId,
           name: cycle.baseName,
-          credits: cycle.baseCredits,
+          'n:credits': cycle.baseCredits,
           studyProgramId: STUDY_PROGRAM_ID,
           lecturerId: cycle.baseLecturer,
         }
@@ -549,7 +547,7 @@ async function main() {
 
   // Duration-based vs loop-based
   const effectiveLoops = opts.duration ? Infinity : opts.loops;
-  const maxDurationMs = opts.duration ? opts.duration * 1000 : Infinity;
+
 
   // Start user workers with ramp-up
   const workers = [];

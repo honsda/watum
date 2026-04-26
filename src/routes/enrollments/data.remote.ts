@@ -65,8 +65,8 @@ const enrollmentListSelect = {
 const weekdayFromIndex = ['MINGGU', ...days] as const;
 
 function scheduleWindowLabel(
-	start: Date | null | undefined,
-	end: Date | null | undefined,
+	start: Date | string | null | undefined,
+	end: Date | string | null | undefined,
 	timezone: string
 ) {
 	if (!start || !end) return 'jadwal lain di hari yang sama';
@@ -74,7 +74,10 @@ function scheduleWindowLabel(
 }
 
 function summarizeConflictWindows(
-	items: Array<{ start_time: Date | null | undefined; end_time: Date | null | undefined }>,
+	items: Array<{
+		start_time: Date | string | null | undefined;
+		end_time: Date | string | null | undefined;
+	}>,
 	timezone: string,
 	limit = 3
 ) {
@@ -282,6 +285,7 @@ function resolveOptimalEnrollmentBase(
 	filters: EnrollmentSearchFilters,
 	user: Awaited<ReturnType<typeof requireUser>>
 ): EnrollmentPrefetchBase {
+	void user;
 	// Role restrictions are handled separately; they don't change the base.
 	if (filters.studentId) return 'students';
 	if (filters.courseId) return 'courses';
@@ -406,10 +410,9 @@ async function prefetchEnrollmentSearchResults(
 	} else if (user.role === 'LECTURER' && user.lecturerId) {
 		// Skip if already driving from the lecturer's own dimension table.
 		if (base !== 'lecturers') {
-			const [courseRows] = await getPool().query(
-				'SELECT id FROM courses WHERE lecturer_id = ?',
-				[user.lecturerId!]
-			);
+			const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
+				user.lecturerId!
+			]);
 			const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
 			if (!courseIds.length) {
 				return [];
@@ -555,7 +558,11 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 	if (filters.studentName)
 		where.push(['student_name', 'FULLTEXT', fulltextSearchPattern(filters.studentName)!]);
 	if (filters.studyProgramName)
-		where.push(['study_program_name', 'FULLTEXT', fulltextSearchPattern(filters.studyProgramName)!]);
+		where.push([
+			'study_program_name',
+			'FULLTEXT',
+			fulltextSearchPattern(filters.studyProgramName)!
+		]);
 	if (filters.courseName)
 		where.push(['course_name', 'FULLTEXT', fulltextSearchPattern(filters.courseName)!]);
 	if (filters.lecturerName)
@@ -721,7 +728,8 @@ const conflictAuditSchema = v.object({
 	classRoomId: v.optional(v.string()),
 	lecturerId: v.optional(v.string()),
 	enrollmentIds: v.optional(v.pipe(v.array(v.string()), v.maxLength(500))),
-	limitGroups: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(1000)))
+	limitGroups: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(1000))),
+	memberSampleSize: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(40)))
 });
 
 export const getEnrollmentConflictAudit = query(conflictAuditSchema, async (filters) => {
@@ -735,6 +743,7 @@ export const getEnrollmentConflictAudit = query(conflictAuditSchema, async (filt
 		classRoomId: filters.classRoomId,
 		focusEnrollmentIds: filters.enrollmentIds,
 		limitGroups: filters.limitGroups,
+		memberSampleSize: filters.memberSampleSize,
 		lecturerId: user.role === 'LECTURER' ? (user.lecturerId ?? undefined) : filters.lecturerId
 	});
 });
