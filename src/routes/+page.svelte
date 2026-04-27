@@ -3463,9 +3463,14 @@
 				const issue = firstIssue(updateCourse);
 				if (issue) {
 					setFeedback('danger', issue);
-					await refreshDependencies({ collections: ['courses'] });
+					void refreshDependencies({ collections: ['courses'] }).catch(() => {});
 					return;
 				}
+
+				// Close editor immediately — don't wait for background refreshes.
+				await tick();
+				stopEditing('courses');
+				setFeedback('success', 'Mata kuliah berhasil diperbarui.');
 
 				const result = updateCourse.result as
 					| {
@@ -3475,21 +3480,21 @@
 					  }
 					| undefined;
 
-				try {
-					await refreshDependencies({ collections: ['courses'] });
-				} catch (refreshErr) {
+				// Refresh courses in background (optimistic update already applied).
+				void refreshDependencies({ collections: ['courses'] }).catch((refreshErr) => {
 					setCollectionIssue(
 						'courses',
 						errorMessage(refreshErr, 'Daftar mata kuliah gagal dimuat ulang setelah disimpan.')
 					);
-				}
+				});
+
 				const nameChanged = Boolean(result?.nameChanged);
 				const lecturerChanged = Boolean(result?.lecturerChanged);
 				if (nameChanged || lecturerChanged) {
 					void refreshDependencies({
 						collections: nameChanged ? ['enrollments', 'grades'] : ['enrollments'],
-						includeSchedulePreview: true,
-						includeConflictAudit: lecturerChanged
+						includeSchedulePreview: true
+						// conflictAudit refreshes on its own TTL — no immediate recompute
 					}).catch((error) => {
 						setCollectionIssue(
 							'enrollments',
@@ -3497,13 +3502,9 @@
 						);
 					});
 				}
-
-				await tick();
-				stopEditing('courses');
-				setFeedback('success', 'Mata kuliah berhasil diperbarui.');
 			} catch (error) {
 				if (applied) {
-					await refreshDependencies({ collections: ['courses'] });
+					void refreshDependencies({ collections: ['courses'] }).catch(() => {});
 				}
 				await tick();
 				stopEditing('courses');
