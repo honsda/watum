@@ -7,16 +7,10 @@ function fixEventUrlForProxy(event: Parameters<Handle>[0]['event']) {
 	const forwardedProto = event.request.headers.get('x-forwarded-proto');
 	const forwardedHost = event.request.headers.get('x-forwarded-host') ?? event.request.headers.get('host');
 	if (forwardedProto && forwardedHost) {
-		const publicUrl = new URL(event.url);
-		publicUrl.protocol = forwardedProto + ':';
-		publicUrl.host = forwardedHost;
-		// SvelteKit's remote function origin check reads event.url.origin.
-		// We must mutate it so it matches the browser's Origin header.
-		Object.defineProperty(event, 'url', {
-			value: publicUrl,
-			writable: true,
-			configurable: true
-		});
+		// Mutate the URL object in place so every reader (including SvelteKit's
+		// internal remote function origin check) sees the public origin.
+		event.url.protocol = forwardedProto + ':';
+		event.url.host = forwardedHost;
 	}
 }
 
