@@ -6322,10 +6322,16 @@
 							/>
 						</section>
 						<section class="workspace-detail">
-							<div class="pane-head compact">
-								<div>
-									<h3>{selectedRoom ? selectedRoom.name : 'Tambah ruang'}</h3>
-								</div>
+								<div class="pane-head compact">
+									<div>
+										<h3>
+											{editorView === 'classrooms-bulk'
+												? 'Ubah massal ruang'
+												: selectedRoom
+													? selectedRoom.name
+													: 'Tambah ruang'}
+										</h3>
+									</div>
 								{#if currentUser.current.role === 'ADMIN'}
 									<div class="detail-actions">
 										{#if editorView === 'classrooms'}
@@ -6658,7 +6664,13 @@
 						<section class="workspace-detail">
 							<div class="pane-head compact">
 								<div>
-									<h3>{selectedCourse ? selectedCourse.name : 'Tambah mata kuliah'}</h3>
+									<h3>
+										{editorView === 'courses-bulk'
+											? 'Ubah massal mata kuliah'
+											: selectedCourse
+												? selectedCourse.name
+												: 'Tambah mata kuliah'}
+									</h3>
 								</div>
 								{#if currentUser.current.role === 'ADMIN'}
 									<div class="detail-actions">
@@ -6981,7 +6993,13 @@
 						<section class="workspace-detail">
 							<div class="pane-head compact">
 								<div>
-									<h3>{selectedStudent ? selectedStudent.name : 'Tambah mahasiswa'}</h3>
+									<h3>
+										{editorView === 'students-bulk'
+											? 'Ubah massal mahasiswa'
+											: selectedStudent
+												? selectedStudent.name
+												: 'Tambah mahasiswa'}
+									</h3>
 								</div>
 								{#if currentUser.current.role === 'ADMIN'}
 									<div class="detail-actions">
@@ -7290,7 +7308,13 @@
 						<section class="workspace-detail">
 							<div class="pane-head compact">
 								<div>
-									<h3>{selectedLecturer ? selectedLecturer.name : 'Tambah dosen'}</h3>
+									<h3>
+										{editorView === 'lecturers-bulk'
+											? 'Ubah massal dosen'
+											: selectedLecturer
+												? selectedLecturer.name
+												: 'Tambah dosen'}
+									</h3>
 								</div>
 								{#if currentUser.current.role === 'ADMIN'}
 									<div class="detail-actions">
@@ -7586,7 +7610,13 @@
 						<section class="workspace-detail">
 							<div class="pane-head compact">
 								<div>
-									<h3>{selectedFaculty ? selectedFaculty.name : 'Tambah fakultas'}</h3>
+									<h3>
+										{editorView === 'faculties-bulk'
+											? 'Ubah massal fakultas'
+											: selectedFaculty
+												? selectedFaculty.name
+												: 'Tambah fakultas'}
+									</h3>
 								</div>
 								{#if currentUser.current.role === 'ADMIN'}
 									<div class="detail-actions">
@@ -7839,7 +7869,11 @@
 							<div class="pane-head compact">
 								<div>
 									<h3>
-										{selectedStudyProgram ? selectedStudyProgram.name : 'Tambah program studi'}
+										{editorView === 'studyPrograms-bulk'
+											? 'Ubah massal program studi'
+											: selectedStudyProgram
+												? selectedStudyProgram.name
+												: 'Tambah program studi'}
 									</h3>
 								</div>
 								{#if currentUser.current.role === 'ADMIN'}
@@ -8317,7 +8351,13 @@
 						<section class="workspace-detail">
 							<div class="pane-head compact">
 								<div>
-									<h3>{selectedEnrollment ? selectedEnrollment.course_name : 'Pilih satu KRS'}</h3>
+									<h3>
+										{editorView === 'enrollments-bulk'
+											? 'Ubah massal KRS'
+											: selectedEnrollment
+												? selectedEnrollment.course_name
+												: 'Pilih satu KRS'}
+									</h3>
 								</div>
 							</div>
 							{#if selectedEnrollment && editorView !== 'enrollments-bulk'}
@@ -8564,9 +8604,11 @@
 							<div class="pane-head compact">
 								<div>
 									<h3>
-										{selectedGrade
-											? `${selectedGrade.student_name} • ${selectedGrade.course_name}`
-											: 'Input nilai baru'}
+										{editorView === 'grades-bulk'
+											? 'Ubah massal nilai'
+											: selectedGrade
+												? `${selectedGrade.student_name} • ${selectedGrade.course_name}`
+												: 'Input nilai baru'}
 									</h3>
 								</div>
 								{#if currentUser.current.role !== 'STUDENT'}
