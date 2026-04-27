@@ -3,6 +3,11 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 
+# argon2 is a native addon — node-gyp requires python3, make, and g++ to compile it
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends python3 make g++ \
+	&& rm -rf /var/lib/apt/lists/*
+
 COPY package*.json ./
 RUN npm ci
 
