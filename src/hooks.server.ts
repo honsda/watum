@@ -2,10 +2,14 @@ import { error, type Handle, type HandleServerError } from '@sveltejs/kit';
 import { getUser } from '$lib/server/auth';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const TRUSTED_ORIGIN = process.env.ORIGIN?.trim();
 
 function hasTrustedCsrfOrigin(event: Parameters<Handle>[0]['event']) {
 	const origin = event.request.headers.get('origin');
 	if (origin) {
+		if (TRUSTED_ORIGIN) {
+			return origin === TRUSTED_ORIGIN;
+		}
 		return origin === event.url.origin;
 	}
 
@@ -15,6 +19,9 @@ function hasTrustedCsrfOrigin(event: Parameters<Handle>[0]['event']) {
 	}
 
 	try {
+		if (TRUSTED_ORIGIN) {
+			return new URL(referer).origin === TRUSTED_ORIGIN;
+		}
 		return new URL(referer).origin === event.url.origin;
 	} catch {
 		return false;
