@@ -1,7 +1,7 @@
 import * as v from 'valibot';
 
 export const gradeSchema = v.object({
-	enrollmentId: v.string(),
+	enrollmentId: v.pipe(v.string(), v.minLength(1)),
 	assignmentScore: v.pipe(v.number(), v.minValue(0), v.maxValue(100)),
 	midtermScore: v.pipe(v.number(), v.minValue(0), v.maxValue(100)),
 	finalScore: v.pipe(v.number(), v.minValue(0), v.maxValue(100))
@@ -12,7 +12,7 @@ export function calculateGrade(
 	midterm: number,
 	final: number
 ): { total: number; letter: string } {
-	const total = assignment * 0.3 + midterm * 0.3 + final * 0.4;
+	const total = Math.round((assignment * 0.3 + midterm * 0.3 + final * 0.4) * 100) / 100;
 
 	let letter: string;
 	if (total >= 85) letter = 'A';

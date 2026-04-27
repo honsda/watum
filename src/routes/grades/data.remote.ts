@@ -517,11 +517,15 @@ export const getGrade = query(v.string(), async (id) => {
 });
 
 export const getGradesByCourse = query(v.string(), async (courseId) => {
-	await requireRole(['ADMIN', 'LECTURER']);
+	const user = await requireRole(['ADMIN', 'LECTURER']);
 	const limit = getListQueryLimit();
+	const where: SelectGradesWhere[] = [['course_id', '=', courseId]];
+	if (user.role === 'LECTURER') {
+		where.push(['lecturer_id', '=', user.lecturerId!]);
+	}
 	return toLimitedListResult(
 		await selectGrades(getPool(), {
-			where: [['course_id', '=', courseId]],
+			where,
 			params: { limit: limit + 1 }
 		}),
 		limit,
@@ -535,9 +539,13 @@ export const getGradesByStudent = query(v.string(), async (studentId) => {
 		throw error(403, 'Anda tidak berhak melihat nilai mahasiswa lain');
 	}
 	const limit = getListQueryLimit();
+	const where: SelectGradesWhere[] = [['student_id', '=', studentId]];
+	if (user.role === 'LECTURER') {
+		where.push(['lecturer_id', '=', user.lecturerId!]);
+	}
 	return toLimitedListResult(
 		await selectGrades(getPool(), {
-			where: [['student_id', '=', studentId]],
+			where,
 			params: { limit: limit + 1 }
 		}),
 		limit,
@@ -547,40 +555,41 @@ export const getGradesByStudent = query(v.string(), async (studentId) => {
 
 export const createGrade = form(gradeSchema, async (data, issue) => {
 	const user = await requireRole(['LECTURER', 'ADMIN']);
-
-	const [[enrollment], [existing]] = await Promise.all([
-		selectEnrollments(getPool(), {
-			where: [['id', '=', data.enrollmentId]]
-		}),
-		selectGrades(getPool(), {
-			where: [['enrollment_id', '=', data.enrollmentId]]
-		})
-	]);
-
-	if (!enrollment) {
-		throw error(404, 'Data KRS tidak ditemukan');
-	}
-
-	if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
-		throw error(403, 'Anda tidak berhak menginput nilai untuk mata kuliah ini');
-	}
-
-	if (existing) invalid(issue.enrollmentId('Nilai untuk KRS ini sudah ada'));
-
-	const { total, letter } = calculateGrade(
-		data.assignmentScore,
-		data.midtermScore,
-		data.finalScore
-	);
 	const id = randomUUID();
-	await insertGrade(getPool(), {
-		id,
-		enrollment_id: data.enrollmentId,
-		assignment_score: data.assignmentScore,
-		midterm_score: data.midtermScore,
-		final_score: data.finalScore,
-		total_score: total,
-		letter_grade: letter
+	await withTransaction(async (conn) => {
+		const [[enrollment], [existing]] = await Promise.all([
+			selectEnrollments(conn, {
+				where: [['id', '=', data.enrollmentId]]
+			}),
+			selectGrades(conn, {
+				where: [['enrollment_id', '=', data.enrollmentId]]
+			})
+		]);
+
+		if (!enrollment) {
+			throw error(404, 'Data KRS tidak ditemukan');
+		}
+
+		if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
+			throw error(403, 'Anda tidak berhak menginput nilai untuk mata kuliah ini');
+		}
+
+		if (existing) invalid(issue.enrollmentId('Nilai untuk KRS ini sudah ada'));
+
+		const { total, letter } = calculateGrade(
+			data.assignmentScore,
+			data.midtermScore,
+			data.finalScore
+		);
+		await insertGrade(conn, {
+			id,
+			enrollment_id: data.enrollmentId,
+			assignment_score: data.assignmentScore,
+			midterm_score: data.midtermScore,
+			final_score: data.finalScore,
+			total_score: total,
+			letter_grade: letter
+		});
 	});
 	await getGrades().refresh();
 	return { success: true, id };
@@ -630,7 +639,7 @@ export const updateGrade = form(
 
 export const batchInputGrades = form(
 	v.object({
-		grades: v.array(v.object(gradeSchema.entries))
+		grades: v.pipe(v.array(v.object(gradeSchema.entries)), v.maxLength(200))
 	}),
 	async (data) => {
 		const user = await requireRole(['LECTURER', 'ADMIN']);

@@ -2,7 +2,7 @@
 	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
-	import { onMount, untrack } from 'svelte';
+	import { onMount, untrack, tick } from 'svelte';
 	import type { Component } from 'svelte';
 	import { clearAccessToken, ensureAccessToken, setAccessToken } from '$lib/client/auth';
 	import {
@@ -1370,6 +1370,7 @@
 		try {
 			const result = await resolveRemoteQuery(request(cursor));
 
+			await tick();
 			applyLimitedCollection(result, assign);
 			const nextHistory =
 				meta?.history ?? (cursor == null ? [] : collectionPagination[key].history);
@@ -1493,8 +1494,17 @@
 	}
 
 	function buildConflictAuditFilters() {
+		const academicYear = scheduleAcademicYearFilter || scheduleAcademicYearOptions[0] || undefined;
+		const semester = scheduleSemesterFilter || scheduleSemesterOptions[0] || undefined;
 		return {
-			limitGroups: 1000
+			academicYear,
+			semester,
+			day: scheduleDayFilter || undefined,
+			courseId: scheduleCourseFilter || undefined,
+			classRoomId: scheduleRoomFilter || undefined,
+			lecturerId: scheduleLecturerFilter || undefined,
+			limitGroups: 1000,
+			memberSampleSize: 10
 		};
 	}
 
@@ -2388,7 +2398,8 @@
 		)
 	);
 	const primaryConflict = $derived(auditConflictGroups[0]?.representative ?? null);
-	const conflictCount = $derived(auditConflictGroups.length);
+	// Use the authoritative total from the audit summary (counts all seeds, not just hydrated groups).
+	const conflictCount = $derived(conflictAudit?.summary?.totalGroups ?? auditConflictGroups.length);
 	const additionalConflictCount = $derived(Math.max(conflictCount - 1, 0));
 	const auditConflictPeersByCardId = $derived.by(() => {
 		const peers: Record<string, ScheduleCard[]> = {};
@@ -2743,6 +2754,11 @@
 				.run()
 				.then((full) => {
 					if (selectedCourseId !== item.id) return;
+					// Only update the detail record — never touch courseDraft here.
+					// The list item already contains every field the editor needs
+					// (id, name, credits, study_program_id, lecturer_id). Overwriting
+					// courseDraft from this async result races with any edits the user
+					// may have already started in the form.
 					selectedCourseRecord = full;
 				});
 		}
@@ -3195,7 +3211,11 @@
 
 	const logoutEnhance = logoutUser.enhance(
 		async ({ submit }: { submit: () => Promise<boolean> }) => {
-			await submit();
+			const ok = await submit();
+			if (!ok) {
+				setFeedback('danger', 'Sesi belum bisa ditutup. Coba lagi.');
+				return;
+			}
 			clearAccessToken();
 			await currentUser.refresh();
 			resetCollections();
@@ -3232,15 +3252,58 @@
 		stopEditing('courses');
 		setFeedback('success', 'Mata kuliah baru berhasil ditambahkan.');
 	});
-	const updateCourseEnhance = createEnhancer(updateCourse, async () => {
-		await refreshDependencies({
-			collections: ['courses', 'enrollments', 'grades'],
-			includeSchedulePreview: true,
-			includeConflictAudit: true
-		});
-		stopEditing('courses');
-		setFeedback('success', 'Mata kuliah berhasil diperbarui.');
-	});
+	const updateCourseEnhance = updateCourse.enhance(
+		async ({ submit }: { submit: () => Promise<boolean> }) => {
+			try {
+				await submit();
+				const issue = firstIssue(updateCourse);
+				if (issue) {
+					setFeedback('danger', issue);
+					return;
+				}
+
+				const result = updateCourse.result as
+					| {
+							id?: string;
+							nameChanged?: boolean;
+							lecturerChanged?: boolean;
+					  }
+					| undefined;
+
+				try {
+					await refreshDependencies({ collections: ['courses'] });
+				} catch (refreshErr) {
+					setCollectionIssue(
+						'courses',
+						errorMessage(refreshErr, 'Daftar mata kuliah gagal dimuat ulang setelah disimpan.')
+					);
+				}
+				const nameChanged = Boolean(result?.nameChanged);
+				const lecturerChanged = Boolean(result?.lecturerChanged);
+				if (nameChanged || lecturerChanged) {
+					void refreshDependencies({
+						collections: nameChanged ? ['enrollments', 'grades'] : ['enrollments'],
+						includeSchedulePreview: true,
+						includeConflictAudit: lecturerChanged
+					}).catch((error) => {
+						setCollectionIssue(
+							'enrollments',
+							errorMessage(error, 'Data jadwal terkait mata kuliah gagal dimuat ulang.')
+						);
+					});
+				}
+
+				await tick();
+				stopEditing('courses');
+				setFeedback('success', 'Mata kuliah berhasil diperbarui.');
+			} catch (error) {
+				await tick();
+				stopEditing('courses');
+				const message = (error as { body?: { message?: string }; message?: string })?.body?.message;
+				setFeedback('danger', message || (error as Error).message || 'Aksi gagal diproses.');
+			}
+		}
+	);
 	const createStudentEnhance = createEnhancer(createStudent, async () => {
 		await refreshDependencies({
 			collections: ['students', 'enrollments', 'grades', 'users'],
@@ -3356,7 +3419,9 @@
 	});
 
 	async function removeEntity(kind: DeleteKind, id: string) {
+		if (!pendingDelete) return; // guard against double-click / concurrent delete
 		const intent = pendingDelete;
+		pendingDelete = null; // prevent re-entry before async completes
 		try {
 			if (kind === 'classroom') {
 				await deleteClassRoom(id);
@@ -3863,7 +3928,10 @@
 
 							<ClassroomDashboard
 								role={currentUser.current.role as AppRole}
-								summary={classRoomDashboardSummary ?? emptyRoomDashboardSummary}
+								summary={{
+									...(classRoomDashboardSummary ?? emptyRoomDashboardSummary),
+									conflictedCount: conflictAudit?.summary?.conflictedRooms ?? 0
+								}}
 								metrics={classRoomDashboardMetrics?.items ?? []}
 								page={classRoomDashboardPagination.pageNumber}
 								pageSize={classRoomDashboardPagination.limit || 10}
@@ -5786,26 +5854,22 @@
 											Kode mata kuliah dibuat otomatis saat data disimpan.
 										</p>{/if}<label
 										><span>Nama mata kuliah</span><input
-											{...selectedCourseId
-												? updateCourse.fields.name.as('text')
-												: createCourse.fields.name.as('text')}
+											name="name"
+											type="text"
 											value={courseDraft.name}
 										/></label
 									><label
 										><span>SKS</span><input
+											name="n:credits"
+											type="number"
 											min="1"
 											max="6"
-											{...selectedCourseId
-												? updateCourse.fields.credits.as('number')
-												: createCourse.fields.credits.as('number')}
 											value={courseDraft.credits}
 										/></label
 									><label
 										><span>Program studi</span><select
-											{...selectedCourseId
-												? updateCourse.fields.studyProgramId.as('select')
-												: createCourse.fields.studyProgramId.as('select')}
-											value={courseDraft.studyProgramId}
+											name="studyProgramId"
+											bind:value={courseDraft.studyProgramId}
 											><option value="">Pilih program studi</option
 											>{#if collectionIssues.studyPrograms && !studyPrograms.length}<option
 													value=""
@@ -5817,11 +5881,13 @@
 										></label
 									><label
 										><span>Dosen pengampu</span><select
-											{...selectedCourseId
-												? updateCourse.fields.lecturerId.as('select')
-												: createCourse.fields.lecturerId.as('select')}
-											value={courseDraft.lecturerId}
+											name="lecturerId"
+											bind:value={courseDraft.lecturerId}
 											><option value="">Pilih dosen</option
+											>{#if courseDraft.lecturerId && !lecturers.some((item) => item.id === courseDraft.lecturerId)}<option
+													value={courseDraft.lecturerId}
+													>{selectedCourse?.lecturer_name ?? courseDraft.lecturerId}</option
+												>{/if}
 											>{#if collectionIssues.lecturers && !lecturers.length}<option
 													value=""
 													disabled>{collectionIssues.lecturers}</option

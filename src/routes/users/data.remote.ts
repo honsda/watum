@@ -422,6 +422,10 @@ export const updateUser = form(
 		//         await deleteLectuer(getPool(), { id: user.lecturer_id });
 		//     }
 		// }
+		if (data.password) {
+			await revokeRefreshTokensForUser(data.id);
+		}
+
 		await updateUserDb(
 			getPool(),
 			{
@@ -434,10 +438,6 @@ export const updateUser = form(
 			{ id: data.id }
 		);
 
-		if (data.password) {
-			await revokeRefreshTokensForUser(data.id);
-		}
-
 		await getUsers().refresh();
 		return { success: true, id: data.id };
 	}
@@ -449,6 +449,7 @@ export const deleteUser = command(v.string(), async (id) => {
 	if (!user) {
 		throw error(404, 'User tidak ditemukan');
 	}
+	await revokeRefreshTokensForUser(id);
 	await deleteUserDb(getPool(), { id });
 	await getUsers().refresh();
 	return { success: true };

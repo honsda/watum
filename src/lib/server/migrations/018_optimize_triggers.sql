@@ -28,7 +28,7 @@ BEGIN
     SET lecturer_audit_sk = NEW.lecturer_audit_sk,
         course_audit_sk = NEW.audit_sk
     WHERE course_id = NEW.id
-      AND lecturer_audit_sk <> NEW.lecturer_audit_sk;
+      AND NOT (lecturer_audit_sk <=> NEW.lecturer_audit_sk);
   END IF;
 END //
 
@@ -41,8 +41,9 @@ BEGIN
   END IF;
 
   IF NOT (OLD.course_id <=> NEW.course_id) THEN
-    SET NEW.course_audit_sk = (SELECT c.audit_sk FROM courses c WHERE c.id = NEW.course_id LIMIT 1);
-    SET NEW.lecturer_audit_sk = (SELECT c.lecturer_audit_sk FROM courses c WHERE c.id = NEW.course_id LIMIT 1);
+    SELECT c.audit_sk, c.lecturer_audit_sk
+      INTO NEW.course_audit_sk, NEW.lecturer_audit_sk
+      FROM courses c WHERE c.id = NEW.course_id LIMIT 1;
   END IF;
 
   IF NOT (OLD.class_room_id <=> NEW.class_room_id) THEN
@@ -50,10 +51,9 @@ BEGIN
   END IF;
 
   IF NOT (OLD.schedule_id <=> NEW.schedule_id) THEN
-    SET NEW.schedule_audit_sk = (SELECT sch.audit_sk FROM schedules sch WHERE sch.id = NEW.schedule_id LIMIT 1);
-    SET NEW.schedule_day = (SELECT sch.day FROM schedules sch WHERE sch.id = NEW.schedule_id LIMIT 1);
-    SET NEW.schedule_start_time = (SELECT sch.start_time FROM schedules sch WHERE sch.id = NEW.schedule_id LIMIT 1);
-    SET NEW.schedule_end_time = (SELECT sch.end_time FROM schedules sch WHERE sch.id = NEW.schedule_id LIMIT 1);
+    SELECT sch.audit_sk, sch.day, sch.start_time, sch.end_time
+      INTO NEW.schedule_audit_sk, NEW.schedule_day, NEW.schedule_start_time, NEW.schedule_end_time
+      FROM schedules sch WHERE sch.id = NEW.schedule_id LIMIT 1;
   END IF;
 
   IF NOT (OLD.academic_year <=> NEW.academic_year) THEN

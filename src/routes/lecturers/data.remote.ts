@@ -26,6 +26,7 @@ import {
 	insertUser,
 	deleteUser,
 	updateLecturer as updateLecturerDb,
+	updateUser as updateUserDb,
 	deleteLectuer as deleteLecturerDb
 } from '$lib/server/sql';
 import { type SelectLecturersWhere } from '$lib/server/sql';
@@ -184,16 +185,33 @@ export const updateLecturer = form(lecturerSchema, async (data) => {
 	if (!existing) {
 		throw error(404, 'Dosen tidak ditemukan');
 	}
-	await updateLecturerDb(
-		getPool(),
-		{
-			name: data.name,
-			email: data.email,
-			phone: data.phone!,
-			address: data.address!
-		},
-		{ id: data.id }
-	);
+	await withTransaction(async (conn) => {
+		await updateLecturerDb(
+			conn,
+			{
+				name: data.name,
+				email: data.email,
+				phone: data.phone!,
+				address: data.address!
+			},
+			{ id: data.id }
+		);
+
+		const [user] = await selectUsers(conn, { where: [['lecturer_id', '=', data.id]] });
+		if (user?.id) {
+			await updateUserDb(
+				conn,
+				{
+					email: data.email,
+					password: user.password ?? '',
+					role: user.role ?? 'LECTURER',
+					student_id: user.student_id ?? undefined,
+					lecturer_id: data.id
+				},
+				{ id: user.id }
+			);
+		}
+	});
 	invalidateConflictAuditCache();
 	await getLecturers().refresh();
 	return { success: true, id: data.id };

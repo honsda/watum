@@ -318,7 +318,7 @@ export function buildRoomMetrics(
 				(card) =>
 					currentDay == null ||
 					DAY_ORDER.indexOf(card.day) > DAY_ORDER.indexOf(currentDay) ||
-					(card.day === currentDay && card.startMinutes >= currentMinutes)
+					(card.day === currentDay && card.startMinutes > currentMinutes)
 			)
 			.sort((left, right) => {
 				const dayDelta = DAY_ORDER.indexOf(left.day) - DAY_ORDER.indexOf(right.day);
@@ -326,7 +326,10 @@ export function buildRoomMetrics(
 			})[0];
 
 		const occupiedMinutes = roomCards.reduce((total, card) => total + card.durationMinutes, 0);
-		const utilizationPercent = Math.round((occupiedMinutes / WEEK_WINDOW_MINUTES) * 100);
+		const utilizationPercent = Math.min(
+			100,
+			Math.round((occupiedMinutes / WEEK_WINDOW_MINUTES) * 100)
+		);
 		const conflictCount = roomCards.filter((card) => card.hasConflict).length;
 
 		return {

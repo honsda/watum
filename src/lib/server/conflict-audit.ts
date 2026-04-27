@@ -50,6 +50,12 @@ export type ConflictAuditResult = {
 		studentGroups: number;
 		lecturerGroups: number;
 		conflictedEnrollments: number;
+		/** Distinct rooms involved in at least one conflict (not the number of conflict instances). */
+		conflictedRooms: number;
+		/** Distinct students involved in at least one conflict. */
+		conflictedStudents: number;
+		/** Distinct lecturers involved in at least one conflict. */
+		conflictedLecturers: number;
 	};
 	truncated: boolean;
 	groups: ConflictAuditGroup[];
@@ -116,9 +122,27 @@ type CacheEntry = {
 const AUDIT_CACHE_TTL_MS = 60_000;
 const DEFAULT_HYDRATED_MEMBERS_PER_GROUP = 40;
 const MAX_HYDRATED_MEMBERS_PER_GROUP = 40;
+const AUDIT_CACHE_MAX_SIZE = 200;
 const auditCache = new Map<string, CacheEntry>();
+const auditCacheInsertionOrder: string[] = [];
 const inFlightAudits = new Map<string, Promise<ConflictAuditResult>>();
 let auditCacheVersion = 0;
+
+function pruneAuditCache() {
+	while (auditCache.size > AUDIT_CACHE_MAX_SIZE) {
+		const oldest = auditCacheInsertionOrder.shift();
+		if (oldest) auditCache.delete(oldest);
+	}
+}
+
+function setAuditCache(key: string, entry: CacheEntry) {
+	const existing = auditCache.has(key);
+	if (!existing) {
+		auditCacheInsertionOrder.push(key);
+	}
+	auditCache.set(key, entry);
+	pruneAuditCache();
+}
 
 function createAuditCacheKey(filters: ConflictAuditFilters) {
 	return JSON.stringify({
@@ -144,6 +168,7 @@ function getMemberSampleSize(filters: ConflictAuditFilters) {
 export function invalidateConflictAuditCache() {
 	auditCacheVersion += 1;
 	auditCache.clear();
+	auditCacheInsertionOrder.length = 0;
 }
 
 function timeToSeconds(value: Date | string) {
@@ -253,17 +278,13 @@ async function collectConflictGroupSeeds(
 	const resourceCol = getConflictResourceColumn(conflictType);
 	const forceIndex = getConflictForceIndex(conflictType);
 
-	// Fast index-only aggregation using denormalized schedule columns.
-	// The covering index (idx_enrollments_*_conflict) lets MySQL satisfy
-	// this query without touching the schedules table at all.
-	// FORCE INDEX is required for unfiltered queries because MariaDB's
-	// optimizer incorrectly chooses a full table scan + temp table + filesort
-	// on 2M+ rows when HAVING COUNT(*) > 1 is present.
-	// However, FORCE INDEX must NOT be used when filters are applied on
-	// columns not present in the chosen index (e.g. course_audit_sk,
-	// lecturer_audit_sk on room_conflict index). In those cases the
-	// optimizer's table scan is ~10x faster than a full index scan with
-	// row lookups.
+	// Group at database level using covering index.
+	// Different HAVING predicates for different conflict types:
+	// - Room: COUNT(*) > 1 — any room double-booking is a conflict
+	// - Student/Lecturer: COUNT(DISTINCT course_id) > 1 — multiple students
+	//   in the same course at the same time is NOT a conflict
+	const havingPredicate =
+		conflictType === 'room' ? 'COUNT(*) > 1' : 'COUNT(DISTINCT e.course_id) > 1';
 	const hasExtraFilters = whereSql !== '1 = 1';
 	const groupSql = [
 		`SELECT ${resourceCol} AS resource_id, e.academic_year_start, e.semester_sort,`,
@@ -273,7 +294,7 @@ async function collectConflictGroupSeeds(
 		`WHERE ${whereSql}`,
 		`GROUP BY ${resourceCol}, e.academic_year_start, e.semester_sort,`,
 		`  e.schedule_day, e.schedule_start_time, e.schedule_end_time`,
-		`HAVING COUNT(DISTINCT e.course_id) > 1`
+		`HAVING ${havingPredicate}`
 	].join(' ');
 
 	const [groupRows] = await pool.query(groupSql, values);
@@ -314,6 +335,7 @@ async function loadMemberRowsForSeeds(
 
 	const BATCH_SIZE = 40;
 	const rowsBySeedKey = new Map<string, AuditScanRow[]>();
+	const enrollmentIdsBySeedKey = new Map<string, Set<string>>();
 	const focusIds = [...focusSet];
 	const addRows = (memberRows: AuditScanRow[]) => {
 		for (const row of memberRows) {
@@ -326,7 +348,13 @@ async function loadMemberRowsForSeeds(
 				endTime: row.end_time
 			});
 			const rows = rowsBySeedKey.get(key) ?? [];
-			if (!rows.some((existing) => existing.enrollment_id === row.enrollment_id)) {
+			let ids = enrollmentIdsBySeedKey.get(key);
+			if (!ids) {
+				ids = new Set(rows.map((r) => r.enrollment_id));
+				enrollmentIdsBySeedKey.set(key, ids);
+			}
+			if (!ids.has(row.enrollment_id)) {
+				ids.add(row.enrollment_id);
 				rows.push(row);
 			}
 			rowsBySeedKey.set(key, rows);
@@ -535,12 +563,14 @@ async function computeAudit(pool: Pool, filters: ConflictAuditFilters) {
 		? [filters.conflictType]
 		: (['room', 'student', 'lecturer'] as ConflictAuditType[]);
 
-	const seedResults = await Promise.all(
-		selectedTypes.map(async (type) => ({
-			type,
-			seeds: await collectConflictGroupSeeds(pool, type, filters)
-		}))
-	);
+	// Run seed collection sequentially, not in parallel.
+	// Three concurrent full-table GROUP BY queries with FORCE INDEX on 2.7M rows
+	// will overwhelm the database. Sequential execution keeps only one heavy
+	// index scan active at a time.
+	const seedResults: Array<{ type: ConflictAuditType; seeds: ConflictAuditGroupSeed[] }> = [];
+	for (const type of selectedTypes) {
+		seedResults.push({ type, seeds: await collectConflictGroupSeeds(pool, type, filters) });
+	}
 
 	const roomSeeds = seedResults.find((entry) => entry.type === 'room')?.seeds ?? [];
 	const studentSeeds = seedResults.find((entry) => entry.type === 'student')?.seeds ?? [];
@@ -584,6 +614,17 @@ async function computeAudit(pool: Pool, filters: ConflictAuditFilters) {
 		(group) => group.conflictType === 'lecturer'
 	).length;
 
+	// Count distinct resources with at least one conflict using the full seed list
+	// (before hydration truncation), so these totals are always accurate.
+	const conflictedRooms = new Set(relevantSeeds.filter((s) => s.conflictType === 'room').map((s) => s.resourceId)).size;
+	const conflictedStudents = new Set(relevantSeeds.filter((s) => s.conflictType === 'student').map((s) => s.resourceId))
+		.size;
+	const conflictedLecturers = new Set(relevantSeeds.filter((s) => s.conflictType === 'lecturer').map((s) => s.resourceId))
+		.size;
+
+	// console.log(`relevantSeedsobj: ${JSON.stringify(relevantSeeds)}`);
+	// console.log(`conflictedrooms: ${conflictedRooms}, conflictedStudents: ${conflictedStudents}, conflictedLecturers: ${conflictedLecturers}`);
+
 	return {
 		filters: {
 			academicYear: filters.academicYear ?? null,
@@ -595,7 +636,10 @@ async function computeAudit(pool: Pool, filters: ConflictAuditFilters) {
 			roomGroups: roomGroupCount,
 			studentGroups: studentGroupCount,
 			lecturerGroups: lecturerGroupCount,
-			conflictedEnrollments
+			conflictedEnrollments,
+			conflictedRooms,
+			conflictedStudents,
+			conflictedLecturers
 		},
 		truncated: relevantSeeds.length > selectedSeeds.length,
 		groups
@@ -612,7 +656,7 @@ function scheduleBackgroundRefresh(
 	const promise = computeAudit(pool, filters)
 		.then((result) => {
 			if (version === auditCacheVersion) {
-				auditCache.set(cacheKey, { version, storedAt: Date.now(), result });
+				setAuditCache(cacheKey, { version, storedAt: Date.now(), result });
 			}
 			return result;
 		})
@@ -641,7 +685,7 @@ export async function auditEnrollmentConflicts(pool: Pool, filters: ConflictAudi
 	const promise = computeAudit(pool, filters)
 		.then((result) => {
 			if (currentVersion === auditCacheVersion) {
-				auditCache.set(cacheKey, { version: currentVersion, storedAt: Date.now(), result });
+				setAuditCache(cacheKey, { version: currentVersion, storedAt: Date.now(), result });
 			}
 			return result;
 		})

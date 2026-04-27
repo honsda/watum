@@ -106,7 +106,11 @@ function getJwtSecret() {
 }
 
 function getJwtIssuer() {
-	return env.JWT_ISSUER || undefined;
+	if (!env.JWT_ISSUER) {
+		console.warn('JWT_ISSUER environment variable is not set — JWT issuer validation is disabled');
+		return undefined;
+	}
+	return env.JWT_ISSUER;
 }
 
 function useSecureCookies(url: URL) {

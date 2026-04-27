@@ -24,18 +24,7 @@ export function createUTCDate(
 	minute: number,
 	second: number = 0
 ): Date {
-	const date = dayjs()
-		.year(year)
-		.month(month)
-		.date(day)
-		.hour(hour)
-		.minute(minute)
-		.second(second)
-		.millisecond(0)
-		.utc()
-		.toDate();
-
-	return date;
+	return new Date(Date.UTC(year, month, day, hour, minute, second, 0));
 }
 
 export function createUTCDateFromString(dateStr: string, timeStr: string): Date {
@@ -74,12 +63,17 @@ export function formatDateTime(
 	if (typeof value === 'string' && isTimeOnly(value)) {
 		const [hours = '00', minutes = '00'] = value.split(':');
 		const time = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
-		return format === 'time' ? time : `2000-01-01 ${time}`;
+		const dayjsDate = dayjs.tz(`2000-01-01T${time}`, timezone);
+		if (format === 'time') return time;
+		if (format === 'date') return dayjsDate.format('DD MMMM YYYY');
+		return dayjsDate.format('DD MMMM YYYY HH:mm');
 	}
 
 	const dayjsDate =
 		typeof value === 'string'
-			? dayjs.tz(`2000-01-01T${value}`, 'UTC').tz(timezone)
+			? hasExplicitTimezone(value)
+				? dayjs(value).tz(timezone)
+				: dayjs.tz(value, timezone)
 			: dayjs(value).tz(timezone);
 
 	switch (format) {
@@ -98,9 +92,12 @@ export function formatDateTimeInput(
 	timezone: string = 'Asia/Jakarta'
 ): string {
 	if (typeof value === 'string') {
-		// TIME string like 'HH:MM:SS' — return as datetime-local on a reference date
-		const [hours, minutes] = value.split(':');
-		return `2000-01-01T${hours}:${minutes}`;
+		if (isTimeOnly(value)) {
+			// TIME string like 'HH:MM:SS' — return as datetime-local on a reference date
+			const [hours = '00', minutes = '00'] = value.split(':');
+			return `2000-01-01T${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+		}
+		return dayjs(value).tz(timezone).format('YYYY-MM-DDTHH:mm');
 	}
 	return dayjs(value).tz(timezone).format('YYYY-MM-DDTHH:mm');
 }

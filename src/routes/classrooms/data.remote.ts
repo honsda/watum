@@ -230,7 +230,7 @@ export const getClassRoomDashboardSummary = query(
 							]
 								.filter(Boolean)
 								.join(' '),
-							[...lecturerValues, currentDay, currentTime, currentTime]
+							[currentDay, currentTime, currentTime, ...lecturerValues]
 						)
 						.then(([rows]) => rows as Array<{ class_room_id: string }>)
 				: Promise.resolve([] as Array<{ class_room_id: string }>)
@@ -244,16 +244,23 @@ export const getClassRoomDashboardSummary = query(
 		);
 		const averageUtilization =
 			totalRooms > 0
-				? Math.round((totalOccupiedMinutes / (totalRooms * ROOM_METRIC_WINDOW_MINUTES)) * 100)
+				? Math.min(
+						100,
+						Math.round((totalOccupiedMinutes / (totalRooms * ROOM_METRIC_WINDOW_MINUTES)) * 100)
+					)
 				: 0;
 		const busyNowRoomIds = new Set(currentRows.map((row) => row.class_room_id));
 		const availableNowCount = totalRooms - busyNowRoomIds.size;
 		const occupiedRoomCount = occupiedRoomIds.size;
 		const lowUtilizationThreshold = Math.round(ROOM_METRIC_WINDOW_MINUTES * 0.3);
-		const lowUtilizationRoomCount = usageRows.filter(
-			(row) => toNumber(row.occupied_minutes) < lowUtilizationThreshold
-		).length;
+		const lowUtilizationRoomCount =
+			totalRooms -
+			usageRows.length +
+			usageRows.filter((row) => toNumber(row.occupied_minutes) < lowUtilizationThreshold).length;
 
+		// conflictedCount is intentionally omitted here — it is supplied client-side
+		// from the already-loaded conflictAudit.summary.roomGroups so both the main
+		// dashboard counter and the classroom summary stat always use the same source.
 		return {
 			totalRooms,
 			availableNowCount,

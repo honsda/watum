@@ -12,9 +12,10 @@ FOR EACH ROW
 BEGIN
   IF NOT (OLD.lecturer_audit_sk <=> NEW.lecturer_audit_sk) THEN
     UPDATE enrollments
-    SET lecturer_audit_sk = NEW.lecturer_audit_sk
+    SET lecturer_audit_sk = NEW.lecturer_audit_sk,
+        course_audit_sk = NEW.audit_sk
     WHERE course_id = NEW.id
-      AND lecturer_audit_sk <> NEW.lecturer_audit_sk;
+      AND NOT (lecturer_audit_sk <=> NEW.lecturer_audit_sk);
   END IF;
 END //
 

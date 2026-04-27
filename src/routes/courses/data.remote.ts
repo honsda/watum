@@ -117,6 +117,14 @@ export const searchCourses = query(searchCoursesSchema, async (filters) => {
 			sqlParts.push('AND c.lecturer_id = ?');
 			values.push(filters.lecturerId);
 		}
+		if (filters.lecturerName) {
+			sqlParts.push('AND l.name LIKE ?');
+			values.push(containsSearchPattern(filters.lecturerName));
+		}
+		if (filters.studyProgramName) {
+			sqlParts.push('AND sp.name LIKE ?');
+			values.push(containsSearchPattern(filters.studyProgramName));
+		}
 		if (filters.minCredits != null) {
 			sqlParts.push('AND c.credits >= ?');
 			values.push(filters.minCredits);
@@ -203,6 +211,21 @@ export const updateCourse = form(courseSchema, async (data) => {
 	if (!lecturer) {
 		throw error(400, 'dosen tidak ditemukan');
 	}
+	const nameChanged = existing.name !== data.name;
+	const creditsChanged = existing.credits !== data.credits;
+	const studyProgramChanged = existing.study_program_id !== data.studyProgramId;
+	const lecturerChanged = existing.lecturer_id !== data.lecturerId;
+
+	if (!nameChanged && !creditsChanged && !studyProgramChanged && !lecturerChanged) {
+		return {
+			success: true,
+			id: data.id,
+			nameChanged,
+			creditsChanged,
+			studyProgramChanged,
+			lecturerChanged
+		};
+	}
 
 	await updateCourseDb(
 		getPool(),
@@ -215,9 +238,17 @@ export const updateCourse = form(courseSchema, async (data) => {
 		{ id: data.id }
 	);
 
-	invalidateConflictAuditCache();
-	await getCourses().refresh();
-	return { success: true, id: data.id };
+	if (nameChanged || lecturerChanged) {
+		invalidateConflictAuditCache();
+	}
+	return {
+		success: true,
+		id: data.id,
+		nameChanged,
+		creditsChanged,
+		studyProgramChanged,
+		lecturerChanged
+	};
 });
 
 export const deleteCourse = command(v.string(), async (id) => {
