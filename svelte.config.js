@@ -17,7 +17,7 @@ const config = {
 		}
 	},
 	kit: {
-		adapter: adapter({ precompress: true }),
+		adapter: adapter({ precompress: true, dynamic_origin: true }),
 		// Disable SvelteKit's automatic origin check for remote functions.
 		// We handle CSRF ourselves in hooks.server.ts with proxy-aware origin detection.
 		csrf: {
