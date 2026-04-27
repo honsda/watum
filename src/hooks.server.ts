@@ -28,25 +28,25 @@ function hasTrustedCsrfOrigin(event: Parameters<Handle>[0]['event']) {
 	if (origin) {
 		const trusted = origin === publicOrigin;
 		if (!trusted) {
-			console.log('[CSRF] Rejected origin:', origin, '!== publicOrigin:', publicOrigin);
+			console.error('[CSRF] Rejected origin:', origin, '!== publicOrigin:', publicOrigin);
 		}
 		return trusted;
 	}
 
 	const referer = event.request.headers.get('referer');
 	if (!referer) {
-		console.log('[CSRF] No origin or referer header');
+		console.error('[CSRF] No origin or referer header');
 		return false;
 	}
 
 	try {
 		const trusted = new URL(referer).origin === publicOrigin;
 		if (!trusted) {
-			console.log('[CSRF] Rejected referer:', new URL(referer).origin, '!== publicOrigin:', publicOrigin);
+			console.error('[CSRF] Rejected referer:', new URL(referer).origin, '!== publicOrigin:', publicOrigin);
 		}
 		return trusted;
 	} catch {
-		console.log('[CSRF] Invalid referer URL:', referer);
+		console.error('[CSRF] Invalid referer URL:', referer);
 		return false;
 	}
 }
