@@ -51,11 +51,8 @@ function hasTrustedCsrfOrigin(event: Parameters<Handle>[0]['event']) {
 	}
 }
 
-const AUTH_ENDPOINTS = new Set(['/auth/login', '/auth/refresh', '/_app/remote/4igj21/loginUser']);
-
 export const handle: Handle = async ({ event, resolve }) => {
-	const isAuthEndpoint = AUTH_ENDPOINTS.has(event.url.pathname) || event.url.pathname.endsWith('/loginUser');
-	if (!isAuthEndpoint && !SAFE_METHODS.has(event.request.method) && !hasTrustedCsrfOrigin(event)) {
+	if (!SAFE_METHODS.has(event.request.method) && !hasTrustedCsrfOrigin(event)) {
 		throw error(403, 'Invalid CSRF origin');
 	}
 
