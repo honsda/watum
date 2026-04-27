@@ -3,21 +3,27 @@ import { getUser } from '$lib/server/auth';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+function fixEventUrlForProxy(event: Parameters<Handle>[0]['event']) {
+	const forwardedProto = event.request.headers.get('x-forwarded-proto');
+	const forwardedHost = event.request.headers.get('x-forwarded-host') ?? event.request.headers.get('host');
+	if (forwardedProto && forwardedHost) {
+		// Mutate the URL object in place so every reader (including SvelteKit's
+		// internal remote function origin check) sees the public origin.
+		event.url.protocol = forwardedProto + ':';
+		event.url.host = forwardedHost;
+	}
+}
+
 function getPublicOrigin(event: Parameters<Handle>[0]['event']): string {
-	// Read env at request time (not module load) — Bun may load env differently
 	const trustedOrigin = process.env.ORIGIN?.trim() ?? '';
 	if (trustedOrigin) {
 		return trustedOrigin;
 	}
-
-	// Derive from X-Forwarded-* headers (most reverse proxies set these)
 	const forwardedProto = event.request.headers.get('x-forwarded-proto');
 	const forwardedHost = event.request.headers.get('x-forwarded-host') ?? event.request.headers.get('host');
 	if (forwardedProto && forwardedHost) {
 		return `${forwardedProto}://${forwardedHost}`;
 	}
-
-	// Fall back to the URL the server sees
 	return event.url.origin;
 }
 
@@ -54,6 +60,10 @@ function hasTrustedCsrfOrigin(event: Parameters<Handle>[0]['event']): { trusted:
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
+	// CRITICAL: rewrite event.url before resolve() so SvelteKit's remote
+	// function origin check sees the public origin, not the internal one.
+	fixEventUrlForProxy(event);
+
 	if (!SAFE_METHODS.has(event.request.method)) {
 		const { trusted, debug } = hasTrustedCsrfOrigin(event);
 		if (!trusted) {
