@@ -4,8 +4,8 @@ export type InsertScheduleParams = {
     id: string;
     class_room_id: string;
     day: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
-    start_time: Date;
-    end_time: Date;
+    start_time: Date | string;
+    end_time: Date | string;
     lecturer_id?: string;
 }
 

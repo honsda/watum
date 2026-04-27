@@ -164,7 +164,15 @@ function poolOptions(): PoolOptions {
 }
 
 function createBasePool(): Pool {
-	return createPool(poolOptions());
+	const opts = poolOptions();
+	console.log('[DB] Creating pool:', {
+		host: opts.host,
+		connectionLimit: opts.connectionLimit,
+		maxIdle: opts.maxIdle,
+		queueLimit: opts.queueLimit,
+		envLimit: env.DB_CONNECTION_LIMIT ?? 'not set (using fallback)'
+	});
+	return createPool(opts);
 }
 
 function ensurePool(): Pool {

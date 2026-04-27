@@ -1,9 +1,8 @@
-SELECT e.id, sch.start_time, sch.end_time, c.name AS course_name
+SELECT e.id, e.schedule_start_time AS start_time, e.schedule_end_time AS end_time, c.name AS course_name
 FROM enrollments e
-INNER JOIN schedules sch ON e.schedule_id = sch.id
 INNER JOIN courses c ON e.course_id = c.id
 WHERE e.student_id = :studentId
-AND sch.day = :day
-AND sch.start_time < :endTime
-AND sch.end_time > :startTime
-ORDER BY sch.start_time ASC
+AND e.schedule_day = :day
+AND e.schedule_start_time < :endTime
+AND e.schedule_end_time > :startTime
+ORDER BY e.schedule_start_time ASC

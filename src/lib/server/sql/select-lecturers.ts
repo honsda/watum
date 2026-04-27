@@ -47,7 +47,7 @@ const selectFragments = {
 
 const NumericOperatorList = ['=', '<>', '>', '<', '>=', '<='] as const;
 type NumericOperator = typeof NumericOperatorList[number];
-type StringOperator = '=' | '<>' | '>' | '<' | '>=' | '<=' | 'LIKE';
+type StringOperator = '=' | '<>' | '>' | '<' | '>=' | '<=' | 'LIKE' | 'FULLTEXT';
 type SetOperator = 'IN' | 'NOT IN';
 type BetweenOperator = 'BETWEEN';
 
@@ -157,7 +157,7 @@ function mapArrayToSelectLecturersResult(data: any, select?: SelectLecturersSele
 }
 
 function appendSelect(sql: string, selectField: string) {
-    if (sql == 'SELECT') {
+    if (!/[\r\n]/.test(sql)) {
         return sql + EOL + selectField;
     }
     else {
@@ -190,6 +190,13 @@ function whereCondition(condition: SelectLecturersWhere): WhereConditionResult |
     if (operator == 'LIKE') {
         return {
             sql: `${selectFragment} LIKE ?`,
+            hasValue: condition[2] != null,
+            values: [condition[2]]
+        }
+    }
+    if (operator == 'FULLTEXT') {
+        return {
+            sql: `MATCH(${selectFragment}) AGAINST(? IN BOOLEAN MODE)`,
             hasValue: condition[2] != null,
             values: [condition[2]]
         }

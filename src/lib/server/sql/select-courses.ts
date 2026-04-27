@@ -53,7 +53,7 @@ const selectFragments = {
 
 const NumericOperatorList = ['=', '<>', '>', '<', '>=', '<='] as const;
 type NumericOperator = typeof NumericOperatorList[number];
-type StringOperator = '=' | '<>' | '>' | '<' | '>=' | '<=' | 'LIKE';
+type StringOperator = '=' | '<>' | '>' | '<' | '>=' | '<=' | 'LIKE' | 'FULLTEXT';
 type SetOperator = 'IN' | 'NOT IN';
 type BetweenOperator = 'BETWEEN';
 
@@ -92,7 +92,12 @@ export type SelectCoursesWhere =
 export async function selectCourses(connection: Connection, params?: SelectCoursesDynamicParams): Promise<SelectCoursesResult[]> {
     const where = whereConditionsToObject(params?.where);
     const paramsValues: any = [];
-    let sql = 'SELECT';
+    // MANUAL FIX: STRAIGHT_JOIN forces MariaDB to read courses first and
+    // then do eq_ref lookups into joined tables. Without this, the optimizer
+    // can choose study_programs (very small table) as the driving table and
+    // BNL join into courses, causing suboptimal plans.
+    // If you regenerate this file with typesql, you must re-apply this change.
+    let sql = 'SELECT STRAIGHT_JOIN';
     if (params?.select == null || params.select.id) {
         sql = appendSelect(sql, `c.id`);
     }
@@ -191,7 +196,7 @@ function mapArrayToSelectCoursesResult(data: any, select?: SelectCoursesSelect) 
 }
 
 function appendSelect(sql: string, selectField: string) {
-    if (sql == 'SELECT') {
+    if (!/[\r\n]/.test(sql)) {
         return sql + EOL + selectField;
     }
     else {
@@ -224,6 +229,13 @@ function whereCondition(condition: SelectCoursesWhere): WhereConditionResult | u
     if (operator == 'LIKE') {
         return {
             sql: `${selectFragment} LIKE ?`,
+            hasValue: condition[2] != null,
+            values: [condition[2]]
+        }
+    }
+    if (operator == 'FULLTEXT') {
+        return {
+            sql: `MATCH(${selectFragment}) AGAINST(? IN BOOLEAN MODE)`,
             hasValue: condition[2] != null,
             values: [condition[2]]
         }

@@ -13,7 +13,12 @@ const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
 export default defineConfig(
 	includeIgnoreFile(gitignorePath),
 	{
-		ignores: ['src/lib/server/sql/**/*.ts']
+		ignores: [
+			'src/lib/server/sql/**/*.ts',
+			'performance/report/**/*',
+			'performance/report-new/**/*',
+			'bench.js'
+		]
 	},
 	js.configs.recommended,
 	ts.configs.recommended,

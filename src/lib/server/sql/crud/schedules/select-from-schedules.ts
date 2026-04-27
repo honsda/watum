@@ -8,8 +8,8 @@ export type SelectFromSchedulesResult = {
     id: string;
     class_room_id: string;
     day: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
-    start_time: Date;
-    end_time: Date;
+    start_time: string;
+    end_time: string;
     lecturer_id?: string;
     created_at?: Date;
     updated_at?: Date;

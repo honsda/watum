@@ -1,4 +1,4 @@
-import { formatDateTime } from '$lib/time-helpers';
+import { formatDateTime, getTimeComponents } from '$lib/time-helpers';
 import type { SelectClassRoomsResult } from '$lib/server/sql/select-class-rooms';
 import type { SelectEnrollmentsResult } from '$lib/server/sql/select-enrollments';
 
@@ -92,21 +92,24 @@ export type RoomMetric = {
 	isAvailableNow: boolean;
 	conflictCount: number;
 	currentCourse: string;
+	nextUseDay?: (typeof DAY_ORDER)[number] | null;
+	nextUseStartTime?: string | null;
+	nextUseCourse?: string | null;
 };
 
 const DAY_WINDOW_MINUTES = (20 - 7) * 60;
 const WEEK_WINDOW_MINUTES = DAY_WINDOW_MINUTES * DAY_ORDER.length;
 
-export function toMinutes(date: Date | null | undefined, timezone: string): number {
-	if (!date) return 0;
-	const formatted = formatDateTime(date, 'time', timezone);
+export function toMinutes(value: Date | string | null | undefined, timezone: string): number {
+	if (!value) return 0;
+	const formatted = formatDateTime(value, 'time', timezone);
 	const [hours, minutes] = formatted.split(':').map(Number);
 	return hours * 60 + minutes;
 }
 
 export function formatTimeRange(
-	start: Date | null | undefined,
-	end: Date | null | undefined,
+	start: Date | string | null | undefined,
+	end: Date | string | null | undefined,
 	timezone: string
 ) {
 	if (!start || !end) return 'Belum dijadwalkan';
@@ -126,8 +129,8 @@ export function buildScheduleCards(
 			): item is SelectEnrollmentsResult & {
 				id: string;
 				schedule_day: (typeof DAY_ORDER)[number];
-				schedule_start_time: Date;
-				schedule_end_time: Date;
+				schedule_start_time: string;
+				schedule_end_time: string;
 			} =>
 				Boolean(item.id && item.schedule_day && item.schedule_start_time && item.schedule_end_time)
 		)
@@ -297,8 +300,9 @@ export function buildRoomMetrics(
 	timezone: string,
 	now = new Date()
 ): RoomMetric[] {
-	const currentDayIndex = Math.max(now.getDay() - 1, 0);
-	const currentDay = DAY_ORDER[Math.min(currentDayIndex, DAY_ORDER.length - 1)];
+	const { dayOfWeek } = getTimeComponents(now, timezone);
+	const currentDay =
+		dayOfWeek >= 1 && dayOfWeek <= DAY_ORDER.length ? DAY_ORDER[dayOfWeek - 1] : null;
 	const currentMinutes = toMinutes(now, timezone);
 
 	return classrooms.map((room) => {
@@ -312,8 +316,9 @@ export function buildRoomMetrics(
 		const nextUse = roomCards
 			.filter(
 				(card) =>
+					currentDay == null ||
 					DAY_ORDER.indexOf(card.day) > DAY_ORDER.indexOf(currentDay) ||
-					(card.day === currentDay && card.startMinutes >= currentMinutes)
+					(card.day === currentDay && card.startMinutes > currentMinutes)
 			)
 			.sort((left, right) => {
 				const dayDelta = DAY_ORDER.indexOf(left.day) - DAY_ORDER.indexOf(right.day);
@@ -321,7 +326,10 @@ export function buildRoomMetrics(
 			})[0];
 
 		const occupiedMinutes = roomCards.reduce((total, card) => total + card.durationMinutes, 0);
-		const utilizationPercent = Math.round((occupiedMinutes / WEEK_WINDOW_MINUTES) * 100);
+		const utilizationPercent = Math.min(
+			100,
+			Math.round((occupiedMinutes / WEEK_WINDOW_MINUTES) * 100)
+		);
 		const conflictCount = roomCards.filter((card) => card.hasConflict).length;
 
 		return {
@@ -337,7 +345,10 @@ export function buildRoomMetrics(
 			nextUse: nextUse ? `${DAY_LABELS[nextUse.day]}, ${nextUse.startLabel}` : 'Belum ada jadwal',
 			isAvailableNow: !currentBlock,
 			conflictCount,
-			currentCourse: currentBlock?.course ?? 'Kosong sekarang'
+			currentCourse: currentBlock?.course ?? 'Kosong sekarang',
+			nextUseDay: nextUse?.day ?? null,
+			nextUseStartTime: nextUse?.original.schedule_start_time ?? null,
+			nextUseCourse: nextUse?.course ?? null
 		};
 	});
 }
@@ -391,14 +402,20 @@ export function availableRoomsForSlot(
 	endMinutes: number,
 	excludedCardId?: string | null
 ) {
-	return classrooms.filter((room) => {
-		const roomCards = cards.filter((card) => card.original.class_room_id === room.id);
-		return !roomCards.some((card) => {
-			if (excludedCardId && card.id === excludedCardId) return false;
-			if (card.day !== day) return false;
-			return card.startMinutes < endMinutes && startMinutes < card.endMinutes;
-		});
-	});
+	const occupiedRoomIds = new Set<string>();
+
+	for (const card of cards) {
+		if (excludedCardId && card.id === excludedCardId) continue;
+		if (card.day !== day) continue;
+		if (!(card.startMinutes < endMinutes && startMinutes < card.endMinutes)) continue;
+
+		const roomId = card.original.class_room_id;
+		if (roomId) {
+			occupiedRoomIds.add(roomId);
+		}
+	}
+
+	return classrooms.filter((room) => !room.id || !occupiedRoomIds.has(room.id));
 }
 
 export function beautifyRoomType(value: string | null | undefined) {

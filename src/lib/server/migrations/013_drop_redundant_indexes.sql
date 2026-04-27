@@ -1,0 +1,14 @@
+DROP INDEX IF EXISTS idx_study_programs_faculty ON study_programs;
+DROP INDEX IF EXISTS idx_courses_study_program ON courses;
+DROP INDEX IF EXISTS idx_courses_lecturer ON courses;
+DROP INDEX IF EXISTS idx_schedules_class_room ON schedules;
+DROP INDEX IF EXISTS idx_schedules_lecturer ON schedules;
+DROP INDEX IF EXISTS idx_schedules_day ON schedules;
+DROP INDEX IF EXISTS idx_enrollments_student ON enrollments;
+DROP INDEX IF EXISTS idx_enrollments_course ON enrollments;
+DROP INDEX IF EXISTS idx_enrollments_class_room ON enrollments;
+DROP INDEX IF EXISTS idx_enrollments_schedule ON enrollments;
+DROP INDEX IF EXISTS idx_grades_enrollment ON grades;
+DROP INDEX IF EXISTS idx_users_student ON users;
+DROP INDEX IF EXISTS idx_users_lecturer ON users;
+DROP INDEX IF EXISTS idx_refresh_tokens_user ON refresh_tokens;

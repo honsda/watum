@@ -15,6 +15,7 @@ import { requireRole, revokeRefreshTokensForUser } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
 	containsSearchPattern,
+	fulltextSearchPattern,
 	prefixSearchPattern,
 	wordPrefixSearchPattern
 } from '$lib/server/search';
@@ -82,16 +83,9 @@ async function searchUsersByRelatedNamePattern(
 	const patterns = Array.isArray(pattern) ? pattern : [pattern];
 	const sqlParts = [
 		'SELECT u.id',
-		...(base === 'students'
-			? [
-					'FROM users u FORCE INDEX (PRIMARY)',
-					`INNER JOIN ${relatedTable} ${relatedAlias} ON u.${joinColumn} = ${relatedAlias}.id`
-				]
-			: [
-					`FROM ${relatedTable} ${relatedAlias}`,
-					`INNER JOIN users u ON u.${joinColumn} = ${relatedAlias}.id`
-				]),
-		`WHERE (${patterns.map(() => `${relatedAlias}.name LIKE ?`).join(' OR ')})`
+		`FROM ${relatedTable} ${relatedAlias}`,
+		`INNER JOIN users u ON u.${joinColumn} = ${relatedAlias}.id`,
+		`WHERE (${patterns.map(() => `MATCH(${relatedAlias}.name) AGAINST(? IN BOOLEAN MODE)`).join(' OR ')})`
 	];
 	const values: unknown[] = [...patterns];
 
@@ -113,13 +107,13 @@ async function searchUsersByRelatedNamePattern(
 	}
 	if (filters.studentName) {
 		if (base === 'students') {
-			sqlParts.push('AND s.name LIKE ?');
-			values.push(containsSearchPattern(filters.studentName)!);
+			sqlParts.push('AND MATCH(s.name) AGAINST(? IN BOOLEAN MODE)');
+			values.push(fulltextSearchPattern(filters.studentName)!);
 		} else {
 			sqlParts.push(
-				'AND EXISTS (SELECT 1 FROM students s WHERE s.id = u.student_id AND s.name LIKE ?)'
+				'AND EXISTS (SELECT 1 FROM students s WHERE s.id = u.student_id AND MATCH(s.name) AGAINST(? IN BOOLEAN MODE))'
 			);
-			values.push(containsSearchPattern(filters.studentName)!);
+			values.push(fulltextSearchPattern(filters.studentName)!);
 		}
 	}
 	if (filters.lecturerId) {
@@ -128,13 +122,13 @@ async function searchUsersByRelatedNamePattern(
 	}
 	if (filters.lecturerName) {
 		if (base === 'lecturers') {
-			sqlParts.push('AND l.name LIKE ?');
-			values.push(containsSearchPattern(filters.lecturerName)!);
+			sqlParts.push('AND MATCH(l.name) AGAINST(? IN BOOLEAN MODE)');
+			values.push(fulltextSearchPattern(filters.lecturerName)!);
 		} else {
 			sqlParts.push(
-				'AND EXISTS (SELECT 1 FROM lecturers l WHERE l.id = u.lecturer_id AND l.name LIKE ?)'
+				'AND EXISTS (SELECT 1 FROM lecturers l WHERE l.id = u.lecturer_id AND MATCH(l.name) AGAINST(? IN BOOLEAN MODE))'
 			);
-			values.push(containsSearchPattern(filters.lecturerName)!);
+			values.push(fulltextSearchPattern(filters.lecturerName)!);
 		}
 	}
 	if (afterId) {
@@ -166,10 +160,10 @@ export const searchUsers = query(searchUsersSchema, async (filters) => {
 	if (filters.role) where.push(['role', '=', filters.role]);
 	if (filters.studentId) where.push(['student_id', '=', filters.studentId]);
 	if (filters.studentName)
-		where.push(['student_name', 'LIKE', containsSearchPattern(filters.studentName)!]);
+		where.push(['student_name', 'FULLTEXT', fulltextSearchPattern(filters.studentName)!]);
 	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
 	if (filters.lecturerName)
-		where.push(['lecturer_name', 'LIKE', containsSearchPattern(filters.lecturerName)!]);
+		where.push(['lecturer_name', 'FULLTEXT', fulltextSearchPattern(filters.lecturerName)!]);
 	const limit = getListQueryLimit(60);
 	const afterId = getListQueryCursor(filters.cursor);
 	const q = filters.q?.trim();
@@ -198,7 +192,7 @@ export const searchUsers = query(searchUsersSchema, async (filters) => {
 			await searchUsersByRelatedNamePattern(
 				'students',
 				filters,
-				containsSearchPattern(filters.studentName)!,
+				fulltextSearchPattern(filters.studentName)!,
 				limit,
 				afterId
 			),
@@ -211,7 +205,7 @@ export const searchUsers = query(searchUsersSchema, async (filters) => {
 			await searchUsersByRelatedNamePattern(
 				'lecturers',
 				filters,
-				containsSearchPattern(filters.lecturerName)!,
+				fulltextSearchPattern(filters.lecturerName)!,
 				limit,
 				afterId
 			),
@@ -428,6 +422,10 @@ export const updateUser = form(
 		//         await deleteLectuer(getPool(), { id: user.lecturer_id });
 		//     }
 		// }
+		if (data.password) {
+			await revokeRefreshTokensForUser(data.id);
+		}
+
 		await updateUserDb(
 			getPool(),
 			{
@@ -440,10 +438,6 @@ export const updateUser = form(
 			{ id: data.id }
 		);
 
-		if (data.password) {
-			await revokeRefreshTokensForUser(data.id);
-		}
-
 		await getUsers().refresh();
 		return { success: true, id: data.id };
 	}
@@ -455,6 +449,7 @@ export const deleteUser = command(v.string(), async (id) => {
 	if (!user) {
 		throw error(404, 'User tidak ditemukan');
 	}
+	await revokeRefreshTokensForUser(id);
 	await deleteUserDb(getPool(), { id });
 	await getUsers().refresh();
 	return { success: true };

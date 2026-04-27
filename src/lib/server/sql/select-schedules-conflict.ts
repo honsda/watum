@@ -3,15 +3,15 @@ import type { Connection } from 'mysql2/promise';
 export type SelectSchedulesConflictParams = {
     classRoomId: string;
     day: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
-    startTime: Date;
-    endTime: Date;
+    startTime: Date | string;
+    endTime: Date | string;
     excludeScheduleId?: string;
 }
 
 export type SelectSchedulesConflictResult = {
     id: string;
-    start_time: Date;
-    end_time: Date;
+    start_time: string;
+    end_time: string;
 }
 
 export async function selectSchedulesConflict(connection: Connection, params: SelectSchedulesConflictParams): Promise<SelectSchedulesConflictResult[]> {

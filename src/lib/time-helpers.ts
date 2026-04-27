@@ -24,18 +24,7 @@ export function createUTCDate(
 	minute: number,
 	second: number = 0
 ): Date {
-	const date = dayjs()
-		.year(year)
-		.month(month)
-		.date(day)
-		.hour(hour)
-		.minute(minute)
-		.second(second)
-		.millisecond(0)
-		.utc()
-		.toDate();
-
-	return date;
+	return new Date(Date.UTC(year, month, day, hour, minute, second, 0));
 }
 
 export function createUTCDateFromString(dateStr: string, timeStr: string): Date {
@@ -47,6 +36,10 @@ export function createUTCDateFromString(dateStr: string, timeStr: string): Date 
 
 function hasExplicitTimezone(value: string): boolean {
 	return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
+}
+
+function isTimeOnly(value: string): boolean {
+	return /^\d{1,2}:\d{2}(?::\d{2})?$/.test(value);
 }
 
 export function parseISO(isoStr: string, sourceTimezone?: string): Date {
@@ -63,11 +56,25 @@ export function parseISO(isoStr: string, sourceTimezone?: string): Date {
 }
 
 export function formatDateTime(
-	date: Date | dayjs.Dayjs,
+	value: Date | dayjs.Dayjs | string,
 	format: 'full' | 'date' | 'time' = 'full',
 	timezone: string = 'Asia/Jakarta'
 ): string {
-	const dayjsDate = dayjs(date).tz(timezone);
+	if (typeof value === 'string' && isTimeOnly(value)) {
+		const [hours = '00', minutes = '00'] = value.split(':');
+		const time = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+		const dayjsDate = dayjs.tz(`2000-01-01T${time}`, timezone);
+		if (format === 'time') return time;
+		if (format === 'date') return dayjsDate.format('DD MMMM YYYY');
+		return dayjsDate.format('DD MMMM YYYY HH:mm');
+	}
+
+	const dayjsDate =
+		typeof value === 'string'
+			? hasExplicitTimezone(value)
+				? dayjs(value).tz(timezone)
+				: dayjs.tz(value, timezone)
+			: dayjs(value).tz(timezone);
 
 	switch (format) {
 		case 'time':
@@ -81,10 +88,18 @@ export function formatDateTime(
 }
 
 export function formatDateTimeInput(
-	date: Date | dayjs.Dayjs,
+	value: Date | dayjs.Dayjs | string,
 	timezone: string = 'Asia/Jakarta'
 ): string {
-	return dayjs(date).tz(timezone).format('YYYY-MM-DDTHH:mm');
+	if (typeof value === 'string') {
+		if (isTimeOnly(value)) {
+			// TIME string like 'HH:MM:SS' — return as datetime-local on a reference date
+			const [hours = '00', minutes = '00'] = value.split(':');
+			return `2000-01-01T${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+		}
+		return dayjs(value).tz(timezone).format('YYYY-MM-DDTHH:mm');
+	}
+	return dayjs(value).tz(timezone).format('YYYY-MM-DDTHH:mm');
 }
 
 export function getDuration(

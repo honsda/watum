@@ -28,8 +28,8 @@ export type SelectEnrollmentsResult = {
     lecturer_name?: string;
     class_room_name?: string;
     schedule_day?: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
-    schedule_start_time?: Date;
-    schedule_end_time?: Date;
+    schedule_start_time?: string;
+    schedule_end_time?: string;
     grade_id?: string;
     letter_grade?: string;
 }
@@ -80,7 +80,7 @@ const selectFragments = {
 
 const NumericOperatorList = ['=', '<>', '>', '<', '>=', '<='] as const;
 type NumericOperator = typeof NumericOperatorList[number];
-type StringOperator = '=' | '<>' | '>' | '<' | '>=' | '<=' | 'LIKE';
+type StringOperator = '=' | '<>' | '>' | '<' | '>=' | '<=' | 'LIKE' | 'FULLTEXT';
 type SetOperator = 'IN' | 'NOT IN';
 type BetweenOperator = 'BETWEEN';
 
@@ -130,12 +130,12 @@ export type SelectEnrollmentsWhere =
     | ['schedule_day', StringOperator, 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU' | null]
     | ['schedule_day', SetOperator, 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU'[]]
     | ['schedule_day', BetweenOperator, 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU' | null, 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU' | null]
-    | ['schedule_start_time', NumericOperator, Date | null]
-    | ['schedule_start_time', SetOperator, Date[]]
-    | ['schedule_start_time', BetweenOperator, Date | null, Date | null]
-    | ['schedule_end_time', NumericOperator, Date | null]
-    | ['schedule_end_time', SetOperator, Date[]]
-    | ['schedule_end_time', BetweenOperator, Date | null, Date | null]
+    | ['schedule_start_time', StringOperator, string | null]
+    | ['schedule_start_time', SetOperator, string[]]
+    | ['schedule_start_time', BetweenOperator, string | null, string | null]
+    | ['schedule_end_time', StringOperator, string | null]
+    | ['schedule_end_time', SetOperator, string[]]
+    | ['schedule_end_time', BetweenOperator, string | null, string | null]
     | ['grade_id', StringOperator, string | null]
     | ['grade_id', SetOperator, string[]]
     | ['grade_id', BetweenOperator, string | null, string | null]
@@ -146,7 +146,14 @@ export type SelectEnrollmentsWhere =
 export async function selectEnrollments(connection: Connection, params?: SelectEnrollmentsDynamicParams): Promise<SelectEnrollmentsResult[]> {
     const where = whereConditionsToObject(params?.where);
     const paramsValues: any = [];
-    let sql = 'SELECT';
+    // MANUAL FIX: STRAIGHT_JOIN forces MariaDB to read enrollments first and
+    // then do eq_ref lookups into joined tables. Without this, the optimizer
+    // often chooses a smaller table (e.g. class_rooms) as the driving table
+    // and does a BNL join into enrollments, causing full index scans on 2M+
+    // rows. With STRAIGHT_JOIN, list queries with ORDER BY e.id LIMIT n stop
+    // early after finding n rows (~40ms instead of ~8s).
+    // If you regenerate this file with typesql, you must re-apply this change.
+    let sql = 'SELECT STRAIGHT_JOIN';
     if (params?.select == null || params.select.id) {
         sql = appendSelect(sql, `e.id`);
     }
@@ -329,7 +336,7 @@ function mapArrayToSelectEnrollmentsResult(data: any, select?: SelectEnrollments
 }
 
 function appendSelect(sql: string, selectField: string) {
-    if (sql == 'SELECT') {
+    if (!/[\r\n]/.test(sql)) {
         return sql + EOL + selectField;
     }
     else {
@@ -362,6 +369,13 @@ function whereCondition(condition: SelectEnrollmentsWhere): WhereConditionResult
     if (operator == 'LIKE') {
         return {
             sql: `${selectFragment} LIKE ?`,
+            hasValue: condition[2] != null,
+            values: [condition[2]]
+        }
+    }
+    if (operator == 'FULLTEXT') {
+        return {
+            sql: `MATCH(${selectFragment}) AGAINST(? IN BOOLEAN MODE)`,
             hasValue: condition[2] != null,
             values: [condition[2]]
         }

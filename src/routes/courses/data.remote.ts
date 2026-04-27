@@ -12,6 +12,7 @@ import { invalidateConflictAuditCache } from '$lib/server/conflict-audit';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
 	containsSearchPattern,
+	fulltextSearchPattern,
 	decodeKeysetCursor,
 	encodeKeysetCursor,
 	prefixSearchPattern,
@@ -74,9 +75,13 @@ export const searchCourses = query(searchCoursesSchema, async (filters) => {
 	if (filters.studyProgramId) where.push(['study_program_id', '=', filters.studyProgramId]);
 	if (filters.lecturerId) where.push(['lecturer_id', '=', filters.lecturerId]);
 	if (filters.lecturerName)
-		where.push(['lecturer_name', 'LIKE', containsSearchPattern(filters.lecturerName)!]);
+		where.push(['lecturer_name', 'FULLTEXT', fulltextSearchPattern(filters.lecturerName)!]);
 	if (filters.studyProgramName)
-		where.push(['study_program_name', 'LIKE', containsSearchPattern(filters.studyProgramName)!]);
+		where.push([
+			'study_program_name',
+			'FULLTEXT',
+			fulltextSearchPattern(filters.studyProgramName)!
+		]);
 	if (filters.minCredits != null && filters.maxCredits != null) {
 		where.push(['credits', 'BETWEEN', filters.minCredits, filters.maxCredits]);
 	} else if (filters.minCredits != null) {
@@ -111,6 +116,14 @@ export const searchCourses = query(searchCoursesSchema, async (filters) => {
 		if (filters.lecturerId) {
 			sqlParts.push('AND c.lecturer_id = ?');
 			values.push(filters.lecturerId);
+		}
+		if (filters.lecturerName) {
+			sqlParts.push('AND l.name LIKE ?');
+			values.push(containsSearchPattern(filters.lecturerName));
+		}
+		if (filters.studyProgramName) {
+			sqlParts.push('AND sp.name LIKE ?');
+			values.push(containsSearchPattern(filters.studyProgramName));
 		}
 		if (filters.minCredits != null) {
 			sqlParts.push('AND c.credits >= ?');
@@ -198,6 +211,22 @@ export const updateCourse = form(courseSchema, async (data) => {
 	if (!lecturer) {
 		throw error(400, 'dosen tidak ditemukan');
 	}
+	const nameChanged = existing.name !== data.name;
+	const creditsChanged = existing.credits !== data.credits;
+	const studyProgramChanged = existing.study_program_id !== data.studyProgramId;
+	const lecturerChanged = existing.lecturer_id !== data.lecturerId;
+
+	if (!nameChanged && !creditsChanged && !studyProgramChanged && !lecturerChanged) {
+		return {
+			success: true,
+			id: data.id,
+			nameChanged,
+			creditsChanged,
+			studyProgramChanged,
+			lecturerChanged
+		};
+	}
+
 	await updateCourseDb(
 		getPool(),
 		{
@@ -208,9 +237,18 @@ export const updateCourse = form(courseSchema, async (data) => {
 		},
 		{ id: data.id }
 	);
-	invalidateConflictAuditCache();
-	await getCourses().refresh();
-	return { success: true, id: data.id };
+
+	if (nameChanged || lecturerChanged) {
+		invalidateConflictAuditCache();
+	}
+	return {
+		success: true,
+		id: data.id,
+		nameChanged,
+		creditsChanged,
+		studyProgramChanged,
+		lecturerChanged
+	};
 });
 
 export const deleteCourse = command(v.string(), async (id) => {
