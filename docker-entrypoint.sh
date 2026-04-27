@@ -9,7 +9,7 @@ if [ -z "${ORIGIN:-}" ] && [ -n "${COOLIFY_FQDN:-}" ]; then
 fi
 
 if [ "${AUTO_APPLY_MIGRATIONS:-true}" = "true" ]; then
-  node ./scripts/run-migrations.mjs
+  bun ./scripts/run-migrations.mjs
 fi
 
-exec node build
+exec bun build/index.js

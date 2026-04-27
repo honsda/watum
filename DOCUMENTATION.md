@@ -421,19 +421,20 @@ WHERE e.schedule_day <> s.day
 
 20 migration files in `src/lib/server/migrations/`:
 
-| File                                  | Purpose                                              |
-| ------------------------------------- | ---------------------------------------------------- |
-| `001_schema.sql`                      | Base schema + indexes                                |
-| `002_refresh_tokens.sql`              | Session management                                   |
-| `003-003`                             | Refresh token indexes                                |
-| `004-009`                             | Schedule overlap + large dataset indexes             |
-| `010-011`                             | Conflict audit integer keys                          |
-| `012`                                 | **Denormalized schedule columns + covering indexes** |
-| `013-016`                             | Index cleanup + fulltext search                      |
-| `017`                                 | Time column optimizations                            |
-| `018_optimize_triggers.sql`           | Conditional trigger guards                           |
-| `019_drop_courses_au_trigger.sql`     | Dropped cascade trigger (later restored)             |
-| `020_recreate_courses_au_trigger.sql` | Restored trigger with optimized query                |
+| File                                  | Purpose                                                  |
+| ------------------------------------- | -------------------------------------------------------- |
+| `001_schema.sql`                      | Base schema + indexes                                    |
+| `002_refresh_tokens.sql`              | Session management                                       |
+| `003-003`                             | Refresh token indexes                                    |
+| `004-009`                             | Schedule overlap + large dataset indexes                 |
+| `010-011`                             | Conflict audit integer keys                              |
+| `012`                                 | **Denormalized schedule columns + covering indexes**     |
+| `013-016`                             | Index cleanup + fulltext search                          |
+| `017`                                 | Time column optimizations                                |
+| `018_optimize_triggers.sql`           | Conditional trigger guards                               |
+| `019_drop_courses_au_trigger.sql`     | Dropped cascade trigger (later restored)                 |
+| `020_recreate_courses_au_trigger.sql` | Restored trigger with optimized query                    |
+| `021_grades_constraints.sql`          | Grade score CHECK constraints + total_score auto trigger |
 
 ---
 
@@ -716,20 +717,74 @@ The result is a list of compact conflict seeds. A seed contains only:
 
 It does not yet contain names or full enrollment rows. This keeps the expensive first phase index-only and avoids joining millions of rows just to discover which groups exist.
 
-#### 6.3.3 Why `COUNT(DISTINCT course_id) > 1`
+#### 6.3.3 HAVING Predicate (Per-Type)
 
-The system intentionally requires more than one distinct course in the group. This avoids false positives where many students are enrolled in the same course, room, and time slot.
+The `HAVING` predicate differs by conflict type because the semantics of "double-booking" depend on the resource:
+
+| Conflict type | HAVING predicate                | Rationale                                                                                                            |
+| ------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Room          | `COUNT(*) > 1`                  | Any room double-booking is a real conflict — even two sections of the same course consuming the same physical space  |
+| Student       | `COUNT(DISTINCT course_id) > 1` | A student enrolled twice in the same course at the same slot is data corruption, not a real conflict                 |
+| Lecturer      | `COUNT(DISTINCT course_id) > 1` | A lecturer teaching one course with hundreds of students is normal; only multiple distinct courses indicate conflict |
+
+Without this split, lecturer audit would report thousands of false-positive "conflicts" per lecturer, because each course has hundreds of student enrollments, and `COUNT(*) > 1` would trigger for every populated time slot.
 
 Examples:
 
-| Scenario                                                   | Should be conflict?        | Reason                                                            |
-| ---------------------------------------------------------- | -------------------------- | ----------------------------------------------------------------- |
-| 40 students enrolled in the same course in room A at 08:00 | No room conflict by itself | Only one distinct course owns the room slot                       |
-| Course A and Course B both use room A at 08:00             | Yes                        | Two distinct courses compete for one room                         |
-| Student S is enrolled in Course A and Course B at 08:00    | Yes                        | Same student has two distinct courses in the same schedule window |
-| Lecturer L teaches Course A and Course B at 08:00          | Yes                        | Same lecturer has two distinct teaching assignments               |
+| Scenario                                                       | Room | Student | Lecturer | Reason                                              |
+| -------------------------------------------------------------- | ---- | ------- | -------- | --------------------------------------------------- |
+| 40 students in one course in room A at 08:00                   | No¹  | No      | No       | Single course; not a conflict for any resource      |
+| Course A and Course B both use room A at 08:00                 | Yes  | —       | —        | Two distinct courses competing for one room         |
+| Student S enrolled in Course A and Course B at 08:00           | —    | Yes     | —        | Same student has two distinct courses in same slot  |
+| Lecturer L teaches Course A and Course B at 08:00 in two rooms | —    | —       | Yes      | Same lecturer has two distinct teaching assignments |
 
-#### 6.3.4 Index Choice and `FORCE INDEX`
+¹ Room would only flag if the same room has 2+ separate enrollment rows pointing to the same time slot, which would mean two schedule rows competing for one room.
+
+#### 6.3.4 Sequential Audit Execution
+
+The three conflict-type seed queries run **sequentially**, not in parallel:
+
+```typescript
+for (const type of selectedTypes) {
+	seedResults.push({ type, seeds: await collectConflictGroupSeeds(pool, type, filters) });
+}
+```
+
+Earlier versions used `Promise.all([...])` to parallelize the three queries. At scale this fired three concurrent `GROUP BY` scans on 2.7M rows simultaneously, each with `FORCE INDEX` on a different conflict index. The combined load:
+
+- exhausted the InnoDB buffer pool
+- triggered three parallel disk read patterns
+- caused MariaDB to spawn 3× the temporary aggregation buffers
+- produced OOM under stress traffic
+
+Sequential execution keeps only one heavy index scan active at a time and reuses warm buffer pool pages between queries.
+
+#### 6.3.5 Audit Filter Scoping
+
+The client `buildConflictAuditFilters()` always sends scope filters to limit the audit's working set:
+
+```typescript
+function buildConflictAuditFilters() {
+	return {
+		academicYear: scheduleAcademicYearFilter || scheduleAcademicYearOptions[0] || undefined,
+		semester: scheduleSemesterFilter || scheduleSemesterOptions[0] || undefined,
+		day: scheduleDayFilter || undefined,
+		courseId: scheduleCourseFilter || undefined,
+		classRoomId: scheduleRoomFilter || undefined,
+		lecturerId: scheduleLecturerFilter || undefined,
+		limitGroups: 1000,
+		memberSampleSize: 10
+	};
+}
+```
+
+If the user has not picked an academic year or semester, the client falls back to the first available value derived from the loaded schedule preview. This guarantees the audit always has at least one filter that the database can use to short-circuit the index scan.
+
+Without scoping, the audit would scan the entire `enrollments` table across all academic years and semesters every time the dashboard loaded, holding millions of rows in the temporary aggregation buffer.
+
+`memberSampleSize: 10` caps hydrated members per group at 10 rather than the default 40, which dramatically reduces hydration cost when there are many seed candidates (one lecturer with 1,728 conflict groups × 40 members = 69,120 hydrated rows; with 10 it becomes 17,280 rows; in practice `limitGroups: 1000` further bounds this).
+
+#### 6.3.6 Index Choice and `FORCE INDEX`
 
 Unfiltered full audits use `FORCE INDEX` because MariaDB can otherwise choose a full table scan plus temporary grouping on the 2M+ row `enrollments` table. The intended indexes are:
 
@@ -741,7 +796,7 @@ Unfiltered full audits use `FORCE INDEX` because MariaDB can otherwise choose a 
 
 There is an important exception: when extra filters are present, `FORCE INDEX` is not always used. Some filters target columns that are not present in the chosen conflict index. For those filtered queries, forcing the conflict index may cause many row lookups and can be slower than allowing the optimizer to choose another plan. The implementation checks whether extra filters exist and only forces the conflict index for the unfiltered hot path.
 
-#### 6.3.5 Focus Filtering
+#### 6.3.7 Focus Filtering
 
 Focus mode is used when the UI wants conflicts connected to specific enrollment IDs. The filter is named `focusEnrollmentIds` internally and `enrollmentIds` at the remote boundary.
 
@@ -754,7 +809,7 @@ The algorithm:
 
 This is faster than hydrating every conflict group and then filtering in application memory.
 
-#### 6.3.6 Member Hydration
+#### 6.3.8 Member Hydration
 
 After the seed list is selected and optionally focused/limited, `loadMemberRowsForSeeds()` fetches display-ready members for those groups.
 
@@ -787,17 +842,19 @@ WHERE <seed key predicate>;
 
 Hydration is batched in groups of 40 seeds. Each seed's member query is unioned with `UNION ALL`, which keeps round trips bounded while avoiding a single enormous dynamic query.
 
-#### 6.3.7 Member Sampling
+#### 6.3.9 Member Sampling
 
 The audit summary counts all conflicted rows in matching seeds, but the UI does not need thousands of member rows per group. The member list is capped:
 
-- default hydrated member sample: 40 members per group
+- client-requested hydrated member sample: **10 members per group** (set via `buildConflictAuditFilters` as `memberSampleSize: 10`)
 - hard maximum: 40 members per group
 - focused enrollment IDs are always prioritized in the sample
 
+The reduced sample size (down from the previous default of 40) was necessary because some lecturer conflict groups have 1,500+ members per group. Even 40 members × 1,000 groups = 40,000 hydrated rows × 4-table UNION ALL batches overwhelmed the database. With 10 members × 1,000 groups = 10,000 rows, the hydration cost drops by 75%.
+
 This preserves accurate counts while keeping remote payloads and UI rendering small.
 
-#### 6.3.8 Group Hydration and Sorting
+#### 6.3.10 Group Hydration and Sorting
 
 `hydrateConflictGroupSeeds()` converts low-level rows into `ConflictAuditGroup` objects:
 
@@ -821,7 +878,7 @@ Group ordering is deterministic:
 
 This makes dashboard and builder output stable between refreshes.
 
-#### 6.3.9 Summary Construction
+#### 6.3.11 Summary Construction
 
 The audit result includes both groups and aggregate counts:
 
@@ -838,11 +895,19 @@ type ConflictAuditResult = {
 		studentGroups: number;
 		lecturerGroups: number;
 		conflictedEnrollments: number;
+		/** Distinct rooms involved in at least one conflict (not the count of conflict instances). */
+		conflictedRooms: number;
+		/** Distinct students involved in at least one conflict. */
+		conflictedStudents: number;
+		/** Distinct lecturers involved in at least one conflict. */
+		conflictedLecturers: number;
 	};
 	truncated: boolean;
 	groups: ConflictAuditGroup[];
 };
 ```
+
+The distinct-resource counts are computed from the full seed list **before** truncation, so they remain accurate even when the hydrated `groups` array is capped by `limitGroups`. The dashboard's "ruang bentrok" metric uses `conflictedRooms` (rooms in conflict) rather than `roomGroups` (instances of conflict), which is what users actually want to see.
 
 `truncated` is true when more groups matched than were hydrated due to `limitGroups`.
 
@@ -894,18 +959,22 @@ The builder conflict panel is collapsed by default so many conflict groups do no
 
 Conflict audits are cached in memory inside `src/lib/server/conflict-audit.ts`.
 
-| Mechanism            | Behavior                                                |
-| -------------------- | ------------------------------------------------------- |
-| `auditCache`         | Stores completed audit results by normalized filter key |
-| `AUDIT_CACHE_TTL_MS` | 60 seconds                                              |
-| `inFlightAudits`     | Deduplicates concurrent requests for the same cache key |
-| `auditCacheVersion`  | Invalidates all old cache entries after mutations       |
+| Mechanism                  | Behavior                                                |
+| -------------------------- | ------------------------------------------------------- |
+| `auditCache`               | Stores completed audit results by normalized filter key |
+| `AUDIT_CACHE_TTL_MS`       | 60 seconds                                              |
+| `AUDIT_CACHE_MAX_SIZE`     | 200 entries (LRU eviction by insertion order)           |
+| `auditCacheInsertionOrder` | Tracks insertion order for LRU eviction                 |
+| `inFlightAudits`           | Deduplicates concurrent requests for the same cache key |
+| `auditCacheVersion`        | Invalidates all old cache entries after mutations       |
 
 The cache key includes conflict type, academic year, semester, lecturer, course, room, day, focus enrollment IDs, group limit, and member sample size. Focus IDs are sorted before building the cache key so equivalent requests share a cache entry.
 
 When a cached entry is older than the TTL, the function returns the cached result immediately and schedules a background refresh. This keeps the UI responsive while refreshing expensive audit data.
 
-`invalidateConflictAuditCache()` clears the cache and increments the cache version. It is called after mutations that can affect conflicts, including enrollment writes, course lecturer changes, classroom changes, student changes, and lecturer changes.
+LRU eviction prevents unbounded cache growth: under high-cardinality filter inputs (many distinct combinations of academic year, semester, lecturer, room), the cache caps at 200 entries and evicts the oldest. Without this bound, the cache could leak memory until the next mutation triggered `invalidateConflictAuditCache()`.
+
+`invalidateConflictAuditCache()` clears both the cache map and the insertion-order tracker, then increments the cache version. It is called after mutations that can affect conflicts, including enrollment writes, course lecturer changes, classroom changes, student changes, and lecturer changes.
 
 ### 6.7 Authorization and Role Scoping
 
@@ -925,12 +994,14 @@ The lecturer scope is included in the returned filter metadata as `lecturerScope
 
 The conflict engine is fast because it separates discovery from hydration:
 
-| Phase            | Data volume                                    | Query style                                      |
-| ---------------- | ---------------------------------------------- | ------------------------------------------------ |
-| Seed collection  | Potentially millions of enrollment rows        | Index-only aggregation over denormalized columns |
-| Focus filtering  | Only focus enrollment IDs                      | Batched primary lookups                          |
-| Member hydration | Only selected conflict seeds                   | Bounded joins for display names                  |
-| UI rendering     | Only hydrated groups and loaded schedule cards | Local maps/sets and derived state                |
+| Phase            | Data volume                                     | Query style                                            |
+| ---------------- | ----------------------------------------------- | ------------------------------------------------------ |
+| Seed collection  | Millions of enrollment rows (scoped by filters) | Sequential index-only aggregation per conflict type    |
+| Focus filtering  | Only focus enrollment IDs                       | Batched primary lookups                                |
+| Member hydration | Only selected conflict seeds (max 1000 groups)  | Bounded batched UNION ALL joins (max 10 members/group) |
+| UI rendering     | Only hydrated groups and loaded schedule cards  | Local maps/sets and derived state                      |
+
+Sequential execution is intentional: three concurrent `GROUP BY` scans on 2.7M rows with `FORCE INDEX` overwhelms MariaDB. Running room → student → lecturer sequentially keeps one index scan active at a time and reuses warm buffer pool pages.
 
 Expected stress-data performance:
 
@@ -954,11 +1025,13 @@ Important assumptions:
 
 Current server audit semantics:
 
-- The server groups by identical denormalized schedule windows.
-- It does not currently expand arbitrary interval-overlap joins across the full enrollment table.
-- The client visual layer detects interval overlaps only among loaded cards.
-
-This split is intentional for current scale/performance. Full-table interval-overlap detection is more expensive than equality grouping and would need a different range-query/index strategy if required for all historical rows.
+- The server groups by **identical** denormalized schedule windows (same `start_time` + `end_time`).
+- Room conflicts use `HAVING COUNT(*) > 1` — any room double-booking is flagged.
+- Student/lecturer conflicts use `HAVING COUNT(DISTINCT course_id) > 1` — multiple students in the same course at the same time slot is not flagged.
+- The audit runs **sequentially** per conflict type to avoid overwhelming the database with concurrent index scans.
+- The audit is always scoped to at least one academic year/semester by the client, preventing full-table scans across all historical data.
+- The client visual layer (`buildScheduleCards`) detects interval overlaps only among loaded cards using `startMinutes < componentEnd`.
+- The server does NOT currently detect arbitrary interval overlaps (e.g., 08:00–10:00 vs 09:00–11:00) because that would require fetching all enrollment rows for each resource into application memory, which is too expensive at 2.7M+ rows.
 
 ### 6.10 Operational Debugging
 
@@ -1004,8 +1077,28 @@ GROUP BY
   schedule_day,
   schedule_start_time,
   schedule_end_time
-HAVING COUNT(DISTINCT course_id) > 1
+HAVING COUNT(*) > 1
 ORDER BY members DESC
+LIMIT 20;
+```
+
+Check whether a lecturer has real conflicts (distinct courses, not just many students in one course):
+
+```sql
+SELECT
+  l.name AS lecturer,
+  COUNT(*) AS conflict_groups,
+  SUM(member_count) AS total_members
+FROM (
+  SELECT lecturer_audit_sk, COUNT(*) AS member_count
+  FROM enrollments
+  GROUP BY lecturer_audit_sk, academic_year_start, semester_sort,
+    schedule_day, schedule_start_time, schedule_end_time
+  HAVING COUNT(DISTINCT course_id) > 1
+) t
+JOIN lecturers l ON l.audit_sk = t.lecturer_audit_sk
+GROUP BY l.name
+ORDER BY conflict_groups DESC
 LIMIT 20;
 ```
 

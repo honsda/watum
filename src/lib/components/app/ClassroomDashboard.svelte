@@ -224,7 +224,7 @@
 
 	.summary-stats {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(min(148px, 100%), 1fr));
 		gap: 0.8rem;
 		margin-top: 1rem;
 		min-height: 7.6rem;

@@ -1,7 +1,7 @@
 import { getRequestEvent } from '$app/server';
 import { env } from '$env/dynamic/private';
 import { error } from '@sveltejs/kit';
-import { verify } from 'argon2';
+import { verify } from '@node-rs/argon2';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { SignJWT, jwtVerify } from 'jose';
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from './db';
@@ -85,16 +85,8 @@ function getPasswordVersion(passwordHash: string) {
 function getRequestContextBinding() {
 	const { request } = getRequestEvent();
 	const userAgent = request.headers.get('user-agent') ?? '';
-	const acceptLanguage = request.headers.get('accept-language') ?? '';
-	const secChUa = request.headers.get('sec-ch-ua') ?? '';
-	const secChUaPlatform = request.headers.get('sec-ch-ua-platform') ?? '';
-	const secChUaMobile = request.headers.get('sec-ch-ua-mobile') ?? '';
 
-	return hashValue(
-		['access-context-v1', userAgent, acceptLanguage, secChUa, secChUaPlatform, secChUaMobile].join(
-			'\n'
-		)
-	);
+	return hashValue(['access-context-v2', userAgent].join('\n'));
 }
 
 function getJwtSecret() {
@@ -378,11 +370,12 @@ export async function refreshSession(): Promise<{ accessToken: string; user: Use
 			return null;
 		}
 
-		if (
-			refreshTokenRow.context_binding !== contextBinding ||
-			isRefreshTokenExpired(refreshTokenRow.expires_at)
-		) {
+		if (isRefreshTokenExpired(refreshTokenRow.expires_at)) {
 			await connection.query('DELETE FROM refresh_tokens WHERE id = ?', [refreshTokenRow.id]);
+			return null;
+		}
+
+		if (refreshTokenRow.context_binding !== contextBinding) {
 			return null;
 		}
 

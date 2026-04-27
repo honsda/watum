@@ -10,4 +10,4 @@ export STRESS_SEED_TARGET_ROWS
 export STRESS_SEED_BATCH_SIZE
 export STRESS_SEED_CLASSROOM_COUNT
 
-npx tsx stress-seed.ts
+bun stress-seed.ts

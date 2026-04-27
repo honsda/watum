@@ -616,11 +616,15 @@ async function computeAudit(pool: Pool, filters: ConflictAuditFilters) {
 
 	// Count distinct resources with at least one conflict using the full seed list
 	// (before hydration truncation), so these totals are always accurate.
-	const conflictedRooms = new Set(relevantSeeds.filter((s) => s.conflictType === 'room').map((s) => s.resourceId)).size;
-	const conflictedStudents = new Set(relevantSeeds.filter((s) => s.conflictType === 'student').map((s) => s.resourceId))
-		.size;
-	const conflictedLecturers = new Set(relevantSeeds.filter((s) => s.conflictType === 'lecturer').map((s) => s.resourceId))
-		.size;
+	const conflictedRooms = new Set(
+		relevantSeeds.filter((s) => s.conflictType === 'room').map((s) => s.resourceId)
+	).size;
+	const conflictedStudents = new Set(
+		relevantSeeds.filter((s) => s.conflictType === 'student').map((s) => s.resourceId)
+	).size;
+	const conflictedLecturers = new Set(
+		relevantSeeds.filter((s) => s.conflictType === 'lecturer').map((s) => s.resourceId)
+	).size;
 
 	// console.log(`relevantSeedsobj: ${JSON.stringify(relevantSeeds)}`);
 	// console.log(`conflictedrooms: ${conflictedRooms}, conflictedStudents: ${conflictedStudents}, conflictedLecturers: ${conflictedLecturers}`);

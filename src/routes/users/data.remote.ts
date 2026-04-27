@@ -1,7 +1,7 @@
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
-import { hash } from 'argon2';
+import { hash } from '@node-rs/argon2';
 import { randomUUID } from 'crypto';
 import {
 	getListQueryLimit,
@@ -454,3 +454,124 @@ export const deleteUser = command(v.string(), async (id) => {
 	await getUsers().refresh();
 	return { success: true };
 });
+
+export const bulkUpdateUserRoles = form(
+	v.object({
+		ids: v.pipe(v.string(), v.minLength(1)),
+		role: v.picklist(['ADMIN', 'STUDENT', 'LECTURER'])
+	}),
+	async (data) => {
+		await requireRole(['ADMIN']);
+		const ids = data.ids.split(',').filter(Boolean);
+		if (!ids.length) {
+			throw error(400, 'Tidak ada akun dipilih');
+		}
+		if (ids.length > 200) {
+			throw error(400, 'Maksimal 200 akun sekaligus');
+		}
+
+		const results = await withTransaction(async (conn) => {
+			const outcomes: Array<{ id: string; ok: boolean; message?: string }> = [];
+			for (const id of ids) {
+				const [user] = await selectUsers(conn, { where: [['id', '=', id]] });
+				if (!user) {
+					outcomes.push({ id, ok: false, message: 'User tidak ditemukan' });
+					continue;
+				}
+				await updateUserDb(
+					conn,
+					{
+						email: user.email ?? '',
+						password: user.password ?? '',
+						role: data.role,
+						student_id: data.role === 'STUDENT' ? (user.student_id ?? undefined) : undefined,
+						lecturer_id: data.role === 'LECTURER' ? (user.lecturer_id ?? undefined) : undefined
+					},
+					{ id }
+				);
+				outcomes.push({ id, ok: true });
+			}
+			return outcomes;
+		});
+
+		await getUsers().refresh();
+		return { success: true, results };
+	}
+);
+
+export const bulkDeleteUsers = command(
+	v.pipe(v.string(), v.minLength(1)),
+	async (idsParam) => {
+		await requireRole(['ADMIN']);
+		const ids = idsParam.split(',').filter(Boolean);
+		if (!ids.length) {
+			throw error(400, 'Tidak ada akun dipilih');
+		}
+		if (ids.length > 200) {
+			throw error(400, 'Maksimal 200 akun sekaligus');
+		}
+
+		const results = await withTransaction(async (conn) => {
+			const outcomes: Array<{ id: string; ok: boolean; message?: string }> = [];
+			for (const id of ids) {
+				const [user] = await selectUsers(conn, { where: [['id', '=', id]] });
+				if (!user) {
+					outcomes.push({ id, ok: false, message: 'User tidak ditemukan' });
+					continue;
+				}
+				await revokeRefreshTokensForUser(id);
+				await deleteUserDb(conn, { id });
+				outcomes.push({ id, ok: true });
+			}
+			return outcomes;
+		});
+
+		await getUsers().refresh();
+		return { success: true, results };
+	}
+);
+
+export const bulkResetPasswords = form(
+	v.object({
+		ids: v.pipe(v.string(), v.minLength(1)),
+		password: v.pipe(v.string(), v.minLength(8, 'Password minimal 8 karakter'))
+	}),
+	async (data) => {
+		await requireRole(['ADMIN']);
+		const ids = data.ids.split(',').filter(Boolean);
+		if (!ids.length) {
+			throw error(400, 'Tidak ada akun dipilih');
+		}
+		if (ids.length > 200) {
+			throw error(400, 'Maksimal 200 akun sekaligus');
+		}
+		const hashedPassword = await hash(data.password);
+		const results = await withTransaction(async (conn) => {
+			const outcomes: Array<{ id: string; ok: boolean; message?: string }> = [];
+			for (const id of ids) {
+				const [user] = await selectUsers(conn, { where: [['id', '=', id]] });
+				if (!user) {
+					outcomes.push({ id, ok: false, message: 'User tidak ditemukan' });
+					continue;
+				}
+				await revokeRefreshTokensForUser(id);
+				await updateUserDb(
+					conn,
+					{
+						email: user.email ?? '',
+						password: hashedPassword,
+						role: user.role ?? 'ADMIN',
+						student_id: user.student_id ?? undefined,
+						lecturer_id: user.lecturer_id ?? undefined
+					},
+					{ id }
+				);
+				outcomes.push({ id, ok: true });
+			}
+			return outcomes;
+		});
+
+		await getUsers().refresh();
+		return { success: true, results };
+	}
+);

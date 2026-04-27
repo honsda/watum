@@ -164,6 +164,9 @@ export const getCourse = query(v.string(), async (id) => {
 
 export const createCourse = form(courseCreateSchema, async (data) => {
 	await requireRole(['ADMIN']);
+	if (!data.studyProgramId || !data.lecturerId) {
+		throw error(400, 'Program studi dan dosen wajib dipilih');
+	}
 
 	const [[sp], [lecturer]] = await Promise.all([
 		selectStudyPrograms(getPool(), { where: [['id', '=', data.studyProgramId]] }),
@@ -196,6 +199,9 @@ export const createCourse = form(courseCreateSchema, async (data) => {
 
 export const updateCourse = form(courseSchema, async (data) => {
 	await requireRole(['ADMIN']);
+	if (!data.studyProgramId || !data.lecturerId) {
+		throw error(400, 'Program studi dan dosen wajib dipilih');
+	}
 	const [existing] = await selectCourses(getPool(), { where: [['id', '=', data.id]] });
 	if (!existing) {
 		throw error(404, 'mata kuliah tidak ditemukan');
@@ -268,3 +274,68 @@ export const deleteCourse = command(v.string(), async (id) => {
 	await getCourses().refresh();
 	return { success: true };
 });
+
+export const bulkDeleteCourses = command(
+	v.pipe(v.string(), v.minLength(1)),
+	async (idsParam) => {
+		await requireRole(['ADMIN']);
+		const ids = idsParam.split(',').filter(Boolean);
+		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+		for (const id of ids) {
+			const [course] = await selectCourses(getPool(), { where: [['id', '=', id]] });
+			if (!course) {
+				results.push({ id, ok: false, message: 'Mata kuliah tidak ditemukan' });
+				continue;
+			}
+			if ((course.enrollment_count ?? 0) > 0) {
+				results.push({ id, ok: false, message: 'Masih memiliki KRS' });
+				continue;
+			}
+			await deleteCourseDb(getPool(), { id });
+			results.push({ id, ok: true });
+		}
+		if (results.some((r) => r.ok)) {
+			invalidateConflictAuditCache();
+			await getCourses().refresh();
+		}
+		return { success: true, results };
+	}
+);
+
+export const bulkUpdateCourses = form(
+	v.object({
+		ids: v.pipe(v.string(), v.minLength(1)),
+		credits: v.optional(v.string()),
+		studyProgramId: v.optional(v.string()),
+		lecturerId: v.optional(v.string())
+	}),
+	async (data) => {
+		await requireRole(['ADMIN']);
+		const ids = data.ids.split(',').filter(Boolean);
+		if (!ids.length) throw error(400, 'Tidak ada mata kuliah dipilih');
+		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+		for (const id of ids) {
+			const [course] = await selectCourses(getPool(), { where: [['id', '=', id]] });
+			if (!course) {
+				results.push({ id, ok: false, message: 'Mata kuliah tidak ditemukan' });
+				continue;
+			}
+			await updateCourseDb(
+				getPool(),
+				{
+					name: course.name ?? '',
+					credits: data.credits ? Number(data.credits) : (course.credits ?? 2),
+					study_program_id: data.studyProgramId || course.study_program_id || '',
+					lecturer_id: data.lecturerId || course.lecturer_id || ''
+				},
+				{ id }
+			);
+			results.push({ id, ok: true });
+		}
+		if (results.some((r) => r.ok)) {
+			invalidateConflictAuditCache();
+			await getCourses().refresh();
+		}
+		return { success: true, results };
+	}
+);

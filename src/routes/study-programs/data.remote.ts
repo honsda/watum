@@ -145,6 +145,7 @@ export const getStudyProgram = query(v.string(), async (id) => {
 
 export const createStudyProgram = form(studyProgramCreateSchema, async (data) => {
 	await requireRole(['ADMIN']);
+	if (!data.facultyId) throw error(400, 'Fakultas wajib dipilih');
 	const [existingName] = await selectStudyPrograms(getPool(), {
 		where: [['name', '=', data.name]]
 	});
@@ -174,6 +175,7 @@ export const createStudyProgram = form(studyProgramCreateSchema, async (data) =>
 
 export const updateStudyProgram = form(studyProgramSchema, async (data) => {
 	await requireRole(['ADMIN']);
+	if (!data.facultyId) throw error(400, 'Fakultas wajib dipilih');
 	const [existing] = await selectStudyPrograms(getPool(), { where: [['id', '=', data.id]] });
 	if (!existing) {
 		throw error(404, 'program studi tidak ditemukan');
@@ -204,3 +206,66 @@ export const deleteStudyProgram = command(v.string(), async (id) => {
 	await getStudyPrograms().refresh();
 	return { success: true, id };
 });
+
+export const bulkDeleteStudyPrograms = command(
+	v.pipe(v.string(), v.minLength(1)),
+	async (idsParam) => {
+		await requireRole(['ADMIN']);
+		const ids = idsParam.split(',').filter(Boolean);
+		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+		for (const id of ids) {
+			const [sp] = await selectStudyPrograms(getPool(), {
+				where: [['id', '=', id]]
+			});
+			if (!sp) {
+				results.push({ id, ok: false, message: 'Prodi tidak ditemukan' });
+				continue;
+			}
+			if ((sp.student_count ?? 0) > 0) {
+				results.push({ id, ok: false, message: 'Masih memiliki mahasiswa' });
+				continue;
+			}
+			await deleteStudyProgramDb(getPool(), { id });
+			results.push({ id, ok: true });
+		}
+		if (results.some((r) => r.ok)) {
+			await getStudyPrograms().refresh();
+		}
+		return { success: true, results };
+	}
+);
+
+export const bulkUpdateStudyPrograms = form(
+	v.object({
+		ids: v.pipe(v.string(), v.minLength(1)),
+		facultyId: v.optional(v.string()),
+		head: v.optional(v.string())
+	}),
+	async (data) => {
+		await requireRole(['ADMIN']);
+		const ids = data.ids.split(',').filter(Boolean);
+		if (!ids.length) throw error(400, 'Tidak ada prodi dipilih');
+		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+		for (const id of ids) {
+			const [sp] = await selectStudyPrograms(getPool(), { where: [['id', '=', id]] });
+			if (!sp) {
+				results.push({ id, ok: false, message: 'Prodi tidak ditemukan' });
+				continue;
+			}
+			await updateStudyProgramDb(
+				getPool(),
+				{
+					name: sp.name ?? '',
+					faculty_id: data.facultyId || sp.faculty_id || '',
+					head: data.head || sp.head || ''
+				},
+				{ id }
+			);
+			results.push({ id, ok: true });
+		}
+		if (results.some((r) => r.ok)) {
+			await getStudyPrograms().refresh();
+		}
+		return { success: true, results };
+	}
+);
