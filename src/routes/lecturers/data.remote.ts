@@ -1,7 +1,7 @@
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
-import { hash } from 'argon2';
+import { hash } from '@node-rs/argon2';
 import { randomUUID } from 'crypto';
 import {
 	getListQueryLimit,
@@ -240,3 +240,82 @@ export const deleteLecturer = command(v.string(), async (id) => {
 	await getLecturers().refresh();
 	return { success: true };
 });
+
+export const bulkDeleteLecturers = command(
+	v.pipe(v.string(), v.minLength(1)),
+	async (idsParam) => {
+		await requireRole(['ADMIN']);
+		const ids = idsParam.split(',').filter(Boolean);
+		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+		await withTransaction(async (conn) => {
+			for (const id of ids) {
+				const [lecturer] = await selectLecturers(conn, {
+					where: [['id', '=', id]]
+				});
+				if (!lecturer) {
+					results.push({ id, ok: false, message: 'Dosen tidak ditemukan' });
+					continue;
+				}
+				if ((lecturer.schedule_count ?? 0) > 0) {
+					results.push({ id, ok: false, message: 'Masih memiliki jadwal' });
+					continue;
+				}
+				await deleteLecturerDb(conn, { id });
+				const [user] = await selectUsers(conn, { where: [['lecturer_id', '=', id]] });
+				if (user?.id) await deleteUser(conn, { id: user.id });
+				results.push({ id, ok: true });
+			}
+		});
+		if (results.some((r) => r.ok)) {
+			invalidateConflictAuditCache();
+			await getLecturers().refresh();
+		}
+		return { success: true, results };
+	}
+);
+
+export const bulkUpdateLecturers = form(
+	v.object({
+		ids: v.pipe(v.string(), v.minLength(1)),
+		email: v.optional(v.string()),
+		name: v.optional(v.string()),
+		phone: v.optional(v.string()),
+		address: v.optional(v.string())
+	}),
+	async (data) => {
+		await requireRole(['ADMIN']);
+		const ids = data.ids.split(',').filter(Boolean);
+		if (!ids.length) throw error(400, 'Tidak ada dosen dipilih');
+		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+		await withTransaction(async (conn) => {
+			for (const id of ids) {
+				const [lecturer] = await selectLecturers(conn, { where: [['id', '=', id]] });
+				if (!lecturer) {
+					results.push({ id, ok: false, message: 'Dosen tidak ditemukan' });
+					continue;
+				}
+				const email = data.email || lecturer.email || '';
+				if (email && !email.includes('@')) {
+					results.push({ id, ok: false, message: 'Email tidak valid' });
+					continue;
+				}
+				await updateLecturerDb(
+					conn,
+					{
+						name: data.name || lecturer.name || '',
+						email,
+						phone: data.phone || lecturer.phone || undefined,
+						address: data.address || lecturer.address || undefined
+					},
+					{ id }
+				);
+				results.push({ id, ok: true });
+			}
+		});
+		if (results.some((r) => r.ok)) {
+			invalidateConflictAuditCache();
+			await getLecturers().refresh();
+		}
+		return { success: true, results };
+	}
+);

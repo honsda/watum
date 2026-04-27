@@ -34,6 +34,7 @@ import {
 	updateEnrollment as updateEnrollmentDb,
 	deleteEnrollment as deleteEnrollmentDb
 } from '$lib/server/sql';
+import { updateEnrollments as updateEnrollmentsDb } from '$lib/server/sql/crud/enrollments/update-enrollments';
 import { type SelectEnrollmentsResult, type SelectEnrollmentsWhere } from '$lib/server/sql';
 import type { SelectSchedulesConflictResult } from '$lib/server/sql/select-schedules-conflict';
 import type { SelectStudentScheduleConflictResult } from '$lib/server/sql/select-student-schedule-conflict';
@@ -1033,3 +1034,78 @@ export const deleteEnrollment = command(v.string(), async (id) => {
 	await getEnrollments().refresh();
 	return { success: true };
 });
+
+export const bulkDeleteEnrollments = command(
+	v.pipe(v.string(), v.minLength(1)),
+	async (idsParam) => {
+		const user = await requireRole(['ADMIN', 'LECTURER']);
+		const ids = idsParam.split(',').filter(Boolean);
+		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+		await withTransaction(async (conn) => {
+			for (const id of ids) {
+				const [enrollment] = await selectEnrollments(conn, {
+					where: [['id', '=', id]]
+				});
+				if (!enrollment) {
+					results.push({ id, ok: false, message: 'Data KRS tidak ditemukan' });
+					continue;
+				}
+				if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
+					results.push({ id, ok: false, message: 'Bukan jadwal Anda' });
+					continue;
+				}
+				await deleteEnrollmentDb(conn, { id });
+				if (enrollment.schedule_id) {
+					await deleteSchedule(conn, { id: enrollment.schedule_id });
+				}
+				results.push({ id, ok: true });
+			}
+		});
+		if (results.some((r) => r.ok)) {
+			invalidateConflictAuditCache();
+			await getEnrollments().refresh();
+		}
+		return { success: true, results };
+	}
+);
+
+export const bulkUpdateEnrollments = form(
+	v.object({
+		ids: v.pipe(v.string(), v.minLength(1)),
+		semester: v.optional(v.string()),
+		academicYear: v.optional(v.string())
+	}),
+	async (data) => {
+		const user = await requireRole(['ADMIN', 'LECTURER']);
+		const ids = data.ids.split(',').filter(Boolean);
+		if (!ids.length) throw error(400, 'Tidak ada KRS dipilih');
+		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+		await withTransaction(async (conn) => {
+			for (const id of ids) {
+				const [enrollment] = await selectEnrollments(conn, { where: [['id', '=', id]] });
+				if (!enrollment) {
+					results.push({ id, ok: false, message: 'KRS tidak ditemukan' });
+					continue;
+				}
+				if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
+					results.push({ id, ok: false, message: 'Bukan jadwal Anda' });
+					continue;
+				}
+				await updateEnrollmentsDb(
+					conn,
+					{
+						semester: data.semester || enrollment.semester || '',
+						academic_year: data.academicYear || enrollment.academic_year || ''
+					},
+					{ id }
+				);
+				results.push({ id, ok: true });
+			}
+		});
+		if (results.some((r) => r.ok)) {
+			invalidateConflictAuditCache();
+			await getEnrollments().refresh();
+		}
+		return { success: true, results };
+	}
+);

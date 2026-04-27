@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { hash } from 'argon2';
+import { hash } from '@node-rs/argon2';
 import { createReadStream } from 'node:fs';
 import { PassThrough } from 'node:stream';
 import { createConnection, type Connection } from 'mysql2/promise';

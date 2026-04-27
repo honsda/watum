@@ -29,6 +29,7 @@
 	} from '@lucide/svelte';
 	import { days } from '$lib/validations/enrollment';
 	import { classRoomTypes } from '$lib/validations/classroom';
+	import { calculateGrade } from '$lib/validations/grade';
 	import {
 		availableRoomsForSlot,
 		beautifyRoomType,
@@ -62,6 +63,8 @@
 		createClassRoom,
 		updateClassRoom,
 		deleteClassRoom,
+		bulkDeleteClassRooms,
+		bulkUpdateClassRooms,
 		type RoomDashboardSummary
 	} from './classrooms/data.remote';
 	import {
@@ -70,7 +73,9 @@
 		searchCourses,
 		createCourse,
 		updateCourse,
-		deleteCourse
+		deleteCourse,
+		bulkDeleteCourses,
+		bulkUpdateCourses
 	} from './courses/data.remote';
 	import {
 		getStudents,
@@ -78,7 +83,9 @@
 		searchStudents,
 		createStudent,
 		updateStudent,
-		deleteStudent
+		deleteStudent,
+		bulkDeleteStudents,
+		bulkUpdateStudents
 	} from './students/data.remote';
 	import {
 		getLecturers,
@@ -86,7 +93,9 @@
 		searchLecturers,
 		createLecturer,
 		updateLecturer,
-		deleteLecturer
+		deleteLecturer,
+		bulkDeleteLecturers,
+		bulkUpdateLecturers
 	} from './lecturers/data.remote';
 	import {
 		getFaculties,
@@ -94,7 +103,9 @@
 		searchFaculties,
 		createFaculty,
 		updateFaculty,
-		deleteFaculty
+		deleteFaculty,
+		bulkDeleteFaculties,
+		bulkUpdateFaculties
 	} from './faculties/data.remote';
 	import {
 		getStudyPrograms,
@@ -102,7 +113,9 @@
 		searchStudyPrograms,
 		createStudyProgram,
 		updateStudyProgram,
-		deleteStudyProgram
+		deleteStudyProgram,
+		bulkDeleteStudyPrograms,
+		bulkUpdateStudyPrograms
 	} from './study-programs/data.remote';
 	import {
 		getEnrollments,
@@ -111,16 +124,27 @@
 		searchEnrollments,
 		createEnrollment,
 		updateEnrollment,
-		deleteEnrollment
+		deleteEnrollment,
+		bulkDeleteEnrollments,
+		bulkUpdateEnrollments
 	} from './enrollments/data.remote';
 	import {
 		getGrades,
 		searchGrades,
 		createGrade,
 		updateGrade,
-		deleteGrade
+		deleteGrade,
+		bulkDeleteGrades,
+		bulkUpdateGrades
 	} from './grades/data.remote';
-	import { getUsers, searchUsers, updateUser } from './users/data.remote';
+	import {
+		getUsers,
+		searchUsers,
+		updateUser,
+		bulkUpdateUserRoles,
+		bulkDeleteUsers,
+		bulkResetPasswords
+	} from './users/data.remote';
 	import type {
 		SelectClassRoomsResult,
 		SelectCoursesResult,
@@ -157,7 +181,17 @@
 		| 'faculties'
 		| 'studyPrograms'
 		| 'grades'
-		| 'users';
+		| 'users'
+		| 'users-bulk-role'
+		| 'users-bulk-password'
+		| 'classrooms-bulk'
+		| 'courses-bulk'
+		| 'students-bulk'
+		| 'lecturers-bulk'
+		| 'faculties-bulk'
+		| 'studyPrograms-bulk'
+		| 'enrollments-bulk'
+		| 'grades-bulk';
 	type DeleteKind =
 		| 'classroom'
 		| 'course'
@@ -166,7 +200,16 @@
 		| 'faculty'
 		| 'studyProgram'
 		| 'enrollment'
-		| 'grade';
+		| 'grade'
+		| 'bulk-user'
+		| 'bulk-classrooms'
+		| 'bulk-courses'
+		| 'bulk-students'
+		| 'bulk-lecturers'
+		| 'bulk-faculties'
+		| 'bulk-studyPrograms'
+		| 'bulk-enrollments'
+		| 'bulk-grades';
 	type DeleteIntent = {
 		kind: DeleteKind;
 		id: string;
@@ -821,6 +864,71 @@
 	let selectedEnrollmentId = $state<string | null>(null);
 	let selectedGradeId = $state<string | null>(null);
 	let selectedUserId = $state<string | null>(null);
+	let selectedUserIds = $state<Set<string>>(new Set());
+	let bulkUserRole = $state<'ADMIN' | 'STUDENT' | 'LECTURER'>('STUDENT');
+	let bulkUserPassword = $state('');
+
+	let bulkSelectedIds = $state<Record<string, Set<string>>>({
+		classrooms: new Set(),
+		courses: new Set(),
+		students: new Set(),
+		lecturers: new Set(),
+		faculties: new Set(),
+		studyPrograms: new Set(),
+		enrollments: new Set(),
+		grades: new Set()
+	});
+
+	let bulkEditClassRoomType = $state<'REGULER' | 'LAB_KOMPUTER' | 'LAB_BAHASA' | 'AUDITORIUM'>('REGULER');
+	let bulkEditClassRoomCapacity = $state(30);
+	let bulkEditClassRoomHasProjector = $state(false);
+	let bulkEditClassRoomHasAC = $state(false);
+	let bulkEditCourseCredits = $state(2);
+	let bulkEditCourseStudyProgramId = $state('');
+	let bulkEditCourseLecturerId = $state('');
+	let bulkEditStudentStudyProgramId = $state('');
+	let bulkEditStudentYearAdmitted = $state(new Date().getFullYear());
+	let bulkEditLecturerEmail = $state('');
+	let bulkEditLecturerName = $state('');
+	let bulkEditLecturerPhone = $state('');
+	let bulkEditLecturerAddress = $state('');
+	let bulkEditFacultyName = $state('');
+	let bulkEditStudyProgramFacultyId = $state('');
+	let bulkEditStudyProgramHead = $state('');
+	let bulkEditEnrollmentSemester = $state('');
+	let bulkEditEnrollmentAcademicYear = $state('');
+	let bulkEditGradeAssignmentScore = $state<number | undefined>(undefined);
+	let bulkEditGradeMidtermScore = $state<number | undefined>(undefined);
+	let bulkEditGradeFinalScore = $state<number | undefined>(undefined);
+
+	function bulkToggleId(kind: string, id: string) {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
+		const next = new Set(bulkSelectedIds[kind] ?? []);
+		if (next.has(id)) {
+			next.delete(id);
+		} else {
+			next.add(id);
+		}
+		bulkSelectedIds = { ...bulkSelectedIds, [kind]: next };
+	}
+
+	function bulkToggleAll(kind: string, ids: string[]) {
+		const current = bulkSelectedIds[kind] ?? new Set();
+		const next = current.size === ids.length && ids.length > 0 ? new Set<string>() : new Set(ids);
+		bulkSelectedIds = { ...bulkSelectedIds, [kind]: next };
+	}
+
+	function bulkClear(kind: string) {
+		bulkSelectedIds = { ...bulkSelectedIds, [kind]: new Set() };
+	}
+
+	function bulkGetIds(kind: string): string[] {
+		return [...(bulkSelectedIds[kind] ?? [])];
+	}
+
+	function bulkCount(kind: string): number {
+		return bulkSelectedIds[kind]?.size ?? 0;
+	}
 
 	const emptyRoomDashboardSummary: RoomDashboardSummary = {
 		totalRooms: 0,
@@ -1499,7 +1607,7 @@
 		return {
 			academicYear,
 			semester,
-			day: scheduleDayFilter || undefined,
+			day: (scheduleDayFilter || undefined) as 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU' | undefined,
 			courseId: scheduleCourseFilter || undefined,
 			classRoomId: scheduleRoomFilter || undefined,
 			lecturerId: scheduleLecturerFilter || undefined,
@@ -2971,6 +3079,31 @@
 		};
 	}
 
+	function toggleUserSelection(id: string) {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
+		const next = new Set(selectedUserIds);
+		if (next.has(id)) {
+			next.delete(id);
+		} else {
+			next.add(id);
+		}
+		selectedUserIds = next;
+	}
+
+	function toggleAllUsers() {
+		if (selectedUserIds.size === filteredUsers.length) {
+			selectedUserIds = new Set();
+		} else {
+			selectedUserIds = new Set(filteredUsers.map((item) => item.id).filter(Boolean) as string[]);
+		}
+	}
+
+	function clearUserSelection() {
+		selectedUserIds = new Set();
+		bulkUserRole = 'STUDENT';
+		bulkUserPassword = '';
+	}
+
 	function clearSelection(view: ViewId) {
 		pendingDelete = null;
 		if (view === 'classrooms') {
@@ -3048,7 +3181,7 @@
 	}
 
 	function beginCreate(view: EditableView) {
-		clearSelection(view);
+		if (view in viewCatalog) clearSelection(view as ViewId);
 		pendingDelete = null;
 		editorView = view;
 		if (view === 'grades') {
@@ -3191,6 +3324,35 @@
 		});
 	}
 
+	function createOptimisticEnhancer(
+		form: EnhancedForm,
+		optimistic: () => void,
+		onSuccess: () => Promise<void> | void,
+		restore: () => Promise<void> | void
+	) {
+		return form.enhance(async ({ submit }: { submit: () => Promise<boolean> }) => {
+			let applied = false;
+			try {
+				optimistic();
+				applied = true;
+				await submit();
+				const issue = firstIssue(form);
+				if (issue) {
+					setFeedback('danger', issue);
+					await restore();
+					return;
+				}
+				await onSuccess();
+			} catch (error) {
+				const message = (error as { body?: { message?: string }; message?: string })?.body?.message;
+				setFeedback('danger', message || (error as Error).message || 'Aksi gagal diproses.');
+				if (applied) {
+					await restore();
+				}
+			}
+		});
+	}
+
 	const loginEnhance = loginUser.enhance(async ({ submit }: { submit: () => Promise<boolean> }) => {
 		try {
 			await submit();
@@ -3233,15 +3395,41 @@
 		stopEditing('classrooms');
 		setFeedback('success', 'Ruang kelas baru berhasil ditambahkan.');
 	});
-	const updateClassRoomEnhance = createEnhancer(updateClassRoom, async () => {
-		await refreshDependencies({
-			collections: ['classrooms', 'enrollments'],
-			includeSchedulePreview: true,
-			includeConflictAudit: true
-		});
-		stopEditing('classrooms');
-		setFeedback('success', 'Data ruang kelas berhasil diperbarui.');
-	});
+	const updateClassRoomEnhance = createOptimisticEnhancer(
+		updateClassRoom,
+		() => {
+			const id = selectedRoomId;
+			if (!id) return;
+			classrooms = classrooms.map((room) =>
+				room.id === id
+					? ({
+							...room,
+							name: classroomDraft.name,
+							class_room_type: classroomDraft.classRoomType as NonNullable<typeof room.class_room_type>,
+							capacity: classroomDraft.capacity,
+							has_projector: classroomDraft.hasProjector ? 1 : 0,
+							has_ac: classroomDraft.hasAC ? 1 : 0
+						} as SelectClassRoomsResult)
+					: room
+			);
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['classrooms', 'enrollments'],
+				includeSchedulePreview: true,
+				includeConflictAudit: true
+			});
+			stopEditing('classrooms');
+			setFeedback('success', 'Data ruang kelas berhasil diperbarui.');
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['classrooms', 'enrollments'],
+				includeSchedulePreview: true,
+				includeConflictAudit: true
+			});
+		}
+	);
 	const createCourseEnhance = createEnhancer(createCourse, async () => {
 		await refreshDependencies({
 			collections: ['courses', 'enrollments', 'grades'],
@@ -3254,13 +3442,35 @@
 	});
 	const updateCourseEnhance = updateCourse.enhance(
 		async ({ submit }: { submit: () => Promise<boolean> }) => {
+			const id = selectedCourseId;
+			let applied = false;
 			try {
+				if (id) {
+					applied = true;
+					courses = courses.map((course) =>
+						course.id === id
+							? {
+									...course,
+									name: courseDraft.name,
+									credits: courseDraft.credits,
+									study_program_id: courseDraft.studyProgramId,
+									lecturer_id: courseDraft.lecturerId
+								}
+							: course
+					);
+				}
 				await submit();
 				const issue = firstIssue(updateCourse);
 				if (issue) {
 					setFeedback('danger', issue);
+					void refreshDependencies({ collections: ['courses'] }).catch(() => {});
 					return;
 				}
+
+				// Close editor immediately — don't wait for background refreshes.
+				await tick();
+				stopEditing('courses');
+				setFeedback('success', 'Mata kuliah berhasil diperbarui.');
 
 				const result = updateCourse.result as
 					| {
@@ -3270,21 +3480,21 @@
 					  }
 					| undefined;
 
-				try {
-					await refreshDependencies({ collections: ['courses'] });
-				} catch (refreshErr) {
+				// Refresh courses in background (optimistic update already applied).
+				void refreshDependencies({ collections: ['courses'] }).catch((refreshErr) => {
 					setCollectionIssue(
 						'courses',
 						errorMessage(refreshErr, 'Daftar mata kuliah gagal dimuat ulang setelah disimpan.')
 					);
-				}
+				});
+
 				const nameChanged = Boolean(result?.nameChanged);
 				const lecturerChanged = Boolean(result?.lecturerChanged);
 				if (nameChanged || lecturerChanged) {
 					void refreshDependencies({
 						collections: nameChanged ? ['enrollments', 'grades'] : ['enrollments'],
-						includeSchedulePreview: true,
-						includeConflictAudit: lecturerChanged
+						includeSchedulePreview: true
+						// conflictAudit refreshes on its own TTL — no immediate recompute
 					}).catch((error) => {
 						setCollectionIssue(
 							'enrollments',
@@ -3292,11 +3502,10 @@
 						);
 					});
 				}
-
-				await tick();
-				stopEditing('courses');
-				setFeedback('success', 'Mata kuliah berhasil diperbarui.');
 			} catch (error) {
+				if (applied) {
+					void refreshDependencies({ collections: ['courses'] }).catch(() => {});
+				}
 				await tick();
 				stopEditing('courses');
 				const message = (error as { body?: { message?: string }; message?: string })?.body?.message;
@@ -3314,15 +3523,42 @@
 		stopEditing('students');
 		setFeedback('success', 'Mahasiswa baru berhasil ditambahkan.');
 	});
-	const updateStudentEnhance = createEnhancer(updateStudent, async () => {
-		await refreshDependencies({
-			collections: ['students', 'enrollments', 'grades', 'users'],
-			includeSchedulePreview: true,
-			includeConflictAudit: true
-		});
-		stopEditing('students');
-		setFeedback('success', 'Profil mahasiswa berhasil diperbarui.');
-	});
+	const updateStudentEnhance = createOptimisticEnhancer(
+		updateStudent,
+		() => {
+			const id = selectedStudentId;
+			if (!id) return;
+			students = students.map((student) =>
+				student.id === id
+					? {
+							...student,
+							name: studentDraft.name,
+							email: studentDraft.email,
+							phone: studentDraft.phone,
+							address: studentDraft.address,
+							year_admitted: studentDraft.yearAdmitted,
+							study_program_id: studentDraft.studyProgramId
+						}
+					: student
+			);
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['students', 'enrollments', 'grades', 'users'],
+				includeSchedulePreview: true,
+				includeConflictAudit: true
+			});
+			stopEditing('students');
+			setFeedback('success', 'Profil mahasiswa berhasil diperbarui.');
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['students', 'enrollments', 'grades', 'users'],
+				includeSchedulePreview: true,
+				includeConflictAudit: true
+			});
+		}
+	);
 	const createLecturerEnhance = createEnhancer(createLecturer, async () => {
 		await refreshDependencies({
 			collections: ['lecturers', 'courses', 'enrollments', 'users'],
@@ -3333,15 +3569,40 @@
 		stopEditing('lecturers');
 		setFeedback('success', 'Dosen baru berhasil ditambahkan.');
 	});
-	const updateLecturerEnhance = createEnhancer(updateLecturer, async () => {
-		await refreshDependencies({
-			collections: ['lecturers', 'courses', 'enrollments', 'users'],
-			includeSchedulePreview: true,
-			includeConflictAudit: true
-		});
-		stopEditing('lecturers');
-		setFeedback('success', 'Profil dosen berhasil diperbarui.');
-	});
+	const updateLecturerEnhance = createOptimisticEnhancer(
+		updateLecturer,
+		() => {
+			const id = selectedLecturerId;
+			if (!id) return;
+			lecturers = lecturers.map((lecturer) =>
+				lecturer.id === id
+					? {
+							...lecturer,
+							name: lecturerDraft.name,
+							email: lecturerDraft.email,
+							phone: lecturerDraft.phone,
+							address: lecturerDraft.address
+						}
+					: lecturer
+			);
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['lecturers', 'courses', 'enrollments', 'users'],
+				includeSchedulePreview: true,
+				includeConflictAudit: true
+			});
+			stopEditing('lecturers');
+			setFeedback('success', 'Profil dosen berhasil diperbarui.');
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['lecturers', 'courses', 'enrollments', 'users'],
+				includeSchedulePreview: true,
+				includeConflictAudit: true
+			});
+		}
+	);
 	const createFacultyEnhance = createEnhancer(createFaculty, async () => {
 		await refreshDependencies({
 			collections: ['faculties', 'studyPrograms', 'students']
@@ -3350,13 +3611,28 @@
 		stopEditing('faculties');
 		setFeedback('success', 'Fakultas baru berhasil ditambahkan.');
 	});
-	const updateFacultyEnhance = createEnhancer(updateFaculty, async () => {
-		await refreshDependencies({
-			collections: ['faculties', 'studyPrograms', 'students']
-		});
-		stopEditing('faculties');
-		setFeedback('success', 'Data fakultas berhasil diperbarui.');
-	});
+	const updateFacultyEnhance = createOptimisticEnhancer(
+		updateFaculty,
+		() => {
+			const id = selectedFacultyId;
+			if (!id) return;
+			faculties = faculties.map((faculty) =>
+				faculty.id === id ? { ...faculty, name: facultyDraft.name } : faculty
+			);
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['faculties', 'studyPrograms', 'students']
+			});
+			stopEditing('faculties');
+			setFeedback('success', 'Data fakultas berhasil diperbarui.');
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['faculties', 'studyPrograms', 'students']
+			});
+		}
+	);
 	const createStudyProgramEnhance = createEnhancer(createStudyProgram, async () => {
 		await refreshDependencies({
 			collections: ['studyPrograms', 'students', 'courses', 'enrollments', 'grades'],
@@ -3367,15 +3643,39 @@
 		stopEditing('studyPrograms');
 		setFeedback('success', 'Program studi baru berhasil ditambahkan.');
 	});
-	const updateStudyProgramEnhance = createEnhancer(updateStudyProgram, async () => {
-		await refreshDependencies({
-			collections: ['studyPrograms', 'students', 'courses', 'enrollments', 'grades'],
-			includeSchedulePreview: true,
-			includeConflictAudit: true
-		});
-		stopEditing('studyPrograms');
-		setFeedback('success', 'Program studi berhasil diperbarui.');
-	});
+	const updateStudyProgramEnhance = createOptimisticEnhancer(
+		updateStudyProgram,
+		() => {
+			const id = selectedStudyProgramId;
+			if (!id) return;
+			studyPrograms = studyPrograms.map((sp) =>
+				sp.id === id
+					? {
+							...sp,
+							name: studyProgramDraft.name,
+							head: studyProgramDraft.head,
+							faculty_id: studyProgramDraft.facultyId
+						}
+					: sp
+			);
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['studyPrograms', 'students', 'courses', 'enrollments', 'grades'],
+				includeSchedulePreview: true,
+				includeConflictAudit: true
+			});
+			stopEditing('studyPrograms');
+			setFeedback('success', 'Program studi berhasil diperbarui.');
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['studyPrograms', 'students', 'courses', 'enrollments', 'grades'],
+				includeSchedulePreview: true,
+				includeConflictAudit: true
+			});
+		}
+	);
 	const createEnrollmentEnhance = createEnhancer(createEnrollment, async () => {
 		const createdId = (createEnrollment.result as { id?: string } | undefined)?.id ?? null;
 		await refreshDependencies({
@@ -3407,16 +3707,304 @@
 		stopEditing('grades');
 		setFeedback('success', 'Nilai baru berhasil disimpan.');
 	});
-	const updateGradeEnhance = createEnhancer(updateGrade, async () => {
-		await refreshDependencies({ collections: ['grades'] });
-		stopEditing('grades');
-		setFeedback('success', 'Nilai berhasil diperbarui.');
-	});
-	const updateUserEnhance = createEnhancer(updateUser, async () => {
+	const updateGradeEnhance = createOptimisticEnhancer(
+		updateGrade,
+		() => {
+			const id = selectedGradeId;
+			if (!id) return;
+			grades = grades.map((grade) => {
+				if (grade.id !== id) return grade;
+				const { total, letter } = calculateGrade(
+					gradeDraft.assignmentScore,
+					gradeDraft.midtermScore,
+					gradeDraft.finalScore
+				);
+				return {
+					...grade,
+					assignment_score: gradeDraft.assignmentScore,
+					midterm_score: gradeDraft.midtermScore,
+					final_score: gradeDraft.finalScore,
+					total_score: total,
+					letter_grade: letter
+				};
+			});
+		},
+		async () => {
+			await refreshDependencies({ collections: ['grades'] });
+			stopEditing('grades');
+			setFeedback('success', 'Nilai berhasil diperbarui.');
+		},
+		async () => {
+			await refreshDependencies({ collections: ['grades'] });
+		}
+	);
+	const updateUserEnhance = createOptimisticEnhancer(
+		updateUser,
+		() => {
+			const id = selectedUserId;
+			if (!id) return;
+			users = users.map((user) =>
+				user.id === id
+					? ({
+							...user,
+							email: userDraft.email,
+							role: userDraft.role as 'ADMIN' | 'STUDENT' | 'LECTURER',
+							student_id: userDraft.studentId || undefined,
+							lecturer_id: userDraft.lecturerId || undefined
+						} as SelectUsersResult)
+					: user
+			);
+		},
+		async () => {
+			await refreshDependencies({ collections: ['users'] });
+			stopEditing('users');
+			setFeedback('success', 'Akun diperbarui. Perubahan akses akan dipakai pada sesi berikutnya.');
+		},
+		async () => {
+			await refreshDependencies({ collections: ['users'] });
+		}
+	);
+
+	const bulkUpdateUserRoleEnhance = createEnhancer(bulkUpdateUserRoles, async () => {
 		await refreshDependencies({ collections: ['users'] });
-		stopEditing('users');
-		setFeedback('success', 'Akun diperbarui. Perubahan akses akan dipakai pada sesi berikutnya.');
+		clearUserSelection();
+		setFeedback('success', 'Peran akun berhasil diperbarui.');
 	});
+	const bulkResetPasswordEnhance = createEnhancer(bulkResetPasswords, async () => {
+		await refreshDependencies({ collections: ['users'] });
+		clearUserSelection();
+		setFeedback('success', 'Password akun terpilih berhasil direset.');
+	});
+	const bulkUpdateClassRoomsEnhance = createOptimisticEnhancer(
+		bulkUpdateClassRooms,
+		() => {
+			const ids = new Set(bulkGetIds('classrooms'));
+			classrooms = classrooms.map((room) =>
+				ids.has(room.id ?? '')
+					? {
+							...room,
+							class_room_type: bulkEditClassRoomType,
+							capacity: bulkEditClassRoomCapacity,
+							has_projector: bulkEditClassRoomHasProjector ? 1 : 0,
+							has_ac: bulkEditClassRoomHasAC ? 1 : 0
+						}
+					: room
+			);
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['classrooms', 'enrollments'],
+				includeSchedulePreview: true,
+				includeConflictAudit: true
+			});
+			bulkClear('classrooms');
+			stopEditing('classrooms');
+			setFeedback('success', 'Ruang terpilih berhasil diperbarui.');
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['classrooms', 'enrollments'],
+				includeSchedulePreview: true,
+				includeConflictAudit: true
+			});
+		}
+	);
+	const bulkUpdateCoursesEnhance = createOptimisticEnhancer(
+		bulkUpdateCourses,
+		() => {
+			const ids = new Set(bulkGetIds('courses'));
+			courses = courses.map((course) =>
+				ids.has(course.id ?? '')
+					? {
+							...course,
+							credits: bulkEditCourseCredits,
+							study_program_id: bulkEditCourseStudyProgramId,
+							lecturer_id: bulkEditCourseLecturerId
+						}
+					: course
+			);
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['courses', 'enrollments', 'grades'],
+				includeSchedulePreview: true,
+				includeConflictAudit: true
+			});
+			bulkClear('courses');
+			stopEditing('courses');
+			setFeedback('success', 'Mata kuliah terpilih berhasil diperbarui.');
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['courses', 'enrollments', 'grades'],
+				includeSchedulePreview: true,
+				includeConflictAudit: true
+			});
+		}
+	);
+	const bulkUpdateStudentsEnhance = createOptimisticEnhancer(
+		bulkUpdateStudents,
+		() => {
+			const ids = new Set(bulkGetIds('students'));
+			students = students.map((student) =>
+				ids.has(student.id ?? '')
+					? {
+							...student,
+							study_program_id: bulkEditStudentStudyProgramId,
+							year_admitted: bulkEditStudentYearAdmitted
+						}
+					: student
+			);
+		},
+		async () => {
+			await refreshDependencies({ collections: ['students'] });
+			bulkClear('students');
+			stopEditing('students');
+			setFeedback('success', 'Mahasiswa terpilih berhasil diperbarui.');
+		},
+		async () => {
+			await refreshDependencies({ collections: ['students'] });
+		}
+	);
+	const bulkUpdateLecturersEnhance = createOptimisticEnhancer(
+		bulkUpdateLecturers,
+		() => {
+			const ids = new Set(bulkGetIds('lecturers'));
+			lecturers = lecturers.map((lecturer) =>
+				ids.has(lecturer.id ?? '')
+					? {
+							...lecturer,
+							name: bulkEditLecturerName || lecturer.name,
+							email: bulkEditLecturerEmail || lecturer.email,
+							phone: bulkEditLecturerPhone || lecturer.phone,
+							address: bulkEditLecturerAddress || lecturer.address
+						}
+					: lecturer
+			);
+		},
+		async () => {
+			await refreshDependencies({ collections: ['lecturers'] });
+			bulkClear('lecturers');
+			stopEditing('lecturers');
+			setFeedback('success', 'Dosen terpilih berhasil diperbarui.');
+		},
+		async () => {
+			await refreshDependencies({ collections: ['lecturers'] });
+		}
+	);
+	const bulkUpdateFacultiesEnhance = createOptimisticEnhancer(
+		bulkUpdateFaculties,
+		() => {
+			const ids = new Set(bulkGetIds('faculties'));
+			faculties = faculties.map((faculty) =>
+				ids.has(faculty.id ?? '') ? { ...faculty, name: bulkEditFacultyName } : faculty
+			);
+		},
+		async () => {
+			await refreshDependencies({ collections: ['faculties', 'studyPrograms'] });
+			bulkClear('faculties');
+			stopEditing('faculties');
+			setFeedback('success', 'Fakultas terpilih berhasil diperbarui.');
+		},
+		async () => {
+			await refreshDependencies({ collections: ['faculties', 'studyPrograms'] });
+		}
+	);
+	const bulkUpdateStudyProgramsEnhance = createOptimisticEnhancer(
+		bulkUpdateStudyPrograms,
+		() => {
+			const ids = new Set(bulkGetIds('studyPrograms'));
+			studyPrograms = studyPrograms.map((sp) =>
+				ids.has(sp.id ?? '')
+					? {
+							...sp,
+							faculty_id: bulkEditStudyProgramFacultyId,
+							head: bulkEditStudyProgramHead
+						}
+					: sp
+			);
+		},
+		async () => {
+			await refreshDependencies({ collections: ['studyPrograms', 'students', 'courses'] });
+			bulkClear('studyPrograms');
+			stopEditing('studyPrograms');
+			setFeedback('success', 'Prodi terpilih berhasil diperbarui.');
+		},
+		async () => {
+			await refreshDependencies({ collections: ['studyPrograms', 'students', 'courses'] });
+		}
+	);
+	const bulkUpdateEnrollmentsEnhance = createOptimisticEnhancer(
+		bulkUpdateEnrollments,
+		() => {
+			const ids = new Set(bulkGetIds('enrollments'));
+			enrollments = enrollments.map((enrollment) =>
+				ids.has(enrollment.id ?? '')
+					? {
+							...enrollment,
+							semester: bulkEditEnrollmentSemester,
+							academic_year: bulkEditEnrollmentAcademicYear
+						}
+					: enrollment
+			);
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['enrollments'],
+				includeSchedulePreview: true,
+				includeConflictAudit: true
+			});
+			bulkClear('enrollments');
+			editorView = null;
+			setFeedback('success', 'KRS terpilih berhasil diperbarui.');
+		},
+		async () => {
+			await refreshDependencies({
+				collections: ['enrollments'],
+				includeSchedulePreview: true,
+				includeConflictAudit: true
+			});
+		}
+	);
+	const bulkUpdateGradesEnhance = createOptimisticEnhancer(
+		bulkUpdateGrades,
+		() => {
+			const ids = new Set(bulkGetIds('grades'));
+			grades = grades.map((grade) => {
+				if (!ids.has(grade.id ?? '')) return grade;
+				const assignmentScore =
+					bulkEditGradeAssignmentScore !== undefined
+						? bulkEditGradeAssignmentScore
+						: (grade.assignment_score ?? 0);
+				const midtermScore =
+					bulkEditGradeMidtermScore !== undefined
+						? bulkEditGradeMidtermScore
+						: (grade.midterm_score ?? 0);
+				const finalScore =
+					bulkEditGradeFinalScore !== undefined
+						? bulkEditGradeFinalScore
+						: (grade.final_score ?? 0);
+				const { total, letter } = calculateGrade(assignmentScore, midtermScore, finalScore);
+				return {
+					...grade,
+					assignment_score: assignmentScore,
+					midterm_score: midtermScore,
+					final_score: finalScore,
+					total_score: total,
+					letter_grade: letter
+				};
+			});
+		},
+		async () => {
+			await refreshDependencies({ collections: ['grades'] });
+			bulkClear('grades');
+			stopEditing('grades');
+			setFeedback('success', 'Nilai terpilih berhasil diperbarui.');
+		},
+		async () => {
+			await refreshDependencies({ collections: ['grades'] });
+		}
+	);
 
 	async function removeEntity(kind: DeleteKind, id: string) {
 		if (!pendingDelete) return; // guard against double-click / concurrent delete
@@ -3494,6 +4082,105 @@
 				await deleteGrade(id);
 				await refreshDependencies({ collections: ['grades'] });
 				clearSelection('grades');
+				stopEditing('grades');
+			}
+			if (kind === 'bulk-user') {
+				await bulkDeleteUsers(id);
+				await refreshDependencies({ collections: ['users'] });
+				clearUserSelection();
+				selectedUserId = null;
+				selectedUserRecord = null;
+				userDraft = emptyUserDraft();
+				stopEditing('users');
+			}
+			if (kind === 'bulk-classrooms') {
+				await bulkDeleteClassRooms(id);
+				await refreshDependencies({
+					collections: ['classrooms', 'enrollments'],
+					includeSchedulePreview: true,
+					includeConflictAudit: true
+				});
+				bulkClear('classrooms');
+				selectedRoomId = null;
+				selectedRoomRecord = null;
+				stopEditing('classrooms');
+			}
+			if (kind === 'bulk-courses') {
+				await bulkDeleteCourses(id);
+				await refreshDependencies({
+					collections: ['courses', 'enrollments', 'grades'],
+					includeSchedulePreview: true,
+					includeConflictAudit: true
+				});
+				bulkClear('courses');
+				selectedCourseId = null;
+				selectedCourseRecord = null;
+				stopEditing('courses');
+			}
+			if (kind === 'bulk-students') {
+				await bulkDeleteStudents(id);
+				await refreshDependencies({
+					collections: ['students', 'enrollments', 'grades', 'users'],
+					includeSchedulePreview: true,
+					includeConflictAudit: true
+				});
+				bulkClear('students');
+				selectedStudentId = null;
+				selectedStudentRecord = null;
+				stopEditing('students');
+			}
+			if (kind === 'bulk-lecturers') {
+				await bulkDeleteLecturers(id);
+				await refreshDependencies({
+					collections: ['lecturers', 'courses', 'enrollments', 'users'],
+					includeSchedulePreview: true,
+					includeConflictAudit: true
+				});
+				bulkClear('lecturers');
+				selectedLecturerId = null;
+				selectedLecturerRecord = null;
+				stopEditing('lecturers');
+			}
+			if (kind === 'bulk-faculties') {
+				await bulkDeleteFaculties(id);
+				await refreshDependencies({
+					collections: ['faculties', 'studyPrograms', 'students']
+				});
+				bulkClear('faculties');
+				selectedFacultyId = null;
+				selectedFacultyRecord = null;
+				stopEditing('faculties');
+			}
+			if (kind === 'bulk-studyPrograms') {
+				await bulkDeleteStudyPrograms(id);
+				await refreshDependencies({
+					collections: ['studyPrograms', 'students', 'courses', 'enrollments', 'grades'],
+					includeSchedulePreview: true,
+					includeConflictAudit: true
+				});
+				bulkClear('studyPrograms');
+				selectedStudyProgramId = null;
+				selectedStudyProgramRecord = null;
+				stopEditing('studyPrograms');
+			}
+			if (kind === 'bulk-enrollments') {
+				await bulkDeleteEnrollments(id);
+				await refreshDependencies({
+					collections: ['enrollments', 'grades'],
+					includeSchedulePreview: true,
+					includeConflictAudit: true
+				});
+				bulkClear('enrollments');
+				selectedEnrollmentId = null;
+				selectedEnrollmentRecord = null;
+				stopEditing();
+			}
+			if (kind === 'bulk-grades') {
+				await bulkDeleteGrades(id);
+				await refreshDependencies({ collections: ['grades'] });
+				bulkClear('grades');
+				selectedGradeId = null;
+				selectedGradeRecord = null;
 				stopEditing('grades');
 			}
 			pendingDelete = null;
@@ -5543,21 +6230,83 @@
 										}}><X size={14} /></button
 									>{/if}</label
 							>
+							{#if bulkCount('classrooms') > 0}
+								<div class="bulk-bar">
+									<span class="bulk-count">{bulkCount('classrooms')} ruang dipilih</span>
+									<div class="bulk-actions">
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => bulkClear('classrooms')}>Batal</Button
+										>
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => {
+												stopEditing('classrooms');
+												editorView = 'classrooms-bulk';
+											}}>Ubah</Button
+										>
+										<Button
+											variant="destructive"
+											size="sm"
+											class="danger-button"
+											onclick={() => {
+												pendingDelete = {
+													kind: 'bulk-classrooms',
+													id: bulkGetIds('classrooms').join(','),
+													label: `${bulkCount('classrooms')} ruang`,
+													message: `Anda akan menghapus ${bulkCount('classrooms')} ruang. Tindakan ini tidak dapat dibatalkan.`,
+													confirmLabel: 'Ya, hapus semua',
+													successMessage: 'Ruang terpilih berhasil dihapus.',
+													failureMessage: 'Gagal menghapus ruang terpilih.'
+												};
+											}}>Hapus</Button
+										>
+									</div>
+								</div>
+							{/if}
 							<div class="list-stack">
+								{#if filteredClassrooms.length > 1}
+									<label class="list-row select-all-row">
+										<input
+											type="checkbox"
+											checked={bulkCount('classrooms') === filteredClassrooms.length &&
+												filteredClassrooms.length > 0}
+											onchange={() =>
+												bulkToggleAll(
+													'classrooms',
+													filteredClassrooms.map((i) => i.id).filter(Boolean) as string[]
+												)}
+										/>
+										<span>Pilih semua ({filteredClassrooms.length})</span>
+									</label>
+								{/if}
 								{#each filteredClassrooms as item (item.id)}
-									<button
-										type="button"
+									<div
+										class="list-row user-row"
 										class:selected={selectedRoomId === item.id}
-										class="list-row"
-										onclick={() => pickClassroom(item)}
+										class:checked={item.id != null && bulkSelectedIds['classrooms']?.has(item.id)}
 									>
-										<div>
-											<strong>{item.name}</strong><span
-												>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
-											>
-										</div>
-										<small>{beautifyRoomType(item.class_room_type)}</small>
-									</button>
+										<label class="row-checkbox"
+											><input
+												type="checkbox"
+												checked={item.id != null && bulkSelectedIds['classrooms']?.has(item.id)}
+												onchange={() => item.id && bulkToggleId('classrooms', item.id)}
+												onclick={(e) => e.stopPropagation()}
+											/></label
+										>
+										<button type="button" class="row-content" onclick={() => pickClassroom(item)}>
+											<div>
+												<strong>{item.name}</strong><span
+													>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
+												>
+											</div>
+											<small>{beautifyRoomType(item.class_room_type)}</small>
+										</button>
+									</div>
 								{/each}
 							</div>
 							<CollectionPagination
@@ -5573,10 +6322,16 @@
 							/>
 						</section>
 						<section class="workspace-detail">
-							<div class="pane-head compact">
-								<div>
-									<h3>{selectedRoom ? selectedRoom.name : 'Tambah ruang'}</h3>
-								</div>
+								<div class="pane-head compact">
+									<div>
+										<h3>
+											{editorView === 'classrooms-bulk'
+												? 'Ubah massal ruang'
+												: selectedRoom
+													? selectedRoom.name
+													: 'Tambah ruang'}
+										</h3>
+									</div>
 								{#if currentUser.current.role === 'ADMIN'}
 									<div class="detail-actions">
 										{#if editorView === 'classrooms'}
@@ -5626,7 +6381,7 @@
 									</div>
 								</section>
 							{/if}
-							{#if selectedRoom && editorView !== 'classrooms'}<div class="detail-stack">
+							{#if selectedRoom && editorView !== 'classrooms' && editorView !== 'classrooms-bulk'}<div class="detail-stack">
 									<div class="detail-lines">
 										<div>
 											<span>Tipe</span><strong
@@ -5709,6 +6464,75 @@
 									<Button type="submit" class="primary-button"
 										>{selectedRoomId ? 'Simpan perubahan' : 'Tambah ruang'}</Button
 									>
+								</form>{:else if editorView === 'classrooms-bulk'}<form
+									class="editor-grid"
+									{...bulkUpdateClassRoomsEnhance}
+								>
+									<p class="editor-note">
+										Ubah tipe, kapasitas, dan fasilitas {bulkCount('classrooms')} ruang terpilih
+										sekaligus. Kosongkan field yang tidak ingin diubah.
+									</p>
+									<input type="hidden" name="ids" value={bulkGetIds('classrooms').join(',')} />
+									<label
+										><span>Tipe ruang</span><select
+											name="classRoomType"
+											value={bulkEditClassRoomType}
+											onchange={(e) =>
+												(bulkEditClassRoomType = (e.currentTarget as HTMLSelectElement)
+													.value as typeof bulkEditClassRoomType)}
+											>{#each classRoomTypes as type (type)}<option value={type}
+													>{beautifyRoomType(type)}</option
+												>{/each}</select
+										></label
+									>
+									<label
+										><span>Kapasitas</span><input
+											type="number"
+											name="capacity"
+											min="1"
+											value={bulkEditClassRoomCapacity}
+											oninput={(e) =>
+												(bulkEditClassRoomCapacity = Number(
+													(e.currentTarget as HTMLInputElement).value
+												))}
+										/></label
+									>
+									<label class="check-row"
+										><input
+											type="checkbox"
+											name="hasProjector"
+											checked={bulkEditClassRoomHasProjector}
+											onchange={(e) =>
+												(bulkEditClassRoomHasProjector = (e.currentTarget as HTMLInputElement)
+													.checked)}
+										/><span>Proyektor tersedia</span></label
+									>
+									<label class="check-row"
+										><input
+											type="checkbox"
+											name="hasAC"
+											checked={bulkEditClassRoomHasAC}
+											onchange={(e) =>
+												(bulkEditClassRoomHasAC = (e.currentTarget as HTMLInputElement).checked)}
+										/><span>AC tersedia</span></label
+									>
+									<div class="builder-inline-actions">
+										<Button
+											type="button"
+											variant="ghost"
+											class="ghost-button"
+											onclick={() => {
+												bulkClear('classrooms');
+												editorView = null;
+											}}>Batal</Button
+										>
+										<Button
+											type="submit"
+											class="primary-button"
+											disabled={bulkUpdateClassRooms.pending > 0}
+											>Simpan perubahan {bulkCount('classrooms')} ruang</Button
+										>
+									</div>
 								</form>{:else}<p class="empty-copy">
 									Pilih satu ruang untuk melihat detail, atau tambahkan ruang baru saat inventaris
 									berubah.
@@ -5746,19 +6570,84 @@
 										}}><X size={14} /></button
 									>{/if}</label
 							>
+							{#if bulkCount('courses') > 0}
+								<div class="bulk-bar">
+									<span class="bulk-count">{bulkCount('courses')} mata kuliah dipilih</span>
+									<div class="bulk-actions">
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => bulkClear('courses')}>Batal</Button
+										>
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => {
+												stopEditing('courses');
+												editorView = 'courses-bulk';
+											}}>Ubah</Button
+										>
+										<Button
+											variant="destructive"
+											size="sm"
+											class="danger-button"
+											onclick={() => {
+												pendingDelete = {
+													kind: 'bulk-courses',
+													id: bulkGetIds('courses').join(','),
+													label: `${bulkCount('courses')} mata kuliah`,
+													message: `Anda akan menghapus ${bulkCount('courses')} mata kuliah. Tindakan ini tidak dapat dibatalkan.`,
+													confirmLabel: 'Ya, hapus semua',
+													successMessage: 'Mata kuliah terpilih berhasil dihapus.',
+													failureMessage: 'Gagal menghapus mata kuliah terpilih.'
+												};
+											}}>Hapus</Button
+										>
+									</div>
+								</div>
+							{/if}
 							<div class="list-stack">
-								{#each filteredCourses as item (item.id)}<button
-										type="button"
+								{#if filteredCourses.length > 1}
+									<label class="list-row select-all-row">
+										<input
+											type="checkbox"
+											checked={bulkCount('courses') === filteredCourses.length &&
+												filteredCourses.length > 0}
+											onchange={() =>
+												bulkToggleAll(
+													'courses',
+													filteredCourses.map((i) => i.id).filter(Boolean) as string[]
+												)}
+										/>
+										<span>Pilih semua ({filteredCourses.length})</span>
+									</label>
+								{/if}
+								{#each filteredCourses as item (item.id)}
+									<div
+										class="list-row user-row"
 										class:selected={selectedCourseId === item.id}
-										class="list-row"
-										onclick={() => pickCourse(item)}
-										><div>
-											<strong>{item.id} • {item.name}</strong><span
-												>{item.study_program_name} • {item.lecturer_name}</span
-											>
-										</div>
-										<small>{item.credits} SKS</small></button
-									>{/each}
+										class:checked={item.id != null && bulkSelectedIds['courses']?.has(item.id)}
+									>
+										<label class="row-checkbox"
+											><input
+												type="checkbox"
+												checked={item.id != null && bulkSelectedIds['courses']?.has(item.id)}
+												onchange={() => item.id && bulkToggleId('courses', item.id)}
+												onclick={(e) => e.stopPropagation()}
+											/></label
+										>
+										<button type="button" class="row-content" onclick={() => pickCourse(item)}>
+											<div>
+												<strong>{item.id} • {item.name}</strong><span
+													>{item.study_program_name} • {item.lecturer_name}</span
+												>
+											</div>
+											<small>{item.credits} SKS</small>
+										</button>
+									</div>
+								{/each}
 							</div>
 							<CollectionPagination
 								label="mata kuliah"
@@ -5775,7 +6664,13 @@
 						<section class="workspace-detail">
 							<div class="pane-head compact">
 								<div>
-									<h3>{selectedCourse ? selectedCourse.name : 'Tambah mata kuliah'}</h3>
+									<h3>
+										{editorView === 'courses-bulk'
+											? 'Ubah massal mata kuliah'
+											: selectedCourse
+												? selectedCourse.name
+												: 'Tambah mata kuliah'}
+									</h3>
 								</div>
 								{#if currentUser.current.role === 'ADMIN'}
 									<div class="detail-actions">
@@ -5826,7 +6721,7 @@
 									</div>
 								</section>
 							{/if}
-							{#if selectedCourse && editorView !== 'courses'}<div class="detail-stack">
+							{#if selectedCourse && editorView !== 'courses' && editorView !== 'courses-bulk'}<div class="detail-stack">
 									<div class="detail-lines">
 										<div><span>Kode</span><strong>{selectedCourse.id}</strong></div>
 										<div>
@@ -5903,6 +6798,70 @@
 										disabled={courseEditorBlocked}
 										>{selectedCourseId ? 'Simpan perubahan' : 'Tambah mata kuliah'}</Button
 									>
+								</form>{:else if editorView === 'courses-bulk'}<form
+									class="editor-grid"
+									{...bulkUpdateCoursesEnhance}
+								>
+									<p class="editor-note">
+										Ubah SKS, prodi, dan dosen {bulkCount('courses')} mata kuliah terpilih sekaligus.
+										Kosongkan field yang tidak ingin diubah.
+									</p>
+									<input type="hidden" name="ids" value={bulkGetIds('courses').join(',')} />
+									<label
+										><span>SKS</span><input
+											type="number"
+											name="credits"
+											min="1"
+											max="6"
+											value={bulkEditCourseCredits}
+											oninput={(e) =>
+												(bulkEditCourseCredits = Number(
+													(e.currentTarget as HTMLInputElement).value
+												))}
+										/></label
+									>
+									<label
+										><span>Program studi</span><select
+											name="studyProgramId"
+											value={bulkEditCourseStudyProgramId}
+											onchange={(e) =>
+												(bulkEditCourseStudyProgramId = (e.currentTarget as HTMLSelectElement)
+													.value)}
+											><option value="">Pilih program studi</option
+											>{#each studyPrograms as item (item.id)}<option value={item.id}
+													>{item.name}</option
+												>{/each}</select
+										></label
+									>
+									<label
+										><span>Dosen pengampu</span><select
+											name="lecturerId"
+											value={bulkEditCourseLecturerId}
+											onchange={(e) =>
+												(bulkEditCourseLecturerId = (e.currentTarget as HTMLSelectElement).value)}
+											><option value="">Pilih dosen</option
+											>{#each lecturers as item (item.id)}<option value={item.id}
+													>{item.name}</option
+												>{/each}</select
+										></label
+									>
+									<div class="builder-inline-actions">
+										<Button
+											type="button"
+											variant="ghost"
+											class="ghost-button"
+											onclick={() => {
+												bulkClear('courses');
+												editorView = null;
+											}}>Batal</Button
+										>
+										<Button
+											type="submit"
+											class="primary-button"
+											disabled={bulkUpdateCourses.pending > 0}
+											>Simpan perubahan {bulkCount('courses')} mata kuliah</Button
+										>
+									</div>
 								</form>{:else}<p class="empty-copy">
 									Pilih satu mata kuliah untuk melihat detail, atau tambahkan mata kuliah baru saat
 									katalog berubah.
@@ -5940,17 +6899,84 @@
 										}}><X size={14} /></button
 									>{/if}</label
 							>
+							{#if bulkCount('students') > 0}
+								<div class="bulk-bar">
+									<span class="bulk-count">{bulkCount('students')} mahasiswa dipilih</span>
+									<div class="bulk-actions">
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => bulkClear('students')}>Batal</Button
+										>
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => {
+												stopEditing('students');
+												editorView = 'students-bulk';
+											}}>Ubah</Button
+										>
+										<Button
+											variant="destructive"
+											size="sm"
+											class="danger-button"
+											onclick={() => {
+												pendingDelete = {
+													kind: 'bulk-students',
+													id: bulkGetIds('students').join(','),
+													label: `${bulkCount('students')} mahasiswa`,
+													message: `Anda akan menghapus ${bulkCount('students')} mahasiswa. Tindakan ini tidak dapat dibatalkan.`,
+													confirmLabel: 'Ya, hapus semua',
+													successMessage: 'Mahasiswa terpilih berhasil dihapus.',
+													failureMessage: 'Gagal menghapus mahasiswa terpilih.'
+												};
+											}}>Hapus</Button
+										>
+									</div>
+								</div>
+							{/if}
 							<div class="list-stack">
-								{#each filteredStudents as item (item.id)}<button
-										type="button"
+								{#if filteredStudents.length > 1}
+									<label class="list-row select-all-row">
+										<input
+											type="checkbox"
+											checked={bulkCount('students') === filteredStudents.length &&
+												filteredStudents.length > 0}
+											onchange={() =>
+												bulkToggleAll(
+													'students',
+													filteredStudents.map((i) => i.id).filter(Boolean) as string[]
+												)}
+										/>
+										<span>Pilih semua ({filteredStudents.length})</span>
+									</label>
+								{/if}
+								{#each filteredStudents as item (item.id)}
+									<div
+										class="list-row user-row"
 										class:selected={selectedStudentId === item.id}
-										class="list-row"
-										onclick={() => pickStudent(item)}
-										><div>
-											<strong>{item.name}</strong><span>{item.id} • {item.study_program_name}</span>
-										</div>
-										<small>{item.year_admitted}</small></button
-									>{/each}
+										class:checked={item.id != null && bulkSelectedIds['students']?.has(item.id)}
+									>
+										<label class="row-checkbox"
+											><input
+												type="checkbox"
+												checked={item.id != null && bulkSelectedIds['students']?.has(item.id)}
+												onchange={() => item.id && bulkToggleId('students', item.id)}
+												onclick={(e) => e.stopPropagation()}
+											/></label
+										>
+										<button type="button" class="row-content" onclick={() => pickStudent(item)}>
+											<div>
+												<strong>{item.name}</strong><span
+													>{item.id} • {item.study_program_name}</span
+												>
+											</div>
+											<small>{item.year_admitted}</small>
+										</button>
+									</div>
+								{/each}
 							</div>
 							<CollectionPagination
 								label="mahasiswa"
@@ -5967,7 +6993,13 @@
 						<section class="workspace-detail">
 							<div class="pane-head compact">
 								<div>
-									<h3>{selectedStudent ? selectedStudent.name : 'Tambah mahasiswa'}</h3>
+									<h3>
+										{editorView === 'students-bulk'
+											? 'Ubah massal mahasiswa'
+											: selectedStudent
+												? selectedStudent.name
+												: 'Tambah mahasiswa'}
+									</h3>
 								</div>
 								{#if currentUser.current.role === 'ADMIN'}
 									<div class="detail-actions">
@@ -6018,7 +7050,7 @@
 									</div>
 								</section>
 							{/if}
-							{#if selectedStudent && editorView !== 'students'}<div class="detail-stack">
+							{#if selectedStudent && editorView !== 'students' && editorView !== 'students-bulk'}<div class="detail-stack">
 									<div class="detail-lines">
 										<div><span>Email</span><strong>{selectedStudent.email}</strong></div>
 										<div>
@@ -6098,6 +7130,57 @@
 										disabled={studentEditorBlocked}
 										>{selectedStudentId ? 'Simpan perubahan' : 'Tambah mahasiswa'}</Button
 									>
+								</form>{:else if editorView === 'students-bulk'}<form
+									class="editor-grid"
+									{...bulkUpdateStudentsEnhance}
+								>
+									<p class="editor-note">
+										Ubah prodi dan angkatan {bulkCount('students')} mahasiswa terpilih sekaligus.
+										Kosongkan field yang tidak ingin diubah.
+									</p>
+									<input type="hidden" name="ids" value={bulkGetIds('students').join(',')} />
+									<label
+										><span>Program studi</span><select
+											name="studyProgramId"
+											value={bulkEditStudentStudyProgramId}
+											onchange={(e) =>
+												(bulkEditStudentStudyProgramId = (e.currentTarget as HTMLSelectElement)
+													.value)}
+											><option value="">Pilih program studi</option
+											>{#each studyPrograms as item (item.id)}<option value={item.id}
+													>{item.name}</option
+												>{/each}</select
+										></label
+									>
+									<label
+										><span>Angkatan</span><input
+											type="number"
+											name="yearAdmitted"
+											min="1900"
+											value={bulkEditStudentYearAdmitted}
+											oninput={(e) =>
+												(bulkEditStudentYearAdmitted = Number(
+													(e.currentTarget as HTMLInputElement).value
+												))}
+										/></label
+									>
+									<div class="builder-inline-actions">
+										<Button
+											type="button"
+											variant="ghost"
+											class="ghost-button"
+											onclick={() => {
+												bulkClear('students');
+												editorView = null;
+											}}>Batal</Button
+										>
+										<Button
+											type="submit"
+											class="primary-button"
+											disabled={bulkUpdateStudents.pending > 0}
+											>Simpan perubahan {bulkCount('students')} mahasiswa</Button
+										>
+									</div>
 								</form>{:else}<p class="empty-copy">
 									Pilih satu mahasiswa untuk melihat profil, atau tambahkan mahasiswa baru saat data
 									aktif berubah.
@@ -6135,15 +7218,80 @@
 										}}><X size={14} /></button
 									>{/if}</label
 							>
+							{#if bulkCount('lecturers') > 0}
+								<div class="bulk-bar">
+									<span class="bulk-count">{bulkCount('lecturers')} dosen dipilih</span>
+									<div class="bulk-actions">
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => bulkClear('lecturers')}>Batal</Button
+										>
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => {
+												stopEditing('lecturers');
+												editorView = 'lecturers-bulk';
+											}}>Ubah</Button
+										>
+										<Button
+											variant="destructive"
+											size="sm"
+											class="danger-button"
+											onclick={() => {
+												pendingDelete = {
+													kind: 'bulk-lecturers',
+													id: bulkGetIds('lecturers').join(','),
+													label: `${bulkCount('lecturers')} dosen`,
+													message: `Anda akan menghapus ${bulkCount('lecturers')} dosen. Tindakan ini tidak dapat dibatalkan.`,
+													confirmLabel: 'Ya, hapus semua',
+													successMessage: 'Dosen terpilih berhasil dihapus.',
+													failureMessage: 'Gagal menghapus dosen terpilih.'
+												};
+											}}>Hapus</Button
+										>
+									</div>
+								</div>
+							{/if}
 							<div class="list-stack">
-								{#each filteredLecturers as item (item.id)}<button
-										type="button"
+								{#if filteredLecturers.length > 1}
+									<label class="list-row select-all-row">
+										<input
+											type="checkbox"
+											checked={bulkCount('lecturers') === filteredLecturers.length &&
+												filteredLecturers.length > 0}
+											onchange={() =>
+												bulkToggleAll(
+													'lecturers',
+													filteredLecturers.map((i) => i.id).filter(Boolean) as string[]
+												)}
+										/>
+										<span>Pilih semua ({filteredLecturers.length})</span>
+									</label>
+								{/if}
+								{#each filteredLecturers as item (item.id)}
+									<div
+										class="list-row user-row"
 										class:selected={selectedLecturerId === item.id}
-										class="list-row"
-										onclick={() => pickLecturer(item)}
-										><div><strong>{item.name}</strong><span>{item.id} • {item.email}</span></div>
-										<small>{item.email}</small></button
-									>{/each}
+										class:checked={item.id != null && bulkSelectedIds['lecturers']?.has(item.id)}
+									>
+										<label class="row-checkbox"
+											><input
+												type="checkbox"
+												checked={item.id != null && bulkSelectedIds['lecturers']?.has(item.id)}
+												onchange={() => item.id && bulkToggleId('lecturers', item.id)}
+												onclick={(e) => e.stopPropagation()}
+											/></label
+										>
+										<button type="button" class="row-content" onclick={() => pickLecturer(item)}>
+											<div><strong>{item.name}</strong><span>{item.id} • {item.email}</span></div>
+											<small>{item.email}</small>
+										</button>
+									</div>
+								{/each}
 							</div>
 							<CollectionPagination
 								label="dosen"
@@ -6160,7 +7308,13 @@
 						<section class="workspace-detail">
 							<div class="pane-head compact">
 								<div>
-									<h3>{selectedLecturer ? selectedLecturer.name : 'Tambah dosen'}</h3>
+									<h3>
+										{editorView === 'lecturers-bulk'
+											? 'Ubah massal dosen'
+											: selectedLecturer
+												? selectedLecturer.name
+												: 'Tambah dosen'}
+									</h3>
 								</div>
 								{#if currentUser.current.role === 'ADMIN'}
 									<div class="detail-actions">
@@ -6211,7 +7365,7 @@
 									</div>
 								</section>
 							{/if}
-							{#if selectedLecturer && editorView !== 'lecturers'}<div class="detail-stack">
+							{#if selectedLecturer && editorView !== 'lecturers' && editorView !== 'lecturers-bulk'}<div class="detail-stack">
 									<div class="detail-lines">
 										<div><span>ID dosen</span><strong>{selectedLecturer.id}</strong></div>
 										<div><span>Email</span><strong>{selectedLecturer.email}</strong></div>
@@ -6267,6 +7421,68 @@
 									><Button type="submit" class="primary-button"
 										>{selectedLecturerId ? 'Simpan perubahan' : 'Tambah dosen'}</Button
 									>
+								</form>{:else if editorView === 'lecturers-bulk'}<form
+									class="editor-grid"
+									{...bulkUpdateLecturersEnhance}
+								>
+									<p class="editor-note">
+										Ubah data {bulkCount('lecturers')} dosen terpilih sekaligus. Kosongkan field yang
+										tidak ingin diubah.
+									</p>
+									<input type="hidden" name="ids" value={bulkGetIds('lecturers').join(',')} />
+									<label
+										><span>Nama</span><input
+											type="text"
+											name="name"
+											value={bulkEditLecturerName}
+											oninput={(e) =>
+												(bulkEditLecturerName = (e.currentTarget as HTMLInputElement).value)}
+										/></label
+									>
+									<label
+										><span>Email</span><input
+											type="email"
+											name="email"
+											value={bulkEditLecturerEmail}
+											oninput={(e) =>
+												(bulkEditLecturerEmail = (e.currentTarget as HTMLInputElement).value)}
+										/></label
+									>
+									<label
+										><span>Telepon</span><input
+											type="text"
+											name="phone"
+											value={bulkEditLecturerPhone}
+											oninput={(e) =>
+												(bulkEditLecturerPhone = (e.currentTarget as HTMLInputElement).value)}
+										/></label
+									>
+									<label
+										><span>Alamat</span><input
+											type="text"
+											name="address"
+											value={bulkEditLecturerAddress}
+											oninput={(e) =>
+												(bulkEditLecturerAddress = (e.currentTarget as HTMLInputElement).value)}
+										/></label
+									>
+									<div class="builder-inline-actions">
+										<Button
+											type="button"
+											variant="ghost"
+											class="ghost-button"
+											onclick={() => {
+												bulkClear('lecturers');
+												editorView = null;
+											}}>Batal</Button
+										>
+										<Button
+											type="submit"
+											class="primary-button"
+											disabled={bulkUpdateLecturers.pending > 0}
+											>Simpan perubahan {bulkCount('lecturers')} dosen</Button
+										>
+									</div>
 								</form>{:else}<p class="empty-copy">
 									Pilih satu dosen untuk melihat detail, atau tambahkan dosen baru saat data
 									pengampu berubah.
@@ -6304,15 +7520,80 @@
 										}}><X size={14} /></button
 									>{/if}</label
 							>
+							{#if bulkCount('faculties') > 0}
+								<div class="bulk-bar">
+									<span class="bulk-count">{bulkCount('faculties')} fakultas dipilih</span>
+									<div class="bulk-actions">
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => bulkClear('faculties')}>Batal</Button
+										>
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => {
+												stopEditing('faculties');
+												editorView = 'faculties-bulk';
+											}}>Ubah</Button
+										>
+										<Button
+											variant="destructive"
+											size="sm"
+											class="danger-button"
+											onclick={() => {
+												pendingDelete = {
+													kind: 'bulk-faculties',
+													id: bulkGetIds('faculties').join(','),
+													label: `${bulkCount('faculties')} fakultas`,
+													message: `Anda akan menghapus ${bulkCount('faculties')} fakultas. Tindakan ini tidak dapat dibatalkan.`,
+													confirmLabel: 'Ya, hapus semua',
+													successMessage: 'Fakultas terpilih berhasil dihapus.',
+													failureMessage: 'Gagal menghapus fakultas terpilih.'
+												};
+											}}>Hapus</Button
+										>
+									</div>
+								</div>
+							{/if}
 							<div class="list-stack">
-								{#each filteredFaculties as item (item.id)}<button
-										type="button"
+								{#if filteredFaculties.length > 1}
+									<label class="list-row select-all-row">
+										<input
+											type="checkbox"
+											checked={bulkCount('faculties') === filteredFaculties.length &&
+												filteredFaculties.length > 0}
+											onchange={() =>
+												bulkToggleAll(
+													'faculties',
+													filteredFaculties.map((i) => i.id).filter(Boolean) as string[]
+												)}
+										/>
+										<span>Pilih semua ({filteredFaculties.length})</span>
+									</label>
+								{/if}
+								{#each filteredFaculties as item (item.id)}
+									<div
+										class="list-row user-row"
 										class:selected={selectedFacultyId === item.id}
-										class="list-row"
-										onclick={() => pickFaculty(item)}
-										><div><strong>{item.name}</strong><span>{item.id}</span></div>
-										<small>{item.id}</small></button
-									>{/each}
+										class:checked={item.id != null && bulkSelectedIds['faculties']?.has(item.id)}
+									>
+										<label class="row-checkbox"
+											><input
+												type="checkbox"
+												checked={item.id != null && bulkSelectedIds['faculties']?.has(item.id)}
+												onchange={() => item.id && bulkToggleId('faculties', item.id)}
+												onclick={(e) => e.stopPropagation()}
+											/></label
+										>
+										<button type="button" class="row-content" onclick={() => pickFaculty(item)}>
+											<div><strong>{item.name}</strong><span>{item.id}</span></div>
+											<small>{item.id}</small>
+										</button>
+									</div>
+								{/each}
 							</div>
 							<CollectionPagination
 								label="fakultas"
@@ -6329,7 +7610,13 @@
 						<section class="workspace-detail">
 							<div class="pane-head compact">
 								<div>
-									<h3>{selectedFaculty ? selectedFaculty.name : 'Tambah fakultas'}</h3>
+									<h3>
+										{editorView === 'faculties-bulk'
+											? 'Ubah massal fakultas'
+											: selectedFaculty
+												? selectedFaculty.name
+												: 'Tambah fakultas'}
+									</h3>
 								</div>
 								{#if currentUser.current.role === 'ADMIN'}
 									<div class="detail-actions">
@@ -6380,7 +7667,7 @@
 									</div>
 								</section>
 							{/if}
-							{#if selectedFaculty && editorView !== 'faculties'}<div class="detail-stack">
+							{#if selectedFaculty && editorView !== 'faculties' && editorView !== 'faculties-bulk'}<div class="detail-stack">
 									<div class="detail-lines">
 										<div><span>Kode</span><strong>{selectedFaculty.id}</strong></div>
 										<div>
@@ -6413,6 +7700,41 @@
 									><Button type="submit" class="primary-button"
 										>{selectedFacultyId ? 'Simpan perubahan' : 'Tambah fakultas'}</Button
 									>
+								</form>{:else if editorView === 'faculties-bulk'}<form
+									class="editor-grid"
+									{...bulkUpdateFacultiesEnhance}
+								>
+									<p class="editor-note">
+										Ubah nama {bulkCount('faculties')} fakultas terpilih sekaligus. Kosongkan field
+										yang tidak ingin diubah.
+									</p>
+									<input type="hidden" name="ids" value={bulkGetIds('faculties').join(',')} />
+									<label
+										><span>Nama fakultas</span><input
+											type="text"
+											name="name"
+											value={bulkEditFacultyName}
+											oninput={(e) =>
+												(bulkEditFacultyName = (e.currentTarget as HTMLInputElement).value)}
+										/></label
+									>
+									<div class="builder-inline-actions">
+										<Button
+											type="button"
+											variant="ghost"
+											class="ghost-button"
+											onclick={() => {
+												bulkClear('faculties');
+												editorView = null;
+											}}>Batal</Button
+										>
+										<Button
+											type="submit"
+											class="primary-button"
+											disabled={bulkUpdateFaculties.pending > 0}
+											>Simpan perubahan {bulkCount('faculties')} fakultas</Button
+										>
+									</div>
 								</form>{:else}<p class="empty-copy">
 									Pilih satu fakultas untuk melihat detail, atau tambahkan fakultas baru saat
 									struktur berubah.
@@ -6450,17 +7772,86 @@
 										}}><X size={14} /></button
 									>{/if}</label
 							>
+							{#if bulkCount('studyPrograms') > 0}
+								<div class="bulk-bar">
+									<span class="bulk-count">{bulkCount('studyPrograms')} prodi dipilih</span>
+									<div class="bulk-actions">
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => bulkClear('studyPrograms')}>Batal</Button
+										>
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => {
+												stopEditing('studyPrograms');
+												editorView = 'studyPrograms-bulk';
+											}}>Ubah</Button
+										>
+										<Button
+											variant="destructive"
+											size="sm"
+											class="danger-button"
+											onclick={() => {
+												pendingDelete = {
+													kind: 'bulk-studyPrograms',
+													id: bulkGetIds('studyPrograms').join(','),
+													label: `${bulkCount('studyPrograms')} prodi`,
+													message: `Anda akan menghapus ${bulkCount('studyPrograms')} prodi. Tindakan ini tidak dapat dibatalkan.`,
+													confirmLabel: 'Ya, hapus semua',
+													successMessage: 'Prodi terpilih berhasil dihapus.',
+													failureMessage: 'Gagal menghapus prodi terpilih.'
+												};
+											}}>Hapus</Button
+										>
+									</div>
+								</div>
+							{/if}
 							<div class="list-stack">
-								{#each filteredStudyPrograms as item (item.id)}<button
-										type="button"
+								{#if filteredStudyPrograms.length > 1}
+									<label class="list-row select-all-row">
+										<input
+											type="checkbox"
+											checked={bulkCount('studyPrograms') === filteredStudyPrograms.length &&
+												filteredStudyPrograms.length > 0}
+											onchange={() =>
+												bulkToggleAll(
+													'studyPrograms',
+													filteredStudyPrograms.map((i) => i.id).filter(Boolean) as string[]
+												)}
+										/>
+										<span>Pilih semua ({filteredStudyPrograms.length})</span>
+									</label>
+								{/if}
+								{#each filteredStudyPrograms as item (item.id)}
+									<div
+										class="list-row user-row"
 										class:selected={selectedStudyProgramId === item.id}
-										class="list-row"
-										onclick={() => pickStudyProgram(item)}
-										><div>
-											<strong>{item.name}</strong><span>{item.id} • {item.faculty_name}</span>
-										</div>
-										<small>{item.head ?? item.faculty_name}</small></button
-									>{/each}
+										class:checked={item.id != null && bulkSelectedIds['studyPrograms']?.has(item.id)}
+									>
+										<label class="row-checkbox"
+											><input
+												type="checkbox"
+												checked={item.id != null && bulkSelectedIds['studyPrograms']?.has(item.id)}
+												onchange={() => item.id && bulkToggleId('studyPrograms', item.id)}
+												onclick={(e) => e.stopPropagation()}
+											/></label
+										>
+										<button
+											type="button"
+											class="row-content"
+											onclick={() => pickStudyProgram(item)}
+										>
+											<div>
+												<strong>{item.name}</strong><span>{item.id} • {item.faculty_name}</span>
+											</div>
+											<small>{item.head ?? item.faculty_name}</small>
+										</button>
+									</div>
+								{/each}
 							</div>
 							<CollectionPagination
 								label="program studi"
@@ -6478,7 +7869,11 @@
 							<div class="pane-head compact">
 								<div>
 									<h3>
-										{selectedStudyProgram ? selectedStudyProgram.name : 'Tambah program studi'}
+										{editorView === 'studyPrograms-bulk'
+											? 'Ubah massal program studi'
+											: selectedStudyProgram
+												? selectedStudyProgram.name
+												: 'Tambah program studi'}
 									</h3>
 								</div>
 								{#if currentUser.current.role === 'ADMIN'}
@@ -6531,7 +7926,7 @@
 									</div>
 								</section>
 							{/if}
-							{#if selectedStudyProgram && editorView !== 'studyPrograms'}<div class="detail-stack">
+							{#if selectedStudyProgram && editorView !== 'studyPrograms' && editorView !== 'studyPrograms-bulk'}<div class="detail-stack">
 									<div class="detail-lines">
 										<div><span>ID prodi</span><strong>{selectedStudyProgram.id}</strong></div>
 										<div>
@@ -6599,6 +7994,54 @@
 										disabled={studyProgramEditorBlocked}
 										>{selectedStudyProgramId ? 'Simpan perubahan' : 'Tambah program studi'}</Button
 									>
+								</form>{:else if editorView === 'studyPrograms-bulk'}<form
+									class="editor-grid"
+									{...bulkUpdateStudyProgramsEnhance}
+								>
+									<p class="editor-note">
+										Ubah fakultas dan ketua prodi {bulkCount('studyPrograms')} prodi terpilih
+										sekaligus. Kosongkan field yang tidak ingin diubah.
+									</p>
+									<input type="hidden" name="ids" value={bulkGetIds('studyPrograms').join(',')} />
+									<label
+										><span>Fakultas</span><select
+											name="facultyId"
+											value={bulkEditStudyProgramFacultyId}
+											onchange={(e) =>
+												(bulkEditStudyProgramFacultyId = (e.currentTarget as HTMLSelectElement)
+													.value)}
+											><option value="">Pilih fakultas</option
+											>{#each faculties as item (item.id)}<option value={item.id}
+													>{item.name}</option
+												>{/each}</select
+										></label
+									>
+									<label
+										><span>Ketua prodi</span><input
+											type="text"
+											name="head"
+											value={bulkEditStudyProgramHead}
+											oninput={(e) =>
+												(bulkEditStudyProgramHead = (e.currentTarget as HTMLInputElement).value)}
+										/></label
+									>
+									<div class="builder-inline-actions">
+										<Button
+											type="button"
+											variant="ghost"
+											class="ghost-button"
+											onclick={() => {
+												bulkClear('studyPrograms');
+												editorView = null;
+											}}>Batal</Button
+										>
+										<Button
+											type="submit"
+											class="primary-button"
+											disabled={bulkUpdateStudyPrograms.pending > 0}
+											>Simpan perubahan {bulkCount('studyPrograms')} prodi</Button
+										>
+									</div>
 								</form>{:else}<p class="empty-copy">
 									Pilih satu program studi untuk melihat detail, atau tambahkan program studi baru
 									saat struktur akademik berubah.
@@ -6809,26 +8252,89 @@
 									</Button>
 								</div>
 							</div>
+							{#if bulkCount('enrollments') > 0}
+								<div class="bulk-bar">
+									<span class="bulk-count">{bulkCount('enrollments')} KRS dipilih</span>
+									<div class="bulk-actions">
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => bulkClear('enrollments')}>Batal</Button
+										>
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+												onclick={() => {
+													editorView = 'enrollments-bulk';
+											}}>Ubah</Button
+										>
+										<Button
+											variant="destructive"
+											size="sm"
+											class="danger-button"
+											onclick={() => {
+												pendingDelete = {
+													kind: 'bulk-enrollments',
+													id: bulkGetIds('enrollments').join(','),
+													label: `${bulkCount('enrollments')} KRS`,
+													message: `Anda akan menghapus ${bulkCount('enrollments')} KRS. Tindakan ini tidak dapat dibatalkan.`,
+													confirmLabel: 'Ya, hapus semua',
+													successMessage: 'KRS terpilih berhasil dihapus.',
+													failureMessage: 'Gagal menghapus KRS terpilih.'
+												};
+											}}>Hapus</Button
+										>
+									</div>
+								</div>
+							{/if}
 							<div class="list-stack">
+								{#if filteredEnrollments.length > 1}
+									<label class="list-row select-all-row">
+										<input
+											type="checkbox"
+											checked={bulkCount('enrollments') === filteredEnrollments.length &&
+												filteredEnrollments.length > 0}
+											onchange={() =>
+												bulkToggleAll(
+													'enrollments',
+													filteredEnrollments.map((i) => i.id).filter(Boolean) as string[]
+												)}
+										/>
+										<span>Pilih semua ({filteredEnrollments.length})</span>
+									</label>
+								{/if}
 								{#each filteredEnrollments as item (item.id)}
 									{@const scheduleCard = item.id ? scheduleCardMap[item.id] : null}
-									<button
-										type="button"
+									<div
+										class="list-row user-row"
 										class:selected={selectedEnrollmentId === item.id}
-										class="list-row"
-										onclick={() => pickEnrollment(item)}
-										><div>
-											<strong>{item.student_name}</strong><span
-												>{item.course_name} • {item.class_room_name}</span
-											>
-											{#if item.id && scheduleCard?.hasConflict && conflictSummaryByCardId[item.id]}
-												<small class="list-conflict-copy">
-													Bentrok dengan {conflictSummaryByCardId[item.id]}
-												</small>
-											{/if}
-										</div>
-										<small>{item.semester} • {item.academic_year}</small></button
-									>{/each}
+										class:checked={item.id != null && bulkSelectedIds['enrollments']?.has(item.id)}
+									>
+										<label class="row-checkbox"
+											><input
+												type="checkbox"
+												checked={item.id != null && bulkSelectedIds['enrollments']?.has(item.id)}
+												onchange={() => item.id && bulkToggleId('enrollments', item.id)}
+												onclick={(e) => e.stopPropagation()}
+											/></label
+										>
+										<button type="button" class="row-content" onclick={() => pickEnrollment(item)}>
+											<div>
+												<strong>{item.student_name}</strong><span
+													>{item.course_name} • {item.class_room_name}</span
+												>
+												{#if item.id && scheduleCard?.hasConflict && conflictSummaryByCardId[item.id]}
+													<small class="list-conflict-copy">
+														Bentrok dengan {conflictSummaryByCardId[item.id]}
+													</small>
+												{/if}
+											</div>
+											<small>{item.semester} • {item.academic_year}</small>
+										</button>
+									</div>
+								{/each}
 							</div>
 							<CollectionPagination
 								label="KRS"
@@ -6845,10 +8351,16 @@
 						<section class="workspace-detail">
 							<div class="pane-head compact">
 								<div>
-									<h3>{selectedEnrollment ? selectedEnrollment.course_name : 'Pilih satu KRS'}</h3>
+									<h3>
+										{editorView === 'enrollments-bulk'
+											? 'Ubah massal KRS'
+											: selectedEnrollment
+												? selectedEnrollment.course_name
+												: 'Pilih satu KRS'}
+									</h3>
 								</div>
 							</div>
-							{#if selectedEnrollment}
+							{#if selectedEnrollment && editorView !== 'enrollments-bulk'}
 								<div class="detail-stack">
 									{#if selectedEnrollmentConflictSummary}
 										<p class="builder-conflict-copy">
@@ -6890,7 +8402,52 @@
 										{/if}
 									</div>
 								</div>
-							{:else}<p class="empty-copy">Pilih satu baris untuk melihat detail KRS.</p>{/if}
+							{:else if editorView === 'enrollments-bulk'}<form
+									class="editor-grid"
+									{...bulkUpdateEnrollmentsEnhance}
+								>
+									<p class="editor-note">
+										Ubah semester dan tahun akademik {bulkCount('enrollments')} KRS terpilih
+										sekaligus. Kosongkan field yang tidak ingin diubah.
+									</p>
+									<input type="hidden" name="ids" value={bulkGetIds('enrollments').join(',')} />
+									<label
+										><span>Semester</span><input
+											type="text"
+											name="semester"
+											value={bulkEditEnrollmentSemester}
+											oninput={(e) =>
+												(bulkEditEnrollmentSemester = (e.currentTarget as HTMLInputElement).value)}
+										/></label
+									>
+									<label
+										><span>Tahun akademik</span><input
+											type="text"
+											name="academicYear"
+											value={bulkEditEnrollmentAcademicYear}
+											oninput={(e) =>
+												(bulkEditEnrollmentAcademicYear = (e.currentTarget as HTMLInputElement)
+													.value)}
+										/></label
+									>
+									<div class="builder-inline-actions">
+										<Button
+											type="button"
+											variant="ghost"
+											class="ghost-button"
+											onclick={() => {
+												bulkClear('enrollments');
+												editorView = null;
+											}}>Batal</Button
+										>
+										<Button
+											type="submit"
+											class="primary-button"
+											disabled={bulkUpdateEnrollments.pending > 0}
+											>Simpan perubahan {bulkCount('enrollments')} KRS</Button
+										>
+									</div>
+								</form>{:else}<p class="empty-copy">Pilih satu baris untuk melihat detail KRS.</p>{/if}
 						</section>
 					</div>
 				{/if}
@@ -6952,19 +8509,84 @@
 									</select>
 								</label>
 							</div>
+							{#if bulkCount('grades') > 0}
+								<div class="bulk-bar">
+									<span class="bulk-count">{bulkCount('grades')} nilai dipilih</span>
+									<div class="bulk-actions">
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => bulkClear('grades')}>Batal</Button
+										>
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => {
+												stopEditing('grades');
+												editorView = 'grades-bulk';
+											}}>Ubah</Button
+										>
+										<Button
+											variant="destructive"
+											size="sm"
+											class="danger-button"
+											onclick={() => {
+												pendingDelete = {
+													kind: 'bulk-grades',
+													id: bulkGetIds('grades').join(','),
+													label: `${bulkCount('grades')} nilai`,
+													message: `Anda akan menghapus ${bulkCount('grades')} nilai. Tindakan ini tidak dapat dibatalkan.`,
+													confirmLabel: 'Ya, hapus semua',
+													successMessage: 'Nilai terpilih berhasil dihapus.',
+													failureMessage: 'Gagal menghapus nilai terpilih.'
+												};
+											}}>Hapus</Button
+										>
+									</div>
+								</div>
+							{/if}
 							<div class="list-stack">
-								{#each filteredGrades as item (item.id)}<button
-										type="button"
+								{#if filteredGrades.length > 1}
+									<label class="list-row select-all-row">
+										<input
+											type="checkbox"
+											checked={bulkCount('grades') === filteredGrades.length &&
+												filteredGrades.length > 0}
+											onchange={() =>
+												bulkToggleAll(
+													'grades',
+													filteredGrades.map((i) => i.id).filter(Boolean) as string[]
+												)}
+										/>
+										<span>Pilih semua ({filteredGrades.length})</span>
+									</label>
+								{/if}
+								{#each filteredGrades as item (item.id)}
+									<div
+										class="list-row user-row"
 										class:selected={selectedGradeId === item.id}
-										class="list-row"
-										onclick={() => pickGrade(item)}
-										><div>
-											<strong>{item.student_name}</strong><span
-												>{item.course_name} • {item.letter_grade}</span
-											>
-										</div>
-										<small>{item.total_score ?? '-'} poin</small></button
-									>{/each}
+										class:checked={item.id != null && bulkSelectedIds['grades']?.has(item.id)}
+									>
+										<label class="row-checkbox"
+											><input
+												type="checkbox"
+												checked={item.id != null && bulkSelectedIds['grades']?.has(item.id)}
+												onchange={() => item.id && bulkToggleId('grades', item.id)}
+												onclick={(e) => e.stopPropagation()}
+											/></label
+										>
+										<button type="button" class="row-content" onclick={() => pickGrade(item)}>
+											<div>
+												<strong>{item.student_name}</strong><span
+													>{item.course_name} • {item.letter_grade}</span
+												>
+											</div>
+											<small>{item.total_score ?? '-'} poin</small>
+										</button>
+									</div>
+								{/each}
 							</div>
 							<CollectionPagination
 								label="nilai"
@@ -6982,9 +8604,11 @@
 							<div class="pane-head compact">
 								<div>
 									<h3>
-										{selectedGrade
-											? `${selectedGrade.student_name} • ${selectedGrade.course_name}`
-											: 'Input nilai baru'}
+										{editorView === 'grades-bulk'
+											? 'Ubah massal nilai'
+											: selectedGrade
+												? `${selectedGrade.student_name} • ${selectedGrade.course_name}`
+												: 'Input nilai baru'}
 									</h3>
 								</div>
 								{#if currentUser.current.role !== 'STUDENT'}
@@ -7036,7 +8660,7 @@
 									</div>
 								</section>
 							{/if}
-							{#if selectedGrade && editorView !== 'grades'}<div class="detail-stack">
+							{#if selectedGrade && editorView !== 'grades' && editorView !== 'grades-bulk'}<div class="detail-stack">
 									<div class="detail-lines">
 										<div><span>Total</span><strong>{selectedGrade.total_score}</strong></div>
 										<div><span>Huruf</span><strong>{selectedGrade.letter_grade}</strong></div>
@@ -7107,6 +8731,74 @@
 										disabled={gradeEditorBlocked}
 										>{selectedGradeId ? 'Simpan perubahan' : 'Simpan nilai'}</Button
 									>
+								</form>{:else if editorView === 'grades-bulk'}<form
+									class="editor-grid"
+									{...bulkUpdateGradesEnhance}
+								>
+									<p class="editor-note">
+										Ubah komponen nilai {bulkCount('grades')} nilai terpilih sekaligus. Total dan nilai
+										huruf akan dihitung ulang otomatis. Kosongkan field yang tidak ingin diubah.
+									</p>
+									<input type="hidden" name="ids" value={bulkGetIds('grades').join(',')} />
+									<label
+										><span>Tugas</span><input
+											type="number"
+											name="assignmentScore"
+											min="0"
+											max="100"
+											placeholder="Kosongkan jika tidak diubah"
+											value={bulkEditGradeAssignmentScore ?? ''}
+											oninput={(e) => {
+												const val = (e.currentTarget as HTMLInputElement).value;
+												bulkEditGradeAssignmentScore = val ? Number(val) : undefined;
+											}}
+										/></label
+									>
+									<label
+										><span>UTS</span><input
+											type="number"
+											name="midtermScore"
+											min="0"
+											max="100"
+											placeholder="Kosongkan jika tidak diubah"
+											value={bulkEditGradeMidtermScore ?? ''}
+											oninput={(e) => {
+												const val = (e.currentTarget as HTMLInputElement).value;
+												bulkEditGradeMidtermScore = val ? Number(val) : undefined;
+											}}
+										/></label
+									>
+									<label
+										><span>UAS</span><input
+											type="number"
+											name="finalScore"
+											min="0"
+											max="100"
+											placeholder="Kosongkan jika tidak diubah"
+											value={bulkEditGradeFinalScore ?? ''}
+											oninput={(e) => {
+												const val = (e.currentTarget as HTMLInputElement).value;
+												bulkEditGradeFinalScore = val ? Number(val) : undefined;
+											}}
+										/></label
+									>
+									<div class="builder-inline-actions">
+										<Button
+											type="button"
+											variant="ghost"
+											class="ghost-button"
+											onclick={() => {
+												bulkClear('grades');
+												editorView = null;
+											}}>Batal</Button
+										>
+										<Button
+											type="submit"
+											class="primary-button"
+											disabled={bulkUpdateGrades.pending > 0}
+											>Simpan perubahan {bulkCount('grades')} nilai</Button
+										>
+									</div>
 								</form>{:else}<p class="empty-copy">
 									Pilih satu nilai untuk melihat hasil, atau tambahkan nilai baru saat evaluasi
 									perlu dicatat.
@@ -7138,19 +8830,86 @@
 										}}><X size={14} /></button
 									>{/if}</label
 							>
+							{#if selectedUserIds.size > 0}
+								<div class="bulk-bar">
+									<span class="bulk-count">{selectedUserIds.size} akun dipilih</span>
+									<div class="bulk-actions">
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={clearUserSelection}>Batal</Button
+										>
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => {
+												stopEditing('users');
+												editorView = 'users-bulk-role';
+											}}>Ubah peran</Button
+										>
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => {
+												stopEditing('users');
+												editorView = 'users-bulk-password';
+											}}>Reset password</Button
+										>
+										<Button
+											variant="destructive"
+											size="sm"
+											class="danger-button"
+											onclick={() => {
+												pendingDelete = {
+													kind: 'bulk-user',
+													id: [...selectedUserIds].join(','),
+													label: `${selectedUserIds.size} akun`,
+													message: `Anda akan menghapus ${selectedUserIds.size} akun. Tindakan ini tidak dapat dibatalkan.`,
+													confirmLabel: 'Ya, hapus semua',
+													successMessage: 'Akun terpilih berhasil dihapus.',
+													failureMessage: 'Gagal menghapus akun terpilih.'
+												};
+											}}>Hapus</Button
+										>
+									</div>
+								</div>
+							{/if}
 							<div class="list-stack">
-								{#each filteredUsers as item (item.id)}<button
-										type="button"
+								{#if filteredUsers.length > 1}
+									<label class="list-row select-all-row">
+										<input
+											type="checkbox"
+											checked={selectedUserIds.size === filteredUsers.length &&
+												filteredUsers.length > 0}
+											onchange={toggleAllUsers}
+										/>
+										<span>Pilih semua ({filteredUsers.length})</span>
+									</label>
+								{/if}
+								{#each filteredUsers as item (item.id)}<div
+										class="list-row user-row"
 										class:selected={selectedUserId === item.id}
-										class="list-row"
-										onclick={() => pickUser(item)}
-										><div>
-											<strong>{item.email}</strong><span
-												>{item.student_name ?? item.lecturer_name ?? 'Administrator sistem'}</span
-											>
-										</div>
-										<small>{item.role}</small></button
-									>{/each}
+										class:checked={item.id != null && selectedUserIds.has(item.id)}
+									>
+										<label class="row-checkbox"
+											><input
+												type="checkbox"
+												checked={item.id != null && selectedUserIds.has(item.id)}
+												onchange={() => item.id && toggleUserSelection(item.id)}
+												onclick={(e) => e.stopPropagation()}
+											/></label
+										><button type="button" class="row-content" onclick={() => pickUser(item)}
+											><div>
+												<strong>{item.email}</strong><span
+													>{item.student_name ?? item.lecturer_name ?? 'Administrator sistem'}</span
+												>
+											</div>
+											<small>{item.role}</small></button
+										>
+									</div>{/each}
 							</div>
 							<CollectionPagination
 								label="akun"
@@ -7243,6 +9002,73 @@
 											value={userDraft.lecturerId}
 										/></label
 									><Button type="submit" class="primary-button">Simpan akun</Button>
+								</form>{:else if editorView === 'users-bulk-role'}<form
+									class="editor-grid"
+									{...bulkUpdateUserRoleEnhance}
+								>
+									<p class="editor-note">
+										Ubah peran {selectedUserIds.size} akun terpilih sekaligus. Perubahan berlaku pada
+										sesi berikutnya.
+									</p>
+									<input type="hidden" name="ids" value={[...selectedUserIds].join(',')} />
+									<label
+										><span>Peran baru</span><select
+											name="role"
+											value={bulkUserRole}
+											onchange={(e) =>
+												(bulkUserRole = (e.currentTarget as HTMLSelectElement)
+													.value as typeof bulkUserRole)}
+											><option value="ADMIN">Admin</option><option value="STUDENT">Mahasiswa</option
+											><option value="LECTURER">Dosen</option></select
+										></label
+									>
+									<div class="builder-inline-actions">
+										<Button
+											type="button"
+											variant="ghost"
+											class="ghost-button"
+											onclick={clearUserSelection}>Batal</Button
+										>
+										<Button
+											type="submit"
+											class="primary-button"
+											disabled={bulkUpdateUserRoles.pending > 0}
+											>Simpan peran {selectedUserIds.size} akun</Button
+										>
+									</div>
+								</form>{:else if editorView === 'users-bulk-password'}<form
+									class="editor-grid"
+									{...bulkResetPasswordEnhance}
+								>
+									<p class="editor-note">
+										Reset password {selectedUserIds.size} akun terpilih. Semua sesi aktif akan dibatalkan.
+									</p>
+									<input type="hidden" name="ids" value={[...selectedUserIds].join(',')} />
+									<label
+										><span>Password baru</span><input
+											type="password"
+											name="password"
+											value={bulkUserPassword}
+											minlength="8"
+											placeholder="Minimal 8 karakter"
+											oninput={(e) =>
+												(bulkUserPassword = (e.currentTarget as HTMLInputElement).value)}
+										/></label
+									>
+									<div class="builder-inline-actions">
+										<Button
+											type="button"
+											variant="ghost"
+											class="ghost-button"
+											onclick={clearUserSelection}>Batal</Button
+										>
+										<Button
+											type="submit"
+											class="primary-button"
+											disabled={bulkResetPasswords.pending > 0 || bulkUserPassword.length < 8}
+											>Reset password {selectedUserIds.size} akun</Button
+										>
+									</div>
 								</form>{:else}<p class="empty-copy">
 									Pilih satu akun untuk memperbarui email, peran, atau relasi identitas.
 								</p>{/if}
@@ -7521,6 +9347,7 @@
 
 	.main-shell {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 1.25rem;
 		padding: 1.45rem 1.5rem;
 		align-content: start;
@@ -7542,6 +9369,7 @@
 		gap: 0.42rem;
 		max-width: 52rem;
 		min-width: 0;
+		overflow: hidden;
 	}
 
 	.topbar-copy h2 {
@@ -8420,6 +10248,7 @@
 		background: var(--color-panel);
 		border-radius: var(--radius-xl);
 		padding: 1.1rem;
+		min-width: 0;
 	}
 
 	.decision-alert {
@@ -9268,6 +11097,106 @@
 		box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
 	}
 
+	.user-row {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		gap: 0.5rem;
+		align-items: start;
+		padding: 0.85rem 0.95rem;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		text-align: left;
+		color: inherit;
+		border-radius: 0.8rem;
+	}
+
+	.user-row:hover {
+		border-color: color-mix(in oklch, var(--color-accent-strong) 16%, var(--color-border) 84%);
+	}
+
+	.user-row.checked {
+		border-color: var(--color-accent-strong);
+		background: color-mix(in oklch, var(--color-accent-soft) 14%, var(--color-surface) 86%);
+	}
+
+	.user-row .row-checkbox {
+		display: flex;
+		align-items: flex-start;
+		padding-top: 0.2rem;
+	}
+
+	.user-row .row-checkbox input {
+		width: 1rem;
+		height: 1rem;
+	}
+
+	.user-row .row-content {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 0.5rem;
+		align-items: start;
+		min-width: 0;
+		background: none;
+		border: 0;
+		padding: 0;
+		color: inherit;
+		text-align: left;
+		cursor: pointer;
+		font: inherit;
+	}
+
+	.user-row .row-content > div {
+		display: grid;
+		gap: 0.22rem;
+		min-width: 0;
+	}
+
+	.user-row .row-content > small {
+		justify-self: end;
+		text-align: right;
+		min-width: 0;
+	}
+
+	.select-all-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.55rem 0.95rem;
+		border: 1px dashed var(--color-border);
+		background: none;
+		border-radius: 0.8rem;
+		font-size: 0.82rem;
+		color: var(--color-muted-foreground);
+	}
+
+	.select-all-row input {
+		width: 1rem;
+		height: 1rem;
+	}
+
+	.bulk-bar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.55rem 0.8rem;
+		border: 1px solid color-mix(in oklch, var(--color-accent-strong) 32%, var(--color-border) 68%);
+		background: color-mix(in oklch, var(--color-accent-soft) 12%, var(--color-surface) 88%);
+		border-radius: 0.8rem;
+	}
+
+	.bulk-count {
+		font-size: 0.82rem;
+		font-weight: 600;
+	}
+
+	.bulk-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		margin-left: auto;
+	}
+
 	.list-row.conflict {
 		background: var(--conflict-surface);
 		border-color: var(--conflict-border);
@@ -9292,7 +11221,7 @@
 
 	.detail-lines {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(11rem, max-content));
 		align-items: stretch;
 		margin-bottom: 0.9rem;
 	}
@@ -9373,6 +11302,10 @@
 			grid-template-columns: 1fr;
 		}
 
+		.topbar {
+			grid-template-columns: minmax(0, 1fr) minmax(0, 20rem);
+		}
+
 		.rail-backdrop {
 			display: block;
 			position: fixed;
@@ -9451,6 +11384,28 @@
 			padding: 1rem;
 		}
 
+		.main-shell {
+			overflow: hidden;
+		}
+
+		.decision-board,
+		.decision-lead,
+		.decision-notes,
+		.topbar,
+		.pane-head,
+		.summary-stats {
+			grid-template-columns: 1fr !important;
+		}
+
+		.decision-lead,
+		.decision-notes,
+		.decision-primary,
+		.decision-actions,
+		.decision-title {
+			min-width: 0;
+			max-width: 100%;
+		}
+
 		.event-calendar-host {
 			overflow-x: auto;
 			overflow-y: hidden;
@@ -9503,7 +11458,8 @@
 		.builder-snapshot,
 		.editor-grid,
 		.detail-lines,
-		.decision-actions {
+		.decision-actions,
+		.decision-board {
 			grid-template-columns: 1fr;
 		}
 

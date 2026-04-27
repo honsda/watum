@@ -10,9 +10,8 @@ import {
 
 export type { RowDataPacket, ResultSetHeader, PoolConnection };
 
-const MAX_RETRIES = 2;
-const RETRY_DELAY_MS = 150;
-const CONNECT_TIMEOUT_MS = 500;
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 300;
 const RETIRED_POOL_GRACE_MS = 5000;
 
 function toPositiveInt(value: string | undefined, fallback: number): number {
@@ -31,6 +30,7 @@ const MAX_LIST_QUERY_LIMIT = Math.max(
 	DEFAULT_LIST_QUERY_LIMIT,
 	toPositiveInt(env.DB_MAX_LIST_QUERY_LIMIT, 5000)
 );
+const CONNECT_TIMEOUT_MS = toPositiveInt(env.DB_CONNECT_TIMEOUT, 10_000);
 
 export type LimitedListResult<T> = {
 	items: T[];

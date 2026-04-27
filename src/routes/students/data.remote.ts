@@ -1,7 +1,7 @@
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
-import { hash } from 'argon2';
+import { hash } from '@node-rs/argon2';
 import { randomUUID } from 'crypto';
 import {
 	getListQueryLimit,
@@ -190,6 +190,7 @@ export const getStudentGPA = query(v.string(), async (studentId) => {
 
 export const createStudent = form(studentSchema, async (data) => {
 	await requireRole(['ADMIN']);
+	if (!data.studyProgramId) throw error(400, 'Program studi wajib dipilih');
 	const [existingEmail] = await selectStudents(getPool(), { where: [['email', '=', data.email]] });
 	if (existingEmail) throw error(400, 'Email sudah terdaftar');
 	const [existingUserEmail] = await selectUsers(getPool(), { where: [['email', '=', data.email]] });
@@ -233,6 +234,7 @@ export const updateStudent = form(
 	async (data) => {
 		await requireRole(['ADMIN']);
 		const { id, ...updateData } = data;
+		if (!updateData.studyProgramId) throw error(400, 'Program studi wajib dipilih');
 		const [student] = await selectStudents(getPool(), { where: [['id', '=', id]] });
 		if (!student) throw error(404, 'Mahasiswa tidak ditemukan');
 		const [existingEmail] = await selectStudents(getPool(), {
@@ -299,3 +301,79 @@ export const deleteStudent = command(v.string(), async (id) => {
 	await getStudents().refresh();
 	return { success: true };
 });
+
+export const bulkDeleteStudents = command(
+	v.pipe(v.string(), v.minLength(1)),
+	async (idsParam) => {
+		await requireRole(['ADMIN']);
+		const ids = idsParam.split(',').filter(Boolean);
+		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+		await withTransaction(async (conn) => {
+			for (const id of ids) {
+				const [student] = await selectStudents(conn, {
+					where: [['id', '=', id]]
+				});
+				if (!student) {
+					results.push({ id, ok: false, message: 'Mahasiswa tidak ditemukan' });
+					continue;
+				}
+				if ((student.enrollment_count ?? 0) > 0) {
+					results.push({ id, ok: false, message: 'Masih memiliki KRS' });
+					continue;
+				}
+				const [user] = await selectUsers(conn, { where: [['student_id', '=', id]] });
+				await deleteStudentDb(conn, { id });
+				if (user?.id) await deleteUser(conn, { id: user.id });
+				results.push({ id, ok: true });
+			}
+		});
+		if (results.some((r) => r.ok)) {
+			invalidateConflictAuditCache();
+			await getStudents().refresh();
+		}
+		return { success: true, results };
+	}
+);
+
+export const bulkUpdateStudents = form(
+	v.object({
+		ids: v.pipe(v.string(), v.minLength(1)),
+		studyProgramId: v.optional(v.string()),
+		yearAdmitted: v.optional(v.string())
+	}),
+	async (data) => {
+		await requireRole(['ADMIN']);
+		const ids = data.ids.split(',').filter(Boolean);
+		if (!ids.length) throw error(400, 'Tidak ada mahasiswa dipilih');
+		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+		await withTransaction(async (conn) => {
+			for (const id of ids) {
+				const [student] = await selectStudents(conn, { where: [['id', '=', id]] });
+				if (!student) {
+					results.push({ id, ok: false, message: 'Mahasiswa tidak ditemukan' });
+					continue;
+				}
+				await updateStudentDb(
+					conn,
+					{
+						name: student.name ?? '',
+						email: student.email ?? '',
+						phone: student.phone ?? undefined,
+						address: student.address ?? undefined,
+						year_admitted: data.yearAdmitted
+							? Number(data.yearAdmitted)
+							: (student.year_admitted ?? new Date().getFullYear()),
+						study_program_id: data.studyProgramId || student.study_program_id || ''
+					},
+					{ id }
+				);
+				results.push({ id, ok: true });
+			}
+		});
+		if (results.some((r) => r.ok)) {
+			invalidateConflictAuditCache();
+			await getStudents().refresh();
+		}
+		return { success: true, results };
+	}
+);

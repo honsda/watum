@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { createPool, type Pool, type Connection } from 'mysql2/promise';
-import { hash } from 'argon2';
+import { hash } from '@node-rs/argon2';
 
 const pool: Pool = createPool({
 	host: process.env.DB_HOST || 'localhost',

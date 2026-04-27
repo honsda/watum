@@ -602,3 +602,77 @@ export const deleteClassRoom = command(v.string(), async (id) => {
 	await getAllClassRooms().refresh();
 	return { success: true };
 });
+
+export const bulkDeleteClassRooms = command(
+	v.pipe(v.string(), v.minLength(1)),
+	async (idsParam) => {
+		await requireRole(['ADMIN']);
+		const ids = idsParam.split(',').filter(Boolean);
+		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+		for (const id of ids) {
+			try {
+				await deleteClassRoomDb(getPool(), { id });
+				results.push({ id, ok: true });
+			} catch {
+				results.push({ id, ok: false, message: 'Gagal menghapus' });
+			}
+		}
+		if (results.some((r) => r.ok)) {
+			invalidateConflictAuditCache();
+			await getClassRooms().refresh();
+			await getAllClassRooms().refresh();
+		}
+		return { success: true, results };
+	}
+);
+
+export const bulkUpdateClassRooms = form(
+	v.object({
+		ids: v.pipe(v.string(), v.minLength(1)),
+		classRoomType: v.optional(v.string()),
+		capacity: v.optional(v.string()),
+		hasProjector: v.optional(v.literal('on')),
+		hasAC: v.optional(v.literal('on'))
+	}),
+	async (data) => {
+		await requireRole(['ADMIN']);
+		const ids = data.ids.split(',').filter(Boolean);
+		if (!ids.length) throw error(400, 'Tidak ada ruang dipilih');
+		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+		for (const id of ids) {
+			const [room] = await selectClassRooms(getPool(), { where: [['id', '=', id]] });
+			if (!room) {
+				results.push({ id, ok: false, message: 'Ruang tidak ditemukan' });
+				continue;
+			}
+			const classRoomType = data.classRoomType || room.class_room_type || 'REGULER';
+			const capacity = data.capacity ? Number(data.capacity) : (room.capacity ?? 30);
+			const hasProjector =
+				data.hasProjector !== undefined
+					? 1
+					: ((room as { has_projector?: number }).has_projector ?? 0);
+			const hasAC =
+				data.hasAC !== undefined
+					? 1
+					: ((room as { has_ac?: number }).has_ac ?? 0);
+			await updateClassRoomDb(
+				getPool(),
+				{
+					name: room.name ?? '',
+					class_room_type: classRoomType as ClassRoomType,
+					capacity,
+					has_projector: hasProjector,
+					has_ac: hasAC
+				},
+				{ id }
+			);
+			results.push({ id, ok: true });
+		}
+		if (results.some((r) => r.ok)) {
+			invalidateConflictAuditCache();
+			await getClassRooms().refresh();
+			await getAllClassRooms().refresh();
+		}
+		return { success: true, results };
+	}
+);

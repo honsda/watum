@@ -713,3 +713,99 @@ export const deleteGrade = command(v.string(), async (id) => {
 	await getGrades().refresh();
 	return { success: true };
 });
+
+export const bulkDeleteGrades = command(
+	v.pipe(v.string(), v.minLength(1)),
+	async (idsParam) => {
+		const user = await requireRole(['LECTURER', 'ADMIN']);
+		const ids = idsParam.split(',').filter(Boolean);
+		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+		for (const id of ids) {
+			const [grade] = await selectGrades(getPool(), {
+				where: [['id', '=', id]]
+			});
+			if (!grade) {
+				results.push({ id, ok: false, message: 'Nilai tidak ditemukan' });
+				continue;
+			}
+			if (user.role === 'LECTURER') {
+				const [enrollment] = await selectEnrollments(getPool(), {
+					where: [['id', '=', grade.enrollment_id ?? '']]
+				});
+				if (enrollment?.lecturer_id !== user.lecturerId) {
+					results.push({ id, ok: false, message: 'Bukan mata kuliah Anda' });
+					continue;
+				}
+			}
+			await deleteGradeDb(getPool(), { id });
+			results.push({ id, ok: true });
+		}
+		if (results.some((r) => r.ok)) {
+			await getGrades().refresh();
+		}
+		return { success: true, results };
+	}
+);
+
+const optionalScore = () =>
+	v.optional(
+		v.pipe(
+			v.string(),
+			v.transform((s) => (s === '' ? undefined : Number(s))),
+			v.check(
+				(v) => v === undefined || (typeof v === 'number' && !isNaN(v) && v >= 0 && v <= 100),
+				'Nilai harus 0-100'
+			)
+		)
+	);
+
+export const bulkUpdateGrades = form(
+	v.object({
+		ids: v.pipe(v.string(), v.minLength(1)),
+		assignmentScore: optionalScore(),
+		midtermScore: optionalScore(),
+		finalScore: optionalScore()
+	}),
+	async (data) => {
+		const user = await requireRole(['LECTURER', 'ADMIN']);
+		const ids = data.ids.split(',').filter(Boolean);
+		if (!ids.length) throw error(400, 'Tidak ada nilai dipilih');
+		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+		await withTransaction(async (conn) => {
+			for (const id of ids) {
+				const [grade] = await selectGrades(conn, { where: [['id', '=', id]] });
+				if (!grade) {
+					results.push({ id, ok: false, message: 'Nilai tidak ditemukan' });
+					continue;
+				}
+				const [enrollment] = await selectEnrollments(conn, {
+					where: [['id', '=', grade.enrollment_id ?? '']]
+				});
+				if (user.role === 'LECTURER' && enrollment?.lecturer_id !== user.lecturerId) {
+					results.push({ id, ok: false, message: 'Bukan mata kuliah Anda' });
+					continue;
+				}
+				const assignmentScore = data.assignmentScore ?? grade.assignment_score ?? 0;
+				const midtermScore = data.midtermScore ?? grade.midterm_score ?? 0;
+				const finalScore = data.finalScore ?? grade.final_score ?? 0;
+				const { total, letter } = calculateGrade(assignmentScore, midtermScore, finalScore);
+				await updateGradeDb(
+					conn,
+					{
+						assignment_score: assignmentScore,
+						midterm_score: midtermScore,
+						final_score: finalScore,
+						total_score: total,
+						letter_grade: letter
+					},
+					{ id }
+				);
+				results.push({ id, ok: true });
+			}
+		});
+		if (results.some((r) => r.ok)) {
+			await getGrades().refresh();
+		}
+		return { success: true, results };
+	}
+);
