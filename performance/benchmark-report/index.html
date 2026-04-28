@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Watum Benchmark Report</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;margin:2rem;background:#f5f5f5}
+h1{color:#333}table{width:100%;border-collapse:collapse;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+th,td{padding:.75rem 1rem;text-align:right;border-bottom:1px solid #eee}
+th{background:#2c3e50;color:#fff}td:first-child,th:first-child{text-align:left}
+tr:hover{background:#f8f9fa}.good{color:#27ae60;font-weight:600}
+.warn{color:#f39c12;font-weight:600}.bad{color:#e74c3c;font-weight:600}
+.summary{background:#fff;padding:1rem;margin-bottom:1rem;border-radius:4px}
+</style></head><body>
+<h1>Watum Benchmark Report</h1>
+<div class="summary">
+<p><strong>Host:</strong> http://localhost:4173</p>
+<p><strong>Generated:</strong> 2026-04-26T03:37:12.737Z</p>
+</div>
+<table><thead><tr>
+<th>Transaction</th><th>Samples</th><th>Errors</th><th>Error %</th>
+<th>Throughput</th><th>Mean</th><th>Median</th><th>Min</th><th>Max</th><th>P90</th><th>P95</th><th>P99</th>
+</tr></thead><tbody><tr>
+        <td>Login User</td>
+        <td>1</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.13</td>
+        <td class="warn">246.99</td>
+        <td>246.99</td>
+        <td>246.99</td>
+        <td>246.99</td>
+        <td>246.99</td>
+        <td>246.99</td>
+        <td>246.99</td>
+      </tr><tr>
+        <td>Login Admin User</td>
+        <td>1</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.13</td>
+        <td class="warn">301.15</td>
+        <td>301.15</td>
+        <td>301.15</td>
+        <td>301.15</td>
+        <td>301.15</td>
+        <td>301.15</td>
+        <td>301.15</td>
+      </tr><tr>
+        <td>Refresh Access Token</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="good">92.22</td>
+        <td>92.22</td>
+        <td>40.92</td>
+        <td>143.52</td>
+        <td>143.52</td>
+        <td>143.52</td>
+        <td>143.52</td>
+      </tr><tr>
+        <td>Get Current User</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="good">71.07</td>
+        <td>71.07</td>
+        <td>70.52</td>
+        <td>71.62</td>
+        <td>71.62</td>
+        <td>71.62</td>
+        <td>71.62</td>
+      </tr><tr>
+        <td>Get Courses</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="warn">108.86</td>
+        <td>108.86</td>
+        <td>107.78</td>
+        <td>109.95</td>
+        <td>109.95</td>
+        <td>109.95</td>
+        <td>109.95</td>
+      </tr><tr>
+        <td>Get Students</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="warn">154.54</td>
+        <td>154.54</td>
+        <td>141.23</td>
+        <td>167.86</td>
+        <td>167.86</td>
+        <td>167.86</td>
+        <td>167.86</td>
+      </tr><tr>
+        <td>Update Course Temp 01</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="warn">438.30</td>
+        <td>438.30</td>
+        <td>367.80</td>
+        <td>508.80</td>
+        <td>508.80</td>
+        <td>508.80</td>
+        <td>508.80</td>
+      </tr><tr>
+        <td>Get Enrollments</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="warn">110.10</td>
+        <td>110.10</td>
+        <td>109.63</td>
+        <td>110.58</td>
+        <td>110.58</td>
+        <td>110.58</td>
+        <td>110.58</td>
+      </tr><tr>
+        <td>Get Courses After Temp Update 01</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="warn">108.90</td>
+        <td>108.90</td>
+        <td>107.06</td>
+        <td>110.75</td>
+        <td>110.75</td>
+        <td>110.75</td>
+        <td>110.75</td>
+      </tr><tr>
+        <td>Get Grades</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="warn">112.91</td>
+        <td>112.91</td>
+        <td>111.66</td>
+        <td>114.16</td>
+        <td>114.16</td>
+        <td>114.16</td>
+        <td>114.16</td>
+      </tr><tr>
+        <td>User Operation Flow</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="bad">557.92</td>
+        <td>557.92</td>
+        <td>544.79</td>
+        <td>571.06</td>
+        <td>571.06</td>
+        <td>571.06</td>
+        <td>571.06</td>
+      </tr><tr>
+        <td>Restore Course 01</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="warn">399.58</td>
+        <td>399.58</td>
+        <td>393.22</td>
+        <td>405.94</td>
+        <td>405.94</td>
+        <td>405.94</td>
+        <td>405.94</td>
+      </tr><tr>
+        <td>Update Course Temp 02</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="warn">372.46</td>
+        <td>372.46</td>
+        <td>366.18</td>
+        <td>378.73</td>
+        <td>378.73</td>
+        <td>378.73</td>
+        <td>378.73</td>
+      </tr><tr>
+        <td>Get Courses After Temp Update 02</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="warn">111.38</td>
+        <td>111.38</td>
+        <td>110.82</td>
+        <td>111.93</td>
+        <td>111.93</td>
+        <td>111.93</td>
+        <td>111.93</td>
+      </tr><tr>
+        <td>Restore Course 02</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="warn">372.94</td>
+        <td>372.94</td>
+        <td>370.00</td>
+        <td>375.88</td>
+        <td>375.88</td>
+        <td>375.88</td>
+        <td>375.88</td>
+      </tr><tr>
+        <td>Update Course Temp 03</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="warn">363.21</td>
+        <td>363.21</td>
+        <td>361.10</td>
+        <td>365.32</td>
+        <td>365.32</td>
+        <td>365.32</td>
+        <td>365.32</td>
+      </tr><tr>
+        <td>Get Courses After Temp Update 03</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="warn">110.94</td>
+        <td>110.94</td>
+        <td>107.57</td>
+        <td>114.32</td>
+        <td>114.32</td>
+        <td>114.32</td>
+        <td>114.32</td>
+      </tr><tr>
+        <td>Restore Course 03</td>
+        <td>2</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.26</td>
+        <td class="warn">361.51</td>
+        <td>361.51</td>
+        <td>361.45</td>
+        <td>361.57</td>
+        <td>361.57</td>
+        <td>361.57</td>
+        <td>361.57</td>
+      </tr></tbody></table>
+</body></html>

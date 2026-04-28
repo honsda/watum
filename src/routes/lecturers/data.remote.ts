@@ -241,38 +241,35 @@ export const deleteLecturer = command(v.string(), async (id) => {
 	return { success: true };
 });
 
-export const bulkDeleteLecturers = command(
-	v.pipe(v.string(), v.minLength(1)),
-	async (idsParam) => {
-		await requireRole(['ADMIN']);
-		const ids = idsParam.split(',').filter(Boolean);
-		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
-		await withTransaction(async (conn) => {
-			for (const id of ids) {
-				const [lecturer] = await selectLecturers(conn, {
-					where: [['id', '=', id]]
-				});
-				if (!lecturer) {
-					results.push({ id, ok: false, message: 'Dosen tidak ditemukan' });
-					continue;
-				}
-				if ((lecturer.schedule_count ?? 0) > 0) {
-					results.push({ id, ok: false, message: 'Masih memiliki jadwal' });
-					continue;
-				}
-				await deleteLecturerDb(conn, { id });
-				const [user] = await selectUsers(conn, { where: [['lecturer_id', '=', id]] });
-				if (user?.id) await deleteUser(conn, { id: user.id });
-				results.push({ id, ok: true });
+export const bulkDeleteLecturers = command(v.pipe(v.string(), v.minLength(1)), async (idsParam) => {
+	await requireRole(['ADMIN']);
+	const ids = idsParam.split(',').filter(Boolean);
+	const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+	await withTransaction(async (conn) => {
+		for (const id of ids) {
+			const [lecturer] = await selectLecturers(conn, {
+				where: [['id', '=', id]]
+			});
+			if (!lecturer) {
+				results.push({ id, ok: false, message: 'Dosen tidak ditemukan' });
+				continue;
 			}
-		});
-		if (results.some((r) => r.ok)) {
-			invalidateConflictAuditCache();
-			await getLecturers().refresh();
+			if ((lecturer.schedule_count ?? 0) > 0) {
+				results.push({ id, ok: false, message: 'Masih memiliki jadwal' });
+				continue;
+			}
+			await deleteLecturerDb(conn, { id });
+			const [user] = await selectUsers(conn, { where: [['lecturer_id', '=', id]] });
+			if (user?.id) await deleteUser(conn, { id: user.id });
+			results.push({ id, ok: true });
 		}
-		return { success: true, results };
+	});
+	if (results.some((r) => r.ok)) {
+		invalidateConflictAuditCache();
+		await getLecturers().refresh();
 	}
-);
+	return { success: true, results };
+});
 
 export const bulkUpdateLecturers = form(
 	v.object({

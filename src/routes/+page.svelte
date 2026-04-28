@@ -11,8 +11,6 @@
 		BookOpen,
 		Building2,
 		CalendarDays,
-		ChevronLeft,
-		ChevronRight,
 		ClipboardList,
 		DoorClosed,
 		GraduationCap,
@@ -4657,37 +4655,6 @@
 									<h2>Kalender kuliah mingguan</h2>
 									<p class="calendar-week-label">{calendarWeekLabel}</p>
 								</div>
-								<div class="calendar-toolbar">
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										size="sm"
-										disabled
-										onclick={() => (calendarWeekOffset -= 1)}
-									>
-										<ChevronLeft size={16} />
-										<span>Minggu lalu</span>
-									</Button>
-									<Button
-										class="ghost-button"
-										variant="outline"
-										size="sm"
-										disabled
-										onclick={() => (calendarWeekOffset = 0)}
-									>
-										Minggu dasar
-									</Button>
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										size="sm"
-										disabled
-										onclick={() => (calendarWeekOffset += 1)}
-									>
-										<span>Minggu depan</span>
-										<ChevronRight size={16} />
-									</Button>
-								</div>
 							</header>
 
 							<section class="schedule-filter-panel">
@@ -5610,606 +5577,595 @@
 									</div>
 								</section>
 							{/if}
+							<div class="builder-progress" aria-label="Tahapan penjadwalan">
+								{#each builderSteps as step, index (step.id)}
+									<button
+										type="button"
+										class={`builder-progress-item ${stepState(step.id)}`}
+										onclick={() => setBuilderStep(step.id)}
+										disabled={!canOpenBuilderStep(step.id)}
+									>
+										<span class="builder-progress-index">{index + 1}</span>
+										<span class="builder-progress-copy">
+											<strong>{step.label}</strong>
+											<span>{step.hint}</span>
+										</span>
+									</button>
+								{/each}
+							</div>
 
-							{#if currentUser.current.role !== 'STUDENT'}
-								<div class="builder-progress" aria-label="Tahapan penjadwalan">
-									{#each builderSteps as step, index (step.id)}
-										<button
-											type="button"
-											class={`builder-progress-item ${stepState(step.id)}`}
-											onclick={() => setBuilderStep(step.id)}
-											disabled={!canOpenBuilderStep(step.id)}
-										>
-											<span class="builder-progress-index">{index + 1}</span>
-											<span class="builder-progress-copy">
-												<strong>{step.label}</strong>
-												<span>{step.hint}</span>
-											</span>
-										</button>
-									{/each}
-								</div>
+							<form
+								class="builder-form"
+								{...selectedEnrollmentId ? updateEnrollmentEnhance : createEnrollmentEnhance}
+							>
+								<input
+									type="hidden"
+									{...selectedEnrollmentId
+										? updateEnrollment.fields.timezone.as('text')
+										: createEnrollment.fields.timezone.as('text')}
+									value={enrollmentDraft.timezone}
+								/>
 
-								<form
-									class="builder-form"
-									{...selectedEnrollmentId ? updateEnrollmentEnhance : createEnrollmentEnhance}
-								>
+								{#if selectedEnrollmentId}
 									<input
 										type="hidden"
-										{...selectedEnrollmentId
-											? updateEnrollment.fields.timezone.as('text')
-											: createEnrollment.fields.timezone.as('text')}
-										value={enrollmentDraft.timezone}
+										{...updateEnrollment.fields.id.as('text')}
+										value={enrollmentDraft.id}
 									/>
+								{/if}
 
-									{#if selectedEnrollmentId}
-										<input
-											type="hidden"
-											{...updateEnrollment.fields.id.as('text')}
-											value={enrollmentDraft.id}
-										/>
-									{/if}
+								<section class="builder-snapshot">
+									<div>
+										<span>Peserta</span>
+										<strong>{selectedDraftStudent}</strong>
+										<p>{selectedDraftCourse}</p>
+									</div>
+									<div>
+										<span>Waktu</span>
+										<strong>{draftTimeSummary}</strong>
+										<p>{availableRoomOptions.length} ruang tersedia untuk slot ini</p>
+									</div>
+									<div>
+										<span>Ruang</span>
+										<strong>{selectedDraftRoom}</strong>
+										<p>{conflictCount} bentrok masih tercatat di kalender aktif</p>
+									</div>
+								</section>
 
-									<section class="builder-snapshot">
+								{#if builderConflictCards.length}
+									<details class="support-panel builder-conflict-panel">
+										<summary class="builder-conflict-summary">
+											<div>
+												<h4>Daftar bentrok</h4>
+												<p class="detail-hint">
+													Buka daftar hanya saat perlu meninjau grup bentrok.
+												</p>
+											</div>
+											<Badge variant="secondary">{builderConflictCards.length} grup</Badge>
+										</summary>
+										<div class="builder-conflict-list">
+											{#each builderConflictCards as group (group.id)}
+												<article
+													class={`builder-conflict-card ${group.selected ? 'selected' : ''}`}
+													style={conflictToneVariables(group.representative.conflictTone ?? null)}
+												>
+													<div class="builder-conflict-card-copy">
+														<strong>{group.label}</strong>
+														<span>{group.representative.course}</span>
+														{#if group.details}
+															<small>{conflictGroupMetaCopy(group.details)}</small>
+														{/if}
+													</div>
+													<div class="builder-conflict-card-actions">
+														<Button
+															class="ghost-button"
+															variant="ghost"
+															size="sm"
+															onclick={() => openBuilderForSchedule(group.representative)}
+														>
+															Buka di penjadwalan
+														</Button>
+														<Button
+															class="ghost-button"
+															variant="ghost"
+															size="sm"
+															onclick={() => openCalendarForSchedule(group.representative)}
+														>
+															Buka di kalender
+														</Button>
+													</div>
+												</article>
+											{/each}
+										</div>
+									</details>
+								{/if}
+
+								<section class:hidden-stage={builderStep !== 'participant'} class="builder-section">
+									<div class="builder-section-head">
+										<h4>Pilih peserta dan mata kuliah</h4>
+										<p class="builder-note">
+											Pilih mahasiswa dan mata kuliah dulu agar cek waktu dan ruang tetap relevan.
+										</p>
+									</div>
+									<div class="editor-grid">
+										<label>
+											<span>Mahasiswa</span>
+											<input
+												type="hidden"
+												{...selectedEnrollmentId
+													? updateEnrollment.fields.studentId.as('text')
+													: createEnrollment.fields.studentId.as('text')}
+												value={enrollmentDraft.studentId}
+											/>
+											<div
+												class="combobox-wrap"
+												onfocusout={(e) => {
+													if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+														studentPickerOpen = false;
+													}
+												}}
+											>
+												<input
+													type="text"
+													class="combobox-input"
+													placeholder="Cari mahasiswa..."
+													value={enrollmentDraft.studentId
+														? `${selectedDraftStudent} • ${enrollmentDraft.studentId}`
+														: studentPickerSearch}
+													oninput={(e) => {
+														studentPickerSearch = (e.currentTarget as HTMLInputElement).value;
+														if (enrollmentDraft.studentId) enrollmentDraft.studentId = '';
+														studentPickerOpen = true;
+														queueStudentPickerRefresh();
+													}}
+													onfocus={() => {
+														studentPickerOpen = true;
+														queueStudentPickerRefresh(0);
+													}}
+												/>
+												{#if studentPickerIssue}
+													<p class="combobox-error">{studentPickerIssue}</p>
+												{:else if studentPickerOpen && studentPickerLoading && !filteredStudentsForPicker.length}
+													<p class="combobox-empty">Memuat mahasiswa...</p>
+												{:else if studentPickerOpen && filteredStudentsForPicker.length}
+													<div class="combobox-dropdown" role="listbox">
+														{#each filteredStudentsForPicker as item (item.id)}
+															<button
+																type="button"
+																role="option"
+																aria-selected={enrollmentDraft.studentId === item.id}
+																class="combobox-option"
+																class:active={enrollmentDraft.studentId === item.id}
+																onmousedown={(e) => {
+																	e.preventDefault();
+																	enrollmentDraft.studentId = item.id ?? '';
+																	studentPickerSearch = '';
+																	studentPickerOpen = false;
+																}}
+															>
+																<strong>{item.name}</strong>
+																<span>{item.id}</span>
+															</button>
+														{/each}
+														{#if studentPickerHasMore || studentPickerLoading}
+															<div class="combobox-footer">
+																<span class="combobox-meta">
+																	{studentPickerOptions.length} mahasiswa dimuat
+																</span>
+																<button
+																	type="button"
+																	class="combobox-more"
+																	disabled={!studentPickerHasMore || studentPickerLoading}
+																	onmousedown={(e) => {
+																		e.preventDefault();
+																		loadMoreStudentPickerOptions();
+																	}}
+																>
+																	{studentPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
+																</button>
+															</div>
+														{/if}
+													</div>
+												{:else if studentPickerOpen}
+													<p class="combobox-empty">Mahasiswa tidak ditemukan.</p>
+												{/if}
+											</div>
+										</label>
+
+										<label>
+											<span>Mata kuliah</span>
+											<input
+												type="hidden"
+												{...selectedEnrollmentId
+													? updateEnrollment.fields.courseId.as('text')
+													: createEnrollment.fields.courseId.as('text')}
+												value={enrollmentDraft.courseId}
+											/>
+											<div
+												class="combobox-wrap"
+												onfocusout={(e) => {
+													if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+														coursePickerOpen = false;
+													}
+												}}
+											>
+												<input
+													type="text"
+													class="combobox-input"
+													placeholder="Cari mata kuliah..."
+													value={enrollmentDraft.courseId
+														? `${selectedDraftCourse} • ${coursePickerLookup.get(enrollmentDraft.courseId)?.lecturer_name ?? selectedEnrollmentRecord?.lecturer_name ?? ''}`
+														: coursePickerSearch}
+													oninput={(e) => {
+														coursePickerSearch = (e.currentTarget as HTMLInputElement).value;
+														if (enrollmentDraft.courseId) enrollmentDraft.courseId = '';
+														coursePickerOpen = true;
+														queueCoursePickerRefresh();
+													}}
+													onfocus={() => {
+														coursePickerOpen = true;
+														queueCoursePickerRefresh(0);
+													}}
+												/>
+												{#if coursePickerIssue}
+													<p class="combobox-error">{coursePickerIssue}</p>
+												{:else if coursePickerOpen && coursePickerLoading && !filteredCoursesForPicker.length}
+													<p class="combobox-empty">Memuat mata kuliah...</p>
+												{:else if coursePickerOpen && filteredCoursesForPicker.length}
+													<div class="combobox-dropdown" role="listbox">
+														{#each filteredCoursesForPicker as item (item.id)}
+															<button
+																type="button"
+																role="option"
+																aria-selected={enrollmentDraft.courseId === item.id}
+																class="combobox-option"
+																class:active={enrollmentDraft.courseId === item.id}
+																onmousedown={(e) => {
+																	e.preventDefault();
+																	enrollmentDraft.courseId = item.id ?? '';
+																	coursePickerSearch = '';
+																	coursePickerOpen = false;
+																}}
+															>
+																<strong>{item.name}</strong>
+																<span>{item.id} • {item.lecturer_name}</span>
+															</button>
+														{/each}
+														{#if coursePickerHasMore || coursePickerLoading}
+															<div class="combobox-footer">
+																<span class="combobox-meta">
+																	{coursePickerOptions.length} mata kuliah dimuat
+																</span>
+																<button
+																	type="button"
+																	class="combobox-more"
+																	disabled={!coursePickerHasMore || coursePickerLoading}
+																	onmousedown={(e) => {
+																		e.preventDefault();
+																		loadMoreCoursePickerOptions();
+																	}}
+																>
+																	{coursePickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
+																</button>
+															</div>
+														{/if}
+													</div>
+												{:else if coursePickerOpen}
+													<p class="combobox-empty">Mata kuliah tidak ditemukan.</p>
+												{/if}
+											</div>
+										</label>
+									</div>
+									<div class="builder-section-actions">
+										<p class="editor-note">
+											Langkah berikutnya akan menampilkan slot dan ruang yang masih bisa dipakai.
+										</p>
+										<Button
+											type="button"
+											class="primary-button"
+											disabled={!participantStepReady}
+											onclick={advanceBuilderStep}>Lanjut ke jadwal</Button
+										>
+									</div>
+								</section>
+
+								<section class:hidden-stage={builderStep !== 'time'} class="builder-section">
+									<div class="builder-section-head">
+										<h4>Tentukan hari dan jam</h4>
+										<p class="builder-note">
+											Masukkan hari dan jam final. Daftar ruang akan mengikuti slot ini.
+										</p>
+									</div>
+									<div class="editor-grid">
+										<label>
+											<span>Hari</span>
+											<select
+												{...selectedEnrollmentId
+													? updateEnrollment.fields.day.as('select')
+													: createEnrollment.fields.day.as('select')}
+												value={enrollmentDraft.day}
+											>
+												{#each days as day (day)}
+													<option value={day}>{DAY_LABELS[day]}</option>
+												{/each}
+											</select>
+										</label>
+
+										<label>
+											<span>Mulai</span>
+											<input
+												type="datetime-local"
+												{...selectedEnrollmentId
+													? updateEnrollment.fields.startTime.as('text')
+													: createEnrollment.fields.startTime.as('text')}
+												value={enrollmentDraft.startTime}
+											/>
+										</label>
+
+										<label>
+											<span>Selesai</span>
+											<input
+												type="datetime-local"
+												{...selectedEnrollmentId
+													? updateEnrollment.fields.endTime.as('text')
+													: createEnrollment.fields.endTime.as('text')}
+												value={enrollmentDraft.endTime}
+											/>
+										</label>
+
+										<label>
+											<span>Semester</span>
+											<input
+												{...selectedEnrollmentId
+													? updateEnrollment.fields.semester.as('text')
+													: createEnrollment.fields.semester.as('text')}
+												value={enrollmentDraft.semester}
+											/>
+										</label>
+
+										<label>
+											<span>Tahun akademik</span>
+											<input
+												{...selectedEnrollmentId
+													? updateEnrollment.fields.academicYear.as('text')
+													: createEnrollment.fields.academicYear.as('text')}
+												value={enrollmentDraft.academicYear}
+											/>
+										</label>
+									</div>
+									<div class="builder-section-actions split">
+										<p class="editor-note">
+											Jika jam berubah, periksa lagi pilihan ruang di langkah berikutnya.
+										</p>
+										<div class="builder-inline-actions">
+											<Button
+												type="button"
+												variant="ghost"
+												class="ghost-button"
+												onclick={retreatBuilderStep}>Kembali</Button
+											>
+											<Button
+												type="button"
+												class="primary-button"
+												disabled={!timeStepReady}
+												onclick={advanceBuilderStep}>Lanjut ke ruang</Button
+											>
+										</div>
+									</div>
+								</section>
+
+								<section class:hidden-stage={builderStep !== 'room'} class="builder-section">
+									<div class="builder-section-head">
+										<h4>Pilih ruang yang tersedia</h4>
+										<p class="builder-note">
+											Pilih satu ruang yang tersedia untuk slot ini, lalu lanjut ke langkah tinjau.
+										</p>
+									</div>
+									<div class="builder-room-stage">
+										<div class="editor-grid builder-room-grid">
+											<label>
+												<span>Ruang</span>
+												<input
+													type="hidden"
+													{...selectedEnrollmentId
+														? updateEnrollment.fields.classRoomId.as('text')
+														: createEnrollment.fields.classRoomId.as('text')}
+													value={enrollmentDraft.classRoomId}
+												/>
+												<div
+													class="combobox-wrap"
+													onfocusout={(e) => {
+														if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+															roomPickerOpen = false;
+														}
+													}}
+												>
+													<input
+														type="text"
+														class="combobox-input"
+														placeholder="Cari ruang tersedia..."
+														value={enrollmentDraft.classRoomId
+															? selectedDraftRoom
+															: roomPickerSearch}
+														oninput={(e) => {
+															roomPickerSearch = (e.currentTarget as HTMLInputElement).value;
+															if (enrollmentDraft.classRoomId) enrollmentDraft.classRoomId = '';
+															queueRoomPickerRefresh();
+															roomPickerOpen = true;
+														}}
+														onfocus={() => {
+															roomPickerOpen = true;
+															if (!roomPickerOptions.length) {
+																queueRoomPickerRefresh(0);
+															}
+														}}
+													/>
+													{#if roomPickerIssue}
+														<p class="combobox-error">{roomPickerIssue}</p>
+													{:else if roomPickerOpen && roomPickerLoading && !roomPickerOptions.length}
+														<p class="combobox-empty">Memuat ruang kelas...</p>
+													{:else if roomPickerOpen}
+														<div class="combobox-dropdown" role="listbox">
+															{#each filteredRoomsForPicker as room (room.id)}
+																<button
+																	type="button"
+																	role="option"
+																	aria-selected={enrollmentDraft.classRoomId === room.id}
+																	class="combobox-option"
+																	class:active={enrollmentDraft.classRoomId === room.id}
+																	onmousedown={(e) => {
+																		e.preventDefault();
+																		enrollmentDraft.classRoomId = room.id ?? '';
+																		roomPickerSearch = '';
+																		roomPickerOpen = false;
+																	}}
+																>
+																	<strong>{room.name}</strong>
+																	<span
+																		>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span
+																	>
+																</button>
+															{/each}
+															{#if !filteredRoomsForPicker.length && !roomPickerLoading}
+																<p class="combobox-empty">Ruang tidak ditemukan untuk slot ini.</p>
+															{/if}
+															{#if roomPickerHasMore || roomPickerLoading}
+																<div class="combobox-footer">
+																	<span class="combobox-meta">
+																		{filteredRoomsForPicker.length} ruang dimuat
+																	</span>
+																	<button
+																		type="button"
+																		class="combobox-more"
+																		disabled={!roomPickerHasMore || roomPickerLoading}
+																		onmousedown={(e) => {
+																			e.preventDefault();
+																			loadMoreRoomPickerOptions();
+																		}}
+																	>
+																		{roomPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
+																	</button>
+																</div>
+															{/if}
+														</div>
+													{/if}
+												</div>
+											</label>
+										</div>
+
+										<section class="support-panel builder-support">
+											<h4>Ruang tersedia untuk slot ini</h4>
+											<div class="support-list">
+												{#if filteredRoomsForPicker.length}
+													{#each filteredRoomsForPicker as room (room.id)}
+														<div>
+															<strong>{room.name}</strong>
+															<span
+																>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span
+															>
+														</div>
+													{/each}
+													{#if roomPickerHasMore || roomPickerLoading}
+														<div class="combobox-footer support-footer">
+															<button
+																type="button"
+																class="combobox-more"
+																disabled={!roomPickerHasMore || roomPickerLoading}
+																onclick={() => loadMoreRoomPickerOptions()}
+															>
+																{roomPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
+															</button>
+														</div>
+													{/if}
+												{:else}
+													<p class="empty-copy">
+														Belum ada ruang yang tersedia untuk slot ini. Ubah jadwal atau pilih
+														slot lain.
+													</p>
+													{#if roomPickerHasMore || roomPickerLoading}
+														<div class="combobox-footer support-footer">
+															<button
+																type="button"
+																class="combobox-more"
+																disabled={!roomPickerHasMore || roomPickerLoading}
+																onclick={() => loadMoreRoomPickerOptions()}
+															>
+																{roomPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
+															</button>
+														</div>
+													{/if}
+												{/if}
+											</div>
+										</section>
+									</div>
+									<div class="builder-section-actions split">
+										<p class="editor-note">
+											Jika daftar ruang kosong, ubah jadwal lebih dulu sebelum melanjutkan.
+										</p>
+										<div class="builder-inline-actions">
+											<Button
+												type="button"
+												variant="ghost"
+												class="ghost-button"
+												onclick={retreatBuilderStep}>Kembali</Button
+											>
+											<Button
+												type="button"
+												class="primary-button"
+												disabled={!roomStepReady}
+												onclick={advanceBuilderStep}>Tinjau sebelum simpan</Button
+											>
+										</div>
+									</div>
+								</section>
+
+								<section
+									class:hidden-stage={builderStep !== 'review'}
+									class="builder-section builder-review"
+								>
+									<div class="builder-section-head">
+										<h4>Tinjau sebelum disimpan</h4>
+										<p class="builder-note">
+											Pastikan peserta, slot, dan ruang sudah benar sebelum disimpan.
+										</p>
+									</div>
+									<div class="detail-lines builder-review-grid">
 										<div>
-											<span>Peserta</span>
+											<span>Mahasiswa</span>
 											<strong>{selectedDraftStudent}</strong>
-											<p>{selectedDraftCourse}</p>
 										</div>
 										<div>
-											<span>Waktu</span>
+											<span>Mata kuliah</span>
+											<strong>{selectedDraftCourse}</strong>
+										</div>
+										<div>
+											<span>Slot kuliah</span>
 											<strong>{draftTimeSummary}</strong>
-											<p>{availableRoomOptions.length} ruang tersedia untuk slot ini</p>
 										</div>
 										<div>
 											<span>Ruang</span>
 											<strong>{selectedDraftRoom}</strong>
-											<p>{conflictCount} bentrok masih tercatat di kalender aktif</p>
 										</div>
-									</section>
-
-									{#if builderConflictCards.length}
-										<details class="support-panel builder-conflict-panel">
-											<summary class="builder-conflict-summary">
-												<div>
-													<h4>Daftar bentrok</h4>
-													<p class="detail-hint">
-														Buka daftar hanya saat perlu meninjau grup bentrok.
-													</p>
-												</div>
-												<Badge variant="secondary">{builderConflictCards.length} grup</Badge>
-											</summary>
-											<div class="builder-conflict-list">
-												{#each builderConflictCards as group (group.id)}
-													<article
-														class={`builder-conflict-card ${group.selected ? 'selected' : ''}`}
-														style={conflictToneVariables(group.representative.conflictTone ?? null)}
-													>
-														<div class="builder-conflict-card-copy">
-															<strong>{group.label}</strong>
-															<span>{group.representative.course}</span>
-															{#if group.details}
-																<small>{conflictGroupMetaCopy(group.details)}</small>
-															{/if}
-														</div>
-														<div class="builder-conflict-card-actions">
-															<Button
-																class="ghost-button"
-																variant="ghost"
-																size="sm"
-																onclick={() => openBuilderForSchedule(group.representative)}
-															>
-																Buka di penjadwalan
-															</Button>
-															<Button
-																class="ghost-button"
-																variant="ghost"
-																size="sm"
-																onclick={() => openCalendarForSchedule(group.representative)}
-															>
-																Buka di kalender
-															</Button>
-														</div>
-													</article>
-												{/each}
-											</div>
-										</details>
-									{/if}
-
-									<section
-										class:hidden-stage={builderStep !== 'participant'}
-										class="builder-section"
-									>
-										<div class="builder-section-head">
-											<h4>Pilih peserta dan mata kuliah</h4>
-											<p class="builder-note">
-												Pilih mahasiswa dan mata kuliah dulu agar cek waktu dan ruang tetap relevan.
-											</p>
-										</div>
-										<div class="editor-grid">
-											<label>
-												<span>Mahasiswa</span>
-												<input
-													type="hidden"
-													{...selectedEnrollmentId
-														? updateEnrollment.fields.studentId.as('text')
-														: createEnrollment.fields.studentId.as('text')}
-													value={enrollmentDraft.studentId}
-												/>
-												<div
-													class="combobox-wrap"
-													onfocusout={(e) => {
-														if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-															studentPickerOpen = false;
-														}
-													}}
-												>
-													<input
-														type="text"
-														class="combobox-input"
-														placeholder="Cari mahasiswa..."
-														value={enrollmentDraft.studentId
-															? `${selectedDraftStudent} • ${enrollmentDraft.studentId}`
-															: studentPickerSearch}
-														oninput={(e) => {
-															studentPickerSearch = (e.currentTarget as HTMLInputElement).value;
-															if (enrollmentDraft.studentId) enrollmentDraft.studentId = '';
-															studentPickerOpen = true;
-															queueStudentPickerRefresh();
-														}}
-														onfocus={() => {
-															studentPickerOpen = true;
-															queueStudentPickerRefresh(0);
-														}}
-													/>
-													{#if studentPickerIssue}
-														<p class="combobox-error">{studentPickerIssue}</p>
-													{:else if studentPickerOpen && studentPickerLoading && !filteredStudentsForPicker.length}
-														<p class="combobox-empty">Memuat mahasiswa...</p>
-													{:else if studentPickerOpen && filteredStudentsForPicker.length}
-														<div class="combobox-dropdown" role="listbox">
-															{#each filteredStudentsForPicker as item (item.id)}
-																<button
-																	type="button"
-																	role="option"
-																	aria-selected={enrollmentDraft.studentId === item.id}
-																	class="combobox-option"
-																	class:active={enrollmentDraft.studentId === item.id}
-																	onmousedown={(e) => {
-																		e.preventDefault();
-																		enrollmentDraft.studentId = item.id ?? '';
-																		studentPickerSearch = '';
-																		studentPickerOpen = false;
-																	}}
-																>
-																	<strong>{item.name}</strong>
-																	<span>{item.id}</span>
-																</button>
-															{/each}
-															{#if studentPickerHasMore || studentPickerLoading}
-																<div class="combobox-footer">
-																	<span class="combobox-meta">
-																		{studentPickerOptions.length} mahasiswa dimuat
-																	</span>
-																	<button
-																		type="button"
-																		class="combobox-more"
-																		disabled={!studentPickerHasMore || studentPickerLoading}
-																		onmousedown={(e) => {
-																			e.preventDefault();
-																			loadMoreStudentPickerOptions();
-																		}}
-																	>
-																		{studentPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
-																	</button>
-																</div>
-															{/if}
-														</div>
-													{:else if studentPickerOpen}
-														<p class="combobox-empty">Mahasiswa tidak ditemukan.</p>
-													{/if}
-												</div>
-											</label>
-
-											<label>
-												<span>Mata kuliah</span>
-												<input
-													type="hidden"
-													{...selectedEnrollmentId
-														? updateEnrollment.fields.courseId.as('text')
-														: createEnrollment.fields.courseId.as('text')}
-													value={enrollmentDraft.courseId}
-												/>
-												<div
-													class="combobox-wrap"
-													onfocusout={(e) => {
-														if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-															coursePickerOpen = false;
-														}
-													}}
-												>
-													<input
-														type="text"
-														class="combobox-input"
-														placeholder="Cari mata kuliah..."
-														value={enrollmentDraft.courseId
-															? `${selectedDraftCourse} • ${coursePickerLookup.get(enrollmentDraft.courseId)?.lecturer_name ?? selectedEnrollmentRecord?.lecturer_name ?? ''}`
-															: coursePickerSearch}
-														oninput={(e) => {
-															coursePickerSearch = (e.currentTarget as HTMLInputElement).value;
-															if (enrollmentDraft.courseId) enrollmentDraft.courseId = '';
-															coursePickerOpen = true;
-															queueCoursePickerRefresh();
-														}}
-														onfocus={() => {
-															coursePickerOpen = true;
-															queueCoursePickerRefresh(0);
-														}}
-													/>
-													{#if coursePickerIssue}
-														<p class="combobox-error">{coursePickerIssue}</p>
-													{:else if coursePickerOpen && coursePickerLoading && !filteredCoursesForPicker.length}
-														<p class="combobox-empty">Memuat mata kuliah...</p>
-													{:else if coursePickerOpen && filteredCoursesForPicker.length}
-														<div class="combobox-dropdown" role="listbox">
-															{#each filteredCoursesForPicker as item (item.id)}
-																<button
-																	type="button"
-																	role="option"
-																	aria-selected={enrollmentDraft.courseId === item.id}
-																	class="combobox-option"
-																	class:active={enrollmentDraft.courseId === item.id}
-																	onmousedown={(e) => {
-																		e.preventDefault();
-																		enrollmentDraft.courseId = item.id ?? '';
-																		coursePickerSearch = '';
-																		coursePickerOpen = false;
-																	}}
-																>
-																	<strong>{item.name}</strong>
-																	<span>{item.id} • {item.lecturer_name}</span>
-																</button>
-															{/each}
-															{#if coursePickerHasMore || coursePickerLoading}
-																<div class="combobox-footer">
-																	<span class="combobox-meta">
-																		{coursePickerOptions.length} mata kuliah dimuat
-																	</span>
-																	<button
-																		type="button"
-																		class="combobox-more"
-																		disabled={!coursePickerHasMore || coursePickerLoading}
-																		onmousedown={(e) => {
-																			e.preventDefault();
-																			loadMoreCoursePickerOptions();
-																		}}
-																	>
-																		{coursePickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
-																	</button>
-																</div>
-															{/if}
-														</div>
-													{:else if coursePickerOpen}
-														<p class="combobox-empty">Mata kuliah tidak ditemukan.</p>
-													{/if}
-												</div>
-											</label>
-										</div>
-										<div class="builder-section-actions">
-											<p class="editor-note">
-												Langkah berikutnya akan menampilkan slot dan ruang yang masih bisa dipakai.
-											</p>
+									</div>
+									<div class="builder-review-note">
+										<p class="editor-note">
+											Jika masih ragu, kembali satu langkah lalu perbaiki waktu atau ruang sebelum
+											simpan.
+										</p>
+										<div class="builder-inline-actions">
 											<Button
 												type="button"
-												class="primary-button"
-												disabled={!participantStepReady}
-												onclick={advanceBuilderStep}>Lanjut ke jadwal</Button
+												variant="ghost"
+												class="ghost-button"
+												onclick={retreatBuilderStep}>Kembali</Button
+											>
+											<Button type="submit" class="primary-button builder-submit"
+												>{selectedEnrollmentId ? 'Simpan perubahan' : 'Simpan jadwal'}</Button
 											>
 										</div>
-									</section>
-
-									<section class:hidden-stage={builderStep !== 'time'} class="builder-section">
-										<div class="builder-section-head">
-											<h4>Tentukan hari dan jam</h4>
-											<p class="builder-note">
-												Masukkan hari dan jam final. Daftar ruang akan mengikuti slot ini.
-											</p>
-										</div>
-										<div class="editor-grid">
-											<label>
-												<span>Hari</span>
-												<select
-													{...selectedEnrollmentId
-														? updateEnrollment.fields.day.as('select')
-														: createEnrollment.fields.day.as('select')}
-													value={enrollmentDraft.day}
-												>
-													{#each days as day (day)}
-														<option value={day}>{DAY_LABELS[day]}</option>
-													{/each}
-												</select>
-											</label>
-
-											<label>
-												<span>Mulai</span>
-												<input
-													type="datetime-local"
-													{...selectedEnrollmentId
-														? updateEnrollment.fields.startTime.as('text')
-														: createEnrollment.fields.startTime.as('text')}
-													value={enrollmentDraft.startTime}
-												/>
-											</label>
-
-											<label>
-												<span>Selesai</span>
-												<input
-													type="datetime-local"
-													{...selectedEnrollmentId
-														? updateEnrollment.fields.endTime.as('text')
-														: createEnrollment.fields.endTime.as('text')}
-													value={enrollmentDraft.endTime}
-												/>
-											</label>
-
-											<label>
-												<span>Semester</span>
-												<input
-													{...selectedEnrollmentId
-														? updateEnrollment.fields.semester.as('text')
-														: createEnrollment.fields.semester.as('text')}
-													value={enrollmentDraft.semester}
-												/>
-											</label>
-
-											<label>
-												<span>Tahun akademik</span>
-												<input
-													{...selectedEnrollmentId
-														? updateEnrollment.fields.academicYear.as('text')
-														: createEnrollment.fields.academicYear.as('text')}
-													value={enrollmentDraft.academicYear}
-												/>
-											</label>
-										</div>
-										<div class="builder-section-actions split">
-											<p class="editor-note">
-												Jika jam berubah, periksa lagi pilihan ruang di langkah berikutnya.
-											</p>
-											<div class="builder-inline-actions">
-												<Button
-													type="button"
-													variant="ghost"
-													class="ghost-button"
-													onclick={retreatBuilderStep}>Kembali</Button
-												>
-												<Button
-													type="button"
-													class="primary-button"
-													disabled={!timeStepReady}
-													onclick={advanceBuilderStep}>Lanjut ke ruang</Button
-												>
-											</div>
-										</div>
-									</section>
-
-									<section class:hidden-stage={builderStep !== 'room'} class="builder-section">
-										<div class="builder-section-head">
-											<h4>Pilih ruang yang tersedia</h4>
-											<p class="builder-note">
-												Pilih satu ruang yang tersedia untuk slot ini, lalu lanjut ke langkah
-												tinjau.
-											</p>
-										</div>
-										<div class="builder-room-stage">
-											<div class="editor-grid builder-room-grid">
-												<label>
-													<span>Ruang</span>
-													<input
-														type="hidden"
-														{...selectedEnrollmentId
-															? updateEnrollment.fields.classRoomId.as('text')
-															: createEnrollment.fields.classRoomId.as('text')}
-														value={enrollmentDraft.classRoomId}
-													/>
-													<div
-														class="combobox-wrap"
-														onfocusout={(e) => {
-															if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-																roomPickerOpen = false;
-															}
-														}}
-													>
-														<input
-															type="text"
-															class="combobox-input"
-															placeholder="Cari ruang tersedia..."
-															value={enrollmentDraft.classRoomId
-																? selectedDraftRoom
-																: roomPickerSearch}
-															oninput={(e) => {
-																roomPickerSearch = (e.currentTarget as HTMLInputElement).value;
-																if (enrollmentDraft.classRoomId) enrollmentDraft.classRoomId = '';
-																queueRoomPickerRefresh();
-																roomPickerOpen = true;
-															}}
-															onfocus={() => {
-																roomPickerOpen = true;
-																if (!roomPickerOptions.length) {
-																	queueRoomPickerRefresh(0);
-																}
-															}}
-														/>
-														{#if roomPickerIssue}
-															<p class="combobox-error">{roomPickerIssue}</p>
-														{:else if roomPickerOpen && roomPickerLoading && !roomPickerOptions.length}
-															<p class="combobox-empty">Memuat ruang kelas...</p>
-														{:else if roomPickerOpen}
-															<div class="combobox-dropdown" role="listbox">
-																{#each filteredRoomsForPicker as room (room.id)}
-																	<button
-																		type="button"
-																		role="option"
-																		aria-selected={enrollmentDraft.classRoomId === room.id}
-																		class="combobox-option"
-																		class:active={enrollmentDraft.classRoomId === room.id}
-																		onmousedown={(e) => {
-																			e.preventDefault();
-																			enrollmentDraft.classRoomId = room.id ?? '';
-																			roomPickerSearch = '';
-																			roomPickerOpen = false;
-																		}}
-																	>
-																		<strong>{room.name}</strong>
-																		<span
-																			>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span
-																		>
-																	</button>
-																{/each}
-																{#if !filteredRoomsForPicker.length && !roomPickerLoading}
-																	<p class="combobox-empty">
-																		Ruang tidak ditemukan untuk slot ini.
-																	</p>
-																{/if}
-																{#if roomPickerHasMore || roomPickerLoading}
-																	<div class="combobox-footer">
-																		<span class="combobox-meta">
-																			{filteredRoomsForPicker.length} ruang dimuat
-																		</span>
-																		<button
-																			type="button"
-																			class="combobox-more"
-																			disabled={!roomPickerHasMore || roomPickerLoading}
-																			onmousedown={(e) => {
-																				e.preventDefault();
-																				loadMoreRoomPickerOptions();
-																			}}
-																		>
-																			{roomPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
-																		</button>
-																	</div>
-																{/if}
-															</div>
-														{/if}
-													</div>
-												</label>
-											</div>
-
-											<section class="support-panel builder-support">
-												<h4>Ruang tersedia untuk slot ini</h4>
-												<div class="support-list">
-													{#if filteredRoomsForPicker.length}
-														{#each filteredRoomsForPicker as room (room.id)}
-															<div>
-																<strong>{room.name}</strong>
-																<span
-																	>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span
-																>
-															</div>
-														{/each}
-														{#if roomPickerHasMore || roomPickerLoading}
-															<div class="combobox-footer support-footer">
-																<button
-																	type="button"
-																	class="combobox-more"
-																	disabled={!roomPickerHasMore || roomPickerLoading}
-																	onclick={() => loadMoreRoomPickerOptions()}
-																>
-																	{roomPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
-																</button>
-															</div>
-														{/if}
-													{:else}
-														<p class="empty-copy">
-															Belum ada ruang yang tersedia untuk slot ini. Ubah jadwal atau pilih
-															slot lain.
-														</p>
-														{#if roomPickerHasMore || roomPickerLoading}
-															<div class="combobox-footer support-footer">
-																<button
-																	type="button"
-																	class="combobox-more"
-																	disabled={!roomPickerHasMore || roomPickerLoading}
-																	onclick={() => loadMoreRoomPickerOptions()}
-																>
-																	{roomPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
-																</button>
-															</div>
-														{/if}
-													{/if}
-												</div>
-											</section>
-										</div>
-										<div class="builder-section-actions split">
-											<p class="editor-note">
-												Jika daftar ruang kosong, ubah jadwal lebih dulu sebelum melanjutkan.
-											</p>
-											<div class="builder-inline-actions">
-												<Button
-													type="button"
-													variant="ghost"
-													class="ghost-button"
-													onclick={retreatBuilderStep}>Kembali</Button
-												>
-												<Button
-													type="button"
-													class="primary-button"
-													disabled={!roomStepReady}
-													onclick={advanceBuilderStep}>Tinjau sebelum simpan</Button
-												>
-											</div>
-										</div>
-									</section>
-
-									<section
-										class:hidden-stage={builderStep !== 'review'}
-										class="builder-section builder-review"
-									>
-										<div class="builder-section-head">
-											<h4>Tinjau sebelum disimpan</h4>
-											<p class="builder-note">
-												Pastikan peserta, slot, dan ruang sudah benar sebelum disimpan.
-											</p>
-										</div>
-										<div class="detail-lines builder-review-grid">
-											<div>
-												<span>Mahasiswa</span>
-												<strong>{selectedDraftStudent}</strong>
-											</div>
-											<div>
-												<span>Mata kuliah</span>
-												<strong>{selectedDraftCourse}</strong>
-											</div>
-											<div>
-												<span>Slot kuliah</span>
-												<strong>{draftTimeSummary}</strong>
-											</div>
-											<div>
-												<span>Ruang</span>
-												<strong>{selectedDraftRoom}</strong>
-											</div>
-										</div>
-										<div class="builder-review-note">
-											<p class="editor-note">
-												Jika masih ragu, kembali satu langkah lalu perbaiki waktu atau ruang sebelum
-												simpan.
-											</p>
-											<div class="builder-inline-actions">
-												<Button
-													type="button"
-													variant="ghost"
-													class="ghost-button"
-													onclick={retreatBuilderStep}>Kembali</Button
-												>
-												<Button type="submit" class="primary-button builder-submit"
-													>{selectedEnrollmentId ? 'Simpan perubahan' : 'Simpan jadwal'}</Button
-												>
-											</div>
-										</div>
-									</section>
-								</form>
-							{:else}
-								<p class="empty-copy">Mahasiswa hanya dapat melihat jadwal dan KRS.</p>
-							{/if}
+									</div>
+								</section>
+							</form>
 						</section>
 					</div>
 				{/if}

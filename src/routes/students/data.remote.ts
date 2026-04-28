@@ -302,38 +302,35 @@ export const deleteStudent = command(v.string(), async (id) => {
 	return { success: true };
 });
 
-export const bulkDeleteStudents = command(
-	v.pipe(v.string(), v.minLength(1)),
-	async (idsParam) => {
-		await requireRole(['ADMIN']);
-		const ids = idsParam.split(',').filter(Boolean);
-		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
-		await withTransaction(async (conn) => {
-			for (const id of ids) {
-				const [student] = await selectStudents(conn, {
-					where: [['id', '=', id]]
-				});
-				if (!student) {
-					results.push({ id, ok: false, message: 'Mahasiswa tidak ditemukan' });
-					continue;
-				}
-				if ((student.enrollment_count ?? 0) > 0) {
-					results.push({ id, ok: false, message: 'Masih memiliki KRS' });
-					continue;
-				}
-				const [user] = await selectUsers(conn, { where: [['student_id', '=', id]] });
-				await deleteStudentDb(conn, { id });
-				if (user?.id) await deleteUser(conn, { id: user.id });
-				results.push({ id, ok: true });
+export const bulkDeleteStudents = command(v.pipe(v.string(), v.minLength(1)), async (idsParam) => {
+	await requireRole(['ADMIN']);
+	const ids = idsParam.split(',').filter(Boolean);
+	const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+	await withTransaction(async (conn) => {
+		for (const id of ids) {
+			const [student] = await selectStudents(conn, {
+				where: [['id', '=', id]]
+			});
+			if (!student) {
+				results.push({ id, ok: false, message: 'Mahasiswa tidak ditemukan' });
+				continue;
 			}
-		});
-		if (results.some((r) => r.ok)) {
-			invalidateConflictAuditCache();
-			await getStudents().refresh();
+			if ((student.enrollment_count ?? 0) > 0) {
+				results.push({ id, ok: false, message: 'Masih memiliki KRS' });
+				continue;
+			}
+			const [user] = await selectUsers(conn, { where: [['student_id', '=', id]] });
+			await deleteStudentDb(conn, { id });
+			if (user?.id) await deleteUser(conn, { id: user.id });
+			results.push({ id, ok: true });
 		}
-		return { success: true, results };
+	});
+	if (results.some((r) => r.ok)) {
+		invalidateConflictAuditCache();
+		await getStudents().refresh();
 	}
-);
+	return { success: true, results };
+});
 
 export const bulkUpdateStudents = form(
 	v.object({

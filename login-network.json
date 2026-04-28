@@ -1,0 +1,4 @@
+[POST] http://127.0.0.1:3000/auth/refresh => [204] No Content
+[POST] http://127.0.0.1:3000/auth/refresh => [204] No Content
+[POST] http://127.0.0.1:3000/_app/remote/4igj21/logoutUser => [200] OK
+[POST] http://127.0.0.1:3000/_app/remote/4igj21/loginUser => [200] OK

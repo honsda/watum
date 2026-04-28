@@ -17,7 +17,8 @@ export default defineConfig(
 			'src/lib/server/sql/**/*.ts',
 			'performance/report/**/*',
 			'performance/report-new/**/*',
-			'bench.js'
+			'bench.js',
+			'.kilo/**/*'
 		]
 	},
 	js.configs.recommended,
@@ -46,7 +47,8 @@ export default defineConfig(
 				projectService: true,
 				extraFileExtensions: ['.svelte'],
 				parser: ts.parser,
-				svelteConfig
+				svelteConfig,
+				tsconfigRootDir: import.meta.dirname
 			}
 		}
 	}

@@ -499,37 +499,34 @@ export const bulkUpdateUserRoles = form(
 	}
 );
 
-export const bulkDeleteUsers = command(
-	v.pipe(v.string(), v.minLength(1)),
-	async (idsParam) => {
-		await requireRole(['ADMIN']);
-		const ids = idsParam.split(',').filter(Boolean);
-		if (!ids.length) {
-			throw error(400, 'Tidak ada akun dipilih');
-		}
-		if (ids.length > 200) {
-			throw error(400, 'Maksimal 200 akun sekaligus');
-		}
-
-		const results = await withTransaction(async (conn) => {
-			const outcomes: Array<{ id: string; ok: boolean; message?: string }> = [];
-			for (const id of ids) {
-				const [user] = await selectUsers(conn, { where: [['id', '=', id]] });
-				if (!user) {
-					outcomes.push({ id, ok: false, message: 'User tidak ditemukan' });
-					continue;
-				}
-				await revokeRefreshTokensForUser(id);
-				await deleteUserDb(conn, { id });
-				outcomes.push({ id, ok: true });
-			}
-			return outcomes;
-		});
-
-		await getUsers().refresh();
-		return { success: true, results };
+export const bulkDeleteUsers = command(v.pipe(v.string(), v.minLength(1)), async (idsParam) => {
+	await requireRole(['ADMIN']);
+	const ids = idsParam.split(',').filter(Boolean);
+	if (!ids.length) {
+		throw error(400, 'Tidak ada akun dipilih');
 	}
-);
+	if (ids.length > 200) {
+		throw error(400, 'Maksimal 200 akun sekaligus');
+	}
+
+	const results = await withTransaction(async (conn) => {
+		const outcomes: Array<{ id: string; ok: boolean; message?: string }> = [];
+		for (const id of ids) {
+			const [user] = await selectUsers(conn, { where: [['id', '=', id]] });
+			if (!user) {
+				outcomes.push({ id, ok: false, message: 'User tidak ditemukan' });
+				continue;
+			}
+			await revokeRefreshTokensForUser(id);
+			await deleteUserDb(conn, { id });
+			outcomes.push({ id, ok: true });
+		}
+		return outcomes;
+	});
+
+	await getUsers().refresh();
+	return { success: true, results };
+});
 
 export const bulkResetPasswords = form(
 	v.object({

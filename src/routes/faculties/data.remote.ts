@@ -157,33 +157,30 @@ export const deleteFaculty = command(v.string(), async (id) => {
 	return { success: true };
 });
 
-export const bulkDeleteFaculties = command(
-	v.pipe(v.string(), v.minLength(1)),
-	async (idsParam) => {
-		await requireRole(['ADMIN']);
-		const ids = idsParam.split(',').filter(Boolean);
-		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
-		for (const id of ids) {
-			const [faculty] = await selectFaculties(getPool(), {
-				where: [['id', '=', id]]
-			});
-			if (!faculty) {
-				results.push({ id, ok: false, message: 'Fakultas tidak ditemukan' });
-				continue;
-			}
-			if ((faculty.study_program_count ?? 0) > 0) {
-				results.push({ id, ok: false, message: 'Masih memiliki prodi' });
-				continue;
-			}
-			await deleteFacultyDb(getPool(), { id });
-			results.push({ id, ok: true });
+export const bulkDeleteFaculties = command(v.pipe(v.string(), v.minLength(1)), async (idsParam) => {
+	await requireRole(['ADMIN']);
+	const ids = idsParam.split(',').filter(Boolean);
+	const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+	for (const id of ids) {
+		const [faculty] = await selectFaculties(getPool(), {
+			where: [['id', '=', id]]
+		});
+		if (!faculty) {
+			results.push({ id, ok: false, message: 'Fakultas tidak ditemukan' });
+			continue;
 		}
-		if (results.some((r) => r.ok)) {
-			await getFaculties().refresh();
+		if ((faculty.study_program_count ?? 0) > 0) {
+			results.push({ id, ok: false, message: 'Masih memiliki prodi' });
+			continue;
 		}
-		return { success: true, results };
+		await deleteFacultyDb(getPool(), { id });
+		results.push({ id, ok: true });
 	}
-);
+	if (results.some((r) => r.ok)) {
+		await getFaculties().refresh();
+	}
+	return { success: true, results };
+});
 
 export const bulkUpdateFaculties = form(
 	v.object({
@@ -201,11 +198,7 @@ export const bulkUpdateFaculties = form(
 				results.push({ id, ok: false, message: 'Fakultas tidak ditemukan' });
 				continue;
 			}
-			await updateFacultyDb(
-				getPool(),
-				{ name: data.name || faculty.name || '' },
-				{ id }
-			);
+			await updateFacultyDb(getPool(), { name: data.name || faculty.name || '' }, { id });
 			results.push({ id, ok: true });
 		}
 		if (results.some((r) => r.ok)) {

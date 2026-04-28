@@ -275,32 +275,29 @@ export const deleteCourse = command(v.string(), async (id) => {
 	return { success: true };
 });
 
-export const bulkDeleteCourses = command(
-	v.pipe(v.string(), v.minLength(1)),
-	async (idsParam) => {
-		await requireRole(['ADMIN']);
-		const ids = idsParam.split(',').filter(Boolean);
-		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
-		for (const id of ids) {
-			const [course] = await selectCourses(getPool(), { where: [['id', '=', id]] });
-			if (!course) {
-				results.push({ id, ok: false, message: 'Mata kuliah tidak ditemukan' });
-				continue;
-			}
-			if ((course.enrollment_count ?? 0) > 0) {
-				results.push({ id, ok: false, message: 'Masih memiliki KRS' });
-				continue;
-			}
-			await deleteCourseDb(getPool(), { id });
-			results.push({ id, ok: true });
+export const bulkDeleteCourses = command(v.pipe(v.string(), v.minLength(1)), async (idsParam) => {
+	await requireRole(['ADMIN']);
+	const ids = idsParam.split(',').filter(Boolean);
+	const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+	for (const id of ids) {
+		const [course] = await selectCourses(getPool(), { where: [['id', '=', id]] });
+		if (!course) {
+			results.push({ id, ok: false, message: 'Mata kuliah tidak ditemukan' });
+			continue;
 		}
-		if (results.some((r) => r.ok)) {
-			invalidateConflictAuditCache();
-			await getCourses().refresh();
+		if ((course.enrollment_count ?? 0) > 0) {
+			results.push({ id, ok: false, message: 'Masih memiliki KRS' });
+			continue;
 		}
-		return { success: true, results };
+		await deleteCourseDb(getPool(), { id });
+		results.push({ id, ok: true });
 	}
-);
+	if (results.some((r) => r.ok)) {
+		invalidateConflictAuditCache();
+		await getCourses().refresh();
+	}
+	return { success: true, results };
+});
 
 export const bulkUpdateCourses = form(
 	v.object({
