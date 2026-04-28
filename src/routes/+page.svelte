@@ -7057,7 +7057,13 @@
 											>{#each studyPrograms as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if courseDraft.studyProgramId}<span
+												class="editor-entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('studyPrograms', courseDraft.studyProgramId);
+												}}>Lihat prodi</span
+											>{/if}</label
 									><label
 										><span>Dosen pengampu</span><select
 											name="lecturerId"
@@ -7073,7 +7079,13 @@
 												>{/if}{#each lecturers as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if courseDraft.lecturerId}<span
+												class="editor-entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('lecturers', courseDraft.lecturerId);
+												}}>Lihat dosen</span
+											>{/if}</label
 									>{#if courseEditorBlocked}<p class="editor-note">
 											Program studi dan dosen harus tersedia sebelum mata kuliah bisa disimpan.
 										</p>{/if}<Button
@@ -7115,7 +7127,13 @@
 											>{#each studyPrograms as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if bulkEditCourseStudyProgramId}<span
+												class="editor-entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('studyPrograms', bulkEditCourseStudyProgramId);
+												}}>Lihat prodi</span
+											>{/if}</label
 									>
 									<label
 										><span>Dosen pengampu</span><select
@@ -7127,7 +7145,13 @@
 											>{#each lecturers as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if bulkEditCourseLecturerId}<span
+												class="editor-entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('lecturers', bulkEditCourseLecturerId);
+												}}>Lihat dosen</span
+											>{/if}</label
 									>
 									<div class="builder-inline-actions">
 										<Button
@@ -7445,7 +7469,13 @@
 											>{#each studyPrograms as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if studentDraft.studyProgramId}<span
+												class="editor-entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('studyPrograms', studentDraft.studyProgramId);
+												}}>Lihat prodi</span
+											>{/if}</label
 									>{#if studentEditorBlocked}<p class="editor-note">
 											Program studi harus tersedia sebelum data mahasiswa bisa disimpan.
 										</p>{/if}<Button
@@ -7474,7 +7504,13 @@
 											>{#each studyPrograms as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if bulkEditStudentStudyProgramId}<span
+												class="editor-entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('studyPrograms', bulkEditStudentStudyProgramId);
+												}}>Lihat prodi</span
+											>{/if}</label
 									>
 									<label
 										><span>Angkatan</span><input
@@ -8357,7 +8393,13 @@
 											>{#each faculties as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if studyProgramDraft.facultyId}<span
+												class="editor-entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('faculties', studyProgramDraft.facultyId);
+												}}>Lihat fakultas</span
+											>{/if}</label
 									>{#if studyProgramEditorBlocked}<p class="editor-note">
 											Fakultas harus tersedia sebelum program studi bisa disimpan.
 										</p>{/if}<Button
@@ -8386,7 +8428,13 @@
 											>{#each faculties as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if bulkEditStudyProgramFacultyId}<span
+												class="editor-entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('faculties', bulkEditStudyProgramFacultyId);
+												}}>Lihat fakultas</span
+											>{/if}</label
 									>
 									<label
 										><span>Ketua prodi</span><input
@@ -11735,6 +11783,13 @@
 		grid-column: 1 / -1;
 	}
 
+	.editor-grid .combobox-dropdown {
+		width: max-content;
+		min-width: 100%;
+		right: auto;
+		max-width: min(32rem, calc(100vw - 2rem));
+	}
+
 	.editor-note {
 		color: var(--color-muted-foreground);
 		font-size: 0.85rem;
@@ -12221,11 +12276,26 @@
 		text-decoration-color: transparent;
 		text-underline-offset: 2px;
 		transition: text-decoration-color 120ms ease;
+		justify-self: start;
 	}
 	.entity-link:hover {
 		text-decoration-color: currentColor;
 	}
 	.entity-link strong {
 		font-weight: 600;
+	}
+
+	.editor-entity-link {
+		font-size: 0.8rem;
+		color: var(--color-accent-strong);
+		cursor: pointer;
+		text-decoration: underline;
+		text-decoration-color: transparent;
+		text-underline-offset: 2px;
+		transition: text-decoration-color 120ms ease;
+		justify-self: start;
+	}
+	.editor-entity-link:hover {
+		text-decoration-color: currentColor;
 	}
 </style>
