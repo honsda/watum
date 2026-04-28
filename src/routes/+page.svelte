@@ -4662,7 +4662,7 @@
 										class="ghost-button"
 										variant="ghost"
 										size="sm"
-										disabled={!calendarCanRender}
+										disabled
 										onclick={() => (calendarWeekOffset -= 1)}
 									>
 										<ChevronLeft size={16} />
@@ -4672,7 +4672,7 @@
 										class="ghost-button"
 										variant="outline"
 										size="sm"
-										disabled={!calendarCanRender}
+										disabled
 										onclick={() => (calendarWeekOffset = 0)}
 									>
 										Minggu dasar
@@ -4681,7 +4681,7 @@
 										class="ghost-button"
 										variant="ghost"
 										size="sm"
-										disabled={!calendarCanRender}
+										disabled
 										onclick={() => (calendarWeekOffset += 1)}
 									>
 										<span>Minggu depan</span>
