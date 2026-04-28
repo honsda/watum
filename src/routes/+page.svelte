@@ -5981,7 +5981,7 @@
 													class="combobox-input"
 													placeholder="Cari mahasiswa..."
 													value={enrollmentDraft.studentId
-														? `${selectedDraftStudent} • ${enrollmentDraft.studentId}`
+														? selectedDraftStudent
 														: studentPickerSearch}
 													oninput={(e) => {
 														studentPickerSearch = (e.currentTarget as HTMLInputElement).value;
@@ -6069,7 +6069,7 @@
 													class="combobox-input"
 													placeholder="Cari mata kuliah..."
 													value={enrollmentDraft.courseId
-														? `${selectedDraftCourse} • ${coursePickerLookup.get(enrollmentDraft.courseId)?.lecturer_name ?? selectedEnrollmentRecord?.lecturer_name ?? ''}`
+														? selectedDraftCourse
 														: coursePickerSearch}
 													oninput={(e) => {
 														coursePickerSearch = (e.currentTarget as HTMLInputElement).value;
