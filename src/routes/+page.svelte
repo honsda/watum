@@ -5990,10 +5990,6 @@
 														queueStudentPickerRefresh();
 													}}
 													onfocus={() => {
-														if (enrollmentDraft.studentId) {
-															enrollmentDraft.studentId = '';
-															studentPickerSearch = '';
-														}
 														studentPickerOpen = true;
 														queueStudentPickerRefresh(0);
 													}}
@@ -6078,10 +6074,6 @@
 														queueCoursePickerRefresh();
 													}}
 													onfocus={() => {
-														if (enrollmentDraft.courseId) {
-															enrollmentDraft.courseId = '';
-															coursePickerSearch = '';
-														}
 														coursePickerOpen = true;
 														queueCoursePickerRefresh(0);
 													}}
@@ -6273,10 +6265,6 @@
 															roomPickerOpen = true;
 														}}
 														onfocus={() => {
-															if (enrollmentDraft.classRoomId) {
-																enrollmentDraft.classRoomId = '';
-																roomPickerSearch = '';
-															}
 															roomPickerOpen = true;
 															if (!roomPickerOptions.length) {
 																queueRoomPickerRefresh(0);
