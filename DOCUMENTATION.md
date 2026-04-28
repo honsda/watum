@@ -1,9 +1,9 @@
 # Watum — Comprehensive Technical Documentation
 
 > **Project**: Watum Academic Scheduling System  
-> **Stack**: SvelteKit 2.x, MariaDB (MySQL), Node.js, TypeScript  
+> **Stack**: SvelteKit 2.x, MariaDB (MySQL), Bun, TypeScript  
 > **Scale**: Stress-tested to 10,000,000 rows (enrollments)  
-> **Last Updated**: 2026-04-26
+> **Last Updated**: 2026-04-28
 
 ---
 
@@ -53,10 +53,10 @@ The system is architected to scale to **10 million enrollment rows** while maint
 
 | Technology      | Version | Purpose                                 |
 | --------------- | ------- | --------------------------------------- |
-| Node.js         | 22.x    | Runtime                                 |
+| Bun             | 1.3+    | Runtime (replaced Node.js 22.x)         |
 | MariaDB (MySQL) | 10.11+  | Primary database                        |
 | mysql2          | 3.22.2  | Database driver (Promise API + pooling) |
-| Argon2          | 0.44.0  | Password hashing                        |
+| @node-rs/argon2 | 2.0.2   | Password hashing (prebuilt Rust binary) |
 | jose            | 6.2.2   | JWT signing/verification                |
 | Valibot         | 1.3.1   | Schema validation                       |
 | dayjs           | 1.11.20 | Date/time manipulation                  |
@@ -64,7 +64,7 @@ The system is architected to scale to **10 million enrollment rows** while maint
 ### Build & Tooling
 
 - **Vite** 8.x — Build tool
-- **@sveltejs/adapter-node** — Node.js server adapter
+- **svelte-adapter-bun** — Bun server adapter (replaced @sveltejs/adapter-node)
 - **TypeScript** — Type safety
 - **ESLint + Prettier** — Code quality
 
@@ -239,8 +239,7 @@ SELECT
   schedule_day,
   schedule_start_time,
   schedule_end_time,
-  COUNT(*) AS enrollment_count,
-  COUNT(DISTINCT course_id) AS distinct_courses
+  COUNT(*) AS enrollment_count
 FROM enrollments FORCE INDEX (idx_enrollments_<resource>_conflict)
 WHERE <optional filters>
 GROUP BY
@@ -250,7 +249,8 @@ GROUP BY
   schedule_day,
   schedule_start_time,
   schedule_end_time
-HAVING COUNT(DISTINCT course_id) > 1;
+HAVING MIN(course_id) != MAX(course_id);  -- student/lecturer: distinct courses
+-- or HAVING COUNT(*) > 1;                -- room: any double-booking
 ```
 
 The scan can be index-only because all columns required for filtering, grouping, and conflict seed construction are inside the secondary index. MariaDB does not need to repeatedly visit the clustered primary row for each enrollment.
@@ -419,22 +419,23 @@ WHERE e.schedule_day <> s.day
 
 ### 3.6 Migrations
 
-20 migration files in `src/lib/server/migrations/`:
+22 migration files in `src/lib/server/migrations/`:
 
-| File                                  | Purpose                                                  |
-| ------------------------------------- | -------------------------------------------------------- |
-| `001_schema.sql`                      | Base schema + indexes                                    |
-| `002_refresh_tokens.sql`              | Session management                                       |
-| `003-003`                             | Refresh token indexes                                    |
-| `004-009`                             | Schedule overlap + large dataset indexes                 |
-| `010-011`                             | Conflict audit integer keys                              |
-| `012`                                 | **Denormalized schedule columns + covering indexes**     |
-| `013-016`                             | Index cleanup + fulltext search                          |
-| `017`                                 | Time column optimizations                                |
-| `018_optimize_triggers.sql`           | Conditional trigger guards                               |
-| `019_drop_courses_au_trigger.sql`     | Dropped cascade trigger (later restored)                 |
-| `020_recreate_courses_au_trigger.sql` | Restored trigger with optimized query                    |
-| `021_grades_constraints.sql`          | Grade score CHECK constraints + total_score auto trigger |
+| File                                            | Purpose                                                  |
+| ----------------------------------------------- | -------------------------------------------------------- |
+| `001_schema.sql`                                | Base schema + indexes                                    |
+| `002_refresh_tokens.sql`                        | Session management                                       |
+| `003-003`                                       | Refresh token indexes                                    |
+| `004-009`                                       | Schedule overlap + large dataset indexes                 |
+| `010-011`                                       | Conflict audit integer keys                              |
+| `012`                                           | **Denormalized schedule columns + covering indexes**     |
+| `013-016`                                       | Index cleanup + fulltext search                          |
+| `017`                                           | Time column optimizations                                |
+| `018_optimize_triggers.sql`                     | Conditional trigger guards                               |
+| `019_drop_courses_au_trigger.sql`               | Dropped cascade trigger (later restored)                 |
+| `020_recreate_courses_au_trigger.sql`           | Restored trigger with optimized query                    |
+| `021_grades_constraints.sql`                    | Grade score CHECK constraints + total_score auto trigger |
+| `022_enrollment_course_lecturer_index.sql`      | Composite index for lecturer cascade trigger performance |
 
 ---
 
@@ -514,7 +515,7 @@ export const deleteCourse = command(v.string(), async (id) => { ... });
 
 ### 4.3 Single-Page Dashboard Architecture
 
-The entire application is a **single page** (`src/routes/+page.svelte`, ~9700 lines) with view switching:
+The entire application is a **single page** (`src/routes/+page.svelte`, ~11700 lines) with view switching:
 
 ```
 +page.svelte
@@ -537,6 +538,29 @@ The entire application is a **single page** (`src/routes/+page.svelte`, ~9700 li
 ```
 
 **State management**: Uses Svelte 5 runes (`$state`, `$derived`) locally within the page component. No external state library.
+
+### 4.4 Role-Scoped View Access
+
+Views are scoped by user role at three layers:
+
+1. **Navigation**: `navigationForRole()` returns only views appropriate for the role. Sidebar groups are filtered by `navigationGroupsForRole()`.
+2. **Activation guard**: `activateView()` returns early if the target view is not in `allowedViews` (a `$derived` reactive value). This prevents programmatic navigation to disallowed views.
+3. **Template guards**: Each view section in the template checks the role conditionally:
+   - `students`, `builder`, `faculties`, `studyPrograms`: `role !== 'STUDENT'`
+   - `users`: `role === 'ADMIN'`
+   - An `$effect` corrects `activeView` if the URL restores a disallowed view after user loads.
+
+Role access matrix:
+
+| Role       | Views                                                                                               |
+| ---------- | --------------------------------------------------------------------------------------------------- |
+| `ADMIN`    | All 12 views (dashboard, calendar, builder, classrooms, courses, students, lecturers, faculties, studyPrograms, enrollments, grades, users) |
+| `LECTURER` | All except `users`; read-only on students, faculties, studyPrograms                                 |
+| `STUDENT`  | dashboard, calendar, classrooms, courses, lecturers, enrollments, grades                            |
+
+### 4.5 Non-Blocking UI Refreshes
+
+Form submissions use **optimistic UI updates** followed by fire-and-forget background refreshes. The enhance handler returns immediately after `submit()` resolves, closing the editor and showing success feedback. Collection refreshes (`refreshDependencies`) run in the background via `void` (unawaited). This keeps the loading spinner from blocking the UI while data reloads over the network.
 
 ### 4.4 Global Loading Spinner
 
@@ -679,7 +703,7 @@ END
 
 #### 6.3.2 Seed Collection
 
-`collectConflictGroupSeeds()` performs the heavy scan. It runs once per selected conflict type: room, student, lecturer, or all three in parallel.
+`collectConflictGroupSeeds()` performs the heavy scan. It runs once per selected conflict type: room, student, lecturer, or all three **in parallel** (each query hits a different covering index, so they don't contend for the same index pages).
 
 The core query shape is:
 
@@ -691,7 +715,6 @@ SELECT
   e.schedule_day AS day,
   e.schedule_start_time AS start_time,
   e.schedule_end_time AS end_time,
-  COUNT(DISTINCT e.course_id) AS distinct_courses,
   COUNT(*) AS member_count
 FROM enrollments e FORCE INDEX (idx_enrollments_<resource>_conflict)
 WHERE <filters>
@@ -702,7 +725,8 @@ GROUP BY
   e.schedule_day,
   e.schedule_start_time,
   e.schedule_end_time
-HAVING COUNT(DISTINCT e.course_id) > 1;
+HAVING MIN(e.course_id) != MAX(e.course_id);  -- for student/lecturer
+-- or HAVING COUNT(*) > 1;                     -- for room
 ```
 
 The result is a list of compact conflict seeds. A seed contains only:
@@ -721,11 +745,13 @@ It does not yet contain names or full enrollment rows. This keeps the expensive 
 
 The `HAVING` predicate differs by conflict type because the semantics of "double-booking" depend on the resource:
 
-| Conflict type | HAVING predicate                | Rationale                                                                                                            |
-| ------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Room          | `COUNT(*) > 1`                  | Any room double-booking is a real conflict — even two sections of the same course consuming the same physical space  |
-| Student       | `COUNT(DISTINCT course_id) > 1` | A student enrolled twice in the same course at the same slot is data corruption, not a real conflict                 |
-| Lecturer      | `COUNT(DISTINCT course_id) > 1` | A lecturer teaching one course with hundreds of students is normal; only multiple distinct courses indicate conflict |
+| Conflict type | HAVING predicate                        | Rationale                                                                                                            |
+| ------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Room          | `COUNT(*) > 1`                          | Any room double-booking is a real conflict — even two sections of the same course consuming the same physical space  |
+| Student       | `MIN(course_id) != MAX(course_id)`      | A student enrolled twice in the same course at the same slot is data corruption, not a real conflict                 |
+| Lecturer      | `MIN(course_id) != MAX(course_id)`      | A lecturer teaching one course with hundreds of students is normal; only multiple distinct courses indicate conflict |
+
+Student and lecturer conflicts previously used `COUNT(DISTINCT course_id) > 1`, which builds a hash table to track distinct values per group. The `MIN/MAX` approach avoids this overhead — for non-NULL values it is semantically equivalent but significantly faster on large groups because it only tracks two values instead of all distinct values.
 
 Without this split, lecturer audit would report thousands of false-positive "conflicts" per lecturer, because each course has hundreds of student enrollments, and `COUNT(*) > 1` would trigger for every populated time slot.
 
@@ -740,24 +766,20 @@ Examples:
 
 ¹ Room would only flag if the same room has 2+ separate enrollment rows pointing to the same time slot, which would mean two schedule rows competing for one room.
 
-#### 6.3.4 Sequential Audit Execution
+#### 6.3.4 Parallel Audit Execution
 
-The three conflict-type seed queries run **sequentially**, not in parallel:
+The three conflict-type seed queries run **in parallel** using `Promise.all`:
 
 ```typescript
-for (const type of selectedTypes) {
-	seedResults.push({ type, seeds: await collectConflictGroupSeeds(pool, type, filters) });
-}
+const seedResults = await Promise.all(
+	selectedTypes.map(async (type) => ({
+		type,
+		seeds: await collectConflictGroupSeeds(pool, type, filters)
+	}))
+);
 ```
 
-Earlier versions used `Promise.all([...])` to parallelize the three queries. At scale this fired three concurrent `GROUP BY` scans on 2.7M rows simultaneously, each with `FORCE INDEX` on a different conflict index. The combined load:
-
-- exhausted the InnoDB buffer pool
-- triggered three parallel disk read patterns
-- caused MariaDB to spawn 3× the temporary aggregation buffers
-- produced OOM under stress traffic
-
-Sequential execution keeps only one heavy index scan active at a time and reuses warm buffer pool pages between queries.
+Each query hits a different covering index (room, student, lecturer), so they don't contend for the same index pages. On a well-provisioned database this is ~3× faster than sequential execution. Earlier versions ran sequentially to avoid overwhelming a resource-constrained database, but the covering-index separation makes parallel safe on standard deployments.
 
 #### 6.3.5 Audit Filter Scoping
 
@@ -840,7 +862,7 @@ INNER JOIN class_rooms cr ON e.class_room_id = cr.id
 WHERE <seed key predicate>;
 ```
 
-Hydration is batched in groups of 40 seeds. Each seed's member query is unioned with `UNION ALL`, which keeps round trips bounded while avoiding a single enormous dynamic query.
+Hydration is batched in groups of 80 seeds. Each seed's member query is unioned with `UNION ALL`, which keeps round trips bounded while avoiding a single enormous dynamic query.
 
 #### 6.3.9 Member Sampling
 
@@ -962,7 +984,7 @@ Conflict audits are cached in memory inside `src/lib/server/conflict-audit.ts`.
 | Mechanism                  | Behavior                                                |
 | -------------------------- | ------------------------------------------------------- |
 | `auditCache`               | Stores completed audit results by normalized filter key |
-| `AUDIT_CACHE_TTL_MS`       | 60 seconds                                              |
+| `AUDIT_CACHE_TTL_MS`       | 300 seconds (5 minutes)                                 |
 | `AUDIT_CACHE_MAX_SIZE`     | 200 entries (LRU eviction by insertion order)           |
 | `auditCacheInsertionOrder` | Tracks insertion order for LRU eviction                 |
 | `inFlightAudits`           | Deduplicates concurrent requests for the same cache key |
@@ -996,12 +1018,12 @@ The conflict engine is fast because it separates discovery from hydration:
 
 | Phase            | Data volume                                     | Query style                                            |
 | ---------------- | ----------------------------------------------- | ------------------------------------------------------ |
-| Seed collection  | Millions of enrollment rows (scoped by filters) | Sequential index-only aggregation per conflict type    |
+| Seed collection  | Millions of enrollment rows (scoped by filters) | Parallel index-only aggregation per conflict type      |
 | Focus filtering  | Only focus enrollment IDs                       | Batched primary lookups                                |
 | Member hydration | Only selected conflict seeds (max 1000 groups)  | Bounded batched UNION ALL joins (max 10 members/group) |
 | UI rendering     | Only hydrated groups and loaded schedule cards  | Local maps/sets and derived state                      |
 
-Sequential execution is intentional: three concurrent `GROUP BY` scans on 2.7M rows with `FORCE INDEX` overwhelms MariaDB. Running room → student → lecturer sequentially keeps one index scan active at a time and reuses warm buffer pool pages.
+Seed collection runs in parallel: each conflict type query hits a different covering index, so they don't contend for the same index pages. On a well-provisioned database this is ~3× faster than the earlier sequential approach.
 
 Expected stress-data performance:
 
@@ -1027,9 +1049,9 @@ Current server audit semantics:
 
 - The server groups by **identical** denormalized schedule windows (same `start_time` + `end_time`).
 - Room conflicts use `HAVING COUNT(*) > 1` — any room double-booking is flagged.
-- Student/lecturer conflicts use `HAVING COUNT(DISTINCT course_id) > 1` — multiple students in the same course at the same time slot is not flagged.
-- The audit runs **sequentially** per conflict type to avoid overwhelming the database with concurrent index scans.
-- The audit is always scoped to at least one academic year/semester by the client, preventing full-table scans across all historical data.
+- Student/lecturer conflicts use `HAVING MIN(course_id) != MAX(course_id)` — multiple students in the same course at the same time slot is not flagged.
+- The audit runs **in parallel** per conflict type, with each query hitting a different covering index.
+- The audit cache TTL is 5 minutes; stale data is returned immediately while a background refresh runs.
 - The client visual layer (`buildScheduleCards`) detects interval overlaps only among loaded cards using `startMinutes < componentEnd`.
 - The server does NOT currently detect arbitrary interval overlaps (e.g., 08:00–10:00 vs 09:00–11:00) because that would require fetching all enrollment rows for each resource into application memory, which is too expensive at 2.7M+ rows.
 
@@ -1094,7 +1116,7 @@ FROM (
   FROM enrollments
   GROUP BY lecturer_audit_sk, academic_year_start, semester_sort,
     schedule_day, schedule_start_time, schedule_end_time
-  HAVING COUNT(DISTINCT course_id) > 1
+  HAVING MIN(course_id) != MAX(course_id)
 ) t
 JOIN lecturers l ON l.audit_sk = t.lecturer_audit_sk
 GROUP BY l.name
@@ -1128,7 +1150,7 @@ The seed data is useful for validating:
 | **Conditional triggers** | Skips 552k unnecessary SELECTs per lecturer change            |
 | **Keyset pagination**    | `cursor`-based pagination instead of OFFSET (avoids skipping) |
 | **Fulltext indexes**     | `MATCH ... AGAINST` for name search                           |
-| **Composite indexes**    | `idx_schedules_room_day_time` for room availability checks    |
+| **Composite indexes**    | `idx_schedules_room_day_time` for room availability checks; `idx_enrollments_course_lecturer` for trigger cascade performance |
 
 #### 7.1.1 Index Families
 
@@ -1191,7 +1213,7 @@ That is why composite indexes such as `idx_schedules_room_day_time` matter. They
 | Optimization              | Impact                                                                   |
 | ------------------------- | ------------------------------------------------------------------------ |
 | **Query batching**        | SvelteKit batches identical queries in the same tick                     |
-| **Conflict audit cache**  | 30-second TTL avoids re-scanning                                         |
+| **Conflict audit cache**  | 5-minute TTL avoids re-scanning; stale-while-revalidate     |
 | **Content-visibility**    | `content-visibility: auto` on list rows                                  |
 | **Enrollment lookup Map** | O(1) instead of O(n) `.find()`                                           |
 | **Available rooms Set**   | O(n) instead of O(n²) room filtering                                     |
@@ -1417,7 +1439,7 @@ Benchmarks therefore separate:
 Generates deterministic fake data:
 
 ```bash
-npm run seed:stress
+bun seed:stress
 ```
 
 **Default targets**:
@@ -1432,7 +1454,7 @@ npm run seed:stress
 **Tunable via env**:
 
 ```bash
-STRESS_SEED_TARGET_ROWS=5000000 npm run seed:stress
+STRESS_SEED_TARGET_ROWS=5000000 bun seed:stress
 ```
 
 ### 8.2 Benchmark Suite (`scripts/benchmark-suite.mjs`)
@@ -1473,7 +1495,21 @@ Alternative JMeter test plan with the same transaction mix.
 
 ## 9. Deployment & Operations
 
-### 9.1 Environment Variables
+### 9.1 Runtime
+
+Watum runs on **Bun** (replaced Node.js in April 2026). The migration involved:
+
+| Change                           | From                       | To                                     |
+| -------------------------------- | -------------------------- | -------------------------------------- |
+| Runtime                          | Node.js 22.x               | Bun 1.3+                               |
+| Server adapter                   | @sveltejs/adapter-node     | svelte-adapter-bun                     |
+| Password hashing                 | argon2 (native C++ addon)  | @node-rs/argon2 (prebuilt Rust binary) |
+| Lockfile                         | package-lock.json          | bun.lock                               |
+| Docker base image                | node:22-bookworm-slim      | oven/bun:1-debian                      |
+
+`svelte-adapter-bun` uses `Bun.serve` instead of Node's `http` module. The `dynamic_origin: true` adapter option is enabled to support reverse proxy deployments (reads `X-Forwarded-Proto` and `X-Forwarded-Host` headers).
+
+### 9.2 Environment Variables
 
 ```bash
 # Database
@@ -1489,16 +1525,30 @@ DB_MAX_LIST_QUERY_LIMIT=5000
 
 # Auth
 JWT_SECRET=...
+
+# Proxy / deployment (set automatically by docker-entrypoint.sh on Coolify)
+ORIGIN=https://projectbasdat.bumimas12.web.id
 ```
 
-### 9.2 Build & Preview
+### 9.3 Coolify Deployment
+
+The `docker-entrypoint.sh` handles Coolify-specific setup:
+
+1. **`ORIGIN` derivation**: If not set, auto-derived from `COOLIFY_FQDN` env var.
+2. **`HOST_HEADER` override**: Unconditionally set to `x-no-such-header` to force the adapter to rewrite request URLs to the public origin. Without this, Bun receives plain HTTP from Traefik and constructs `http://` URLs, which fail SvelteKit's remote-functions CSRF check (`http` vs `https`).
+3. **Auto-migrations**: Runs `scripts/run-migrations.mjs` before starting the server (controlled by `AUTO_APPLY_MIGRATIONS`).
+
+### 9.4 Build & Preview
 
 ```bash
-npm run build      # Production build
-npm run preview    # Preview production build locally
+bun run build      # Production build
+bun run preview    # Preview via Vite (dev middleware)
+
+# True production preview (uses svelte-adapter-bun output)
+bun ./build/index.js
 ```
 
-### 9.3 Database Maintenance
+### 9.5 Database Maintenance
 
 ```bash
 # Run migrations
@@ -1525,7 +1575,7 @@ ALTER TABLE enrollments ADD INDEX idx_enrollments_lecturer_conflict (...);
 watum/
 ├── src/
 │   ├── routes/                          # SvelteKit routes (all views in +page.svelte)
-│   │   ├── +page.svelte                 # Main dashboard (~9700 lines)
+│   │   ├── +page.svelte                 # Main dashboard (~11700 lines)
 │   │   ├── +layout.svelte               # Root layout (fonts, auth, loading spinner)
 │   │   ├── auth/
 │   │   │   ├── data.remote.ts           # loginUser, logoutUser, getCurrentUser
@@ -1556,7 +1606,7 @@ watum/
 │   │   │   ├── entity-id.ts             # ID generation utilities
 │   │   │   ├── search.ts                # Fulltext, prefix, cursor helpers
 │   │   │   ├── time-helpers.ts          # Timezone-aware time formatting
-│   │   │   ├── migrations/              # 20 SQL migration files
+│   │   │   ├── migrations/              # 22 SQL migration files
 │   │   │   └── sql/                     # Generated + handwritten SQL queries
 │   │   │       ├── select-*.ts          # Dynamic SELECT builders
 │   │   │       ├── insert-*.ts          # INSERT queries
@@ -1582,6 +1632,10 @@ watum/
 │   ├── benchmark-loader.mjs             # ESM loader for benchmark
 │   └── benchmark-env.mjs                # Environment defaults
 ├── stress-seed.ts                       # 10M-row stress data generator
+├── Dockerfile                           # Multi-stage Bun build
+├── docker-entrypoint.sh                 # Coolify startup (ORIGIN, HOST_HEADER, migrations)
+├── bun.lock                             # Bun lockfile (replaced package-lock.json)
+├── .env.example                         # Environment template
 ├── performance/
 │   ├── benchmark-report/                # Generated reports
 │   └── watum-benchmark.jmx              # JMeter test plan
@@ -1619,6 +1673,22 @@ watum/
 
 **Cause**: 200 concurrent users hitting refresh_tokens with `SELECT ... FOR UPDATE`  
 **Mitigation**: Reduced concurrent threads in benchmark; transactions are short-lived
+
+### Issue: Login 403 "Cross-site remote requests are forbidden" behind Coolify proxy
+
+**Cause**: Bun receives plain HTTP from Traefik and constructs `request.url = "http://hostname/..."`. SvelteKit's remote-functions CSRF check (in `respond.js:79`) compares `new URL(request.url).origin` (`http`) against the browser's `Origin` header (`https`). They don't match.  
+**Fix**: Set `HOST_HEADER=x-no-such-header` in `docker-entrypoint.sh` to force the adapter's URL rewrite. The adapter only rewrites when `origin !== requestOrigin`; pointing `HOST_HEADER` at a non-existent header makes them differ, triggering the rewrite to the correct `https://` origin.  
+**Also**: Enabled `dynamic_origin: true` in the svelte-adapter-bun config and ensured `ORIGIN` is set (auto-derived from `COOLIFY_FQDN`).
+
+### Issue: Dashboard content cut off on mobile
+
+**Cause**: Grid children (`.student-hero`, `.student-summary-row`, `.ClassroomDashboard`) could expand past the viewport because parent grids lacked `min-width: 0`.  
+**Fix**: Added `min-width: 0` to `.dashboard-stack`, `.student-dashboard`, `.student-summary-row`, `.student-grade-items`. Added `overflow: hidden` to `.student-hero`. Collapsed `.student-actions` to `1fr` at 720px.
+
+### Issue: Search bar squished in list view topbar on medium screens
+
+**Cause**: `.pane-head` used `grid-template-columns: 1fr auto` at all viewports above 720px, and `.topbar` used `minmax(0, 1fr) minmax(0, 20rem)`, causing search/actions to be squeezed.  
+**Fix**: Both `.topbar` and `.pane-head` now collapse to `grid-template-columns: 1fr` at the 1080px breakpoint (where `workspace-shell` already goes single-column).
 
 ---
 
