@@ -1,0 +1,66 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - heading "Remote Functions Test" [level=1] [ref=e4]
+    - generic [ref=e5]:
+      - heading "Auth Session" [level=3] [ref=e6]
+      - paragraph [ref=e7]: Most remote functions require a valid session. Login first to avoid Unauthorized.
+      - generic [ref=e8]:
+        - button "Check Session" [ref=e9]
+        - generic [ref=e10]:
+          - textbox "Email" [ref=e11]: student.0001@stress.watum.ac.id
+          - textbox "Password" [ref=e12]: stress123
+          - button "Login" [ref=e13]
+        - button "Logout" [ref=e15]
+      - paragraph [ref=e73]: Login success.
+    - generic [ref=e16]:
+      - button "courses" [ref=e17]
+      - button "classrooms" [ref=e18]
+      - button "students" [ref=e19]
+      - button "lecturers" [ref=e20]
+      - button "faculties" [ref=e21]
+      - button "study-programs" [ref=e22]
+      - button "enrollments" [ref=e23]
+      - button "grades" [ref=e24]
+      - button "users" [ref=e25]
+    - generic [ref=e26]:
+      - generic [ref=e27]:
+        - heading "getCourses" [level=3] [ref=e28]
+        - button "Test" [ref=e29]
+      - generic [ref=e30]:
+        - heading "searchCourses" [level=3] [ref=e31]
+        - generic [ref=e32]:
+          - textbox "ID" [ref=e33]
+          - textbox "Name" [ref=e34]
+          - textbox "Study Program ID" [ref=e35]
+          - textbox "Lecturer ID" [ref=e36]
+          - textbox "Lecturer Name" [ref=e37]
+          - textbox "Study Program Name" [ref=e38]
+          - spinbutton [ref=e39]
+          - spinbutton [ref=e40]
+          - button "Test" [ref=e41]
+      - generic [ref=e42]:
+        - heading "getCourse" [level=3] [ref=e43]
+        - textbox "Course ID" [ref=e44]: CS101
+        - button "Test" [ref=e45]
+      - generic [ref=e46]:
+        - heading "createCourse" [level=3] [ref=e47]
+        - generic [ref=e48]:
+          - textbox "Name" [ref=e49]
+          - spinbutton [ref=e50]
+          - textbox "Study Program ID" [ref=e51]
+          - textbox "Lecturer ID" [ref=e52]
+          - button "Submit" [ref=e53]
+      - generic [ref=e54]:
+        - heading "updateCourse" [level=3] [ref=e55]
+        - generic [ref=e56]:
+          - textbox "ID" [ref=e57]
+          - textbox "Name" [ref=e58]
+          - spinbutton [ref=e59]
+          - textbox "Study Program ID" [ref=e60]
+          - textbox "Lecturer ID" [ref=e61]
+          - button "Submit" [ref=e62]
+      - generic [ref=e63]:
+        - heading "deleteCourse" [level=3] [ref=e64]
+        - textbox "Course ID to delete" [ref=e65]: CS101
+        - button "Test" [ref=e66]
+  - generic [ref=e67]: untitled page

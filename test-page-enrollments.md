@@ -1,0 +1,43 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - heading "Remote Functions Test" [level=1] [ref=e4]
+    - generic [ref=e5]:
+      - heading "Auth Session" [level=3] [ref=e6]
+      - paragraph [ref=e7]: Most remote functions require a valid session. Login first to avoid Unauthorized.
+      - generic [ref=e8]:
+        - button "Check Session" [ref=e9]
+        - generic [ref=e10]
+        - button "Logout" [ref=e15]
+      - paragraph [ref=e73]: Login success.
+    - generic [ref=e16]:
+      - button "courses" [ref=e17]
+      - button "classrooms" [ref=e18]
+      - button "students" [ref=e19]
+      - button "lecturers" [ref=e20]
+      - button "faculties" [ref=e21]
+      - button "study-programs" [ref=e22]
+      - button "enrollments" [active] [ref=e23]
+      - button "grades" [ref=e24]
+      - button "users" [ref=e25]
+    - generic [ref=e140]:
+      - generic [ref=e141]:
+        - heading "getEnrollments" [level=3] [ref=e142]
+        - button "Test" [ref=e143]
+      - generic [ref=e144]:
+        - heading "searchEnrollments" [level=3] [ref=e145]
+        - generic [ref=e146]
+      - generic [ref=e161]:
+        - heading "getEnrollment" [level=3] [ref=e162]
+        - textbox "Enrollment ID" [ref=e163]
+        - button "Test" [ref=e164]
+      - generic [ref=e165]:
+        - heading "createEnrollment" [level=3] [ref=e166]
+        - generic [ref=e167]
+      - generic [ref=e177]:
+        - heading "updateEnrollment" [level=3] [ref=e178]
+        - generic [ref=e179]
+      - generic [ref=e190]:
+        - heading "deleteEnrollment" [level=3] [ref=e191]
+        - textbox "Enrollment ID to delete" [ref=e192]
+        - button "Test" [ref=e193]
+  - generic [ref=e67]: untitled page

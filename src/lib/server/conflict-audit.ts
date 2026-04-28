@@ -285,9 +285,7 @@ async function collectConflictGroupSeeds(
 	//   expensive DISTINCT hash table that COUNT(DISTINCT) builds.
 	//   course_id is NOT NULL so this is equivalent for non-empty groups.
 	const havingPredicate =
-		conflictType === 'room'
-			? 'COUNT(*) > 1'
-			: 'MIN(e.course_id) != MAX(e.course_id)';
+		conflictType === 'room' ? 'COUNT(*) > 1' : 'MIN(e.course_id) != MAX(e.course_id)';
 	const hasExtraFilters = whereSql !== '1 = 1';
 	const groupSql = [
 		`SELECT ${resourceCol} AS resource_id, e.academic_year_start, e.semester_sort,`,

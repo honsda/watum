@@ -1,0 +1,40 @@
+- generic [ref=e3]:
+  - heading "Remote Functions Test" [level=1] [ref=e4]
+  - generic [ref=e5]:
+    - heading "Auth Session" [level=3] [ref=e6]
+    - paragraph [ref=e7]: Most remote functions require a valid session. Login first to avoid Unauthorized.
+    - generic [ref=e8]:
+      - button "Check Session" [ref=e9]
+      - generic [ref=e10]
+      - button "Logout" [ref=e15]
+  - generic [ref=e16]:
+    - button "courses" [ref=e17]
+    - button "classrooms" [ref=e18]
+    - button "students" [ref=e19]
+    - button "lecturers" [ref=e20]
+    - button "faculties" [ref=e21]
+    - button "study-programs" [ref=e22]
+    - button "enrollments" [ref=e23]
+    - button "grades" [ref=e24]
+    - button "users" [ref=e25]
+  - generic [ref=e26]:
+    - generic [ref=e27]:
+      - heading "getCourses" [level=3] [ref=e28]
+      - button "Test" [ref=e29]
+    - generic [ref=e30]:
+      - heading "searchCourses" [level=3] [ref=e31]
+      - generic [ref=e32]
+    - generic [ref=e42]:
+      - heading "getCourse" [level=3] [ref=e43]
+      - textbox "Course ID" [ref=e44]: CS101
+      - button "Test" [ref=e45]
+    - generic [ref=e46]:
+      - heading "createCourse" [level=3] [ref=e47]
+      - generic [ref=e48]
+    - generic [ref=e54]:
+      - heading "updateCourse" [level=3] [ref=e55]
+      - generic [ref=e56]
+    - generic [ref=e63]:
+      - heading "deleteCourse" [level=3] [ref=e64]
+      - textbox "Course ID to delete" [ref=e65]: CS101
+      - button "Test" [ref=e66]

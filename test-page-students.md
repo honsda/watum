@@ -1,0 +1,47 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - heading "Remote Functions Test" [level=1] [ref=e4]
+    - generic [ref=e5]:
+      - heading "Auth Session" [level=3] [ref=e6]
+      - paragraph [ref=e7]: Most remote functions require a valid session. Login first to avoid Unauthorized.
+      - generic [ref=e8]:
+        - button "Check Session" [ref=e9]
+        - generic [ref=e10]
+        - button "Logout" [ref=e15]
+      - paragraph [ref=e73]: Login success.
+    - generic [ref=e16]:
+      - button "courses" [ref=e17]
+      - button "classrooms" [ref=e18]
+      - button "students" [active] [ref=e19]
+      - button "lecturers" [ref=e20]
+      - button "faculties" [ref=e21]
+      - button "study-programs" [ref=e22]
+      - button "enrollments" [ref=e23]
+      - button "grades" [ref=e24]
+      - button "users" [ref=e25]
+    - generic [ref=e87]:
+      - generic [ref=e88]:
+        - heading "getStudents" [level=3] [ref=e89]
+        - button "Test" [ref=e90]
+      - generic [ref=e91]:
+        - heading "searchStudents" [level=3] [ref=e92]
+        - generic [ref=e93]
+      - generic [ref=e102]:
+        - heading "getStudent" [level=3] [ref=e103]
+        - textbox "Student ID (NRP)" [ref=e104]
+        - button "Test" [ref=e105]
+      - generic [ref=e106]:
+        - heading "getStudentGPA" [level=3] [ref=e107]
+        - textbox "Student ID (NRP)" [ref=e108]
+        - button "Test" [ref=e109]
+      - generic [ref=e110]:
+        - heading "createStudent" [level=3] [ref=e111]
+        - generic [ref=e112]
+      - generic [ref=e120]:
+        - heading "updateStudent" [level=3] [ref=e121]
+        - generic [ref=e122]
+      - generic [ref=e131]:
+        - heading "deleteStudent" [level=3] [ref=e132]
+        - textbox "Student ID (NRP) to delete" [ref=e133]
+        - button "Test" [ref=e134]
+  - generic [ref=e67]: untitled page

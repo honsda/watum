@@ -651,10 +651,7 @@ export const bulkUpdateClassRooms = form(
 				data.hasProjector !== undefined
 					? 1
 					: ((room as { has_projector?: number }).has_projector ?? 0);
-			const hasAC =
-				data.hasAC !== undefined
-					? 1
-					: ((room as { has_ac?: number }).has_ac ?? 0);
+			const hasAC = data.hasAC !== undefined ? 1 : ((room as { has_ac?: number }).has_ac ?? 0);
 			await updateClassRoomDb(
 				getPool(),
 				{

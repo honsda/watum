@@ -1,0 +1,282 @@
+"filename", "language", "TypeScript", "HTML", "Svelte", "MS SQL", "Markdown", "XML", "PostCSS", "comment", "blank", "total"
+"/home/dharon/watum/src/app.d.ts", "TypeScript", 16, 0, 0, 0, 0, 0, 0, 6, 2, 24
+"/home/dharon/watum/src/app.html", "HTML", 0, 12, 0, 0, 0, 0, 0, 0, 1, 13
+"/home/dharon/watum/src/event-calendar.d.ts", "TypeScript", 6, 0, 0, 0, 0, 0, 0, 0, 3, 9
+"/home/dharon/watum/src/hooks.server.ts", "TypeScript", 31, 0, 0, 0, 0, 0, 0, 0, 8, 39
+"/home/dharon/watum/src/lib/app/academic.ts", "TypeScript", 390, 0, 0, 0, 0, 0, 0, 0, 51, 441
+"/home/dharon/watum/src/lib/assets/favicon.svg", "XML", 0, 0, 0, 0, 0, 1, 0, 0, 0, 1
+"/home/dharon/watum/src/lib/client/auth.ts", "TypeScript", 108, 0, 0, 0, 0, 0, 0, 0, 32, 140
+"/home/dharon/watum/src/lib/client/loading.svelte.ts", "TypeScript", 41, 0, 0, 0, 0, 0, 0, 1, 11, 53
+"/home/dharon/watum/src/lib/components/app/ClassroomDashboard.svelte", "Svelte", 0, 0, 393, 0, 0, 0, 0, 0, 53, 446
+"/home/dharon/watum/src/lib/components/app/CollectionPagination.svelte", "Svelte", 0, 0, 95, 0, 0, 0, 0, 0, 10, 105
+"/home/dharon/watum/src/lib/components/app/GlobalSpinner.svelte", "Svelte", 0, 0, 15, 0, 0, 0, 0, 0, 3, 18
+"/home/dharon/watum/src/lib/components/ui/badge/badge.svelte", "Svelte", 0, 0, 45, 0, 0, 0, 0, 0, 6, 51
+"/home/dharon/watum/src/lib/components/ui/badge/index.ts", "TypeScript", 2, 0, 0, 0, 0, 0, 0, 0, 1, 3
+"/home/dharon/watum/src/lib/components/ui/button/button.svelte", "Svelte", 0, 0, 89, 0, 0, 0, 0, 0, 7, 96
+"/home/dharon/watum/src/lib/components/ui/button/index.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 1, 2, 18
+"/home/dharon/watum/src/lib/components/ui/card/card-action.svelte", "Svelte", 0, 0, 21, 0, 0, 0, 0, 0, 3, 24
+"/home/dharon/watum/src/lib/components/ui/card/card-content.svelte", "Svelte", 0, 0, 18, 0, 0, 0, 0, 0, 3, 21
+"/home/dharon/watum/src/lib/components/ui/card/card-description.svelte", "Svelte", 0, 0, 18, 0, 0, 0, 0, 0, 3, 21
+"/home/dharon/watum/src/lib/components/ui/card/card-footer.svelte", "Svelte", 0, 0, 21, 0, 0, 0, 0, 0, 3, 24
+"/home/dharon/watum/src/lib/components/ui/card/card-header.svelte", "Svelte", 0, 0, 21, 0, 0, 0, 0, 0, 3, 24
+"/home/dharon/watum/src/lib/components/ui/card/card-title.svelte", "Svelte", 0, 0, 18, 0, 0, 0, 0, 0, 3, 21
+"/home/dharon/watum/src/lib/components/ui/card/card.svelte", "Svelte", 0, 0, 23, 0, 0, 0, 0, 0, 3, 26
+"/home/dharon/watum/src/lib/components/ui/card/index.ts", "TypeScript", 23, 0, 0, 0, 0, 0, 0, 1, 2, 26
+"/home/dharon/watum/src/lib/components/ui/input/index.ts", "TypeScript", 5, 0, 0, 0, 0, 0, 0, 1, 2, 8
+"/home/dharon/watum/src/lib/components/ui/input/input.svelte", "Svelte", 0, 0, 44, 0, 0, 0, 0, 0, 5, 49
+"/home/dharon/watum/src/lib/components/ui/label/index.ts", "TypeScript", 5, 0, 0, 0, 0, 0, 0, 1, 2, 8
+"/home/dharon/watum/src/lib/components/ui/label/label.svelte", "Svelte", 0, 0, 18, 0, 0, 0, 0, 0, 3, 21
+"/home/dharon/watum/src/lib/components/ui/select/index.ts", "TypeScript", 35, 0, 0, 0, 0, 0, 0, 1, 2, 38
+"/home/dharon/watum/src/lib/components/ui/select/select-content.svelte", "Svelte", 0, 0, 43, 0, 0, 0, 0, 0, 3, 46
+"/home/dharon/watum/src/lib/components/ui/select/select-group-heading.svelte", "Svelte", 0, 0, 19, 0, 0, 0, 0, 0, 3, 22
+"/home/dharon/watum/src/lib/components/ui/select/select-group.svelte", "Svelte", 0, 0, 15, 0, 0, 0, 0, 0, 3, 18
+"/home/dharon/watum/src/lib/components/ui/select/select-item.svelte", "Svelte", 0, 0, 36, 0, 0, 0, 0, 0, 3, 39
+"/home/dharon/watum/src/lib/components/ui/select/select-label.svelte", "Svelte", 0, 0, 18, 0, 0, 0, 0, 0, 3, 21
+"/home/dharon/watum/src/lib/components/ui/select/select-portal.svelte", "Svelte", 0, 0, 5, 0, 0, 0, 0, 0, 3, 8
+"/home/dharon/watum/src/lib/components/ui/select/select-scroll-down-button.svelte", "Svelte", 0, 0, 21, 0, 0, 0, 0, 0, 3, 24
+"/home/dharon/watum/src/lib/components/ui/select/select-scroll-up-button.svelte", "Svelte", 0, 0, 21, 0, 0, 0, 0, 0, 3, 24
+"/home/dharon/watum/src/lib/components/ui/select/select-separator.svelte", "Svelte", 0, 0, 16, 0, 0, 0, 0, 0, 3, 19
+"/home/dharon/watum/src/lib/components/ui/select/select-trigger.svelte", "Svelte", 0, 0, 27, 0, 0, 0, 0, 0, 3, 30
+"/home/dharon/watum/src/lib/components/ui/select/select.svelte", "Svelte", 0, 0, 9, 0, 0, 0, 0, 0, 3, 12
+"/home/dharon/watum/src/lib/components/ui/separator/index.ts", "TypeScript", 5, 0, 0, 0, 0, 0, 0, 1, 2, 8
+"/home/dharon/watum/src/lib/components/ui/separator/separator.svelte", "Svelte", 0, 0, 21, 0, 0, 0, 0, 0, 3, 24
+"/home/dharon/watum/src/lib/index.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 0, 1, 1, 2
+"/home/dharon/watum/src/lib/server/NRP-generator.ts", "TypeScript", 23, 0, 0, 0, 0, 0, 0, 0, 6, 29
+"/home/dharon/watum/src/lib/server/auth.ts", "TypeScript", 449, 0, 0, 0, 0, 0, 0, 0, 76, 525
+"/home/dharon/watum/src/lib/server/conflict-audit.ts", "TypeScript", 619, 0, 0, 0, 0, 0, 0, 17, 67, 703
+"/home/dharon/watum/src/lib/server/db.ts", "TypeScript", 252, 0, 0, 0, 0, 0, 0, 0, 36, 288
+"/home/dharon/watum/src/lib/server/entity-id.ts", "TypeScript", 55, 0, 0, 0, 0, 0, 0, 0, 9, 64
+"/home/dharon/watum/src/lib/server/index.ts", "TypeScript", 12, 0, 0, 0, 0, 0, 0, 0, 1, 13
+"/home/dharon/watum/src/lib/server/migrations/001_schema.sql", "MS SQL", 0, 0, 0, 138, 0, 0, 0, 43, 30, 211
+"/home/dharon/watum/src/lib/server/migrations/002_refresh_tokens.sql", "MS SQL", 0, 0, 0, 11, 0, 0, 0, 0, 2, 13
+"/home/dharon/watum/src/lib/server/migrations/003_refresh_tokens_user_context_index.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 1, 3
+"/home/dharon/watum/src/lib/server/migrations/004_schedule_overlap_indexes.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 1, 3
+"/home/dharon/watum/src/lib/server/migrations/005_large_dataset_indexes.sql", "MS SQL", 0, 0, 0, 9, 0, 0, 0, 0, 1, 10
+"/home/dharon/watum/src/lib/server/migrations/006_enrollment_keyset_indexes.sql", "MS SQL", 0, 0, 0, 1, 0, 0, 0, 0, 1, 2
+"/home/dharon/watum/src/lib/server/migrations/007_enrollment_academic_year_index.sql", "MS SQL", 0, 0, 0, 1, 0, 0, 0, 0, 1, 2
+"/home/dharon/watum/src/lib/server/migrations/008_conflict_audit_indexes.sql", "MS SQL", 0, 0, 0, 3, 0, 0, 0, 0, 1, 4
+"/home/dharon/watum/src/lib/server/migrations/009_conflict_audit_scale_indexes.sql", "MS SQL", 0, 0, 0, 6, 0, 0, 0, 0, 3, 9
+"/home/dharon/watum/src/lib/server/migrations/010_conflict_audit_schema_shrink.sql", "MS SQL", 0, 0, 0, 100, 0, 0, 0, 0, 26, 126
+"/home/dharon/watum/src/lib/server/migrations/011_conflict_audit_integer_keys.sql", "MS SQL", 0, 0, 0, 133, 0, 0, 0, 0, 23, 156
+"/home/dharon/watum/src/lib/server/migrations/012_conflict_audit_denormalized.sql", "MS SQL", 0, 0, 0, 58, 0, 0, 0, 7, 11, 76
+"/home/dharon/watum/src/lib/server/migrations/013_drop_redundant_indexes.sql", "MS SQL", 0, 0, 0, 14, 0, 0, 0, 0, 1, 15
+"/home/dharon/watum/src/lib/server/migrations/014_restore_redundant_indexes.sql", "MS SQL", 0, 0, 0, 14, 0, 0, 0, 0, 1, 15
+"/home/dharon/watum/src/lib/server/migrations/015_drop_superseded_audit_indexes.sql", "MS SQL", 0, 0, 0, 5, 0, 0, 0, 6, 2, 13
+"/home/dharon/watum/src/lib/server/migrations/016_fulltext_name_indexes.sql", "MS SQL", 0, 0, 0, 6, 0, 0, 0, 4, 2, 12
+"/home/dharon/watum/src/lib/server/migrations/017_time_columns.sql", "MS SQL", 0, 0, 0, 57, 0, 0, 0, 6, 12, 75
+"/home/dharon/watum/src/lib/server/migrations/018_covering_conflict_audit_indexes.sql", "MS SQL", 0, 0, 0, 9, 0, 0, 0, 3, 5, 17
+"/home/dharon/watum/src/lib/server/migrations/018_optimize_triggers.sql", "MS SQL", 0, 0, 0, 58, 0, 0, 0, 3, 12, 73
+"/home/dharon/watum/src/lib/server/migrations/019_drop_courses_au_trigger.sql", "MS SQL", 0, 0, 0, 1, 0, 0, 0, 3, 2, 6
+"/home/dharon/watum/src/lib/server/migrations/020_recreate_courses_au_trigger.sql", "MS SQL", 0, 0, 0, 15, 0, 0, 0, 3, 5, 23
+"/home/dharon/watum/src/lib/server/migrations/021_grades_constraints.sql", "MS SQL", 0, 0, 0, 23, 0, 0, 0, 2, 6, 31
+"/home/dharon/watum/src/lib/server/migrations/README.md", "Markdown", 0, 0, 0, 0, 105, 0, 0, 0, 41, 146
+"/home/dharon/watum/src/lib/server/search.ts", "TypeScript", 58, 0, 0, 0, 0, 0, 0, 5, 7, 70
+"/home/dharon/watum/src/lib/server/sql/crud/class_rooms/delete-from-class_rooms.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/crud/class_rooms/delete-from-class_rooms.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 4, 19
+"/home/dharon/watum/src/lib/server/sql/crud/class_rooms/index.ts", "TypeScript", 4, 0, 0, 0, 0, 0, 0, 0, 1, 5
+"/home/dharon/watum/src/lib/server/sql/crud/class_rooms/insert-into-class_rooms.sql", "MS SQL", 0, 0, 0, 22, 0, 0, 0, 0, 0, 22
+"/home/dharon/watum/src/lib/server/sql/crud/class_rooms/insert-into-class_rooms.ts", "TypeScript", 43, 0, 0, 0, 0, 0, 0, 0, 4, 47
+"/home/dharon/watum/src/lib/server/sql/crud/class_rooms/select-from-class_rooms.sql", "MS SQL", 0, 0, 0, 11, 0, 0, 0, 0, 0, 11
+"/home/dharon/watum/src/lib/server/sql/crud/class_rooms/select-from-class_rooms.ts", "TypeScript", 46, 0, 0, 0, 0, 0, 0, 0, 5, 51
+"/home/dharon/watum/src/lib/server/sql/crud/class_rooms/update-class_rooms.sql", "MS SQL", 0, 0, 0, 12, 0, 0, 0, 0, 0, 12
+"/home/dharon/watum/src/lib/server/sql/crud/class_rooms/update-class_rooms.ts", "TypeScript", 35, 0, 0, 0, 0, 0, 0, 0, 5, 40
+"/home/dharon/watum/src/lib/server/sql/crud/courses/delete-from-courses.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/crud/courses/delete-from-courses.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 4, 19
+"/home/dharon/watum/src/lib/server/sql/crud/courses/index.ts", "TypeScript", 4, 0, 0, 0, 0, 0, 0, 0, 1, 5
+"/home/dharon/watum/src/lib/server/sql/crud/courses/insert-into-courses.sql", "MS SQL", 0, 0, 0, 20, 0, 0, 0, 0, 0, 20
+"/home/dharon/watum/src/lib/server/sql/crud/courses/insert-into-courses.ts", "TypeScript", 40, 0, 0, 0, 0, 0, 0, 0, 4, 44
+"/home/dharon/watum/src/lib/server/sql/crud/courses/select-from-courses.sql", "MS SQL", 0, 0, 0, 10, 0, 0, 0, 0, 0, 10
+"/home/dharon/watum/src/lib/server/sql/crud/courses/select-from-courses.ts", "TypeScript", 43, 0, 0, 0, 0, 0, 0, 0, 5, 48
+"/home/dharon/watum/src/lib/server/sql/crud/courses/update-courses.sql", "MS SQL", 0, 0, 0, 11, 0, 0, 0, 0, 0, 11
+"/home/dharon/watum/src/lib/server/sql/crud/courses/update-courses.ts", "TypeScript", 33, 0, 0, 0, 0, 0, 0, 0, 5, 38
+"/home/dharon/watum/src/lib/server/sql/crud/enrollments/delete-from-enrollments.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/crud/enrollments/delete-from-enrollments.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 4, 19
+"/home/dharon/watum/src/lib/server/sql/crud/enrollments/index.ts", "TypeScript", 4, 0, 0, 0, 0, 0, 0, 0, 1, 5
+"/home/dharon/watum/src/lib/server/sql/crud/enrollments/insert-into-enrollments.sql", "MS SQL", 0, 0, 0, 24, 0, 0, 0, 0, 0, 24
+"/home/dharon/watum/src/lib/server/sql/crud/enrollments/insert-into-enrollments.ts", "TypeScript", 46, 0, 0, 0, 0, 0, 0, 0, 4, 50
+"/home/dharon/watum/src/lib/server/sql/crud/enrollments/select-from-enrollments.sql", "MS SQL", 0, 0, 0, 12, 0, 0, 0, 0, 0, 12
+"/home/dharon/watum/src/lib/server/sql/crud/enrollments/select-from-enrollments.ts", "TypeScript", 49, 0, 0, 0, 0, 0, 0, 0, 5, 54
+"/home/dharon/watum/src/lib/server/sql/crud/enrollments/update-enrollments.sql", "MS SQL", 0, 0, 0, 13, 0, 0, 0, 0, 0, 13
+"/home/dharon/watum/src/lib/server/sql/crud/enrollments/update-enrollments.ts", "TypeScript", 37, 0, 0, 0, 0, 0, 0, 0, 5, 42
+"/home/dharon/watum/src/lib/server/sql/crud/faculties/delete-from-faculties.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/crud/faculties/delete-from-faculties.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 4, 19
+"/home/dharon/watum/src/lib/server/sql/crud/faculties/index.ts", "TypeScript", 4, 0, 0, 0, 0, 0, 0, 0, 1, 5
+"/home/dharon/watum/src/lib/server/sql/crud/faculties/insert-into-faculties.sql", "MS SQL", 0, 0, 0, 14, 0, 0, 0, 0, 0, 14
+"/home/dharon/watum/src/lib/server/sql/crud/faculties/insert-into-faculties.ts", "TypeScript", 31, 0, 0, 0, 0, 0, 0, 0, 4, 35
+"/home/dharon/watum/src/lib/server/sql/crud/faculties/select-from-faculties.sql", "MS SQL", 0, 0, 0, 7, 0, 0, 0, 0, 0, 7
+"/home/dharon/watum/src/lib/server/sql/crud/faculties/select-from-faculties.ts", "TypeScript", 34, 0, 0, 0, 0, 0, 0, 0, 5, 39
+"/home/dharon/watum/src/lib/server/sql/crud/faculties/update-faculties.sql", "MS SQL", 0, 0, 0, 8, 0, 0, 0, 0, 0, 8
+"/home/dharon/watum/src/lib/server/sql/crud/faculties/update-faculties.ts", "TypeScript", 27, 0, 0, 0, 0, 0, 0, 0, 5, 32
+"/home/dharon/watum/src/lib/server/sql/crud/grades/delete-from-grades.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/crud/grades/delete-from-grades.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 4, 19
+"/home/dharon/watum/src/lib/server/sql/crud/grades/index.ts", "TypeScript", 4, 0, 0, 0, 0, 0, 0, 0, 1, 5
+"/home/dharon/watum/src/lib/server/sql/crud/grades/insert-into-grades.sql", "MS SQL", 0, 0, 0, 24, 0, 0, 0, 0, 0, 24
+"/home/dharon/watum/src/lib/server/sql/crud/grades/insert-into-grades.ts", "TypeScript", 46, 0, 0, 0, 0, 0, 0, 0, 4, 50
+"/home/dharon/watum/src/lib/server/sql/crud/grades/select-from-grades.sql", "MS SQL", 0, 0, 0, 12, 0, 0, 0, 0, 0, 12
+"/home/dharon/watum/src/lib/server/sql/crud/grades/select-from-grades.ts", "TypeScript", 49, 0, 0, 0, 0, 0, 0, 0, 5, 54
+"/home/dharon/watum/src/lib/server/sql/crud/grades/update-grades.sql", "MS SQL", 0, 0, 0, 13, 0, 0, 0, 0, 0, 13
+"/home/dharon/watum/src/lib/server/sql/crud/grades/update-grades.ts", "TypeScript", 37, 0, 0, 0, 0, 0, 0, 0, 5, 42
+"/home/dharon/watum/src/lib/server/sql/crud/lecturers/delete-from-lecturers.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/crud/lecturers/delete-from-lecturers.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 4, 19
+"/home/dharon/watum/src/lib/server/sql/crud/lecturers/index.ts", "TypeScript", 4, 0, 0, 0, 0, 0, 0, 0, 1, 5
+"/home/dharon/watum/src/lib/server/sql/crud/lecturers/insert-into-lecturers.sql", "MS SQL", 0, 0, 0, 20, 0, 0, 0, 0, 0, 20
+"/home/dharon/watum/src/lib/server/sql/crud/lecturers/insert-into-lecturers.ts", "TypeScript", 40, 0, 0, 0, 0, 0, 0, 0, 4, 44
+"/home/dharon/watum/src/lib/server/sql/crud/lecturers/select-from-lecturers.sql", "MS SQL", 0, 0, 0, 10, 0, 0, 0, 0, 0, 10
+"/home/dharon/watum/src/lib/server/sql/crud/lecturers/select-from-lecturers.ts", "TypeScript", 43, 0, 0, 0, 0, 0, 0, 0, 5, 48
+"/home/dharon/watum/src/lib/server/sql/crud/lecturers/update-lecturers.sql", "MS SQL", 0, 0, 0, 11, 0, 0, 0, 0, 0, 11
+"/home/dharon/watum/src/lib/server/sql/crud/lecturers/update-lecturers.ts", "TypeScript", 33, 0, 0, 0, 0, 0, 0, 0, 5, 38
+"/home/dharon/watum/src/lib/server/sql/crud/schedules/delete-from-schedules.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/crud/schedules/delete-from-schedules.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 4, 19
+"/home/dharon/watum/src/lib/server/sql/crud/schedules/index.ts", "TypeScript", 4, 0, 0, 0, 0, 0, 0, 0, 1, 5
+"/home/dharon/watum/src/lib/server/sql/crud/schedules/insert-into-schedules.sql", "MS SQL", 0, 0, 0, 22, 0, 0, 0, 0, 0, 22
+"/home/dharon/watum/src/lib/server/sql/crud/schedules/insert-into-schedules.ts", "TypeScript", 43, 0, 0, 0, 0, 0, 0, 0, 4, 47
+"/home/dharon/watum/src/lib/server/sql/crud/schedules/select-from-schedules.sql", "MS SQL", 0, 0, 0, 11, 0, 0, 0, 0, 0, 11
+"/home/dharon/watum/src/lib/server/sql/crud/schedules/select-from-schedules.ts", "TypeScript", 46, 0, 0, 0, 0, 0, 0, 0, 5, 51
+"/home/dharon/watum/src/lib/server/sql/crud/schedules/update-schedules.sql", "MS SQL", 0, 0, 0, 12, 0, 0, 0, 0, 0, 12
+"/home/dharon/watum/src/lib/server/sql/crud/schedules/update-schedules.ts", "TypeScript", 35, 0, 0, 0, 0, 0, 0, 0, 5, 40
+"/home/dharon/watum/src/lib/server/sql/crud/students/delete-from-students.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/crud/students/delete-from-students.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 4, 19
+"/home/dharon/watum/src/lib/server/sql/crud/students/index.ts", "TypeScript", 4, 0, 0, 0, 0, 0, 0, 0, 1, 5
+"/home/dharon/watum/src/lib/server/sql/crud/students/insert-into-students.sql", "MS SQL", 0, 0, 0, 24, 0, 0, 0, 0, 0, 24
+"/home/dharon/watum/src/lib/server/sql/crud/students/insert-into-students.ts", "TypeScript", 46, 0, 0, 0, 0, 0, 0, 0, 4, 50
+"/home/dharon/watum/src/lib/server/sql/crud/students/select-from-students.sql", "MS SQL", 0, 0, 0, 12, 0, 0, 0, 0, 0, 12
+"/home/dharon/watum/src/lib/server/sql/crud/students/select-from-students.ts", "TypeScript", 49, 0, 0, 0, 0, 0, 0, 0, 5, 54
+"/home/dharon/watum/src/lib/server/sql/crud/students/update-students.sql", "MS SQL", 0, 0, 0, 13, 0, 0, 0, 0, 0, 13
+"/home/dharon/watum/src/lib/server/sql/crud/students/update-students.ts", "TypeScript", 37, 0, 0, 0, 0, 0, 0, 0, 5, 42
+"/home/dharon/watum/src/lib/server/sql/crud/study_programs/delete-from-study_programs.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/crud/study_programs/delete-from-study_programs.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 4, 19
+"/home/dharon/watum/src/lib/server/sql/crud/study_programs/index.ts", "TypeScript", 4, 0, 0, 0, 0, 0, 0, 0, 1, 5
+"/home/dharon/watum/src/lib/server/sql/crud/study_programs/insert-into-study_programs.sql", "MS SQL", 0, 0, 0, 18, 0, 0, 0, 0, 0, 18
+"/home/dharon/watum/src/lib/server/sql/crud/study_programs/insert-into-study_programs.ts", "TypeScript", 37, 0, 0, 0, 0, 0, 0, 0, 4, 41
+"/home/dharon/watum/src/lib/server/sql/crud/study_programs/select-from-study_programs.sql", "MS SQL", 0, 0, 0, 9, 0, 0, 0, 0, 0, 9
+"/home/dharon/watum/src/lib/server/sql/crud/study_programs/select-from-study_programs.ts", "TypeScript", 40, 0, 0, 0, 0, 0, 0, 0, 5, 45
+"/home/dharon/watum/src/lib/server/sql/crud/study_programs/update-study_programs.sql", "MS SQL", 0, 0, 0, 10, 0, 0, 0, 0, 0, 10
+"/home/dharon/watum/src/lib/server/sql/crud/study_programs/update-study_programs.ts", "TypeScript", 31, 0, 0, 0, 0, 0, 0, 0, 5, 36
+"/home/dharon/watum/src/lib/server/sql/crud/users/delete-from-users.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/crud/users/delete-from-users.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 4, 19
+"/home/dharon/watum/src/lib/server/sql/crud/users/index.ts", "TypeScript", 4, 0, 0, 0, 0, 0, 0, 0, 1, 5
+"/home/dharon/watum/src/lib/server/sql/crud/users/insert-into-users.sql", "MS SQL", 0, 0, 0, 22, 0, 0, 0, 0, 0, 22
+"/home/dharon/watum/src/lib/server/sql/crud/users/insert-into-users.ts", "TypeScript", 43, 0, 0, 0, 0, 0, 0, 0, 4, 47
+"/home/dharon/watum/src/lib/server/sql/crud/users/select-from-users.sql", "MS SQL", 0, 0, 0, 11, 0, 0, 0, 0, 0, 11
+"/home/dharon/watum/src/lib/server/sql/crud/users/select-from-users.ts", "TypeScript", 46, 0, 0, 0, 0, 0, 0, 0, 5, 51
+"/home/dharon/watum/src/lib/server/sql/crud/users/update-users.sql", "MS SQL", 0, 0, 0, 12, 0, 0, 0, 0, 0, 12
+"/home/dharon/watum/src/lib/server/sql/crud/users/update-users.ts", "TypeScript", 35, 0, 0, 0, 0, 0, 0, 0, 5, 40
+"/home/dharon/watum/src/lib/server/sql/delete-class-room.sql", "MS SQL", 0, 0, 0, 1, 0, 0, 0, 0, 0, 1
+"/home/dharon/watum/src/lib/server/sql/delete-class-room.ts", "TypeScript", 14, 0, 0, 0, 0, 0, 0, 0, 4, 18
+"/home/dharon/watum/src/lib/server/sql/delete-course.sql", "MS SQL", 0, 0, 0, 1, 0, 0, 0, 0, 0, 1
+"/home/dharon/watum/src/lib/server/sql/delete-course.ts", "TypeScript", 14, 0, 0, 0, 0, 0, 0, 0, 4, 18
+"/home/dharon/watum/src/lib/server/sql/delete-enrollment.sql", "MS SQL", 0, 0, 0, 1, 0, 0, 0, 0, 0, 1
+"/home/dharon/watum/src/lib/server/sql/delete-enrollment.ts", "TypeScript", 14, 0, 0, 0, 0, 0, 0, 0, 4, 18
+"/home/dharon/watum/src/lib/server/sql/delete-faculty.sql", "MS SQL", 0, 0, 0, 1, 0, 0, 0, 0, 0, 1
+"/home/dharon/watum/src/lib/server/sql/delete-faculty.ts", "TypeScript", 14, 0, 0, 0, 0, 0, 0, 0, 4, 18
+"/home/dharon/watum/src/lib/server/sql/delete-grade.sql", "MS SQL", 0, 0, 0, 1, 0, 0, 0, 0, 1, 2
+"/home/dharon/watum/src/lib/server/sql/delete-grade.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 4, 19
+"/home/dharon/watum/src/lib/server/sql/delete-lectuer.sql", "MS SQL", 0, 0, 0, 1, 0, 0, 0, 0, 0, 1
+"/home/dharon/watum/src/lib/server/sql/delete-lectuer.ts", "TypeScript", 14, 0, 0, 0, 0, 0, 0, 0, 4, 18
+"/home/dharon/watum/src/lib/server/sql/delete-schedule.sql", "MS SQL", 0, 0, 0, 1, 0, 0, 0, 0, 0, 1
+"/home/dharon/watum/src/lib/server/sql/delete-schedule.ts", "TypeScript", 14, 0, 0, 0, 0, 0, 0, 0, 4, 18
+"/home/dharon/watum/src/lib/server/sql/delete-student.sql", "MS SQL", 0, 0, 0, 1, 0, 0, 0, 0, 1, 2
+"/home/dharon/watum/src/lib/server/sql/delete-student.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 4, 19
+"/home/dharon/watum/src/lib/server/sql/delete-study-program.sql", "MS SQL", 0, 0, 0, 1, 0, 0, 0, 0, 0, 1
+"/home/dharon/watum/src/lib/server/sql/delete-study-program.ts", "TypeScript", 14, 0, 0, 0, 0, 0, 0, 0, 4, 18
+"/home/dharon/watum/src/lib/server/sql/delete-user.sql", "MS SQL", 0, 0, 0, 1, 0, 0, 0, 0, 1, 2
+"/home/dharon/watum/src/lib/server/sql/delete-user.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 4, 19
+"/home/dharon/watum/src/lib/server/sql/index.ts", "TypeScript", 43, 0, 0, 0, 0, 0, 0, 0, 1, 44
+"/home/dharon/watum/src/lib/server/sql/insert-class-room.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/insert-class-room.ts", "TypeScript", 21, 0, 0, 0, 0, 0, 0, 0, 4, 25
+"/home/dharon/watum/src/lib/server/sql/insert-course.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/insert-course.ts", "TypeScript", 20, 0, 0, 0, 0, 0, 0, 0, 4, 24
+"/home/dharon/watum/src/lib/server/sql/insert-enrollment.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/insert-enrollment.ts", "TypeScript", 22, 0, 0, 0, 0, 0, 0, 0, 4, 26
+"/home/dharon/watum/src/lib/server/sql/insert-faculty.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/insert-faculty.ts", "TypeScript", 17, 0, 0, 0, 0, 0, 0, 0, 4, 21
+"/home/dharon/watum/src/lib/server/sql/insert-grade.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/insert-grade.ts", "TypeScript", 22, 0, 0, 0, 0, 0, 0, 0, 4, 26
+"/home/dharon/watum/src/lib/server/sql/insert-lecturer.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/insert-lecturer.ts", "TypeScript", 20, 0, 0, 0, 0, 0, 0, 0, 4, 24
+"/home/dharon/watum/src/lib/server/sql/insert-schedule.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/insert-schedule.ts", "TypeScript", 21, 0, 0, 0, 0, 0, 0, 0, 4, 25
+"/home/dharon/watum/src/lib/server/sql/insert-student.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/insert-student.ts", "TypeScript", 22, 0, 0, 0, 0, 0, 0, 0, 4, 26
+"/home/dharon/watum/src/lib/server/sql/insert-study-program.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 0, 2
+"/home/dharon/watum/src/lib/server/sql/insert-study-program.ts", "TypeScript", 19, 0, 0, 0, 0, 0, 0, 0, 4, 23
+"/home/dharon/watum/src/lib/server/sql/insert-user.sql", "MS SQL", 0, 0, 0, 2, 0, 0, 0, 0, 1, 3
+"/home/dharon/watum/src/lib/server/sql/insert-user.ts", "TypeScript", 22, 0, 0, 0, 0, 0, 0, 0, 4, 26
+"/home/dharon/watum/src/lib/server/sql/select-class-rooms.sql", "MS SQL", 0, 0, 0, 14, 0, 0, 0, 1, 1, 16
+"/home/dharon/watum/src/lib/server/sql/select-class-rooms.ts", "TypeScript", 234, 0, 0, 0, 0, 0, 0, 0, 16, 250
+"/home/dharon/watum/src/lib/server/sql/select-courses.sql", "MS SQL", 0, 0, 0, 16, 0, 0, 0, 1, 1, 18
+"/home/dharon/watum/src/lib/server/sql/select-courses.ts", "TypeScript", 244, 0, 0, 0, 0, 0, 0, 5, 16, 265
+"/home/dharon/watum/src/lib/server/sql/select-enrollments.sql", "MS SQL", 0, 0, 0, 29, 0, 0, 0, 1, 1, 31
+"/home/dharon/watum/src/lib/server/sql/select-enrollments.ts", "TypeScript", 382, 0, 0, 0, 0, 0, 0, 7, 16, 405
+"/home/dharon/watum/src/lib/server/sql/select-faculties.sql", "MS SQL", 0, 0, 0, 9, 0, 0, 0, 1, 1, 11
+"/home/dharon/watum/src/lib/server/sql/select-faculties.ts", "TypeScript", 174, 0, 0, 0, 0, 0, 0, 0, 16, 190
+"/home/dharon/watum/src/lib/server/sql/select-grades.sql", "MS SQL", 0, 0, 0, 25, 0, 0, 0, 1, 1, 27
+"/home/dharon/watum/src/lib/server/sql/select-grades.ts", "TypeScript", 362, 0, 0, 0, 0, 0, 0, 5, 16, 383
+"/home/dharon/watum/src/lib/server/sql/select-lecturer-schedule-conflict.ts", "TypeScript", 48, 0, 0, 0, 0, 0, 0, 0, 8, 56
+"/home/dharon/watum/src/lib/server/sql/select-lecturers.sql", "MS SQL", 0, 0, 0, 12, 0, 0, 0, 1, 1, 14
+"/home/dharon/watum/src/lib/server/sql/select-lecturers.ts", "TypeScript", 210, 0, 0, 0, 0, 0, 0, 0, 16, 226
+"/home/dharon/watum/src/lib/server/sql/select-schedules-conflict.sql", "MS SQL", 0, 0, 0, 5, 0, 0, 0, 0, 1, 6
+"/home/dharon/watum/src/lib/server/sql/select-schedules-conflict.ts", "TypeScript", 37, 0, 0, 0, 0, 0, 0, 0, 8, 45
+"/home/dharon/watum/src/lib/server/sql/select-schedules.sql", "MS SQL", 0, 0, 0, 13, 0, 0, 0, 1, 1, 15
+"/home/dharon/watum/src/lib/server/sql/select-schedules.ts", "TypeScript", 205, 0, 0, 0, 0, 0, 0, 0, 16, 221
+"/home/dharon/watum/src/lib/server/sql/select-student-schedule-conflict.sql", "MS SQL", 0, 0, 0, 8, 0, 0, 0, 0, 1, 9
+"/home/dharon/watum/src/lib/server/sql/select-student-schedule-conflict.ts", "TypeScript", 47, 0, 0, 0, 0, 0, 0, 0, 8, 55
+"/home/dharon/watum/src/lib/server/sql/select-students.sql", "MS SQL", 0, 0, 0, 19, 0, 0, 0, 6, 1, 26
+"/home/dharon/watum/src/lib/server/sql/select-students.ts", "TypeScript", 286, 0, 0, 0, 0, 0, 0, 4, 16, 306
+"/home/dharon/watum/src/lib/server/sql/select-study-programs.sql", "MS SQL", 0, 0, 0, 13, 0, 0, 0, 1, 1, 15
+"/home/dharon/watum/src/lib/server/sql/select-study-programs.ts", "TypeScript", 215, 0, 0, 0, 0, 0, 0, 0, 16, 231
+"/home/dharon/watum/src/lib/server/sql/select-users.sql", "MS SQL", 0, 0, 0, 14, 0, 0, 0, 1, 1, 16
+"/home/dharon/watum/src/lib/server/sql/select-users.ts", "TypeScript", 220, 0, 0, 0, 0, 0, 0, 0, 16, 236
+"/home/dharon/watum/src/lib/server/sql/update-class-room.sql", "MS SQL", 0, 0, 0, 8, 0, 0, 0, 0, 0, 8
+"/home/dharon/watum/src/lib/server/sql/update-class-room.ts", "TypeScript", 28, 0, 0, 0, 0, 0, 0, 0, 5, 33
+"/home/dharon/watum/src/lib/server/sql/update-course.sql", "MS SQL", 0, 0, 0, 6, 0, 0, 0, 0, 0, 6
+"/home/dharon/watum/src/lib/server/sql/update-course.ts", "TypeScript", 25, 0, 0, 0, 0, 0, 0, 0, 5, 30
+"/home/dharon/watum/src/lib/server/sql/update-enrollment.sql", "MS SQL", 0, 0, 0, 4, 0, 0, 0, 0, 0, 4
+"/home/dharon/watum/src/lib/server/sql/update-enrollment.ts", "TypeScript", 38, 0, 0, 0, 0, 0, 0, 0, 6, 44
+"/home/dharon/watum/src/lib/server/sql/update-faculty.sql", "MS SQL", 0, 0, 0, 3, 0, 0, 0, 0, 0, 3
+"/home/dharon/watum/src/lib/server/sql/update-faculty.ts", "TypeScript", 19, 0, 0, 0, 0, 0, 0, 0, 5, 24
+"/home/dharon/watum/src/lib/server/sql/update-grade.sql", "MS SQL", 0, 0, 0, 7, 0, 0, 0, 0, 0, 7
+"/home/dharon/watum/src/lib/server/sql/update-grade.ts", "TypeScript", 27, 0, 0, 0, 0, 0, 0, 0, 5, 32
+"/home/dharon/watum/src/lib/server/sql/update-lecturer.sql", "MS SQL", 0, 0, 0, 6, 0, 0, 0, 0, 0, 6
+"/home/dharon/watum/src/lib/server/sql/update-lecturer.ts", "TypeScript", 25, 0, 0, 0, 0, 0, 0, 0, 5, 30
+"/home/dharon/watum/src/lib/server/sql/update-schedule.sql", "MS SQL", 0, 0, 0, 4, 0, 0, 0, 0, 0, 4
+"/home/dharon/watum/src/lib/server/sql/update-schedule.ts", "TypeScript", 24, 0, 0, 0, 0, 0, 0, 0, 5, 29
+"/home/dharon/watum/src/lib/server/sql/update-student.sql", "MS SQL", 0, 0, 0, 8, 0, 0, 0, 0, 0, 8
+"/home/dharon/watum/src/lib/server/sql/update-student.ts", "TypeScript", 29, 0, 0, 0, 0, 0, 0, 0, 5, 34
+"/home/dharon/watum/src/lib/server/sql/update-study-program.sql", "MS SQL", 0, 0, 0, 5, 0, 0, 0, 0, 0, 5
+"/home/dharon/watum/src/lib/server/sql/update-study-program.ts", "TypeScript", 23, 0, 0, 0, 0, 0, 0, 0, 5, 28
+"/home/dharon/watum/src/lib/server/sql/update-user.sql", "MS SQL", 0, 0, 0, 3, 0, 0, 0, 0, 0, 3
+"/home/dharon/watum/src/lib/server/sql/update-user.ts", "TypeScript", 23, 0, 0, 0, 0, 0, 0, 0, 5, 28
+"/home/dharon/watum/src/lib/time-helpers.ts", "TypeScript", 123, 0, 0, 0, 0, 0, 0, 3, 16, 142
+"/home/dharon/watum/src/lib/utils.ts", "TypeScript", 9, 0, 0, 0, 0, 0, 0, 2, 3, 14
+"/home/dharon/watum/src/lib/validations/classroom.ts", "TypeScript", 9, 0, 0, 0, 0, 0, 0, 0, 3, 12
+"/home/dharon/watum/src/lib/validations/course.ts", "TypeScript", 11, 0, 0, 0, 0, 0, 0, 0, 3, 14
+"/home/dharon/watum/src/lib/validations/enrollment.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 4, 19
+"/home/dharon/watum/src/lib/validations/faculty.ts", "TypeScript", 8, 0, 0, 0, 0, 0, 0, 0, 3, 11
+"/home/dharon/watum/src/lib/validations/grade.ts", "TypeScript", 28, 0, 0, 0, 0, 0, 0, 0, 6, 34
+"/home/dharon/watum/src/lib/validations/lecturer.ts", "TypeScript", 11, 0, 0, 0, 0, 0, 0, 0, 3, 14
+"/home/dharon/watum/src/lib/validations/pagination.ts", "TypeScript", 6, 0, 0, 0, 0, 0, 0, 0, 4, 10
+"/home/dharon/watum/src/lib/validations/student.ts", "TypeScript", 9, 0, 0, 0, 0, 0, 0, 0, 2, 11
+"/home/dharon/watum/src/lib/validations/study-program.ts", "TypeScript", 10, 0, 0, 0, 0, 0, 0, 0, 3, 13
+"/home/dharon/watum/src/lib/validations/user.ts", "TypeScript", 22, 0, 0, 0, 0, 0, 0, 0, 6, 28
+"/home/dharon/watum/src/routes/+layout.svelte", "Svelte", 0, 0, 18, 0, 0, 0, 0, 0, 5, 23
+"/home/dharon/watum/src/routes/+page.svelte", "Svelte", 0, 0, 9133, 0, 0, 0, 0, 0, 626, 9759
+"/home/dharon/watum/src/routes/auth/data.remote.ts", "TypeScript", 23, 0, 0, 0, 0, 0, 0, 0, 5, 28
+"/home/dharon/watum/src/routes/auth/refresh/+server.ts", "TypeScript", 12, 0, 0, 0, 0, 0, 0, 0, 3, 15
+"/home/dharon/watum/src/routes/classrooms/data.remote.ts", "TypeScript", 559, 0, 0, 0, 0, 0, 0, 3, 43, 605
+"/home/dharon/watum/src/routes/courses/data.remote.ts", "TypeScript", 254, 0, 0, 0, 0, 0, 0, 0, 17, 271
+"/home/dharon/watum/src/routes/demo/+page.svelte", "Svelte", 0, 0, 7, 0, 0, 0, 0, 0, 2, 9
+"/home/dharon/watum/src/routes/demo/playwright/+page.svelte", "Svelte", 0, 0, 4, 0, 0, 0, 0, 0, 1, 5
+"/home/dharon/watum/src/routes/demo/playwright/page.svelte.e2e.ts", "TypeScript", 5, 0, 0, 0, 0, 0, 0, 0, 2, 7
+"/home/dharon/watum/src/routes/enrollments/data.remote.ts", "TypeScript", 955, 0, 0, 0, 0, 0, 0, 19, 62, 1036
+"/home/dharon/watum/src/routes/faculties/data.remote.ts", "TypeScript", 150, 0, 0, 0, 0, 0, 0, 0, 9, 159
+"/home/dharon/watum/src/routes/grades/data.remote.ts", "TypeScript", 663, 0, 0, 0, 0, 0, 0, 7, 46, 716
+"/home/dharon/watum/src/routes/health/+server.ts", "TypeScript", 4, 0, 0, 0, 0, 0, 0, 0, 2, 6
+"/home/dharon/watum/src/routes/layout.css", "PostCSS", 0, 0, 0, 0, 0, 0, 199, 0, 19, 218
+"/home/dharon/watum/src/routes/lecturers/data.remote.ts", "TypeScript", 228, 0, 0, 0, 0, 0, 0, 0, 15, 243
+"/home/dharon/watum/src/routes/ready/+server.ts", "TypeScript", 10, 0, 0, 0, 0, 0, 0, 0, 2, 12
+"/home/dharon/watum/src/routes/students/data.remote.ts", "TypeScript", 282, 0, 0, 0, 0, 0, 0, 0, 20, 302
+"/home/dharon/watum/src/routes/study-programs/data.remote.ts", "TypeScript", 198, 0, 0, 0, 0, 0, 0, 0, 9, 207
+"/home/dharon/watum/src/routes/test/+page.svelte", "Svelte", 0, 0, 2242, 0, 0, 0, 0, 0, 30, 2272
+"/home/dharon/watum/src/routes/users/data.remote.ts", "TypeScript", 414, 0, 0, 0, 0, 0, 0, 8, 35, 457
+"Total", "-", 10875, 12, 12494, 1377, 105, 1, 199, 194, 2189, 27446

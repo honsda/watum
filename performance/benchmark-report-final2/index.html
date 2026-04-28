@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Watum Benchmark Report</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;margin:2rem;background:#f5f5f5}
+h1{color:#333}table{width:100%;border-collapse:collapse;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+th,td{padding:.75rem 1rem;text-align:right;border-bottom:1px solid #eee}
+th{background:#2c3e50;color:#fff}td:first-child,th:first-child{text-align:left}
+tr:hover{background:#f8f9fa}.good{color:#27ae60;font-weight:600}
+.warn{color:#f39c12;font-weight:600}.bad{color:#e74c3c;font-weight:600}
+.summary{background:#fff;padding:1rem;margin-bottom:1rem;border-radius:4px}
+</style></head><body>
+<h1>Watum Benchmark Report</h1>
+<div class="summary">
+<p><strong>Host:</strong> http://localhost:3000</p>
+<p><strong>Generated:</strong> 2026-04-25T08:12:30.614Z</p>
+</div>
+<table><thead><tr>
+<th>Transaction</th><th>Samples</th><th>Errors</th><th>Error %</th>
+<th>Throughput</th><th>Mean</th><th>Median</th><th>Min</th><th>Max</th><th>P90</th><th>P95</th><th>P99</th>
+</tr></thead><tbody><tr>
+        <td>Login User</td>
+        <td>10</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.30</td>
+        <td class="warn">248.76</td>
+        <td>228.03</td>
+        <td>208.54</td>
+        <td>472.28</td>
+        <td>472.28</td>
+        <td>472.28</td>
+        <td>472.28</td>
+      </tr><tr>
+        <td>Login Admin User</td>
+        <td>1</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.03</td>
+        <td class="warn">460.54</td>
+        <td>460.54</td>
+        <td>460.54</td>
+        <td>460.54</td>
+        <td>460.54</td>
+        <td>460.54</td>
+        <td>460.54</td>
+      </tr><tr>
+        <td>Refresh Access Token</td>
+        <td>30</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.89</td>
+        <td class="warn">248.72</td>
+        <td>253.04</td>
+        <td>227.09</td>
+        <td>280.45</td>
+        <td>270.27</td>
+        <td>270.36</td>
+        <td>280.45</td>
+      </tr><tr>
+        <td>Get Current User</td>
+        <td>30</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.89</td>
+        <td class="good">73.44</td>
+        <td>73.71</td>
+        <td>64.62</td>
+        <td>83.25</td>
+        <td>82.97</td>
+        <td>82.98</td>
+        <td>83.25</td>
+      </tr><tr>
+        <td>Get Courses</td>
+        <td>30</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.89</td>
+        <td class="warn">117.08</td>
+        <td>110.79</td>
+        <td>96.65</td>
+        <td>352.22</td>
+        <td>127.85</td>
+        <td>133.79</td>
+        <td>352.22</td>
+      </tr><tr>
+        <td>Get Students</td>
+        <td>30</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.89</td>
+        <td class="warn">107.36</td>
+        <td>108.68</td>
+        <td>96.47</td>
+        <td>122.43</td>
+        <td>118.70</td>
+        <td>118.93</td>
+        <td>122.43</td>
+      </tr><tr>
+        <td>Get Enrollments</td>
+        <td>30</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.89</td>
+        <td class="warn">118.96</td>
+        <td>113.36</td>
+        <td>98.32</td>
+        <td>354.57</td>
+        <td>125.31</td>
+        <td>129.94</td>
+        <td>354.57</td>
+      </tr><tr>
+        <td>Get Grades</td>
+        <td>30</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.89</td>
+        <td class="warn">119.97</td>
+        <td>111.46</td>
+        <td>97.51</td>
+        <td>353.51</td>
+        <td>130.08</td>
+        <td>155.32</td>
+        <td>353.51</td>
+      </tr><tr>
+        <td>User Operation Flow</td>
+        <td>30</td>
+        <td>0</td>
+        <td>0.0%</td>
+        <td>0.89</td>
+        <td class="bad">537.09</td>
+        <td>527.84</td>
+        <td>465.59</td>
+        <td>782.92</td>
+        <td>722.49</td>
+        <td>729.29</td>
+        <td>782.92</td>
+      </tr></tbody></table>
+</body></html>

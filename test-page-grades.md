@@ -1,0 +1,54 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - heading "Remote Functions Test" [level=1] [ref=e4]
+    - generic [ref=e5]:
+      - heading "Auth Session" [level=3] [ref=e6]
+      - paragraph [ref=e7]: Most remote functions require a valid session. Login first to avoid Unauthorized.
+      - generic [ref=e8]:
+        - button "Check Session" [ref=e9]
+        - generic [ref=e10]
+        - button "Logout" [ref=e15]
+      - paragraph [ref=e73]: Login success.
+    - generic [ref=e16]:
+      - button "courses" [ref=e17]
+      - button "classrooms" [ref=e18]
+      - button "students" [ref=e19]
+      - button "lecturers" [ref=e20]
+      - button "faculties" [ref=e21]
+      - button "study-programs" [ref=e22]
+      - button "enrollments" [ref=e23]
+      - button "grades" [active] [ref=e24]
+      - button "users" [ref=e25]
+    - generic [ref=e199]:
+      - generic [ref=e200]:
+        - heading "getGrades" [level=3] [ref=e201]
+        - button "Test" [ref=e202]
+      - generic [ref=e203]:
+        - heading "searchGrades" [level=3] [ref=e204]
+        - generic [ref=e205]
+      - generic [ref=e219]:
+        - heading "getGrade" [level=3] [ref=e220]
+        - textbox "Grade ID" [ref=e221]
+        - button "Test" [ref=e222]
+      - generic [ref=e223]:
+        - heading "getGradesByCourse" [level=3] [ref=e224]
+        - textbox "Course ID" [ref=e225]: CS101
+        - button "Test" [ref=e226]
+      - generic [ref=e227]:
+        - heading "getGradesByStudent" [level=3] [ref=e228]
+        - textbox "Student ID (NRP)" [ref=e229]
+        - button "Test" [ref=e230]
+      - generic [ref=e231]:
+        - heading "createGrade" [level=3] [ref=e232]
+        - generic [ref=e233]
+      - generic [ref=e239]:
+        - heading "updateGrade" [level=3] [ref=e240]
+        - generic [ref=e241]
+      - generic [ref=e248]:
+        - heading "batchInputGrades" [level=3] [ref=e249]
+        - generic [ref=e250]
+      - generic [ref=e256]:
+        - heading "deleteGrade" [level=3] [ref=e257]
+        - textbox "Grade ID to delete" [ref=e258]
+        - button "Test" [ref=e259]
+  - generic [ref=e67]: untitled page

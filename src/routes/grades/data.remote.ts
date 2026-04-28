@@ -714,38 +714,35 @@ export const deleteGrade = command(v.string(), async (id) => {
 	return { success: true };
 });
 
-export const bulkDeleteGrades = command(
-	v.pipe(v.string(), v.minLength(1)),
-	async (idsParam) => {
-		const user = await requireRole(['LECTURER', 'ADMIN']);
-		const ids = idsParam.split(',').filter(Boolean);
-		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
-		for (const id of ids) {
-			const [grade] = await selectGrades(getPool(), {
-				where: [['id', '=', id]]
+export const bulkDeleteGrades = command(v.pipe(v.string(), v.minLength(1)), async (idsParam) => {
+	const user = await requireRole(['LECTURER', 'ADMIN']);
+	const ids = idsParam.split(',').filter(Boolean);
+	const results: Array<{ id: string; ok: boolean; message?: string }> = [];
+	for (const id of ids) {
+		const [grade] = await selectGrades(getPool(), {
+			where: [['id', '=', id]]
+		});
+		if (!grade) {
+			results.push({ id, ok: false, message: 'Nilai tidak ditemukan' });
+			continue;
+		}
+		if (user.role === 'LECTURER') {
+			const [enrollment] = await selectEnrollments(getPool(), {
+				where: [['id', '=', grade.enrollment_id ?? '']]
 			});
-			if (!grade) {
-				results.push({ id, ok: false, message: 'Nilai tidak ditemukan' });
+			if (enrollment?.lecturer_id !== user.lecturerId) {
+				results.push({ id, ok: false, message: 'Bukan mata kuliah Anda' });
 				continue;
 			}
-			if (user.role === 'LECTURER') {
-				const [enrollment] = await selectEnrollments(getPool(), {
-					where: [['id', '=', grade.enrollment_id ?? '']]
-				});
-				if (enrollment?.lecturer_id !== user.lecturerId) {
-					results.push({ id, ok: false, message: 'Bukan mata kuliah Anda' });
-					continue;
-				}
-			}
-			await deleteGradeDb(getPool(), { id });
-			results.push({ id, ok: true });
 		}
-		if (results.some((r) => r.ok)) {
-			await getGrades().refresh();
-		}
-		return { success: true, results };
+		await deleteGradeDb(getPool(), { id });
+		results.push({ id, ok: true });
 	}
-);
+	if (results.some((r) => r.ok)) {
+		await getGrades().refresh();
+	}
+	return { success: true, results };
+});
 
 const optionalScore = () =>
 	v.optional(

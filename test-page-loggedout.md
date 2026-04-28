@@ -1,0 +1,25 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - heading "Remote Functions Test" [level=1] [ref=e4]
+    - generic [ref=e5]:
+      - heading "Auth Session" [level=3] [ref=e6]
+      - paragraph [ref=e7]: Most remote functions require a valid session. Login first to avoid Unauthorized.
+      - generic [ref=e8]
+    - generic [ref=e16]:
+      - button "courses" [ref=e17]
+      - button "classrooms" [ref=e18]
+      - button "students" [ref=e19]
+      - button "lecturers" [ref=e20]
+      - button "faculties" [ref=e21]
+      - button "study-programs" [ref=e22]
+      - button "enrollments" [ref=e23]
+      - button "grades" [ref=e24]
+      - button "users" [ref=e25]
+    - generic [ref=e26]:
+      - generic [ref=e27]
+      - generic [ref=e30]
+      - generic [ref=e42]
+      - generic [ref=e46]
+      - generic [ref=e54]
+      - generic [ref=e63]
+  - generic [ref=e67]: untitled page
