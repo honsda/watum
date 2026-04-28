@@ -883,7 +883,9 @@
 		grades: new Set()
 	});
 
-	let bulkEditClassRoomType = $state<'REGULER' | 'LAB_KOMPUTER' | 'LAB_BAHASA' | 'AUDITORIUM'>('REGULER');
+	let bulkEditClassRoomType = $state<'REGULER' | 'LAB_KOMPUTER' | 'LAB_BAHASA' | 'AUDITORIUM'>(
+		'REGULER'
+	);
 	let bulkEditClassRoomCapacity = $state(30);
 	let bulkEditClassRoomHasProjector = $state(false);
 	let bulkEditClassRoomHasAC = $state(false);
@@ -1611,7 +1613,14 @@
 		return {
 			academicYear,
 			semester,
-			day: (scheduleDayFilter || undefined) as 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU' | undefined,
+			day: (scheduleDayFilter || undefined) as
+				| 'SENIN'
+				| 'SELASA'
+				| 'RABU'
+				| 'KAMIS'
+				| 'JUMAT'
+				| 'SABTU'
+				| undefined,
 			courseId: scheduleCourseFilter || undefined,
 			classRoomId: scheduleRoomFilter || undefined,
 			lecturerId: scheduleLecturerFilter || undefined,
@@ -3407,7 +3416,9 @@
 					? ({
 							...room,
 							name: classroomDraft.name,
-							class_room_type: classroomDraft.classRoomType as NonNullable<typeof room.class_room_type>,
+							class_room_type: classroomDraft.classRoomType as NonNullable<
+								typeof room.class_room_type
+							>,
 							capacity: classroomDraft.capacity,
 							has_projector: classroomDraft.hasProjector ? 1 : 0,
 							has_ac: classroomDraft.hasAC ? 1 : 0
@@ -6324,16 +6335,16 @@
 							/>
 						</section>
 						<section class="workspace-detail">
-								<div class="pane-head compact">
-									<div>
-										<h3>
-											{editorView === 'classrooms-bulk'
-												? 'Ubah massal ruang'
-												: selectedRoom
-													? selectedRoom.name
-													: 'Tambah ruang'}
-										</h3>
-									</div>
+							<div class="pane-head compact">
+								<div>
+									<h3>
+										{editorView === 'classrooms-bulk'
+											? 'Ubah massal ruang'
+											: selectedRoom
+												? selectedRoom.name
+												: 'Tambah ruang'}
+									</h3>
+								</div>
 								{#if currentUser.current.role === 'ADMIN'}
 									<div class="detail-actions">
 										{#if editorView === 'classrooms'}
@@ -6383,7 +6394,9 @@
 									</div>
 								</section>
 							{/if}
-							{#if selectedRoom && editorView !== 'classrooms' && editorView !== 'classrooms-bulk'}<div class="detail-stack">
+							{#if selectedRoom && editorView !== 'classrooms' && editorView !== 'classrooms-bulk'}<div
+									class="detail-stack"
+								>
 									<div class="detail-lines">
 										<div>
 											<span>Tipe</span><strong
@@ -6471,8 +6484,8 @@
 									{...bulkUpdateClassRoomsEnhance}
 								>
 									<p class="editor-note">
-										Ubah tipe, kapasitas, dan fasilitas {bulkCount('classrooms')} ruang terpilih
-										sekaligus. Kosongkan field yang tidak ingin diubah.
+										Ubah tipe, kapasitas, dan fasilitas {bulkCount('classrooms')} ruang terpilih sekaligus.
+										Kosongkan field yang tidak ingin diubah.
 									</p>
 									<input type="hidden" name="ids" value={bulkGetIds('classrooms').join(',')} />
 									<label
@@ -6723,7 +6736,9 @@
 									</div>
 								</section>
 							{/if}
-							{#if selectedCourse && editorView !== 'courses' && editorView !== 'courses-bulk'}<div class="detail-stack">
+							{#if selectedCourse && editorView !== 'courses' && editorView !== 'courses-bulk'}<div
+									class="detail-stack"
+								>
 									<div class="detail-lines">
 										<div><span>Kode</span><strong>{selectedCourse.id}</strong></div>
 										<div>
@@ -7052,7 +7067,9 @@
 									</div>
 								</section>
 							{/if}
-							{#if selectedStudent && editorView !== 'students' && editorView !== 'students-bulk'}<div class="detail-stack">
+							{#if selectedStudent && editorView !== 'students' && editorView !== 'students-bulk'}<div
+									class="detail-stack"
+								>
 									<div class="detail-lines">
 										<div><span>Email</span><strong>{selectedStudent.email}</strong></div>
 										<div>
@@ -7137,8 +7154,8 @@
 									{...bulkUpdateStudentsEnhance}
 								>
 									<p class="editor-note">
-										Ubah prodi dan angkatan {bulkCount('students')} mahasiswa terpilih sekaligus.
-										Kosongkan field yang tidak ingin diubah.
+										Ubah prodi dan angkatan {bulkCount('students')} mahasiswa terpilih sekaligus. Kosongkan
+										field yang tidak ingin diubah.
 									</p>
 									<input type="hidden" name="ids" value={bulkGetIds('students').join(',')} />
 									<label
@@ -7367,7 +7384,9 @@
 									</div>
 								</section>
 							{/if}
-							{#if selectedLecturer && editorView !== 'lecturers' && editorView !== 'lecturers-bulk'}<div class="detail-stack">
+							{#if selectedLecturer && editorView !== 'lecturers' && editorView !== 'lecturers-bulk'}<div
+									class="detail-stack"
+								>
 									<div class="detail-lines">
 										<div><span>ID dosen</span><strong>{selectedLecturer.id}</strong></div>
 										<div><span>Email</span><strong>{selectedLecturer.email}</strong></div>
@@ -7669,7 +7688,9 @@
 									</div>
 								</section>
 							{/if}
-							{#if selectedFaculty && editorView !== 'faculties' && editorView !== 'faculties-bulk'}<div class="detail-stack">
+							{#if selectedFaculty && editorView !== 'faculties' && editorView !== 'faculties-bulk'}<div
+									class="detail-stack"
+								>
 									<div class="detail-lines">
 										<div><span>Kode</span><strong>{selectedFaculty.id}</strong></div>
 										<div>
@@ -7707,8 +7728,8 @@
 									{...bulkUpdateFacultiesEnhance}
 								>
 									<p class="editor-note">
-										Ubah nama {bulkCount('faculties')} fakultas terpilih sekaligus. Kosongkan field
-										yang tidak ingin diubah.
+										Ubah nama {bulkCount('faculties')} fakultas terpilih sekaligus. Kosongkan field yang
+										tidak ingin diubah.
 									</p>
 									<input type="hidden" name="ids" value={bulkGetIds('faculties').join(',')} />
 									<label
@@ -7832,7 +7853,8 @@
 									<div
 										class="list-row user-row"
 										class:selected={selectedStudyProgramId === item.id}
-										class:checked={item.id != null && bulkSelectedIds['studyPrograms']?.has(item.id)}
+										class:checked={item.id != null &&
+											bulkSelectedIds['studyPrograms']?.has(item.id)}
 									>
 										<label class="row-checkbox"
 											><input
@@ -7928,7 +7950,9 @@
 									</div>
 								</section>
 							{/if}
-							{#if selectedStudyProgram && editorView !== 'studyPrograms' && editorView !== 'studyPrograms-bulk'}<div class="detail-stack">
+							{#if selectedStudyProgram && editorView !== 'studyPrograms' && editorView !== 'studyPrograms-bulk'}<div
+									class="detail-stack"
+								>
 									<div class="detail-lines">
 										<div><span>ID prodi</span><strong>{selectedStudyProgram.id}</strong></div>
 										<div>
@@ -8001,8 +8025,8 @@
 									{...bulkUpdateStudyProgramsEnhance}
 								>
 									<p class="editor-note">
-										Ubah fakultas dan ketua prodi {bulkCount('studyPrograms')} prodi terpilih
-										sekaligus. Kosongkan field yang tidak ingin diubah.
+										Ubah fakultas dan ketua prodi {bulkCount('studyPrograms')} prodi terpilih sekaligus.
+										Kosongkan field yang tidak ingin diubah.
 									</p>
 									<input type="hidden" name="ids" value={bulkGetIds('studyPrograms').join(',')} />
 									<label
@@ -8268,8 +8292,8 @@
 											variant="ghost"
 											size="sm"
 											class="ghost-button"
-												onclick={() => {
-													editorView = 'enrollments-bulk';
+											onclick={() => {
+												editorView = 'enrollments-bulk';
 											}}>Ubah</Button
 										>
 										<Button
@@ -8409,8 +8433,8 @@
 									{...bulkUpdateEnrollmentsEnhance}
 								>
 									<p class="editor-note">
-										Ubah semester dan tahun akademik {bulkCount('enrollments')} KRS terpilih
-										sekaligus. Kosongkan field yang tidak ingin diubah.
+										Ubah semester dan tahun akademik {bulkCount('enrollments')} KRS terpilih sekaligus.
+										Kosongkan field yang tidak ingin diubah.
 									</p>
 									<input type="hidden" name="ids" value={bulkGetIds('enrollments').join(',')} />
 									<label
@@ -8449,7 +8473,9 @@
 											>Simpan perubahan {bulkCount('enrollments')} KRS</Button
 										>
 									</div>
-								</form>{:else}<p class="empty-copy">Pilih satu baris untuk melihat detail KRS.</p>{/if}
+								</form>{:else}<p class="empty-copy">
+									Pilih satu baris untuk melihat detail KRS.
+								</p>{/if}
 						</section>
 					</div>
 				{/if}
@@ -8662,7 +8688,9 @@
 									</div>
 								</section>
 							{/if}
-							{#if selectedGrade && editorView !== 'grades' && editorView !== 'grades-bulk'}<div class="detail-stack">
+							{#if selectedGrade && editorView !== 'grades' && editorView !== 'grades-bulk'}<div
+									class="detail-stack"
+								>
 									<div class="detail-lines">
 										<div><span>Total</span><strong>{selectedGrade.total_score}</strong></div>
 										<div><span>Huruf</span><strong>{selectedGrade.letter_grade}</strong></div>
@@ -9663,6 +9691,7 @@
 	.calendar-layout,
 	.workspace-shell {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 1rem;
 		min-width: 0;
 	}
@@ -11362,17 +11391,17 @@
 		}
 
 		.pane-head {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 		}
 
 		.student-summary-row,
 		.student-grade-items,
 		.student-actions {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 		}
 
 		.workspace-shell {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 		}
 
 		.builder-shell {
@@ -11388,7 +11417,7 @@
 
 		.decision-board,
 		.builder-room-stage {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 		}
 	}
 
@@ -11409,7 +11438,7 @@
 		.topbar,
 		.pane-head,
 		.summary-stats {
-			grid-template-columns: 1fr !important;
+			grid-template-columns: minmax(0, 1fr) !important;
 		}
 
 		.decision-lead,
@@ -11454,7 +11483,7 @@
 
 		.topbar,
 		.pane-head {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 			display: grid;
 		}
 
@@ -11475,15 +11504,25 @@
 		.detail-lines,
 		.decision-actions,
 		.decision-board {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 		}
 
 		.builder-section-actions.split {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 		}
 
 		.schedule-filter-summary {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.filter-bar {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.schedule-filter-grid,
+		.list-filter-grid {
+			grid-template-columns: minmax(0, 1fr);
 		}
 
 		.builder-inline-actions {

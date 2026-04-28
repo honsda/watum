@@ -182,7 +182,9 @@
 <style>
 	.dashboard-grid {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 1rem;
+		min-width: 0;
 	}
 
 	.overview-panel,
@@ -420,6 +422,16 @@
 
 	.summary-stats article.stat-highlight strong {
 		color: var(--color-success);
+	}
+
+	@media (max-width: 720px) {
+		.table-panel header {
+			grid-template-columns: 1fr;
+		}
+
+		.detail-grid {
+			grid-template-columns: 1fr;
+		}
 	}
 
 	@media (min-width: 1100px) {
