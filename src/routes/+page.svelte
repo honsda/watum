@@ -2612,6 +2612,9 @@
 	const selectedGrade = $derived(
 		grades.find((item) => item.id === selectedGradeId) ?? selectedGradeRecord ?? null
 	);
+	const selectedGradeEnrollment = $derived(
+		enrollments.find((item) => item.id === gradeDraft.enrollmentId) ?? null
+	);
 	const selectedUser = $derived(
 		users.find((item) => item.id === selectedUserId) ?? selectedUserRecord ?? null
 	);
@@ -9201,7 +9204,27 @@
 												>{/if}{#each enrollments as item (item.id)}<option value={item.id}
 													>{item.student_name} • {item.course_name}</option
 												>{/each}</select
-										></label
+										>{#if selectedGradeEnrollment}<span
+												class="editor-entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity(
+														'students',
+														selectedGradeEnrollment.student_id,
+														selectedGradeEnrollment.student_name
+													);
+												}}>Lihat mahasiswa</span
+											>{/if}{#if selectedGradeEnrollment}<span
+												class="editor-entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity(
+														'courses',
+														selectedGradeEnrollment.course_id,
+														selectedGradeEnrollment.course_name
+													);
+												}}>Lihat mata kuliah</span
+											>{/if}</label
 									><label
 										><span>Tugas</span><input
 											min="0"
