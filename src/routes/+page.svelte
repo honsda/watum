@@ -9664,6 +9664,7 @@
 	.workspace-shell {
 		display: grid;
 		gap: 1rem;
+		min-width: 0;
 	}
 
 	.calendar-layout {
@@ -10160,6 +10161,11 @@
 	.student-grade-items {
 		display: grid;
 		gap: 0.75rem;
+		min-width: 0;
+	}
+
+	.student-hero {
+		overflow: hidden;
 	}
 
 	.student-hero,
@@ -10178,6 +10184,7 @@
 	.student-hero {
 		display: grid;
 		gap: 0.9rem;
+		min-width: 0;
 	}
 
 	.student-hero-copy {
@@ -11355,7 +11362,8 @@
 		}
 
 		.student-summary-row,
-		.student-grade-items {
+		.student-grade-items,
+		.student-actions {
 			grid-template-columns: 1fr;
 		}
 
@@ -11388,6 +11396,7 @@
 
 		.main-shell {
 			overflow: hidden;
+			overflow-x: clip;
 		}
 
 		.decision-board,
