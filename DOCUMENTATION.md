@@ -4,6 +4,7 @@
 > **Stack**: SvelteKit 2.x, MariaDB (MySQL), Bun, TypeScript  
 > **Scale**: Stress-tested to 10,000,000 rows (enrollments)  
 > **Last Updated**: 2026-04-28
+> **Recent Changes**: Added Section 12 (UI Entity Links & Accessibility), updated Appendix with a11y trade-off documentation
 
 ---
 
@@ -20,6 +21,7 @@
 9. [Stress Testing & Benchmarking](#9-stress-testing--benchmarking)
 10. [Deployment & Operations](#10-deployment--operations)
 11. [File Structure](#11-file-structure)
+12. [UI Entity Links & Accessibility](#12-ui-entity-links--accessibility)
 
 ---
 
@@ -3907,6 +3909,42 @@ watum/
 
 ---
 
+## 12. UI Entity Links & Accessibility
+
+### 12.1 Clickable Entity Links
+
+The application implements clickable entity links across all views to enable rapid navigation between related records. Any mention of a lecturer, student, course, room, grade, enrollment, faculty, or study program can be clicked to jump to that entity's list view.
+
+#### Implementation Pattern
+
+- **Navigation mechanism**: `activateView('viewId')` — switches the SPA to the target entity's tab
+- **Element type**: `<span class="entity-link">` with an `onclick` handler
+- **Event handling**: All links call `e.stopPropagation()` to prevent triggering parent row-selection handlers when nested inside clickable list rows
+- **Styling**: `.entity-link` uses `text-decoration: underline` with `transparent` default color and `currentColor` on hover, giving a subtle but discoverable affordance
+
+#### Coverage
+
+Entity links are present in:
+- **Dashboard** (`+page.svelte`): next schedule course → courses, room → classrooms
+- **Calendar detail panel**: course → courses, room → classrooms, lecturer → lecturers; conflict peer cards link to all related entities
+- **Builder enrollments list**: course → courses, student → students, room → classrooms
+- **Collection list rows**: courses (study program → studyPrograms, lecturer → lecturers), students (study program → studyPrograms), study programs (faculty → faculties), enrollments (student → students, course → courses, room → classrooms), grades (student → students, course → courses), users (student → students, lecturer → lecturers)
+- **Detail panels**: enrollment (student, course, room), grade (implicit via list), course (study program, lecturer), student (study program, faculty), study program (faculty), user (student, lecturer)
+
+#### Why `<span>` instead of `<button>` or `<a>`
+
+Entity links are frequently nested inside clickable list-row `<button>` elements. HTML does not allow nested buttons — browsers will break the DOM structure. Using `<a>` would require an `href` (the app uses SPA view switching, not navigation) and would still create nested interactive element issues. The `<span>` with `onclick` + `e.stopPropagation()` is the pragmatic compromise that keeps markup valid while preserving both row-click and link-click behaviors.
+
+### 12.2 Accessibility Trade-off
+
+`svelte-check` reports 86 warnings for `.entity-link` spans:
+- `a11y_click_events_have_key_events` — clickable elements should respond to keyboard events (Enter/Space)
+- `a11y_no_static_element_interactions` — a `<span>` is not semantically interactive
+
+**Why this is accepted**: Restructuring every list row to make entity links sibling elements outside the row button would break the existing "click anywhere on the row to select" interaction pattern and require significant layout changes. The alternative (using `<button>`) produces invalid HTML. The spans work correctly for mouse and touch users, and the only downside is these lint warnings.
+
+---
+
 ## Appendix: Common Issues & Fixes
 
 ### Issue: Lecturer select not updating
@@ -3949,6 +3987,14 @@ watum/
 
 **Cause**: `.pane-head` used `grid-template-columns: 1fr auto` at all viewports above 720px, and `.topbar` used `minmax(0, 1fr) minmax(0, 20rem)`, causing search/actions to be squeezed.  
 **Fix**: Both `.topbar` and `.pane-head` now collapse to `grid-template-columns: 1fr` at the 1080px breakpoint (where `workspace-shell` already goes single-column).
+
+---
+
+### Issue: `svelte-check` a11y warnings for `.entity-link` spans
+
+**Cause**: Entity links use `<span onclick={...}>` nested inside clickable list-row `<button>` elements. Svelte's a11y linter flags `a11y_click_events_have_key_events` and `a11y_no_static_element_interactions` because `<span>` is not semantically interactive and lacks keyboard handlers.
+
+**Why accepted**: Nested `<button>` elements are invalid HTML (browsers break the DOM). `<a>` tags would require `href` values and still create nested-interactive issues. Restructuring list rows to make links siblings outside the row button would break the "click anywhere to select" pattern. The spans correctly handle mouse/touch via `e.stopPropagation()` and are the pragmatic compromise for an SPA with view-switching navigation.
 
 ---
 

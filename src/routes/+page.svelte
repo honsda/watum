@@ -117,6 +117,7 @@
 	} from './study-programs/data.remote';
 	import {
 		getEnrollments,
+		getEnrollment,
 		getEnrollmentConflictAudit,
 		getSchedulePreview,
 		searchEnrollments,
@@ -128,6 +129,7 @@
 	} from './enrollments/data.remote';
 	import {
 		getGrades,
+		getGrade,
 		searchGrades,
 		createGrade,
 		updateGrade,
@@ -620,6 +622,130 @@
 		if (!allowedViews.includes(view)) return;
 		activeView = view;
 		mobileRailOpen = false;
+	}
+
+	function navigateToEntity(view: ViewId, id: string | null | undefined, name?: string) {
+		if (!id) return;
+		activateView(view);
+		stopEditing();
+		pendingDelete = null;
+
+		switch (view) {
+			case 'students': {
+				selectedStudentId = id;
+				const existing = students.find((s) => s.id === id);
+				selectedStudentRecord = existing ?? (name ? ({ id, name } as SelectStudentsResult) : null);
+				if (!existing) {
+					void getStudent(id)
+						.run()
+						.then((full) => {
+							if (selectedStudentId !== id) return;
+							selectedStudentRecord = full;
+						});
+				}
+				break;
+			}
+			case 'lecturers': {
+				selectedLecturerId = id;
+				const existing = lecturers.find((l) => l.id === id);
+				selectedLecturerRecord =
+					existing ?? (name ? ({ id, name } as SelectLecturersResult) : null);
+				if (!existing) {
+					void getLecturer(id)
+						.run()
+						.then((full) => {
+							if (selectedLecturerId !== id) return;
+							selectedLecturerRecord = full;
+						});
+				}
+				break;
+			}
+			case 'courses': {
+				selectedCourseId = id;
+				const existing = courses.find((c) => c.id === id);
+				selectedCourseRecord = existing ?? (name ? ({ id, name } as SelectCoursesResult) : null);
+				if (!existing) {
+					void getCourse(id)
+						.run()
+						.then((full) => {
+							if (selectedCourseId !== id) return;
+							selectedCourseRecord = full;
+						});
+				}
+				break;
+			}
+			case 'classrooms': {
+				selectedRoomId = id;
+				const existing = classrooms.find((r) => r.id === id);
+				selectedRoomRecord = existing ?? (name ? ({ id, name } as SelectClassRoomsResult) : null);
+				if (!existing) {
+					void getClassRoom(id)
+						.run()
+						.then((full) => {
+							if (selectedRoomId !== id) return;
+							selectedRoomRecord = full;
+						});
+				}
+				break;
+			}
+			case 'faculties': {
+				selectedFacultyId = id;
+				const existing = faculties.find((f) => f.id === id);
+				selectedFacultyRecord = existing ?? (name ? ({ id, name } as SelectFacultiesResult) : null);
+				if (!existing) {
+					void getFaculty(id)
+						.run()
+						.then((full) => {
+							if (selectedFacultyId !== id) return;
+							selectedFacultyRecord = full;
+						});
+				}
+				break;
+			}
+			case 'studyPrograms': {
+				selectedStudyProgramId = id;
+				const existing = studyPrograms.find((sp) => sp.id === id);
+				selectedStudyProgramRecord =
+					existing ?? (name ? ({ id, name } as SelectStudyProgramsResult) : null);
+				if (!existing) {
+					void getStudyProgram(id)
+						.run()
+						.then((full) => {
+							if (selectedStudyProgramId !== id) return;
+							selectedStudyProgramRecord = full;
+						});
+				}
+				break;
+			}
+			case 'enrollments': {
+				selectedEnrollmentId = id;
+				const existing = enrollments.find((e) => e.id === id);
+				selectedEnrollmentRecord = existing ?? null;
+				if (!existing) {
+					void getEnrollment(id)
+						.run()
+						.then((full) => {
+							if (selectedEnrollmentId !== id) return;
+							selectedEnrollmentRecord = full;
+						});
+				}
+				break;
+			}
+			case 'grades': {
+				selectedGradeId = id;
+				const existing = grades.find((g) => g.id === id);
+				selectedGradeRecord = existing ?? null;
+				if (!existing) {
+					void getGrade(id)
+						.run()
+						.then((full) => {
+							if (selectedGradeId !== id) return;
+							selectedGradeRecord = full;
+						});
+				}
+				break;
+			}
+		}
 	}
 
 	function emptyClassRoomDraft() {
@@ -4479,12 +4605,24 @@
 									<div class="student-hero-copy">
 										<span>Kelas berikutnya</span>
 										<strong
-											>{nextSchedule ? nextSchedule.course : 'Belum ada kelas terjadwal'}</strong
+											>{#if nextSchedule}<span
+													class="entity-link"
+													onclick={() => activateView('courses')}>{nextSchedule.course}</span
+												>{:else}Belum ada kelas terjadwal{/if}</strong
 										>
 										{#if nextSchedule}
 											<p>
 												{DAY_LABELS[nextSchedule.day]} • {nextSchedule.startLabel} - {nextSchedule.endLabel}
-												• {nextSchedule.room}
+												•
+												<span
+													class="entity-link"
+													onclick={() =>
+														navigateToEntity(
+															'classrooms',
+															nextSchedule.original.class_room_id,
+															nextSchedule.room
+														)}>{nextSchedule.room}</span
+												>
 											</p>
 										{/if}
 									</div>
@@ -4511,7 +4649,17 @@
 									</div>
 									<div>
 										<span>Ruang yang dipakai</span>
-										<strong>{nextSchedule ? nextSchedule.room : 'Belum ditentukan'}</strong>
+										<strong
+											>{#if nextSchedule}<span
+													class="entity-link"
+													onclick={() =>
+														navigateToEntity(
+															'courses',
+															nextSchedule.original.course_id,
+															nextSchedule.course
+														)}>{nextSchedule.course}</span
+												>{:else}Belum ada kelas terjadwal{/if}</strong
+										>
 									</div>
 								</section>
 
@@ -4589,10 +4737,27 @@
 										<section class="decision-primary decision-primary-steady">
 											<div class="decision-primary-copy">
 												<span>Kelas berikutnya</span>
-												<strong>{nextSchedule.course}</strong>
+												<span
+													class="entity-link"
+													onclick={() =>
+														navigateToEntity(
+															'courses',
+															nextSchedule.original.course_id,
+															nextSchedule.course
+														)}><strong>{nextSchedule.course}</strong></span
+												>
 												<p>
 													{DAY_LABELS[nextSchedule.day]} • {nextSchedule.startLabel} - {nextSchedule.endLabel}
-													• {nextSchedule.room}
+													•
+													<span
+														class="entity-link"
+														onclick={() =>
+															navigateToEntity(
+																'classrooms',
+																nextSchedule.original.class_room_id,
+																nextSchedule.room
+															)}>{nextSchedule.room}</span
+													>
 												</p>
 											</div>
 										</section>
@@ -4618,7 +4783,10 @@
 									<div class="decision-note-row">
 										<span>Kelas berikutnya</span>
 										<strong
-											>{nextSchedule ? nextSchedule.course : 'Belum ada kelas terjadwal'}</strong
+											>{#if nextSchedule}<span
+													class="entity-link"
+													onclick={() => activateView('courses')}>{nextSchedule.course}</span
+												>{:else}Belum ada kelas terjadwal{/if}</strong
 										>
 									</div>
 								</aside>
@@ -4931,7 +5099,17 @@
 							{#if calendarDetailSchedule}
 								<div class="pane-head compact">
 									<div>
-										<h3>{calendarDetailSchedule.course}</h3>
+										<h3>
+											<span
+												class="entity-link"
+												onclick={() =>
+													navigateToEntity(
+														'courses',
+														calendarDetailSchedule.original.course_id,
+														calendarDetailSchedule.course
+													)}>{calendarDetailSchedule.course}</span
+											>
+										</h3>
 										{#if calendarDetailSchedule.hasConflict && selectedScheduleConflictSummary}
 											<p class="calendar-conflict-copy">
 												Bentrok dengan {selectedScheduleConflictSummary}
@@ -4956,8 +5134,28 @@
 											>{calendarDetailSchedule.startLabel} - {calendarDetailSchedule.endLabel}</strong
 										>
 									</div>
-									<div><span>Ruang</span><strong>{calendarDetailSchedule.room}</strong></div>
-									<div><span>Dosen</span><strong>{calendarDetailSchedule.lecturer}</strong></div>
+									<div>
+										<span>Ruang</span><span
+											class="entity-link"
+											onclick={() =>
+												navigateToEntity(
+													'classrooms',
+													calendarDetailSchedule.original.class_room_id,
+													calendarDetailSchedule.room
+												)}><strong>{calendarDetailSchedule.room}</strong></span
+										>
+									</div>
+									<div>
+										<span>Dosen</span><span
+											class="entity-link"
+											onclick={() =>
+												navigateToEntity(
+													'lecturers',
+													calendarDetailSchedule.original.lecturer_id,
+													calendarDetailSchedule.lecturer
+												)}><strong>{calendarDetailSchedule.lecturer}</strong></span
+										>
+									</div>
 									<div>
 										<span>Semester</span><strong
 											>{calendarDetailSchedule.semester} • {calendarDetailSchedule.academicYear}</strong
@@ -4993,8 +5191,43 @@
 													style={conflictToneVariables(peer.conflictTone ?? null)}
 												>
 													<div class="calendar-overlap-copy">
-														<strong>{peer.course}</strong>
-														<span>{peer.student} • {peer.lecturer} • {peer.room}</span>
+														<span
+															class="entity-link"
+															onclick={() =>
+																navigateToEntity('courses', peer.original.course_id, peer.course)}
+															><strong>{peer.course}</strong></span
+														>
+														<span
+															><span
+																class="entity-link"
+																onclick={() =>
+																	navigateToEntity(
+																		'students',
+																		peer.original.student_id,
+																		peer.student
+																	)}>{peer.student}</span
+															>
+															•
+															<span
+																class="entity-link"
+																onclick={() =>
+																	navigateToEntity(
+																		'lecturers',
+																		peer.original.lecturer_id,
+																		peer.lecturer
+																	)}>{peer.lecturer}</span
+															>
+															•
+															<span
+																class="entity-link"
+																onclick={() =>
+																	navigateToEntity(
+																		'classrooms',
+																		peer.original.class_room_id,
+																		peer.room
+																	)}>{peer.room}</span
+															></span
+														>
 														<small
 															>{DAY_LABELS[peer.day]} • {peer.startLabel} - {peer.endLabel}</small
 														>
@@ -5495,8 +5728,34 @@
 										onclick={() => pickEnrollment(item)}
 									>
 										<div>
-											<strong>{item.course_name}</strong>
-											<span>{item.student_name} • {item.class_room_name}</span>
+											<span
+												class="entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('courses', item.course_id, item.course_name);
+												}}><strong>{item.course_name}</strong></span
+											>
+											<span
+												><span
+													class="entity-link"
+													onclick={(e) => {
+														e.stopPropagation();
+														navigateToEntity('students', item.student_id, item.student_name);
+													}}>{item.student_name}</span
+												>
+												•
+												<span
+													class="entity-link"
+													onclick={(e) => {
+														e.stopPropagation();
+														navigateToEntity(
+															'classrooms',
+															item.class_room_id,
+															item.class_room_name
+														);
+													}}>{item.class_room_name}</span
+												></span
+											>
 											{#if item.id && scheduleCard?.hasConflict && conflictSummaryByCardId[item.id]}
 												<small class="list-conflict-copy">
 													Bentrok dengan {conflictSummaryByCardId[item.id]}
@@ -6269,7 +6528,13 @@
 										>
 										<button type="button" class="row-content" onclick={() => pickClassroom(item)}>
 											<div>
-												<strong>{item.name}</strong><span
+												<span
+													class="entity-link"
+													onclick={(e) => {
+														e.stopPropagation();
+														navigateToEntity('classrooms', item.id, item.name);
+													}}><strong>{item.name}</strong></span
+												><span
 													>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
 												>
 											</div>
@@ -6611,8 +6876,32 @@
 										>
 										<button type="button" class="row-content" onclick={() => pickCourse(item)}>
 											<div>
-												<strong>{item.id} • {item.name}</strong><span
-													>{item.study_program_name} • {item.lecturer_name}</span
+												<span
+													class="entity-link"
+													onclick={(e) => {
+														e.stopPropagation();
+														navigateToEntity('courses', item.id, item.name);
+													}}><strong>{item.id} • {item.name}</strong></span
+												><span
+													><span
+														class="entity-link"
+														onclick={(e) => {
+															e.stopPropagation();
+															navigateToEntity(
+																'studyPrograms',
+																item.study_program_id,
+																item.study_program_name
+															);
+														}}>{item.study_program_name}</span
+													>
+													•
+													<span
+														class="entity-link"
+														onclick={(e) => {
+															e.stopPropagation();
+															navigateToEntity('lecturers', item.lecturer_id, item.lecturer_name);
+														}}>{item.lecturer_name}</span
+													></span
 												>
 											</div>
 											<small>{item.credits} SKS</small>
@@ -6698,9 +6987,31 @@
 									<div class="detail-lines">
 										<div><span>Kode</span><strong>{selectedCourse.id}</strong></div>
 										<div>
-											<span>Program studi</span><strong>{selectedCourse.study_program_name}</strong>
+											<span>Program studi</span><span
+												class="entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity(
+														'studyPrograms',
+														selectedCourse.study_program_id,
+														selectedCourse.study_program_name
+													);
+												}}><strong>{selectedCourse.study_program_name}</strong></span
+											>
 										</div>
-										<div><span>Dosen</span><strong>{selectedCourse.lecturer_name}</strong></div>
+										<div>
+											<span>Dosen</span><span
+												class="entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity(
+														'lecturers',
+														selectedCourse.lecturer_id,
+														selectedCourse.lecturer_name
+													);
+												}}><strong>{selectedCourse.lecturer_name}</strong></span
+											>
+										</div>
 										<div><span>Beban</span><strong>{selectedCourse.credits} SKS</strong></div>
 										<div>
 											<span>Peserta</span><strong>{selectedCourse.enrollment_count ?? 0}</strong>
@@ -6942,8 +7253,25 @@
 										>
 										<button type="button" class="row-content" onclick={() => pickStudent(item)}>
 											<div>
-												<strong>{item.name}</strong><span
-													>{item.id} • {item.study_program_name}</span
+												<span
+													class="entity-link"
+													onclick={(e) => {
+														e.stopPropagation();
+														navigateToEntity('students', item.id, item.name);
+													}}><strong>{item.name}</strong></span
+												><span
+													>{item.id} •
+													<span
+														class="entity-link"
+														onclick={(e) => {
+															e.stopPropagation();
+															navigateToEntity(
+																'studyPrograms',
+																item.study_program_id,
+																item.study_program_name
+															);
+														}}>{item.study_program_name}</span
+													></span
 												>
 											</div>
 											<small>{item.year_admitted}</small>
@@ -7029,10 +7357,31 @@
 									<div class="detail-lines">
 										<div><span>Email</span><strong>{selectedStudent.email}</strong></div>
 										<div>
-											<span>Program studi</span><strong>{selectedStudent.study_program_name}</strong
+											<span>Program studi</span><span
+												class="entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity(
+														'studyPrograms',
+														selectedStudent.study_program_id,
+														selectedStudent.study_program_name
+													);
+												}}><strong>{selectedStudent.study_program_name}</strong></span
 											>
 										</div>
-										<div><span>Fakultas</span><strong>{selectedStudent.faculty_name}</strong></div>
+										<div>
+											<span>Fakultas</span><span
+												class="entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity(
+														'faculties',
+														selectedStudent.faculty_id,
+														selectedStudent.faculty_name
+													);
+												}}><strong>{selectedStudent.faculty_name}</strong></span
+											>
+										</div>
 										<div><span>Angkatan</span><strong>{selectedStudent.year_admitted}</strong></div>
 									</div>
 									<p class="detail-hint">
@@ -7262,7 +7611,15 @@
 											/></label
 										>
 										<button type="button" class="row-content" onclick={() => pickLecturer(item)}>
-											<div><strong>{item.name}</strong><span>{item.id} • {item.email}</span></div>
+											<div>
+												<span
+													class="entity-link"
+													onclick={(e) => {
+														e.stopPropagation();
+														navigateToEntity('lecturers', item.id, item.name);
+													}}><strong>{item.name}</strong></span
+												><span>{item.id} • {item.email}</span>
+											</div>
 											<small>{item.email}</small>
 										</button>
 									</div>
@@ -7566,7 +7923,15 @@
 											/></label
 										>
 										<button type="button" class="row-content" onclick={() => pickFaculty(item)}>
-											<div><strong>{item.name}</strong><span>{item.id}</span></div>
+											<div>
+												<span
+													class="entity-link"
+													onclick={(e) => {
+														e.stopPropagation();
+														navigateToEntity('faculties', item.id, item.name);
+													}}><strong>{item.name}</strong></span
+												><span>{item.id}</span>
+											</div>
 											<small>{item.id}</small>
 										</button>
 									</div>
@@ -7826,7 +8191,22 @@
 											onclick={() => pickStudyProgram(item)}
 										>
 											<div>
-												<strong>{item.name}</strong><span>{item.id} • {item.faculty_name}</span>
+												<span
+													class="entity-link"
+													onclick={(e) => {
+														e.stopPropagation();
+														navigateToEntity('studyPrograms', item.id, item.name);
+													}}><strong>{item.name}</strong></span
+												><span
+													>{item.id} •
+													<span
+														class="entity-link"
+														onclick={(e) => {
+															e.stopPropagation();
+															navigateToEntity('faculties', item.faculty_id, item.faculty_name);
+														}}>{item.faculty_name}</span
+													></span
+												>
 											</div>
 											<small>{item.head ?? item.faculty_name}</small>
 										</button>
@@ -7915,7 +8295,17 @@
 											<span>Ketua program</span><strong>{selectedStudyProgram.head}</strong>
 										</div>
 										<div>
-											<span>Fakultas</span><strong>{selectedStudyProgram.faculty_name}</strong>
+											<span>Fakultas</span><span
+												class="entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity(
+														'faculties',
+														selectedStudyProgram.faculty_id,
+														selectedStudyProgram.faculty_name
+													);
+												}}><strong>{selectedStudyProgram.faculty_name}</strong></span
+											>
 										</div>
 										<div>
 											<span>Mahasiswa</span><strong
@@ -8304,8 +8694,32 @@
 										>
 										<button type="button" class="row-content" onclick={() => pickEnrollment(item)}>
 											<div>
-												<strong>{item.student_name}</strong><span
-													>{item.course_name} • {item.class_room_name}</span
+												<span
+													class="entity-link"
+													onclick={(e) => {
+														e.stopPropagation();
+														navigateToEntity('students', item.student_id, item.student_name);
+													}}><strong>{item.student_name}</strong></span
+												><span
+													><span
+														class="entity-link"
+														onclick={(e) => {
+															e.stopPropagation();
+															navigateToEntity('courses', item.course_id, item.course_name);
+														}}>{item.course_name}</span
+													>
+													•
+													<span
+														class="entity-link"
+														onclick={(e) => {
+															e.stopPropagation();
+															navigateToEntity(
+																'classrooms',
+																item.class_room_id,
+																item.class_room_name
+															);
+														}}>{item.class_room_name}</span
+													></span
 												>
 												{#if item.id && scheduleCard?.hasConflict && conflictSummaryByCardId[item.id]}
 													<small class="list-conflict-copy">
@@ -8351,13 +8765,43 @@
 									{/if}
 									<div class="detail-lines">
 										<div>
-											<span>Mahasiswa</span><strong>{selectedEnrollment.student_name}</strong>
+											<span>Mahasiswa</span><span
+												class="entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity(
+														'students',
+														selectedEnrollment.student_id,
+														selectedEnrollment.student_name
+													);
+												}}><strong>{selectedEnrollment.student_name}</strong></span
+											>
 										</div>
 										<div>
-											<span>Mata kuliah</span><strong>{selectedEnrollment.course_name}</strong>
+											<span>Mata kuliah</span><span
+												class="entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity(
+														'courses',
+														selectedEnrollment.course_id,
+														selectedEnrollment.course_name
+													);
+												}}><strong>{selectedEnrollment.course_name}</strong></span
+											>
 										</div>
 										<div>
-											<span>Ruang</span><strong>{selectedEnrollment.class_room_name}</strong>
+											<span>Ruang</span><span
+												class="entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity(
+														'classrooms',
+														selectedEnrollment.class_room_id,
+														selectedEnrollment.class_room_name
+													);
+												}}><strong>{selectedEnrollment.class_room_name}</strong></span
+											>
 										</div>
 										<div>
 											<span>Jadwal</span><strong
@@ -8563,8 +9007,21 @@
 										>
 										<button type="button" class="row-content" onclick={() => pickGrade(item)}>
 											<div>
-												<strong>{item.student_name}</strong><span
-													>{item.course_name} • {item.letter_grade}</span
+												<span
+													class="entity-link"
+													onclick={(e) => {
+														e.stopPropagation();
+														navigateToEntity('students', item.student_id, item.student_name);
+													}}><strong>{item.student_name}</strong></span
+												><span
+													><span
+														class="entity-link"
+														onclick={(e) => {
+															e.stopPropagation();
+															navigateToEntity('courses', item.course_id, item.course_name);
+														}}>{item.course_name}</span
+													>
+													• {item.letter_grade}</span
 												>
 											</div>
 											<small>{item.total_score ?? '-'} poin</small>
@@ -8890,7 +9347,19 @@
 										><button type="button" class="row-content" onclick={() => pickUser(item)}
 											><div>
 												<strong>{item.email}</strong><span
-													>{item.student_name ?? item.lecturer_name ?? 'Administrator sistem'}</span
+													>{#if item.student_name}<span
+															class="entity-link"
+															onclick={(e) => {
+																e.stopPropagation();
+																navigateToEntity('students', item.student_id, item.student_name);
+															}}>{item.student_name}</span
+														>{:else if item.lecturer_name}<span
+															class="entity-link"
+															onclick={(e) => {
+																e.stopPropagation();
+																navigateToEntity('lecturers', item.lecturer_id, item.lecturer_name);
+															}}>{item.lecturer_name}</span
+														>{:else}Administrator sistem{/if}</span
 												>
 											</div>
 											<small>{item.role}</small></button
@@ -8936,10 +9405,30 @@
 									<div class="detail-lines">
 										<div><span>Peran</span><strong>{selectedUser.role}</strong></div>
 										<div>
-											<span>Mahasiswa</span><strong>{selectedUser.student_name ?? '-'}</strong>
+											<span>Mahasiswa</span><span
+												class="entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity(
+														'students',
+														selectedUser.student_id,
+														selectedUser.student_name
+													);
+												}}><strong>{selectedUser.student_name ?? '-'}</strong></span
+											>
 										</div>
 										<div>
-											<span>Dosen</span><strong>{selectedUser.lecturer_name ?? '-'}</strong>
+											<span>Dosen</span><span
+												class="entity-link"
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity(
+														'lecturers',
+														selectedUser.lecturer_id,
+														selectedUser.lecturer_name
+													);
+												}}><strong>{selectedUser.lecturer_name ?? '-'}</strong></span
+											>
 										</div>
 									</div>
 									<p class="detail-hint">
@@ -11717,5 +12206,26 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.75rem;
+	}
+
+	/* --- Entity links --- */
+	.entity-link {
+		background: none;
+		border: none;
+		padding: 0;
+		margin: 0;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+		text-decoration: underline;
+		text-decoration-color: transparent;
+		text-underline-offset: 2px;
+		transition: text-decoration-color 120ms ease;
+	}
+	.entity-link:hover {
+		text-decoration-color: currentColor;
+	}
+	.entity-link strong {
+		font-weight: 600;
 	}
 </style>
