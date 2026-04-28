@@ -17,7 +17,8 @@ fi
 # Fix: point HOST_HEADER at a header Traefik never sends. This makes requestOrigin
 # = "https://null", which != ORIGIN, forcing the adapter to rewrite request.url to
 # "https://<public-host>/..." before SvelteKit sees it.
-export HOST_HEADER="${HOST_HEADER:-x-no-such-header}"
+# Always force this — do not set HOST_HEADER in Coolify env vars.
+export HOST_HEADER=x-no-such-header
 
 if [ "${AUTO_APPLY_MIGRATIONS:-true}" = "true" ]; then
   bun ./scripts/run-migrations.mjs

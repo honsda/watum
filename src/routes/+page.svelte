@@ -619,6 +619,7 @@
 	}
 
 	function activateView(view: ViewId) {
+		if (!allowedViews.includes(view)) return;
 		activeView = view;
 		mobileRailOpen = false;
 	}
@@ -722,6 +723,9 @@
 	let calendarLoadPromise: Promise<void> | null = null;
 	let theme = $state<'light' | 'dark'>('light');
 	let activeView = $state<ViewId>('dashboard');
+	const allowedViews = $derived(
+		navigationForRole((currentUser.current?.role ?? undefined) as AppRole | undefined)
+	);
 	let builderStep = $state<BuilderStep>('participant');
 	let editorView = $state<EditableView | null>(null);
 	let pendingDelete = $state<DeleteIntent | null>(null);
@@ -2134,8 +2138,6 @@
 
 	$effect(() => {
 		if (currentUser.loading || !currentUser.current) return;
-		const role = currentUser.current?.role as AppRole | undefined;
-		const allowedViews = navigationForRole(role);
 		if (!allowedViews.includes(activeView)) {
 			activeView = allowedViews[0] ?? 'dashboard';
 		}
@@ -5100,7 +5102,7 @@
 					</div>
 				{/if}
 
-				{#if activeView === 'builder'}
+				{#if activeView === 'builder' && currentUser.current.role !== 'STUDENT'}
 					<div class="workspace-shell builder-shell">
 						<section class="workspace-list builder-list">
 							<div class="pane-head">
@@ -7491,7 +7493,7 @@
 					</div>
 				{/if}
 
-				{#if activeView === 'faculties'}
+				{#if activeView === 'faculties' && currentUser.current.role !== 'STUDENT'}
 					<div class="workspace-shell">
 						<section class="workspace-list">
 							<div class="pane-head">
@@ -7743,7 +7745,7 @@
 					</div>
 				{/if}
 
-				{#if activeView === 'studyPrograms'}
+				{#if activeView === 'studyPrograms' && currentUser.current.role !== 'STUDENT'}
 					<div class="workspace-shell">
 						<section class="workspace-list">
 							<div class="pane-head">
@@ -9662,6 +9664,7 @@
 	.workspace-shell {
 		display: grid;
 		gap: 1rem;
+		min-width: 0;
 	}
 
 	.calendar-layout {
@@ -10158,6 +10161,11 @@
 	.student-grade-items {
 		display: grid;
 		gap: 0.75rem;
+		min-width: 0;
+	}
+
+	.student-hero {
+		overflow: hidden;
 	}
 
 	.student-hero,
@@ -10176,6 +10184,7 @@
 	.student-hero {
 		display: grid;
 		gap: 0.9rem;
+		min-width: 0;
 	}
 
 	.student-hero-copy {
@@ -11303,7 +11312,7 @@
 		}
 
 		.topbar {
-			grid-template-columns: minmax(0, 1fr) minmax(0, 20rem);
+			grid-template-columns: 1fr;
 		}
 
 		.rail-backdrop {
@@ -11352,8 +11361,13 @@
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 
+		.pane-head {
+			grid-template-columns: 1fr;
+		}
+
 		.student-summary-row,
-		.student-grade-items {
+		.student-grade-items,
+		.student-actions {
 			grid-template-columns: 1fr;
 		}
 
@@ -11386,6 +11400,7 @@
 
 		.main-shell {
 			overflow: hidden;
+			overflow-x: clip;
 		}
 
 		.decision-board,
