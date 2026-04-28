@@ -15,7 +15,7 @@
 <svelte:head>
 	<link rel="icon" href={favicon} />
 	<link rel="preload" href={soraLatin} as="font" type="font/woff2" crossorigin="anonymous" />
-	<link rel="preload" href={publicSansLatin} as="font" type="font/woff2" crossorigin="anonymous" />
+	<link rel="preload" href={publicSansLatin} as="font" type="font/woff2" crossorigin="anonymous" fetchpriority="high" />
 </svelte:head>
 
 <GlobalSpinner />
