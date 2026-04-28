@@ -5989,9 +5989,10 @@
 														studentPickerOpen = true;
 														queueStudentPickerRefresh();
 													}}
-													onfocus={(e) => {
+													onfocus={() => {
 														if (enrollmentDraft.studentId) {
-															(e.currentTarget as HTMLInputElement).select();
+															enrollmentDraft.studentId = '';
+															studentPickerSearch = '';
 														}
 														studentPickerOpen = true;
 														queueStudentPickerRefresh(0);
@@ -6076,9 +6077,10 @@
 														coursePickerOpen = true;
 														queueCoursePickerRefresh();
 													}}
-													onfocus={(e) => {
+													onfocus={() => {
 														if (enrollmentDraft.courseId) {
-															(e.currentTarget as HTMLInputElement).select();
+															enrollmentDraft.courseId = '';
+															coursePickerSearch = '';
 														}
 														coursePickerOpen = true;
 														queueCoursePickerRefresh(0);
@@ -6270,9 +6272,10 @@
 															queueRoomPickerRefresh();
 															roomPickerOpen = true;
 														}}
-														onfocus={(e) => {
+														onfocus={() => {
 															if (enrollmentDraft.classRoomId) {
-																(e.currentTarget as HTMLInputElement).select();
+																enrollmentDraft.classRoomId = '';
+																roomPickerSearch = '';
 															}
 															roomPickerOpen = true;
 															if (!roomPickerOptions.length) {
