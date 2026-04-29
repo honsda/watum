@@ -1,0 +1,385 @@
+.workspace-list,
+.workspace-detail {
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-xl);
+	background: var(--color-panel);
+	padding: 1.1rem;
+}
+
+.workspace-shell {
+	display: grid;
+	grid-template-columns: minmax(18rem, 0.78fr) minmax(0, 1.22fr);
+	gap: 1rem;
+	min-width: 0;
+	align-items: stretch;
+}
+
+.workspace-list,
+.workspace-detail {
+	display: grid;
+	gap: 0.9rem;
+	align-content: start;
+	min-height: 0;
+}
+
+.workspace-list {
+	grid-template-rows: auto auto minmax(0, 1fr);
+	gap: 0.8rem;
+}
+
+.workspace-list .list-stack {
+	min-height: 0;
+	overflow: auto;
+}
+
+.workspace-detail {
+	overflow: auto;
+}
+
+.workspace-list h3,
+.workspace-detail h3 {
+	font: 600 1.18rem/1.08 var(--font-display);
+	letter-spacing: -0.03em;
+	margin: 0;
+}
+
+.pane-head,
+.list-stack,
+.detail-lines,
+.editor-grid,
+.search-box {
+	display: grid;
+	gap: 0.8rem;
+}
+
+.pane-head {
+	grid-template-columns: 1fr auto;
+	align-items: start;
+}
+
+.pane-head.compact {
+	margin-bottom: 0.6rem;
+}
+
+.search-box {
+	grid-template-columns: auto 1fr auto;
+	align-items: center;
+	padding: 0.7rem 0.85rem;
+	border: 1px solid var(--color-border);
+	border-radius: 0.8rem;
+	background: var(--color-surface);
+	gap: 0.55rem;
+}
+
+.search-box:focus-within {
+	border-color: color-mix(in oklch, var(--color-accent-strong) 46%, var(--color-border) 54%);
+	box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 18%, transparent 82%);
+}
+
+.search-box input,
+.editor-grid input,
+.editor-grid select {
+	width: 100%;
+	padding: 0.72rem 0.85rem;
+	border: 1px solid var(--color-border);
+	border-radius: 0.8rem;
+	background: var(--color-surface);
+	color: inherit;
+}
+
+.search-box input:focus,
+.editor-grid input:focus,
+.editor-grid select:focus {
+	outline: 2px solid color-mix(in oklch, var(--color-accent-strong) 32%, transparent 68%);
+	outline-offset: 1px;
+}
+
+.search-box input {
+	padding: 0;
+	border: 0;
+	background: transparent;
+}
+
+.search-clear {
+	display: inline-grid;
+	place-items: center;
+	width: 1.6rem;
+	height: 1.6rem;
+	padding: 0;
+	border: 0;
+	border-radius: 999px;
+	background: transparent;
+	color: var(--color-muted-foreground);
+}
+
+.search-clear:hover {
+	background: color-mix(in oklch, var(--color-surface) 78%, var(--color-border) 22%);
+	color: var(--color-foreground);
+}
+
+.bulk-bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.6rem;
+	padding: 0.55rem 0.8rem;
+	border: 1px solid color-mix(in oklch, var(--color-accent-strong) 32%, var(--color-border) 68%);
+	background: color-mix(in oklch, var(--color-accent-soft) 12%, var(--color-surface) 88%);
+	border-radius: 0.8rem;
+}
+
+.bulk-count {
+	font-size: 0.82rem;
+	font-weight: 600;
+}
+
+.bulk-actions,
+.detail-actions,
+.warning-actions,
+.builder-inline-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+}
+
+.bulk-actions,
+.detail-actions {
+	justify-content: flex-end;
+}
+
+.bulk-actions {
+	margin-left: auto;
+}
+
+.select-all-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.55rem 0.95rem;
+	border: 1px dashed var(--color-border);
+	background: none;
+	border-radius: 0.8rem;
+	font-size: 0.82rem;
+	color: var(--color-muted-foreground);
+}
+
+.select-all-row input,
+.user-row .row-checkbox input {
+	width: 1rem;
+	height: 1rem;
+}
+
+.user-row {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	gap: 0.5rem;
+	align-items: start;
+	padding: 0.85rem 0.95rem;
+	border: 1px solid var(--color-border);
+	background: var(--color-surface);
+	text-align: left;
+	color: inherit;
+	border-radius: 0.8rem;
+}
+
+.user-row:hover {
+	border-color: color-mix(in oklch, var(--color-accent-strong) 16%, var(--color-border) 84%);
+}
+
+.user-row.checked {
+	border-color: var(--color-accent-strong);
+	background: color-mix(in oklch, var(--color-accent-soft) 14%, var(--color-surface) 86%);
+}
+
+.user-row .row-checkbox {
+	display: flex;
+	align-items: flex-start;
+	padding-top: 0.2rem;
+}
+
+.user-row .row-content {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 0.5rem;
+	align-items: start;
+	min-width: 0;
+	background: none;
+	border: 0;
+	padding: 0;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+	font: inherit;
+}
+
+.user-row .row-content:focus-visible {
+	outline: 2px solid color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
+	outline-offset: 2px;
+	border-radius: 0.5rem;
+}
+
+.user-row .row-content > div {
+	display: grid;
+	gap: 0.22rem;
+	min-width: 0;
+}
+
+.user-row .row-content > small {
+	justify-self: end;
+	text-align: right;
+	min-width: 0;
+}
+
+.list-row strong,
+.list-row span,
+.list-row small,
+.user-row strong,
+.user-row span,
+.user-row small,
+.detail-lines span {
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+
+.list-row span,
+.list-row small,
+.user-row span,
+.user-row small,
+.detail-lines span,
+.detail-hint,
+.editor-note,
+.warning-panel p:not(.warning-title) {
+	font-size: 0.91rem;
+	line-height: 1.42;
+	color: var(--color-muted-foreground);
+}
+
+.detail-stack {
+	display: grid;
+	gap: 0.8rem;
+}
+
+.detail-lines {
+	grid-template-columns: repeat(auto-fit, minmax(11rem, max-content));
+	align-items: stretch;
+	margin-bottom: 0.9rem;
+}
+
+.detail-lines div {
+	display: grid;
+	gap: 0.22rem;
+	padding: 0.82rem;
+	border-radius: 0.8rem;
+	background: var(--color-surface);
+	width: 100%;
+	max-width: none;
+}
+
+.detail-hint,
+.warning-panel p,
+.editor-note {
+	margin: 0;
+}
+
+.warning-panel {
+	display: grid;
+	gap: 0.75rem;
+	padding: 0.95rem 1rem;
+	border: 1px solid color-mix(in oklch, var(--color-danger) 38%, var(--color-border) 62%);
+	border-radius: var(--radius-xl);
+	background: color-mix(in oklch, var(--color-surface) 76%, var(--color-danger-soft) 24%);
+}
+
+.warning-title {
+	font: 600 1.04rem/1.08 var(--font-display);
+	letter-spacing: -0.02em;
+}
+
+.editor-grid {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.editor-grid label {
+	display: grid;
+	gap: 0.35rem;
+}
+
+.editor-submit,
+.editor-note {
+	grid-column: 1 / -1;
+}
+
+.empty-copy {
+	margin: 0;
+	color: var(--color-muted-foreground);
+	line-height: 1.5;
+}
+
+.entity-link {
+	background: none;
+	border: none;
+	padding: 0;
+	margin: 0;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+	text-decoration: underline;
+	text-decoration-color: transparent;
+	text-underline-offset: 2px;
+	transition: text-decoration-color 120ms ease;
+	justify-self: start;
+}
+
+.entity-link:hover,
+.entity-link:focus-visible {
+	text-decoration-color: currentColor;
+}
+
+.entity-link:focus-visible,
+.editor-entity-link:focus-visible {
+	outline: 2px solid color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
+	outline-offset: 2px;
+	border-radius: 0.25rem;
+}
+
+.entity-link strong {
+	font-weight: 600;
+}
+
+.editor-entity-link {
+	font-size: 0.8rem;
+	color: var(--color-accent-strong);
+	cursor: pointer;
+	text-decoration: underline;
+	text-decoration-color: transparent;
+	text-underline-offset: 2px;
+	transition: text-decoration-color 120ms ease;
+	justify-self: start;
+}
+
+.editor-entity-link:hover,
+.editor-entity-link:focus-visible {
+	text-decoration-color: currentColor;
+}
+
+@media (max-width: 1080px) {
+	.workspace-shell {
+		grid-template-columns: 1fr;
+	}
+
+	.pane-head {
+		grid-template-columns: 1fr;
+	}
+}
+
+@media (max-width: 720px) {
+	.workspace-list,
+	.workspace-detail {
+		padding: 0.95rem;
+	}
+
+	.detail-lines,
+	.editor-grid {
+		grid-template-columns: 1fr;
+	}
+}

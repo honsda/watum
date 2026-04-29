@@ -5,26 +5,7 @@
 	import { onDestroy, onMount, untrack, tick } from 'svelte';
 	import type { Component } from 'svelte';
 	import { clearAccessToken, ensureAccessToken, setAccessToken } from '$lib/client/auth';
-	import {
-		AlertCircle,
-		ArrowRightLeft,
-		BookOpen,
-		Building2,
-		CalendarDays,
-		ClipboardList,
-		DoorClosed,
-		GraduationCap,
-		LayoutPanelTop,
-		Menu,
-		MoonStar,
-		RotateCw,
-		Search,
-		ShieldCheck,
-		SunMedium,
-		UsersRound,
-		Waypoints,
-		X
-	} from '@lucide/svelte';
+	import { AlertCircle, Menu, MoonStar, RotateCw, Search, SunMedium, X } from '@lucide/svelte';
 	import { days } from '$lib/validations/enrollment';
 	import { classRoomTypes } from '$lib/validations/classroom';
 	import { calculateGrade } from '$lib/validations/grade';
@@ -43,13 +24,40 @@
 		type ScheduleCard
 	} from '$lib/app/academic';
 	import { formatDateTime, formatDateTimeInput, parseISO } from '$lib/time-helpers';
+	import {
+		headerAction,
+		navigationForRole,
+		navigationGroupsForRole,
+		pageHeading,
+		viewCatalog,
+		type ViewId
+	} from '$lib/app/navigation';
 	import ClassroomDashboard from '$lib/components/app/ClassroomDashboard.svelte';
 	import CollectionPagination from '$lib/components/app/CollectionPagination.svelte';
+	import LecturersView from '$lib/components/app/LecturersView.svelte';
+	import FacultiesView from '$lib/components/app/FacultiesView.svelte';
+	import ClassroomsView from '$lib/components/app/ClassroomsView.svelte';
+	import '$lib/components/app/page-shell.css';
+	import StudentsView from '$lib/components/app/StudentsView.svelte';
+	import CoursesView from '$lib/components/app/CoursesView.svelte';
+	import StudyProgramsView from '$lib/components/app/StudyProgramsView.svelte';
+	import GradesView from '$lib/components/app/GradesView.svelte';
+	import UsersView from '$lib/components/app/UsersView.svelte';
+	import DashboardView from '$lib/components/app/DashboardView.svelte';
+	import CalendarView from '$lib/components/app/CalendarView.svelte';
+	import BuilderView from '$lib/components/app/BuilderView.svelte';
+	import EnrollmentsView from '$lib/components/app/EnrollmentsView.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
+	import {
+		createEnhancer as createSharedEnhancer,
+		createOptimisticEnhancer as createSharedOptimisticEnhancer,
+		firstIssue,
+		type EnhancedForm
+	} from '$lib/client/form-enhancers';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { getCurrentUser, loginUser, logoutUser } from './auth/data.remote';
 	import {
@@ -157,20 +165,6 @@
 		SelectUsersResult
 	} from '$lib/server/sql';
 
-	type ViewId =
-		| 'dashboard'
-		| 'calendar'
-		| 'builder'
-		| 'classrooms'
-		| 'courses'
-		| 'students'
-		| 'lecturers'
-		| 'faculties'
-		| 'studyPrograms'
-		| 'enrollments'
-		| 'grades'
-		| 'users';
-
 	type Tone = 'neutral' | 'success' | 'danger';
 	type Feedback = { tone: Tone; text: string } | null;
 	type EditableView =
@@ -220,22 +214,6 @@
 		failureMessage: string;
 	};
 
-	const semesterOptions = ['GANJIL', 'GENAP'] as const;
-	type NavigationGroupId =
-		| 'overview'
-		| 'planning'
-		| 'records'
-		| 'people'
-		| 'access'
-		| 'schedule'
-		| 'study';
-	type NavigationGroup = {
-		id: NavigationGroupId;
-		label: string;
-		description: string;
-		icon: typeof LayoutPanelTop;
-		views: ViewId[];
-	};
 	type BuilderStep = 'participant' | 'time' | 'room' | 'review';
 	type DataCollectionKey =
 		| 'classrooms'
@@ -247,11 +225,6 @@
 		| 'enrollments'
 		| 'grades'
 		| 'users';
-	type IssueForm = {
-		fields?: {
-			allIssues?: () => Array<{ message?: string }> | undefined;
-		};
-	};
 	type LimitedCollectionResponse<T> = {
 		items: T[];
 		limit: number;
@@ -284,14 +257,6 @@
 		loading: boolean;
 	};
 	type CollectionLoadedState = Record<DataCollectionKey, boolean>;
-	type EnhancedForm = IssueForm & {
-		enhance: (callback: (opts: { submit: () => Promise<boolean> }) => void | Promise<void>) => {
-			action: string;
-			method: 'POST';
-			[key: symbol]: (node: HTMLFormElement) => void;
-		};
-	};
-
 	const currentUser = getCurrentUser();
 	const timezone = 'Asia/Jakarta';
 	const DEFAULT_DAY_START = 7 * 60;
@@ -308,21 +273,6 @@
 		date.setDate(date.getDate() + weekOffset * 7);
 		return date;
 	}
-
-	const viewCatalog = {
-		dashboard: { label: 'Ringkasan', icon: LayoutPanelTop },
-		calendar: { label: 'Kalender Mingguan', icon: CalendarDays },
-		builder: { label: 'Penjadwalan', icon: Waypoints },
-		classrooms: { label: 'Ruang Kelas', icon: DoorClosed },
-		courses: { label: 'Mata Kuliah', icon: BookOpen },
-		students: { label: 'Mahasiswa', icon: GraduationCap },
-		lecturers: { label: 'Dosen', icon: UsersRound },
-		faculties: { label: 'Fakultas', icon: Building2 },
-		studyPrograms: { label: 'Program Studi', icon: ClipboardList },
-		enrollments: { label: 'KRS', icon: ArrowRightLeft },
-		grades: { label: 'Nilai', icon: ShieldCheck },
-		users: { label: 'Akun', icon: UsersRound }
-	} as const;
 
 	function readViewFromUrl(): ViewId | null {
 		if (!browser) return null;
@@ -342,141 +292,6 @@
 		const resolveRoute = resolve as unknown as (path: string) => string;
 		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		replaceState(resolveRoute(`${url.pathname}${url.search}${url.hash}`), {});
-	}
-
-	function navigationForRole(role: AppRole | undefined): ViewId[] {
-		if (role === 'ADMIN') {
-			return [
-				'dashboard',
-				'calendar',
-				'builder',
-				'classrooms',
-				'courses',
-				'students',
-				'lecturers',
-				'faculties',
-				'studyPrograms',
-				'enrollments',
-				'grades',
-				'users'
-			];
-		}
-		if (role === 'LECTURER') {
-			return [
-				'dashboard',
-				'calendar',
-				'builder',
-				'classrooms',
-				'courses',
-				'students',
-				'lecturers',
-				'faculties',
-				'studyPrograms',
-				'enrollments',
-				'grades'
-			];
-		}
-		return ['dashboard', 'calendar', 'classrooms', 'courses', 'lecturers', 'enrollments', 'grades'];
-	}
-
-	function navigationGroupsForRole(role: AppRole | undefined): NavigationGroup[] {
-		if (role === 'ADMIN') {
-			return [
-				{
-					id: 'overview',
-					label: 'Ringkasan',
-					description: 'Lihat bentrok, kalender, dan ruang yang perlu ditata.',
-					icon: LayoutPanelTop,
-					views: ['dashboard', 'calendar']
-				},
-				{
-					id: 'planning',
-					label: 'Penjadwalan',
-					description: 'Atur jadwal kelas dan pilih ruang pengganti dari satu halaman.',
-					icon: Waypoints,
-					views: ['builder', 'classrooms']
-				},
-				{
-					id: 'records',
-					label: 'Perkuliahan',
-					description: 'Buka KRS, nilai, dan katalog kuliah yang aktif pada semester ini.',
-					icon: ClipboardList,
-					views: ['enrollments', 'grades', 'courses']
-				},
-				{
-					id: 'people',
-					label: 'Identitas',
-					description: 'Rapikan data mahasiswa, dosen, fakultas, dan program studi.',
-					icon: Building2,
-					views: ['students', 'lecturers', 'faculties', 'studyPrograms']
-				},
-				{
-					id: 'access',
-					label: 'Akun',
-					description: 'Perbarui peran dan akses login saat relasi identitas berubah.',
-					icon: ShieldCheck,
-					views: ['users']
-				}
-			];
-		}
-
-		if (role === 'LECTURER') {
-			return [
-				{
-					id: 'overview',
-					label: 'Ringkasan',
-					description: 'Lihat kelas terdekat, bentrok, dan ruang yang masih tersedia.',
-					icon: LayoutPanelTop,
-					views: ['dashboard', 'calendar']
-				},
-				{
-					id: 'planning',
-					label: 'Penjadwalan',
-					description: 'Pindahkan jadwal dan pilih ruang dari halaman penjadwalan.',
-					icon: Waypoints,
-					views: ['builder', 'classrooms']
-				},
-				{
-					id: 'records',
-					label: 'Perkuliahan',
-					description: 'Buka KRS, nilai, dan mata kuliah aktif saat keputusan akademik diperlukan.',
-					icon: ClipboardList,
-					views: ['enrollments', 'grades', 'courses']
-				},
-				{
-					id: 'people',
-					label: 'Referensi',
-					description: 'Lihat mahasiswa, dosen, fakultas, dan program studi sebagai referensi.',
-					icon: Building2,
-					views: ['students', 'lecturers', 'faculties', 'studyPrograms']
-				}
-			];
-		}
-
-		return [
-			{
-				id: 'schedule',
-				label: 'Jadwal',
-				description: 'Lihat kelas berikutnya, perubahan ruang, dan jadwal mingguan.',
-				icon: CalendarDays,
-				views: ['dashboard', 'calendar']
-			},
-			{
-				id: 'study',
-				label: 'Studi',
-				description: 'Buka KRS, nilai, ruang, dan daftar mata kuliah.',
-				icon: BookOpen,
-				views: ['enrollments', 'grades', 'courses', 'lecturers', 'classrooms']
-			}
-		];
-	}
-
-	function pageHeading(view: ViewId) {
-		if (currentUser.current?.role === 'STUDENT' && view === 'dashboard') return 'Jadwal dan nilai';
-		if (view === 'dashboard') return 'Ringkasan jadwal';
-		if (view === 'calendar') return 'Kalender perkuliahan';
-		if (view === 'builder') return 'Penjadwalan kelas';
-		return viewCatalog[view].label;
 	}
 
 	function conflictPeerLabel(card: ScheduleCard) {
@@ -608,24 +423,6 @@
 		selectedScheduleId = representative.id;
 	}
 
-	const builderSteps = [
-		{ id: 'participant', label: 'Peserta', hint: 'Pilih mahasiswa dan mata kuliah.' },
-		{ id: 'time', label: 'Waktu', hint: 'Tentukan hari dan jam kuliah.' },
-		{ id: 'room', label: 'Ruang', hint: 'Pilih ruang yang tersedia.' },
-		{ id: 'review', label: 'Tinjau', hint: 'Periksa sebelum disimpan.' }
-	] as const;
-	function headerAction(view: ViewId, role: AppRole | undefined) {
-		if (role === 'STUDENT') {
-			if (view === 'dashboard') return { label: 'Buka kalender', target: 'calendar' as ViewId };
-			return null;
-		}
-
-		if (view === 'builder') return { label: 'Lihat kalender', target: 'calendar' as ViewId };
-		if (view === 'calendar') return { label: 'Buka penjadwalan', target: 'builder' as ViewId };
-		if (view === 'dashboard') return { label: 'Atur jadwal', target: 'builder' as ViewId };
-		return { label: 'Kembali ke ringkasan', target: 'dashboard' as ViewId };
-	}
-
 	function activateView(view: ViewId) {
 		if (!allowedViews.includes(view)) return;
 		activeView = view;
@@ -637,17 +434,6 @@
 		event.preventDefault();
 		event.stopPropagation();
 		(event.currentTarget as HTMLElement).click();
-	}
-
-	function clampActiveIndex(nextIndex: number, count: number) {
-		if (count <= 0) return -1;
-		if (nextIndex < 0) return count - 1;
-		if (nextIndex >= count) return 0;
-		return nextIndex;
-	}
-
-	function activeDescendantId(prefix: string, index: number) {
-		return index >= 0 ? `${prefix}-option-${index}` : undefined;
 	}
 
 	function clearRefreshTimers() {
@@ -936,8 +722,6 @@
 	let coursePickerSearch = $state('');
 	let studentPickerOpen = $state(false);
 	let coursePickerOpen = $state(false);
-	let studentPickerActiveIndex = $state(-1);
-	let coursePickerActiveIndex = $state(-1);
 	let studentPickerOptions = $state<SelectStudentsResult[]>([]);
 	let coursePickerOptions = $state<SelectCoursesResult[]>([]);
 	let studentPickerLoading = $state(false);
@@ -954,7 +738,6 @@
 	let coursePickerRequestToken = 0;
 	let roomPickerSearch = $state('');
 	let roomPickerOpen = $state(false);
-	let roomPickerActiveIndex = $state(-1);
 	let roomPickerOptions = $state<SelectClassRoomsResult[]>([]);
 	let roomPickerLoading = $state(false);
 	let roomPickerIssue = $state<string | null>(null);
@@ -1003,9 +786,6 @@
 	let scheduleCourseFilterOpen = $state(false);
 	let scheduleRoomFilterOpen = $state(false);
 	let scheduleLecturerFilterOpen = $state(false);
-	let scheduleCourseFilterActiveIndex = $state(-1);
-	let scheduleRoomFilterActiveIndex = $state(-1);
-	let scheduleLecturerFilterActiveIndex = $state(-1);
 	let scheduleCourseFilterOptions = $state<SelectCoursesResult[]>([]);
 	let scheduleLecturerFilterOptions = $state<SelectLecturersResult[]>([]);
 	let scheduleCourseFilterLoading = $state(false);
@@ -1139,6 +919,23 @@
 
 	function setFeedback(tone: Tone, text: string) {
 		feedback = { tone, text };
+	}
+
+	function reportDanger(message: string) {
+		setFeedback('danger', message);
+	}
+
+	function createEnhancer(form: EnhancedForm, onSuccess: () => Promise<void> | void) {
+		return createSharedEnhancer(form, onSuccess, reportDanger);
+	}
+
+	function createOptimisticEnhancer(
+		form: EnhancedForm,
+		optimistic: () => void,
+		onSuccess: () => Promise<void> | void,
+		restore: () => Promise<void> | void
+	) {
+		return createSharedOptimisticEnhancer(form, optimistic, onSuccess, restore, reportDanger);
 	}
 
 	function setCollectionIssue(key: DataCollectionKey, message: string) {
@@ -1496,10 +1293,6 @@
 		queueCollectionRefresh('enrollments', 0);
 	}
 
-	function firstIssue(form: IssueForm) {
-		return form?.fields?.allIssues?.()?.[0]?.message ?? null;
-	}
-
 	function applyTheme(nextTheme: 'light' | 'dark') {
 		theme = nextTheme;
 		if (browser) {
@@ -1620,12 +1413,6 @@
 		scheduleLecturerFilterNextCursor = null;
 		roomPickerSearch = '';
 		roomPickerOpen = false;
-		studentPickerActiveIndex = -1;
-		coursePickerActiveIndex = -1;
-		roomPickerActiveIndex = -1;
-		scheduleCourseFilterActiveIndex = -1;
-		scheduleRoomFilterActiveIndex = -1;
-		scheduleLecturerFilterActiveIndex = -1;
 		scheduleCourseFilterSearch = '';
 		scheduleRoomFilterSearch = '';
 		scheduleLecturerFilterSearch = '';
@@ -1984,216 +1771,6 @@
 			scheduleRoomFilterRefreshTimer = null;
 			void refreshScheduleRoomFilterOptions(null);
 		}, delay);
-	}
-
-	function selectScheduleCourseFilterOption(item: SelectCoursesResult | null) {
-		scheduleCourseFilter = item?.id ?? '';
-		scheduleCourseFilterSearch = item?.name ?? '';
-		scheduleCourseFilterActiveIndex = -1;
-		scheduleCourseFilterOpen = false;
-		queueCollectionRefresh('enrollments', 0);
-	}
-
-	function selectScheduleRoomFilterOption(item: SelectClassRoomsResult | null) {
-		scheduleRoomFilter = item?.id ?? '';
-		scheduleRoomFilterSearch = item?.name ?? '';
-		scheduleRoomFilterActiveIndex = -1;
-		scheduleRoomFilterOpen = false;
-		queueCollectionRefresh('enrollments', 0);
-	}
-
-	function selectScheduleLecturerFilterOption(item: SelectLecturersResult | null) {
-		scheduleLecturerFilter = item?.id ?? '';
-		scheduleLecturerFilterSearch = item?.name ?? '';
-		scheduleLecturerFilterActiveIndex = -1;
-		scheduleLecturerFilterOpen = false;
-		queueCollectionRefresh('enrollments', 0);
-	}
-
-	function selectStudentPickerOption(item: SelectStudentsResult) {
-		enrollmentDraft.studentId = item.id ?? '';
-		studentPickerSearch = item.name ?? '';
-		studentPickerActiveIndex = -1;
-		studentPickerOpen = false;
-	}
-
-	function selectCoursePickerOption(item: SelectCoursesResult) {
-		enrollmentDraft.courseId = item.id ?? '';
-		coursePickerSearch = item.name ?? '';
-		coursePickerActiveIndex = -1;
-		coursePickerOpen = false;
-	}
-
-	function selectRoomPickerOption(item: SelectClassRoomsResult) {
-		enrollmentDraft.classRoomId = item.id ?? '';
-		roomPickerSearch = item.name ?? '';
-		roomPickerActiveIndex = -1;
-		roomPickerOpen = false;
-	}
-
-	function handleScheduleCourseFilterKeydown(event: KeyboardEvent) {
-		const optionCount = scheduleCourseFilterOptions.length + 1;
-		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-			event.preventDefault();
-			scheduleCourseFilterOpen = true;
-			if (!scheduleCourseFilterOptions.length) queueScheduleCourseFilterRefresh(0);
-			const delta = event.key === 'ArrowDown' ? 1 : -1;
-			scheduleCourseFilterActiveIndex = clampActiveIndex(
-				scheduleCourseFilterActiveIndex + delta,
-				optionCount
-			);
-			return;
-		}
-		if (event.key === 'Enter' && scheduleCourseFilterOpen) {
-			event.preventDefault();
-			if (scheduleCourseFilterActiveIndex === 0) {
-				selectScheduleCourseFilterOption(null);
-				return;
-			}
-			const item = scheduleCourseFilterOptions[scheduleCourseFilterActiveIndex - 1];
-			if (item) selectScheduleCourseFilterOption(item);
-			return;
-		}
-		if (event.key === 'Escape') {
-			scheduleCourseFilterOpen = false;
-			scheduleCourseFilterActiveIndex = -1;
-		}
-	}
-
-	function handleScheduleRoomFilterKeydown(event: KeyboardEvent) {
-		const optionCount = filteredScheduleRoomFilterOptions.length + 1;
-		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-			event.preventDefault();
-			scheduleRoomFilterOpen = true;
-			if (!scheduleRoomFilterOptions.length) queueScheduleRoomFilterRefresh(0);
-			const delta = event.key === 'ArrowDown' ? 1 : -1;
-			scheduleRoomFilterActiveIndex = clampActiveIndex(
-				scheduleRoomFilterActiveIndex + delta,
-				optionCount
-			);
-			return;
-		}
-		if (event.key === 'Enter' && scheduleRoomFilterOpen) {
-			event.preventDefault();
-			if (scheduleRoomFilterActiveIndex === 0) {
-				selectScheduleRoomFilterOption(null);
-				return;
-			}
-			const item = filteredScheduleRoomFilterOptions[scheduleRoomFilterActiveIndex - 1];
-			if (item) selectScheduleRoomFilterOption(item);
-			return;
-		}
-		if (event.key === 'Escape') {
-			scheduleRoomFilterOpen = false;
-			scheduleRoomFilterActiveIndex = -1;
-		}
-	}
-
-	function handleScheduleLecturerFilterKeydown(event: KeyboardEvent) {
-		const optionCount = scheduleLecturerFilterOptions.length + 1;
-		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-			event.preventDefault();
-			scheduleLecturerFilterOpen = true;
-			if (!scheduleLecturerFilterOptions.length) queueScheduleLecturerFilterRefresh(0);
-			const delta = event.key === 'ArrowDown' ? 1 : -1;
-			scheduleLecturerFilterActiveIndex = clampActiveIndex(
-				scheduleLecturerFilterActiveIndex + delta,
-				optionCount
-			);
-			return;
-		}
-		if (event.key === 'Enter' && scheduleLecturerFilterOpen) {
-			event.preventDefault();
-			if (scheduleLecturerFilterActiveIndex === 0) {
-				selectScheduleLecturerFilterOption(null);
-				return;
-			}
-			const item = scheduleLecturerFilterOptions[scheduleLecturerFilterActiveIndex - 1];
-			if (item) selectScheduleLecturerFilterOption(item);
-			return;
-		}
-		if (event.key === 'Escape') {
-			scheduleLecturerFilterOpen = false;
-			scheduleLecturerFilterActiveIndex = -1;
-		}
-	}
-
-	function handleStudentPickerKeydown(event: KeyboardEvent) {
-		const optionCount = filteredStudentsForPicker.length;
-		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-			event.preventDefault();
-			studentPickerOpen = true;
-			if (!studentPickerOptions.length) queueStudentPickerRefresh(0);
-			if (optionCount > 0) {
-				const delta = event.key === 'ArrowDown' ? 1 : -1;
-				studentPickerActiveIndex = clampActiveIndex(studentPickerActiveIndex + delta, optionCount);
-			}
-			return;
-		}
-		if (event.key === 'Enter' && studentPickerOpen) {
-			const item = filteredStudentsForPicker[studentPickerActiveIndex];
-			if (item) {
-				event.preventDefault();
-				selectStudentPickerOption(item);
-			}
-			return;
-		}
-		if (event.key === 'Escape') {
-			studentPickerOpen = false;
-			studentPickerActiveIndex = -1;
-		}
-	}
-
-	function handleCoursePickerKeydown(event: KeyboardEvent) {
-		const optionCount = filteredCoursesForPicker.length;
-		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-			event.preventDefault();
-			coursePickerOpen = true;
-			if (!coursePickerOptions.length) queueCoursePickerRefresh(0);
-			if (optionCount > 0) {
-				const delta = event.key === 'ArrowDown' ? 1 : -1;
-				coursePickerActiveIndex = clampActiveIndex(coursePickerActiveIndex + delta, optionCount);
-			}
-			return;
-		}
-		if (event.key === 'Enter' && coursePickerOpen) {
-			const item = filteredCoursesForPicker[coursePickerActiveIndex];
-			if (item) {
-				event.preventDefault();
-				selectCoursePickerOption(item);
-			}
-			return;
-		}
-		if (event.key === 'Escape') {
-			coursePickerOpen = false;
-			coursePickerActiveIndex = -1;
-		}
-	}
-
-	function handleRoomPickerKeydown(event: KeyboardEvent) {
-		const optionCount = filteredRoomsForPicker.length;
-		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-			event.preventDefault();
-			roomPickerOpen = true;
-			if (!roomPickerOptions.length) queueRoomPickerRefresh(0);
-			if (optionCount > 0) {
-				const delta = event.key === 'ArrowDown' ? 1 : -1;
-				roomPickerActiveIndex = clampActiveIndex(roomPickerActiveIndex + delta, optionCount);
-			}
-			return;
-		}
-		if (event.key === 'Enter' && roomPickerOpen) {
-			const item = filteredRoomsForPicker[roomPickerActiveIndex];
-			if (item) {
-				event.preventDefault();
-				selectRoomPickerOption(item);
-			}
-			return;
-		}
-		if (event.key === 'Escape') {
-			roomPickerOpen = false;
-			roomPickerActiveIndex = -1;
-		}
 	}
 
 	async function refreshCourses(cursor = collectionPagination.courses.currentCursor) {
@@ -3170,19 +2747,15 @@
 		);
 	});
 	const filteredScheduleRoomFilterOptions = $derived(scheduleRoomFilterOptions);
-	const participantStepReady = $derived(
-		Boolean(enrollmentDraft.studentId && enrollmentDraft.courseId)
-	);
 	const timeStepReady = $derived(
 		Boolean(
 			enrollmentDraft.day &&
-			enrollmentDraft.startTime &&
-			enrollmentDraft.endTime &&
-			enrollmentDraft.semester &&
-			enrollmentDraft.academicYear
+				enrollmentDraft.startTime &&
+				enrollmentDraft.endTime &&
+				enrollmentDraft.semester &&
+				enrollmentDraft.academicYear
 		) && enrollmentDraft.startTime < enrollmentDraft.endTime
 	);
-	const roomStepReady = $derived(Boolean(enrollmentDraft.classRoomId));
 	const builderTaskMode = $derived(Boolean(selectedEnrollmentId || builderStep !== 'participant'));
 	const selectedDraftStudent = $derived(
 		studentPickerLookup.get(enrollmentDraft.studentId)?.name ??
@@ -3216,58 +2789,6 @@
 		const dayLabel = DAY_LABELS[enrollmentDraft.day as keyof typeof DAY_LABELS];
 		return `${dayLabel} • ${formatTimeRange(parseISO(enrollmentDraft.startTime, timezone), parseISO(enrollmentDraft.endTime, timezone), timezone)}`;
 	});
-
-	function canOpenBuilderStep(step: BuilderStep) {
-		if (step === 'participant') return true;
-		if (step === 'time') return participantStepReady;
-		if (step === 'room') return participantStepReady && timeStepReady;
-		return participantStepReady && timeStepReady && roomStepReady;
-	}
-
-	function setBuilderStep(step: BuilderStep) {
-		if (!canOpenBuilderStep(step)) return;
-		builderStep = step;
-	}
-
-	function advanceBuilderStep() {
-		if (builderStep === 'participant' && participantStepReady) {
-			builderStep = 'time';
-			return;
-		}
-		if (builderStep === 'time' && timeStepReady) {
-			builderStep = 'room';
-			return;
-		}
-		if (builderStep === 'room' && roomStepReady) {
-			builderStep = 'review';
-		}
-	}
-
-	function retreatBuilderStep() {
-		if (builderStep === 'review') {
-			builderStep = 'room';
-			return;
-		}
-		if (builderStep === 'room') {
-			builderStep = 'time';
-			return;
-		}
-		if (builderStep === 'time') {
-			builderStep = 'participant';
-		}
-	}
-
-	function stepState(step: BuilderStep) {
-		if (builderStep === step) return 'active';
-		if (
-			(step === 'participant' && participantStepReady) ||
-			(step === 'time' && timeStepReady) ||
-			(step === 'room' && roomStepReady)
-		) {
-			return 'complete';
-		}
-		return canOpenBuilderStep(step) ? 'available' : 'locked';
-	}
 
 	function pickClassroom(item: SelectClassRoomsResult) {
 		pendingDelete = null;
@@ -3750,52 +3271,6 @@
 			successMessage: 'Nilai dihapus dari rekap hasil.',
 			failureMessage: 'Nilai belum bisa dihapus. Periksa apakah data masih dipakai di rekap.'
 		};
-	}
-
-	function createEnhancer(form: EnhancedForm, onSuccess: () => Promise<void> | void) {
-		return form.enhance(async ({ submit }: { submit: () => Promise<boolean> }) => {
-			try {
-				await submit();
-				const issue = firstIssue(form);
-				if (issue) {
-					setFeedback('danger', issue);
-					return;
-				}
-				await onSuccess();
-			} catch (error) {
-				const message = (error as { body?: { message?: string }; message?: string })?.body?.message;
-				setFeedback('danger', message || (error as Error).message || 'Aksi gagal diproses.');
-			}
-		});
-	}
-
-	function createOptimisticEnhancer(
-		form: EnhancedForm,
-		optimistic: () => void,
-		onSuccess: () => Promise<void> | void,
-		restore: () => Promise<void> | void
-	) {
-		return form.enhance(async ({ submit }: { submit: () => Promise<boolean> }) => {
-			let applied = false;
-			try {
-				optimistic();
-				applied = true;
-				await submit();
-				const issue = firstIssue(form);
-				if (issue) {
-					setFeedback('danger', issue);
-					await restore();
-					return;
-				}
-				await onSuccess();
-			} catch (error) {
-				const message = (error as { body?: { message?: string }; message?: string })?.body?.message;
-				setFeedback('danger', message || (error as Error).message || 'Aksi gagal diproses.');
-				if (applied) {
-					await restore();
-				}
-			}
-		});
 	}
 
 	const loginEnhance = loginUser.enhance(async ({ submit }: { submit: () => Promise<boolean> }) => {
@@ -4643,11 +4118,17 @@
 		viewRefreshLoading = true;
 		try {
 			await refreshViewData(activeView);
-			setFeedback('success', `${pageHeading(activeView)} berhasil dimuat ulang.`);
+			setFeedback(
+				'success',
+				`${pageHeading(activeView, currentUser.current?.role as AppRole | undefined)} berhasil dimuat ulang.`
+			);
 		} catch (error) {
 			setFeedback(
 				'danger',
-				errorMessage(error, `${pageHeading(activeView)} belum bisa dimuat ulang.`)
+				errorMessage(
+					error,
+					`${pageHeading(activeView, currentUser.current?.role as AppRole | undefined)} belum bisa dimuat ulang.`
+				)
 			);
 		} finally {
 			viewRefreshLoading = false;
@@ -4798,7 +4279,7 @@
 					>
 						<Menu size={18} />
 					</button>
-					<h2>{pageHeading(activeView)}</h2>
+					<h2>{pageHeading(activeView, currentUser.current?.role as AppRole | undefined)}</h2>
 				</div>
 
 				<div class="topbar-tools">
@@ -4908,5364 +4389,736 @@
 
 			{#if !blocksViewRendering}
 				{#if activeView === 'dashboard'}
-					<div class="dashboard-stack">
-						{#if currentUser.current.role === 'STUDENT'}
-							<section class="student-dashboard">
-								<article class="student-hero">
-									<div class="student-hero-copy">
-										<span>Kelas berikutnya</span>
-										<strong
-											>{#if nextSchedule}<span
-													role="button"
-													tabindex="0"
-													class="entity-link"
-													onkeydown={handleKeyboardClick}
-													onclick={() => activateView('courses')}>{nextSchedule.course}</span
-												>{:else}Belum ada kelas terjadwal{/if}</strong
-										>
-										{#if nextSchedule}
-											<p>
-												{DAY_LABELS[nextSchedule.day]} • {nextSchedule.startLabel} - {nextSchedule.endLabel}
-												•
-												<span
-													role="button"
-													tabindex="0"
-													class="entity-link"
-													onkeydown={handleKeyboardClick}
-													onclick={() =>
-														navigateToEntity(
-															'classrooms',
-															nextSchedule.original.class_room_id,
-															nextSchedule.room
-														)}>{nextSchedule.room}</span
-												>
-											</p>
-										{/if}
-									</div>
-									<div class="decision-actions student-actions">
-										<Button class="primary-button" onclick={() => activateView('calendar')}
-											>Lihat kalender</Button
-										>
-										<Button
-											class="ghost-button"
-											variant="ghost"
-											onclick={() => activateView('grades')}>Lihat nilai</Button
-										>
-									</div>
-								</article>
-
-								<section class="student-summary-row">
-									<div>
-										<span>KRS aktif</span>
-										<strong>{enrollments.length} kelas tercatat</strong>
-									</div>
-									<div>
-										<span>Nilai tersedia</span>
-										<strong>{grades.length} hasil sudah masuk</strong>
-									</div>
-									<div>
-										<span>Ruang yang dipakai</span>
-										<strong
-											>{#if nextSchedule}<span
-													role="button"
-													tabindex="0"
-													class="entity-link"
-													onkeydown={handleKeyboardClick}
-													onclick={() =>
-														navigateToEntity(
-															'courses',
-															nextSchedule.original.course_id,
-															nextSchedule.course
-														)}>{nextSchedule.course}</span
-												>{:else}Belum ada kelas terjadwal{/if}</strong
-										>
-									</div>
-								</section>
-
-								{#if studentGradeHighlights.length}
-									<section class="student-grade-list">
-										<h3>Nilai terbaru</h3>
-										<div class="student-grade-items">
-											{#each studentGradeHighlights as item (item.id)}
-												<div>
-													<span>{item.course_name}</span>
-													<strong>{item.letter_grade ?? '-'}</strong>
-												</div>
-											{/each}
-										</div>
-									</section>
-								{/if}
-							</section>
-						{:else}
-							<section class="decision-board">
-								<article
-									class="decision-lead"
-									class:decision-alert={conflictCount > 0}
-									class:decision-steady={conflictCount === 0}
-								>
-									<h3 class="decision-title">
-										{#if conflictCount > 0}
-											{conflictCount} bentrok perlu ditangani
-										{:else if nextSchedule}
-											Jadwal hari ini siap berjalan
-										{:else}
-											Belum ada kelas aktif yang perlu diatur
-										{/if}
-									</h3>
-									{#if primaryConflict}
-										<section class="decision-primary">
-											<div class="decision-primary-copy">
-												<span>Bentrok terdekat</span>
-												<strong>{primaryConflict.course}</strong>
-												<p>
-													{DAY_LABELS[primaryConflict.day]} • {primaryConflict.startLabel} - {primaryConflict.endLabel}
-												</p>
-												{#if primaryConflict.conflictGroupId && conflictGroupDetailsById[primaryConflict.conflictGroupId]}
-													<p>
-														{conflictGroupMetaCopy(
-															conflictGroupDetailsById[primaryConflict.conflictGroupId]
-														)}
-													</p>
-												{/if}
-											</div>
-											{#if additionalConflictCount > 0}
-												<p class="decision-secondary-count">
-													+{additionalConflictCount} bentrok lain belum ditangani
-												</p>
-											{/if}
-											<div class="decision-actions conflict-card-actions">
-												<Button
-													class="ghost-button"
-													variant="ghost"
-													size="sm"
-													onclick={() => openBuilderForSchedule(primaryConflict)}
-												>
-													Buka di penjadwalan
-												</Button>
-												<Button
-													class="ghost-button"
-													variant="ghost"
-													size="sm"
-													onclick={() => openCalendarForSchedule(primaryConflict)}
-												>
-													Buka di kalender
-												</Button>
-											</div>
-										</section>
-									{:else if nextSchedule}
-										<section class="decision-primary decision-primary-steady">
-											<div class="decision-primary-copy">
-												<span>Kelas berikutnya</span>
-												<span
-													role="button"
-													tabindex="0"
-													class="entity-link"
-													onkeydown={handleKeyboardClick}
-													onclick={() =>
-														navigateToEntity(
-															'courses',
-															nextSchedule.original.course_id,
-															nextSchedule.course
-														)}><strong>{nextSchedule.course}</strong></span
-												>
-												<p>
-													{DAY_LABELS[nextSchedule.day]} • {nextSchedule.startLabel} - {nextSchedule.endLabel}
-													•
-													<span
-														role="button"
-														tabindex="0"
-														class="entity-link"
-														onkeydown={handleKeyboardClick}
-														onclick={() =>
-															navigateToEntity(
-																'classrooms',
-																nextSchedule.original.class_room_id,
-																nextSchedule.room
-															)}>{nextSchedule.room}</span
-													>
-												</p>
-											</div>
-										</section>
-									{/if}
-
-									<div class="decision-actions">
-										<Button class="primary-button" onclick={() => activateView('builder')}
-											>Buka penjadwalan</Button
-										>
-										<Button
-											class="ghost-button"
-											variant="ghost"
-											onclick={() => activateView('calendar')}>Lihat kalender</Button
-										>
-									</div>
-								</article>
-
-								<aside class="decision-notes">
-									<div class="decision-note-row">
-										<span>Ruang belum padat</span>
-										<strong>{underusedRooms} ruang masih longgar</strong>
-									</div>
-									<div class="decision-note-row">
-										<span>Kelas berikutnya</span>
-										<strong
-											>{#if nextSchedule}<span
-													role="button"
-													tabindex="0"
-													class="entity-link"
-													onkeydown={handleKeyboardClick}
-													onclick={() => activateView('courses')}>{nextSchedule.course}</span
-												>{:else}Belum ada kelas terjadwal{/if}</strong
-										>
-									</div>
-								</aside>
-							</section>
-
-							<ClassroomDashboard
-								role={currentUser.current.role as AppRole}
-								summary={{
-									...(classRoomDashboardSummary ?? emptyRoomDashboardSummary),
-									conflictedCount: conflictAudit?.summary?.conflictedRooms ?? 0
-								}}
-								metrics={classRoomDashboardMetrics?.items ?? []}
-								page={classRoomDashboardPagination.pageNumber}
-								pageSize={classRoomDashboardPagination.limit || 10}
-								total={classRoomDashboardSummary?.totalRooms ?? 0}
-								hasMore={classRoomDashboardPagination.hasMore}
-								loading={classRoomDashboardPagination.loading}
-								canPrevious={classRoomDashboardPagination.history.length > 0}
-								{selectedRoomId}
-								onPickRoom={(id) => (selectedRoomId = id)}
-								onPreviousPage={() => changeClassRoomDashboardPage('previous')}
-								onNextPage={() => changeClassRoomDashboardPage('next')}
-							/>
-						{/if}
-					</div>
+					<DashboardView
+						role={currentUser.current.role as AppRole}
+						{nextSchedule}
+						{enrollments}
+						{grades}
+						{studentGradeHighlights}
+						{conflictCount}
+						{primaryConflict}
+						{additionalConflictCount}
+						{conflictGroupDetailsById}
+						{underusedRooms}
+						{classRoomDashboardSummary}
+						classRoomDashboardMetrics={classRoomDashboardMetrics?.items ?? []}
+						{classRoomDashboardPagination}
+						{selectedRoomId}
+						conflictedCount={conflictAudit?.summary?.conflictedRooms ?? 0}
+						onActivateView={activateView}
+						onNavigateToEntity={navigateToEntity}
+						onOpenBuilderForSchedule={openBuilderForSchedule}
+						onOpenCalendarForSchedule={openCalendarForSchedule}
+						onPickRoom={(id) => (selectedRoomId = id)}
+						onPreviousPage={() => changeClassRoomDashboardPage('previous')}
+						onNextPage={() => changeClassRoomDashboardPage('next')}
+						{handleKeyboardClick}
+					/>
 				{/if}
 
 				{#if activeView === 'calendar'}
-					<div class="calendar-layout">
-						<section class="calendar-surface">
-							<header class="surface-head">
-								<div>
-									<p class="surface-kicker">Kalender</p>
-									<h2>Kalender kuliah mingguan</h2>
-									<p class="calendar-week-label">{calendarWeekLabel}</p>
-								</div>
-							</header>
-
-							<section class="schedule-filter-panel">
-								<div class="editor-grid schedule-filter-grid">
-									<label class="schedule-filter-search">
-										<span>Cari jadwal</span>
-										<div class="search-box compact">
-											<Search size={16} />
-											<input
-												bind:value={enrollmentSearch}
-												aria-label="Cari jadwal kalender"
-												placeholder="Cari mahasiswa, mata kuliah, ruang, atau dosen"
-												oninput={() => queueCollectionRefresh('enrollments')}
-											/>
-										</div>
-									</label>
-									<label>
-										<span>Hari</span>
-										<select
-											bind:value={scheduleDayFilter}
-											onchange={() => queueCollectionRefresh('enrollments', 0)}
-										>
-											<option value="">Semua hari</option>
-											{#each days as day (day)}
-												<option value={day}>{DAY_LABELS[day]}</option>
-											{/each}
-										</select>
-									</label>
-									<label>
-										<span>Mata kuliah</span>
-										<select
-											bind:value={scheduleCourseFilter}
-											onchange={() => queueCollectionRefresh('enrollments', 0)}
-										>
-											<option value="">Semua mata kuliah</option>
-											{#each courses as item (item.id)}
-												<option value={item.id}>{item.name}</option>
-											{/each}
-										</select>
-									</label>
-									<label>
-										<span>Ruang</span>
-										<div
-											class="combobox-wrap"
-											onfocusout={(e) => {
-												if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-													scheduleRoomFilterOpen = false;
-												}
-											}}
-										>
-											<input
-												type="text"
-												class="combobox-input"
-												placeholder="Cari ruang filter..."
-												value={scheduleRoomFilter
-													? selectedScheduleRoomFilterLabel
-													: scheduleRoomFilterSearch}
-												oninput={(e) => {
-													scheduleRoomFilterSearch = (e.currentTarget as HTMLInputElement).value;
-													if (scheduleRoomFilter) {
-														scheduleRoomFilter = '';
-														queueCollectionRefresh('enrollments', 0);
-													}
-													queueScheduleRoomFilterRefresh();
-													scheduleRoomFilterOpen = true;
-												}}
-												onfocus={(e) => {
-													if (scheduleRoomFilter) {
-														(e.currentTarget as HTMLInputElement).select();
-													}
-													scheduleRoomFilterOpen = true;
-													if (!scheduleRoomFilterOptions.length) {
-														queueScheduleRoomFilterRefresh(0);
-													}
-												}}
-											/>
-											{#if scheduleRoomFilterIssue}
-												<p class="combobox-error">{scheduleRoomFilterIssue}</p>
-											{:else if scheduleRoomFilterOpen && scheduleRoomFilterLoading && !scheduleRoomFilterOptions.length}
-												<p class="combobox-empty">Memuat ruang kelas...</p>
-											{:else if scheduleRoomFilterOpen}
-												<div class="combobox-dropdown" role="listbox">
-													<button
-														type="button"
-														role="option"
-														aria-selected={!scheduleRoomFilter}
-														class="combobox-option"
-														class:active={!scheduleRoomFilter}
-														onmousedown={(e) => {
-															e.preventDefault();
-															scheduleRoomFilter = '';
-															scheduleRoomFilterSearch = '';
-															scheduleRoomFilterOpen = false;
-															queueCollectionRefresh('enrollments', 0);
-														}}
-													>
-														<strong>Semua ruang</strong>
-														<span>Hapus filter ruang</span>
-													</button>
-													{#each filteredScheduleRoomFilterOptions as item (item.id)}
-														<button
-															type="button"
-															role="option"
-															aria-selected={scheduleRoomFilter === item.id}
-															class="combobox-option"
-															class:active={scheduleRoomFilter === item.id}
-															onmousedown={(e) => {
-																e.preventDefault();
-																scheduleRoomFilter = item.id ?? '';
-																scheduleRoomFilterSearch = '';
-																scheduleRoomFilterOpen = false;
-																queueCollectionRefresh('enrollments', 0);
-															}}
-														>
-															<strong>{item.name}</strong>
-															<span
-																>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
-															>
-														</button>
-													{/each}
-													{#if !filteredScheduleRoomFilterOptions.length && !scheduleRoomFilterLoading}
-														<p class="combobox-empty">Ruang tidak ditemukan.</p>
-													{/if}
-													{#if scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
-														<div class="combobox-footer">
-															<span class="combobox-meta">
-																{scheduleRoomFilterOptions.length} opsi dimuat
-															</span>
-															<button
-																type="button"
-																class="combobox-more"
-																disabled={!scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
-																onmousedown={(e) => {
-																	e.preventDefault();
-																	loadMoreScheduleRoomFilterOptions();
-																}}
-															>
-																{scheduleRoomFilterLoading ? 'Memuat...' : 'Muat lebih banyak'}
-															</button>
-														</div>
-													{/if}
-												</div>
-											{/if}
-										</div>
-									</label>
-									<label>
-										<span>Dosen</span>
-										<select
-											bind:value={scheduleLecturerFilter}
-											onchange={() => queueCollectionRefresh('enrollments', 0)}
-										>
-											<option value="">Semua dosen</option>
-											{#each lecturers as item (item.id)}
-												<option value={item.id}>{item.name}</option>
-											{/each}
-										</select>
-									</label>
-									<label>
-										<span>Semester</span>
-										<select
-											bind:value={scheduleSemesterFilter}
-											onchange={() => queueCollectionRefresh('enrollments', 0)}
-										>
-											<option value="">Semua semester</option>
-											{#each scheduleSemesterOptions as item (item)}
-												<option value={item}>{item}</option>
-											{/each}
-										</select>
-									</label>
-									<label>
-										<span>Tahun akademik</span>
-										<select
-											bind:value={scheduleAcademicYearFilter}
-											onchange={() => queueCollectionRefresh('enrollments', 0)}
-										>
-											<option value="">Semua tahun</option>
-											{#each scheduleAcademicYearOptions as item (item)}
-												<option value={item}>{item}</option>
-											{/each}
-										</select>
-									</label>
-								</div>
-								<div class="list-summary schedule-filter-summary">
-									<span>{filteredScheduleCards.length} jadwal tampil</span>
-									<div class="schedule-filter-actions">
-										<Badge variant="secondary">{scheduleActiveFilterCount} filter aktif</Badge>
-										<Button
-											class="ghost-button"
-											variant="ghost"
-											size="sm"
-											onclick={resetScheduleFilters}
-											disabled={scheduleActiveFilterCount === 0}
-										>
-											Hapus filter
-										</Button>
-									</div>
-								</div>
-							</section>
-
-							{#if calendarConflictLegend.length}
-								<div class="calendar-conflict-toolbar">
-									<div class="calendar-conflict-toolbar-head">
-										<strong>{calendarConflictLegend.length} grup bentrok</strong>
-										{#if selectedConflictGroupId}
-											<Button
-												class="ghost-button"
-												variant="ghost"
-												size="sm"
-												onclick={() => (selectedConflictGroupId = null)}
-											>
-												Lihat semua
-											</Button>
-										{/if}
-									</div>
-									<div class="calendar-conflict-legend">
-										{#each calendarConflictLegend as group (group.id)}
-											<button
-												type="button"
-												class={`calendar-conflict-chip ${group.selected ? 'selected' : ''}`}
-												style={conflictToneVariables(group.tone)}
-												onclick={() => toggleConflictGroup(group.id, group.representative)}
-											>
-												<span class="calendar-conflict-chip-dot"></span>
-												<span class="calendar-conflict-chip-copy">
-													<strong>{group.label}</strong>
-													<small>{group.course}</small>
-													{#if group.details}
-														<small>{conflictGroupMetaCopy(group.details)}</small>
-													{/if}
-												</span>
-											</button>
-										{/each}
-									</div>
-								</div>
-							{/if}
-
-							{#if calendarNeedsFilters}
-								<section class="calendar-empty-state support-panel">
-									<h3>Terapkan filter jadwal terlebih dahulu</h3>
-									<p class="detail-hint">
-										Kalender penuh disembunyikan. Pilih mata kuliah, ruang, dosen, hari, semester,
-										atau tahun akademik untuk menampilkan jadwal yang ingin dilihat.
-									</p>
-								</section>
-							{:else if calendarExceedsVisibleLimit}
-								<section class="calendar-empty-state support-warning">
-									<h3>Persempit hasil sebelum membuka kalender</h3>
-									<p>
-										{filteredScheduleCards.length} jadwal masih cocok dengan filter saat ini. Kurangi
-										hasil hingga maksimal {CALENDAR_MAX_VISIBLE_SCHEDULES} jadwal agar kalender tetap
-										mudah dibaca.
-									</p>
-								</section>
-							{:else if !filteredScheduleCards.length}
-								<section class="calendar-empty-state support-panel">
-									<h3>Tidak ada jadwal yang cocok</h3>
-									<p class="detail-hint">
-										Ubah kata kunci atau longgarkan filter untuk menampilkan jadwal pada kalender.
-									</p>
-								</section>
-							{:else}
-								<div class="event-calendar-host">
-									{#if EventCalendarComponent}
-										<EventCalendarComponent plugins={calendarPlugins} options={calendarOptions} />
-									{:else}
-										<div class="calendar-loading">Memuat kalender...</div>
-									{/if}
-								</div>
-							{/if}
-						</section>
-
-						<section
-							class="detail-card"
-							class:calendar-conflict={calendarDetailSchedule?.hasConflict}
-							style={conflictToneVariables(calendarDetailSchedule?.conflictTone ?? null)}
-						>
-							{#if calendarDetailSchedule}
-								<div class="pane-head compact">
-									<div>
-										<h3>
-											<span
-												role="button"
-												tabindex="0"
-												class="entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={() =>
-													navigateToEntity(
-														'courses',
-														calendarDetailSchedule.original.course_id,
-														calendarDetailSchedule.course
-													)}>{calendarDetailSchedule.course}</span
-											>
-										</h3>
-										{#if calendarDetailSchedule.hasConflict && selectedScheduleConflictSummary}
-											<p class="calendar-conflict-copy">
-												Bentrok dengan {selectedScheduleConflictSummary}
-											</p>
-										{/if}
-									</div>
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										size="sm"
-										onclick={() => openBuilderForSchedule(calendarDetailSchedule)}
-									>
-										Buka di penjadwalan
-									</Button>
-								</div>
-								<div class="detail-lines">
-									<div>
-										<span>Hari</span><strong>{DAY_LABELS[calendarDetailSchedule.day]}</strong>
-									</div>
-									<div>
-										<span>Jam</span><strong
-											>{calendarDetailSchedule.startLabel} - {calendarDetailSchedule.endLabel}</strong
-										>
-									</div>
-									<div>
-										<span>Ruang</span><span
-											role="button"
-											tabindex="0"
-											class="entity-link"
-											onkeydown={handleKeyboardClick}
-											onclick={() =>
-												navigateToEntity(
-													'classrooms',
-													calendarDetailSchedule.original.class_room_id,
-													calendarDetailSchedule.room
-												)}><strong>{calendarDetailSchedule.room}</strong></span
-										>
-									</div>
-									<div>
-										<span>Dosen</span><span
-											role="button"
-											tabindex="0"
-											class="entity-link"
-											onkeydown={handleKeyboardClick}
-											onclick={() =>
-												navigateToEntity(
-													'lecturers',
-													calendarDetailSchedule.original.lecturer_id,
-													calendarDetailSchedule.lecturer
-												)}><strong>{calendarDetailSchedule.lecturer}</strong></span
-										>
-									</div>
-									<div>
-										<span>Semester</span><strong
-											>{calendarDetailSchedule.semester} • {calendarDetailSchedule.academicYear}</strong
-										>
-									</div>
-									<div>
-										<span>Status</span><strong
-											class:selected-danger={calendarDetailSchedule.hasConflict}
-											class:selected-safe={!calendarDetailSchedule.hasConflict}
-											>{calendarDetailSchedule.hasConflict ? 'Bentrok' : 'Aman'}</strong
-										>
-									</div>
-									{#if selectedScheduleConflictGroup}
-										<div>
-											<span>Ruang bentrok</span><strong
-												>{selectedScheduleConflictGroup.rooms}</strong
-											>
-										</div>
-										<div>
-											<span>Dosen terkait</span><strong
-												>{selectedScheduleConflictGroup.lecturers}</strong
-											>
-										</div>
-									{/if}
-								</div>
-								{#if calendarDetailSchedule.hasConflict && selectedScheduleConflictPeers.length}
-									<section class="calendar-overlap-panel">
-										<h4>Jadwal lain di grup bentrok ini</h4>
-										<div class="calendar-overlap-list">
-											{#each selectedScheduleConflictPeers as peer (peer.id)}
-												<div
-													class={`calendar-overlap-item ${peer.hasConflict ? 'conflict' : ''} ${selectedScheduleId === peer.id ? 'selected' : ''}`}
-													style={conflictToneVariables(peer.conflictTone ?? null)}
-												>
-													<div class="calendar-overlap-copy">
-														<span
-															role="button"
-															tabindex="0"
-															class="entity-link"
-															onkeydown={handleKeyboardClick}
-															onclick={() =>
-																navigateToEntity('courses', peer.original.course_id, peer.course)}
-															><strong>{peer.course}</strong></span
-														>
-														<span
-															><span
-																role="button"
-																tabindex="0"
-																class="entity-link"
-																onkeydown={handleKeyboardClick}
-																onclick={() =>
-																	navigateToEntity(
-																		'students',
-																		peer.original.student_id,
-																		peer.student
-																	)}>{peer.student}</span
-															>
-															•
-															<span
-																role="button"
-																tabindex="0"
-																class="entity-link"
-																onkeydown={handleKeyboardClick}
-																onclick={() =>
-																	navigateToEntity(
-																		'lecturers',
-																		peer.original.lecturer_id,
-																		peer.lecturer
-																	)}>{peer.lecturer}</span
-															>
-															•
-															<span
-																role="button"
-																tabindex="0"
-																class="entity-link"
-																onkeydown={handleKeyboardClick}
-																onclick={() =>
-																	navigateToEntity(
-																		'classrooms',
-																		peer.original.class_room_id,
-																		peer.room
-																	)}>{peer.room}</span
-															></span
-														>
-														<small
-															>{DAY_LABELS[peer.day]} • {peer.startLabel} - {peer.endLabel}</small
-														>
-													</div>
-													<div class="calendar-overlap-actions">
-														<Button
-															class="ghost-button"
-															variant="ghost"
-															size="sm"
-															onclick={() => focusSchedule(peer)}
-														>
-															Lihat jadwal
-														</Button>
-														<Button
-															class="ghost-button"
-															variant="ghost"
-															size="sm"
-															onclick={() => openBuilderForSchedule(peer)}
-														>
-															Buka penjadwalan
-														</Button>
-													</div>
-												</div>
-											{/each}
-										</div>
-									</section>
-								{:else if selectedScheduleOverlapPeers.length}
-									<section class="calendar-overlap-panel">
-										<h4>Jadwal lain pada slot ini</h4>
-										<div class="calendar-overlap-list">
-											{#each selectedScheduleOverlapPeers as peer (peer.id)}
-												<div
-													class={`calendar-overlap-item ${peer.hasConflict ? 'conflict' : ''} ${selectedScheduleId === peer.id ? 'selected' : ''}`}
-													style={conflictToneVariables(peer.conflictTone ?? null)}
-												>
-													<div class="calendar-overlap-copy">
-														<strong>{peer.course}</strong>
-														<span>{peer.student} • {peer.lecturer} • {peer.room}</span>
-														<small
-															>{DAY_LABELS[peer.day]} • {peer.startLabel} - {peer.endLabel}</small
-														>
-													</div>
-													<div class="calendar-overlap-actions">
-														<Button
-															class="ghost-button"
-															variant="ghost"
-															size="sm"
-															onclick={() => focusSchedule(peer)}
-														>
-															Lihat jadwal
-														</Button>
-														<Button
-															class="ghost-button"
-															variant="ghost"
-															size="sm"
-															onclick={() => openBuilderForSchedule(peer)}
-														>
-															Buka penjadwalan
-														</Button>
-													</div>
-												</div>
-											{/each}
-										</div>
-									</section>
-								{/if}
-							{:else if calendarNeedsFilters}
-								<p class="empty-copy">
-									Kalender mingguan akan tampil setelah filter dipilih. Gunakan daftar bentrok di
-									atas untuk mulai memeriksa jadwal yang bentrok.
-								</p>
-							{:else if calendarExceedsVisibleLimit}
-								<p class="empty-copy">
-									Terlalu banyak jadwal untuk ditampilkan sekaligus. Tambahkan filter sampai
-									hasilnya maksimal {CALENDAR_MAX_VISIBLE_SCHEDULES} jadwal, atau pilih salah satu grup
-									bentrok di atas untuk melihat rinciannya lebih dulu.
-								</p>
-							{:else if !filteredScheduleCards.length}
-								<p class="empty-copy">Belum ada jadwal yang cocok dengan filter saat ini.</p>
-							{:else}
-								<p class="empty-copy">Pilih satu blok jadwal untuk melihat detail kelas.</p>
-							{/if}
-						</section>
-					</div>
+					<CalendarView
+						bind:enrollmentSearch
+						bind:scheduleDayFilter
+						bind:scheduleCourseFilter
+						bind:scheduleRoomFilter
+						bind:scheduleLecturerFilter
+						bind:scheduleSemesterFilter
+						bind:scheduleAcademicYearFilter
+						bind:scheduleRoomFilterSearch
+						bind:scheduleRoomFilterOpen
+						bind:selectedConflictGroupId
+						{calendarWeekLabel}
+						{courses}
+						{lecturers}
+						{scheduleSemesterOptions}
+						{scheduleAcademicYearOptions}
+						{filteredScheduleCards}
+						{scheduleActiveFilterCount}
+						{calendarConflictLegend}
+						{calendarNeedsFilters}
+						{calendarExceedsVisibleLimit}
+						calendarMaxVisibleSchedules={CALENDAR_MAX_VISIBLE_SCHEDULES}
+						{EventCalendarComponent}
+						{calendarPlugins}
+						{calendarOptions}
+						{calendarDetailSchedule}
+						{selectedScheduleConflictSummary}
+						{selectedScheduleConflictGroup}
+						{selectedScheduleConflictPeers}
+						{selectedScheduleOverlapPeers}
+						{selectedScheduleId}
+						{scheduleRoomFilterOptions}
+						{filteredScheduleRoomFilterOptions}
+						{scheduleRoomFilterIssue}
+						{scheduleRoomFilterLoading}
+						{scheduleRoomFilterHasMore}
+						selectedScheduleRoomFilterLabel={scheduleRoomFilter
+							? (classrooms.find((r) => r.id === scheduleRoomFilter)?.name ?? '')
+							: ''}
+						{queueCollectionRefresh}
+						{queueScheduleRoomFilterRefresh}
+						{loadMoreScheduleRoomFilterOptions}
+						{resetScheduleFilters}
+						{toggleConflictGroup}
+						{navigateToEntity}
+						{openBuilderForSchedule}
+						{focusSchedule}
+						{handleKeyboardClick}
+					/>
 				{/if}
 
 				{#if activeView === 'builder' && currentUser.current.role !== 'STUDENT'}
-					<div class="workspace-shell builder-shell">
-						<section class="workspace-list builder-list">
-							<div class="pane-head">
-								<div>
-									<h3>{builderTaskMode ? 'Jadwal terkait' : 'Jadwal aktif'}</h3>
-								</div>
-								<Button
-									variant="ghost"
-									size="sm"
-									class="ghost-button"
-									onclick={() => clearSelection('builder')}>Tambah jadwal</Button
-								>
-							</div>
-
-							<label class="search-box">
-								<Search size={16} />
-								<input
-									bind:value={enrollmentSearch}
-									oninput={() => queueCollectionRefresh('enrollments')}
-									aria-label="Cari jadwal kuliah"
-									placeholder="Cari mahasiswa, mata kuliah, atau ruang"
-								/>
-								{#if enrollmentSearch}
-									<button
-										type="button"
-										class="search-clear"
-										onclick={() => {
-											enrollmentSearch = '';
-											queueCollectionRefresh('enrollments', 0);
-										}}
-									>
-										<X size={14} />
-									</button>
-								{/if}
-							</label>
-
-							<div class="editor-grid schedule-filter-grid list-filter-grid">
-								<label>
-									<span>Hari</span>
-									<select
-										bind:value={scheduleDayFilter}
-										onchange={() => queueCollectionRefresh('enrollments', 0)}
-									>
-										<option value="">Semua hari</option>
-										{#each days as day (day)}
-											<option value={day}>{DAY_LABELS[day]}</option>
-										{/each}
-									</select>
-								</label>
-								<label>
-									<span>Mata kuliah</span>
-									<div
-										class="combobox-wrap"
-										onfocusout={(e) => {
-											if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-												scheduleCourseFilterOpen = false;
-												scheduleCourseFilterActiveIndex = -1;
-											}
-										}}
-									>
-										<input
-											type="text"
-											role="combobox"
-											class="combobox-input"
-											placeholder="Cari mata kuliah filter..."
-											aria-expanded={scheduleCourseFilterOpen}
-											aria-controls="schedule-course-filter-listbox"
-											aria-autocomplete="list"
-											aria-activedescendant={activeDescendantId(
-												'schedule-course-filter',
-												scheduleCourseFilterActiveIndex
-											)}
-											value={scheduleCourseFilter
-												? selectedScheduleCourseFilterLabel
-												: scheduleCourseFilterSearch}
-											oninput={(e) => {
-												scheduleCourseFilterSearch = (e.currentTarget as HTMLInputElement).value;
-												scheduleCourseFilterActiveIndex = -1;
-												if (scheduleCourseFilter) {
-													scheduleCourseFilter = '';
-													queueCollectionRefresh('enrollments', 0);
-												}
-												scheduleCourseFilterOpen = true;
-												queueScheduleCourseFilterRefresh();
-											}}
-											onkeydown={handleScheduleCourseFilterKeydown}
-											onfocus={(e) => {
-												if (scheduleCourseFilter) {
-													(e.currentTarget as HTMLInputElement).select();
-												}
-												scheduleCourseFilterActiveIndex = -1;
-												scheduleCourseFilterOpen = true;
-												queueScheduleCourseFilterRefresh(0);
-											}}
-										/>
-										{#if scheduleCourseFilterIssue}
-											<p class="combobox-error">{scheduleCourseFilterIssue}</p>
-										{:else if scheduleCourseFilterOpen && scheduleCourseFilterLoading && !scheduleCourseFilterOptions.length}
-											<p class="combobox-empty">Memuat mata kuliah...</p>
-										{:else if scheduleCourseFilterOpen}
-											<div
-												id="schedule-course-filter-listbox"
-												class="combobox-dropdown"
-												role="listbox"
-											>
-												<button
-													id="schedule-course-filter-option-0"
-													type="button"
-													role="option"
-													aria-selected={!scheduleCourseFilter}
-													class="combobox-option"
-													class:active={scheduleCourseFilterActiveIndex === 0 ||
-														!scheduleCourseFilter}
-													onmousedown={(e) => {
-														e.preventDefault();
-														selectScheduleCourseFilterOption(null);
-													}}
-													onfocus={() => (scheduleCourseFilterActiveIndex = 0)}
-													onmouseover={() => (scheduleCourseFilterActiveIndex = 0)}
-												>
-													<strong>Semua mata kuliah</strong>
-													<span>Hapus filter mata kuliah</span>
-												</button>
-												{#each scheduleCourseFilterOptions as item, index (item.id)}
-													<button
-														id={`schedule-course-filter-option-${index + 1}`}
-														type="button"
-														role="option"
-														aria-selected={scheduleCourseFilter === item.id}
-														class="combobox-option"
-														class:active={scheduleCourseFilterActiveIndex === index + 1 ||
-															scheduleCourseFilter === item.id}
-														onmousedown={(e) => {
-															e.preventDefault();
-															selectScheduleCourseFilterOption(item);
-														}}
-														onfocus={() => (scheduleCourseFilterActiveIndex = index + 1)}
-														onmouseover={() => (scheduleCourseFilterActiveIndex = index + 1)}
-													>
-														<strong>{item.name}</strong>
-														<span>{item.id} • {item.lecturer_name}</span>
-													</button>
-												{/each}
-												{#if !scheduleCourseFilterOptions.length && !scheduleCourseFilterLoading}
-													<p class="combobox-empty">Mata kuliah tidak ditemukan.</p>
-												{/if}
-												{#if scheduleCourseFilterHasMore || scheduleCourseFilterLoading}
-													<div class="combobox-footer">
-														<span class="combobox-meta">
-															{scheduleCourseFilterOptions.length} opsi dimuat
-														</span>
-														<button
-															type="button"
-															class="combobox-more"
-															disabled={!scheduleCourseFilterHasMore || scheduleCourseFilterLoading}
-															onmousedown={(e) => {
-																e.preventDefault();
-																loadMoreScheduleCourseFilterOptions();
-															}}
-														>
-															{scheduleCourseFilterLoading ? 'Memuat...' : 'Muat lebih banyak'}
-														</button>
-													</div>
-												{/if}
-											</div>
-										{/if}
-									</div>
-								</label>
-								<label>
-									<span>Ruang</span>
-									<div
-										class="combobox-wrap"
-										onfocusout={(e) => {
-											if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-												scheduleRoomFilterOpen = false;
-												scheduleRoomFilterActiveIndex = -1;
-											}
-										}}
-									>
-										<input
-											type="text"
-											role="combobox"
-											class="combobox-input"
-											placeholder="Cari ruang filter..."
-											aria-expanded={scheduleRoomFilterOpen}
-											aria-controls="schedule-room-filter-listbox"
-											aria-autocomplete="list"
-											aria-activedescendant={activeDescendantId(
-												'schedule-room-filter',
-												scheduleRoomFilterActiveIndex
-											)}
-											value={scheduleRoomFilter
-												? selectedScheduleRoomFilterLabel
-												: scheduleRoomFilterSearch}
-											oninput={(e) => {
-												scheduleRoomFilterSearch = (e.currentTarget as HTMLInputElement).value;
-												scheduleRoomFilterActiveIndex = -1;
-												if (scheduleRoomFilter) {
-													scheduleRoomFilter = '';
-													queueCollectionRefresh('enrollments', 0);
-												}
-												queueScheduleRoomFilterRefresh();
-												scheduleRoomFilterOpen = true;
-											}}
-											onkeydown={handleScheduleRoomFilterKeydown}
-											onfocus={(e) => {
-												if (scheduleRoomFilter) {
-													(e.currentTarget as HTMLInputElement).select();
-												}
-												scheduleRoomFilterActiveIndex = -1;
-												scheduleRoomFilterOpen = true;
-												if (!scheduleRoomFilterOptions.length) {
-													queueScheduleRoomFilterRefresh(0);
-												}
-											}}
-										/>
-										{#if scheduleRoomFilterIssue}
-											<p class="combobox-error">{scheduleRoomFilterIssue}</p>
-										{:else if scheduleRoomFilterOpen && scheduleRoomFilterLoading && !scheduleRoomFilterOptions.length}
-											<p class="combobox-empty">Memuat ruang kelas...</p>
-										{:else if scheduleRoomFilterOpen}
-											<div
-												id="schedule-room-filter-listbox"
-												class="combobox-dropdown"
-												role="listbox"
-											>
-												<button
-													id="schedule-room-filter-option-0"
-													type="button"
-													role="option"
-													aria-selected={!scheduleRoomFilter}
-													class="combobox-option"
-													class:active={scheduleRoomFilterActiveIndex === 0 || !scheduleRoomFilter}
-													onmousedown={(e) => {
-														e.preventDefault();
-														selectScheduleRoomFilterOption(null);
-													}}
-													onfocus={() => (scheduleRoomFilterActiveIndex = 0)}
-													onmouseover={() => (scheduleRoomFilterActiveIndex = 0)}
-												>
-													<strong>Semua ruang</strong>
-													<span>Hapus filter ruang</span>
-												</button>
-												{#each filteredScheduleRoomFilterOptions as item, index (item.id)}
-													<button
-														id={`schedule-room-filter-option-${index + 1}`}
-														type="button"
-														role="option"
-														aria-selected={scheduleRoomFilter === item.id}
-														class="combobox-option"
-														class:active={scheduleRoomFilterActiveIndex === index + 1 ||
-															scheduleRoomFilter === item.id}
-														onmousedown={(e) => {
-															e.preventDefault();
-															selectScheduleRoomFilterOption(item);
-														}}
-														onfocus={() => (scheduleRoomFilterActiveIndex = index + 1)}
-														onmouseover={() => (scheduleRoomFilterActiveIndex = index + 1)}
-													>
-														<strong>{item.name}</strong>
-														<span
-															>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
-														>
-													</button>
-												{/each}
-												{#if !filteredScheduleRoomFilterOptions.length && !scheduleRoomFilterLoading}
-													<p class="combobox-empty">Ruang tidak ditemukan.</p>
-												{/if}
-												{#if scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
-													<div class="combobox-footer">
-														<span class="combobox-meta">
-															{scheduleRoomFilterOptions.length} opsi dimuat
-														</span>
-														<button
-															type="button"
-															class="combobox-more"
-															disabled={!scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
-															onmousedown={(e) => {
-																e.preventDefault();
-																loadMoreScheduleRoomFilterOptions();
-															}}
-														>
-															{scheduleRoomFilterLoading ? 'Memuat...' : 'Muat lebih banyak'}
-														</button>
-													</div>
-												{/if}
-											</div>
-										{/if}
-									</div>
-								</label>
-								<label>
-									<span>Dosen</span>
-									<div
-										class="combobox-wrap"
-										onfocusout={(e) => {
-											if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-												scheduleLecturerFilterOpen = false;
-												scheduleLecturerFilterActiveIndex = -1;
-											}
-										}}
-									>
-										<input
-											type="text"
-											role="combobox"
-											class="combobox-input"
-											placeholder="Cari dosen filter..."
-											aria-expanded={scheduleLecturerFilterOpen}
-											aria-controls="schedule-lecturer-filter-listbox"
-											aria-autocomplete="list"
-											aria-activedescendant={activeDescendantId(
-												'schedule-lecturer-filter',
-												scheduleLecturerFilterActiveIndex
-											)}
-											value={scheduleLecturerFilter
-												? selectedScheduleLecturerFilterLabel
-												: scheduleLecturerFilterSearch}
-											oninput={(e) => {
-												scheduleLecturerFilterSearch = (e.currentTarget as HTMLInputElement).value;
-												scheduleLecturerFilterActiveIndex = -1;
-												if (scheduleLecturerFilter) {
-													scheduleLecturerFilter = '';
-													queueCollectionRefresh('enrollments', 0);
-												}
-												scheduleLecturerFilterOpen = true;
-												queueScheduleLecturerFilterRefresh();
-											}}
-											onkeydown={handleScheduleLecturerFilterKeydown}
-											onfocus={(e) => {
-												if (scheduleLecturerFilter) {
-													(e.currentTarget as HTMLInputElement).select();
-												}
-												scheduleLecturerFilterActiveIndex = -1;
-												scheduleLecturerFilterOpen = true;
-												queueScheduleLecturerFilterRefresh(0);
-											}}
-										/>
-										{#if scheduleLecturerFilterIssue}
-											<p class="combobox-error">{scheduleLecturerFilterIssue}</p>
-										{:else if scheduleLecturerFilterOpen && scheduleLecturerFilterLoading && !scheduleLecturerFilterOptions.length}
-											<p class="combobox-empty">Memuat dosen...</p>
-										{:else if scheduleLecturerFilterOpen}
-											<div
-												id="schedule-lecturer-filter-listbox"
-												class="combobox-dropdown"
-												role="listbox"
-											>
-												<button
-													id="schedule-lecturer-filter-option-0"
-													type="button"
-													role="option"
-													aria-selected={!scheduleLecturerFilter}
-													class="combobox-option"
-													class:active={scheduleLecturerFilterActiveIndex === 0 ||
-														!scheduleLecturerFilter}
-													onmousedown={(e) => {
-														e.preventDefault();
-														selectScheduleLecturerFilterOption(null);
-													}}
-													onfocus={() => (scheduleLecturerFilterActiveIndex = 0)}
-													onmouseover={() => (scheduleLecturerFilterActiveIndex = 0)}
-												>
-													<strong>Semua dosen</strong>
-													<span>Hapus filter dosen</span>
-												</button>
-												{#each scheduleLecturerFilterOptions as item, index (item.id)}
-													<button
-														id={`schedule-lecturer-filter-option-${index + 1}`}
-														type="button"
-														role="option"
-														aria-selected={scheduleLecturerFilter === item.id}
-														class="combobox-option"
-														class:active={scheduleLecturerFilterActiveIndex === index + 1 ||
-															scheduleLecturerFilter === item.id}
-														onmousedown={(e) => {
-															e.preventDefault();
-															selectScheduleLecturerFilterOption(item);
-														}}
-														onfocus={() => (scheduleLecturerFilterActiveIndex = index + 1)}
-														onmouseover={() => (scheduleLecturerFilterActiveIndex = index + 1)}
-													>
-														<strong>{item.name}</strong>
-														<span>{item.id} • {item.email}</span>
-													</button>
-												{/each}
-												{#if !scheduleLecturerFilterOptions.length && !scheduleLecturerFilterLoading}
-													<p class="combobox-empty">Dosen tidak ditemukan.</p>
-												{/if}
-												{#if scheduleLecturerFilterHasMore || scheduleLecturerFilterLoading}
-													<div class="combobox-footer">
-														<span class="combobox-meta">
-															{scheduleLecturerFilterOptions.length} opsi dimuat
-														</span>
-														<button
-															type="button"
-															class="combobox-more"
-															disabled={!scheduleLecturerFilterHasMore ||
-																scheduleLecturerFilterLoading}
-															onmousedown={(e) => {
-																e.preventDefault();
-																loadMoreScheduleLecturerFilterOptions();
-															}}
-														>
-															{scheduleLecturerFilterLoading ? 'Memuat...' : 'Muat lebih banyak'}
-														</button>
-													</div>
-												{/if}
-											</div>
-										{/if}
-									</div>
-								</label>
-								<label>
-									<span>Semester</span>
-									<select
-										bind:value={scheduleSemesterFilter}
-										onchange={() => queueCollectionRefresh('enrollments', 0)}
-									>
-										<option value="">Semua semester</option>
-										{#each scheduleSemesterOptions as item (item)}
-											<option value={item}>{item}</option>
-										{/each}
-									</select>
-								</label>
-								<label>
-									<span>Tahun akademik</span>
-									<select
-										bind:value={scheduleAcademicYearFilter}
-										onchange={() => queueCollectionRefresh('enrollments', 0)}
-									>
-										<option value="">Semua tahun</option>
-										{#each scheduleAcademicYearOptions as item (item)}
-											<option value={item}>{item}</option>
-										{/each}
-									</select>
-								</label>
-							</div>
-
-							<label class="filter-toggle-row">
-								<input type="checkbox" bind:checked={builderConflictOnly} />
-								<span>Hanya tampilkan jadwal bentrok</span>
-							</label>
-
-							<div class="list-summary">
-								<span>{filteredBuilderEnrollments.length} jadwal ditemukan</span>
-								<div class="schedule-filter-actions">
-									{#if builderConflictOnly}
-										<Badge variant="secondary">Bentrok saja</Badge>
-									{/if}
-									<Badge variant="secondary"
-										>{scheduleActiveFilterCount + Number(builderConflictOnly)} filter aktif</Badge
-									>
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										size="sm"
-										onclick={resetScheduleFilters}
-										disabled={scheduleActiveFilterCount === 0 && !builderConflictOnly}
-									>
-										Hapus filter
-									</Button>
-								</div>
-							</div>
-
-							<div class="list-stack">
-								{#each filteredBuilderEnrollments as item (item.id)}
-									{@const scheduleCard = item.id
-										? (scheduleCardMap[item.id] ?? auditConflictCardMap[item.id])
-										: null}
-									<div
-										role="button"
-										tabindex="0"
-										onkeydown={handleKeyboardClick}
-										class:selected={selectedEnrollmentId === item.id}
-										class:conflict={Boolean(scheduleCard?.hasConflict)}
-										class="list-row"
-										style={conflictToneVariables(scheduleCard?.conflictTone ?? null)}
-										onclick={() => pickEnrollment(item)}
-									>
-										<div>
-											<span
-												role="button"
-												tabindex="0"
-												class="entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity('courses', item.course_id, item.course_name);
-												}}><strong>{item.course_name}</strong></span
-											>
-											<span
-												><span
-													role="button"
-													tabindex="0"
-													class="entity-link"
-													onkeydown={handleKeyboardClick}
-													onclick={(e) => {
-														e.stopPropagation();
-														navigateToEntity('students', item.student_id, item.student_name);
-													}}>{item.student_name}</span
-												>
-												•
-												<span
-													role="button"
-													tabindex="0"
-													class="entity-link"
-													onkeydown={handleKeyboardClick}
-													onclick={(e) => {
-														e.stopPropagation();
-														navigateToEntity(
-															'classrooms',
-															item.class_room_id,
-															item.class_room_name
-														);
-													}}>{item.class_room_name}</span
-												></span
-											>
-											{#if item.id && scheduleCard?.hasConflict && conflictSummaryByCardId[item.id]}
-												<small class="list-conflict-copy">
-													Bentrok dengan {conflictSummaryByCardId[item.id]}
-												</small>
-											{/if}
-										</div>
-										<small
-											>{item.schedule_day
-												? DAY_LABELS[item.schedule_day as keyof typeof DAY_LABELS]
-												: '-'} • {formatTimeRange(
-												item.schedule_start_time,
-												item.schedule_end_time,
-												timezone
-											)}</small
-										>
-									</div>
-								{/each}
-							</div>
-							<CollectionPagination
-								label="jadwal"
-								pageNumber={collectionPagination.enrollments.pageNumber}
-								canPrevious={collectionPagination.enrollments.history.length > 0}
-								limit={collectionPagination.enrollments.limit}
-								itemCount={collectionPagination.enrollments.itemCount}
-								hasMore={collectionPagination.enrollments.hasMore}
-								loading={collectionPagination.enrollments.loading}
-								onPrevious={() => void changeCollectionPage('enrollments', 'previous')}
-								onNext={() => void changeCollectionPage('enrollments', 'next')}
-							/>
-						</section>
-
-						<section class="workspace-detail builder-detail">
-							<div class="pane-head compact">
-								<div>
-									<h3>{selectedEnrollmentId ? 'Edit jadwal terpilih' : 'Tambah jadwal baru'}</h3>
-									{#if selectedEnrollmentScheduleCard?.hasConflict && selectedEnrollmentConflictSummary}
-										<p
-											class="builder-conflict-copy"
-											style={conflictToneVariables(selectedEnrollmentScheduleCard.conflictTone)}
-										>
-											Bentrok dengan {selectedEnrollmentConflictSummary}
-										</p>
-										{#if selectedEnrollmentConflictGroup}
-											<p class="builder-conflict-copy">
-												Ruang: {selectedEnrollmentConflictGroup.rooms} • Dosen: {selectedEnrollmentConflictGroup.lecturers}
-											</p>
-										{/if}
-									{/if}
-								</div>
-								{#if selectedEnrollmentId}
-									<Button
-										variant="destructive"
-										size="sm"
-										class="danger-button"
-										onclick={() => requestDelete('enrollment', selectedEnrollmentId!)}>Hapus</Button
-									>
-								{/if}
-							</div>
-
-							{#if pendingDelete?.kind === 'enrollment' && pendingDelete.id === selectedEnrollmentId}
-								<section class="warning-panel">
-									<p class="warning-title">Hapus {pendingDelete.label}?</p>
-									<p>{pendingDelete.message}</p>
-									<div class="warning-actions">
-										<Button
-											class="danger-button"
-											variant="destructive"
-											size="sm"
-											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-											>{pendingDelete.confirmLabel}</Button
-										>
-										<Button
-											class="ghost-button"
-											variant="ghost"
-											size="sm"
-											onclick={() => (pendingDelete = null)}>Batal</Button
-										>
-									</div>
-								</section>
-							{/if}
-							<div class="builder-progress" aria-label="Tahapan penjadwalan">
-								{#each builderSteps as step, index (step.id)}
-									<button
-										type="button"
-										class={`builder-progress-item ${stepState(step.id)}`}
-										onclick={() => setBuilderStep(step.id)}
-										disabled={!canOpenBuilderStep(step.id)}
-									>
-										<span class="builder-progress-index">{index + 1}</span>
-										<span class="builder-progress-copy">
-											<strong>{step.label}</strong>
-											<span>{step.hint}</span>
-										</span>
-									</button>
-								{/each}
-							</div>
-
-							<form
-								class="builder-form"
-								{...selectedEnrollmentId ? updateEnrollmentEnhance : createEnrollmentEnhance}
-							>
-								<input
-									type="hidden"
-									{...selectedEnrollmentId
-										? updateEnrollment.fields.timezone.as('text')
-										: createEnrollment.fields.timezone.as('text')}
-									value={enrollmentDraft.timezone}
-								/>
-
-								{#if selectedEnrollmentId}
-									<input
-										type="hidden"
-										{...updateEnrollment.fields.id.as('text')}
-										value={enrollmentDraft.id}
-									/>
-								{/if}
-
-								<section class="builder-snapshot">
-									<div>
-										<span>Peserta</span>
-										<strong>{selectedDraftStudent}</strong>
-										<p>{selectedDraftCourse}</p>
-									</div>
-									<div>
-										<span>Waktu</span>
-										<strong>{draftTimeSummary}</strong>
-										<p>{filteredRoomsForPicker.length} ruang tersedia untuk slot ini</p>
-									</div>
-									<div>
-										<span>Ruang</span>
-										<strong>{selectedDraftRoom}</strong>
-										<p>{conflictCount} bentrok masih tercatat di kalender aktif</p>
-									</div>
-								</section>
-
-								{#if builderConflictCards.length}
-									<details class="support-panel builder-conflict-panel">
-										<summary class="builder-conflict-summary">
-											<div>
-												<h4>Daftar bentrok</h4>
-												<p class="detail-hint">
-													Buka daftar hanya saat perlu meninjau grup bentrok.
-												</p>
-											</div>
-											<Badge variant="secondary">{builderConflictCards.length} grup</Badge>
-										</summary>
-										<div class="builder-conflict-list">
-											{#each builderConflictCards as group (group.id)}
-												<article
-													class={`builder-conflict-card ${group.selected ? 'selected' : ''}`}
-													style={conflictToneVariables(group.representative.conflictTone ?? null)}
-												>
-													<div class="builder-conflict-card-copy">
-														<strong>{group.label}</strong>
-														<span>{group.representative.course}</span>
-														{#if group.details}
-															<small>{conflictGroupMetaCopy(group.details)}</small>
-														{/if}
-													</div>
-													<div class="builder-conflict-card-actions">
-														<Button
-															class="ghost-button"
-															variant="ghost"
-															size="sm"
-															onclick={() => openBuilderForSchedule(group.representative)}
-														>
-															Buka di penjadwalan
-														</Button>
-														<Button
-															class="ghost-button"
-															variant="ghost"
-															size="sm"
-															onclick={() => openCalendarForSchedule(group.representative)}
-														>
-															Buka di kalender
-														</Button>
-													</div>
-												</article>
-											{/each}
-										</div>
-									</details>
-								{/if}
-
-								<section class:hidden-stage={builderStep !== 'participant'} class="builder-section">
-									<div class="builder-section-head">
-										<h4>Pilih peserta dan mata kuliah</h4>
-										<p class="builder-note">
-											Pilih mahasiswa dan mata kuliah dulu agar cek waktu dan ruang tetap relevan.
-										</p>
-									</div>
-									<div class="editor-grid">
-										<label>
-											<span>Mahasiswa</span>
-											<input
-												type="hidden"
-												{...selectedEnrollmentId
-													? updateEnrollment.fields.studentId.as('text')
-													: createEnrollment.fields.studentId.as('text')}
-												value={enrollmentDraft.studentId}
-											/>
-											<div
-												class="combobox-wrap"
-												onfocusout={(e) => {
-													if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-														studentPickerOpen = false;
-														studentPickerActiveIndex = -1;
-													}
-												}}
-											>
-												<input
-													type="text"
-													role="combobox"
-													class="combobox-input"
-													placeholder="Cari mahasiswa..."
-													aria-expanded={studentPickerOpen}
-													aria-controls="student-picker-listbox"
-													aria-autocomplete="list"
-													aria-activedescendant={activeDescendantId(
-														'student-picker',
-														studentPickerActiveIndex
-													)}
-													value={enrollmentDraft.studentId
-														? selectedDraftStudent
-														: studentPickerSearch}
-													oninput={(e) => {
-														studentPickerSearch = (e.currentTarget as HTMLInputElement).value;
-														studentPickerActiveIndex = -1;
-														if (enrollmentDraft.studentId) enrollmentDraft.studentId = '';
-														studentPickerOpen = true;
-														queueStudentPickerRefresh();
-													}}
-													onkeydown={handleStudentPickerKeydown}
-													onfocus={() => {
-														studentPickerActiveIndex = -1;
-														studentPickerOpen = true;
-														queueStudentPickerRefresh(0);
-													}}
-												/>
-												{#if studentPickerIssue}
-													<p class="combobox-error">{studentPickerIssue}</p>
-												{:else if studentPickerOpen && studentPickerLoading && !filteredStudentsForPicker.length}
-													<p class="combobox-empty">Memuat mahasiswa...</p>
-												{:else if studentPickerOpen && filteredStudentsForPicker.length}
-													<div id="student-picker-listbox" class="combobox-dropdown" role="listbox">
-														{#each filteredStudentsForPicker as item, index (item.id)}
-															<button
-																id={`student-picker-option-${index}`}
-																type="button"
-																role="option"
-																aria-selected={enrollmentDraft.studentId === item.id}
-																class="combobox-option"
-																class:active={studentPickerActiveIndex === index ||
-																	enrollmentDraft.studentId === item.id}
-																onmousedown={(e) => {
-																	e.preventDefault();
-																	selectStudentPickerOption(item);
-																}}
-																onfocus={() => (studentPickerActiveIndex = index)}
-																onmouseover={() => (studentPickerActiveIndex = index)}
-															>
-																<strong>{item.name}</strong>
-																<span>{item.id}</span>
-															</button>
-														{/each}
-														{#if studentPickerHasMore || studentPickerLoading}
-															<div class="combobox-footer">
-																<span class="combobox-meta">
-																	{studentPickerOptions.length} mahasiswa dimuat
-																</span>
-																<button
-																	type="button"
-																	class="combobox-more"
-																	disabled={!studentPickerHasMore || studentPickerLoading}
-																	onmousedown={(e) => {
-																		e.preventDefault();
-																		loadMoreStudentPickerOptions();
-																	}}
-																>
-																	{studentPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
-																</button>
-															</div>
-														{/if}
-													</div>
-												{:else if studentPickerOpen}
-													<p class="combobox-empty">Mahasiswa tidak ditemukan.</p>
-												{/if}
-											</div>
-										</label>
-
-										<label>
-											<span>Mata kuliah</span>
-											<input
-												type="hidden"
-												{...selectedEnrollmentId
-													? updateEnrollment.fields.courseId.as('text')
-													: createEnrollment.fields.courseId.as('text')}
-												value={enrollmentDraft.courseId}
-											/>
-											<div
-												class="combobox-wrap"
-												onfocusout={(e) => {
-													if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-														coursePickerOpen = false;
-														coursePickerActiveIndex = -1;
-													}
-												}}
-											>
-												<input
-													type="text"
-													role="combobox"
-													class="combobox-input"
-													placeholder="Cari mata kuliah..."
-													aria-expanded={coursePickerOpen}
-													aria-controls="course-picker-listbox"
-													aria-autocomplete="list"
-													aria-activedescendant={activeDescendantId(
-														'course-picker',
-														coursePickerActiveIndex
-													)}
-													value={enrollmentDraft.courseId
-														? selectedDraftCourse
-														: coursePickerSearch}
-													oninput={(e) => {
-														coursePickerSearch = (e.currentTarget as HTMLInputElement).value;
-														coursePickerActiveIndex = -1;
-														if (enrollmentDraft.courseId) enrollmentDraft.courseId = '';
-														coursePickerOpen = true;
-														queueCoursePickerRefresh();
-													}}
-													onkeydown={handleCoursePickerKeydown}
-													onfocus={() => {
-														coursePickerActiveIndex = -1;
-														coursePickerOpen = true;
-														queueCoursePickerRefresh(0);
-													}}
-												/>
-												{#if coursePickerIssue}
-													<p class="combobox-error">{coursePickerIssue}</p>
-												{:else if coursePickerOpen && coursePickerLoading && !filteredCoursesForPicker.length}
-													<p class="combobox-empty">Memuat mata kuliah...</p>
-												{:else if coursePickerOpen && filteredCoursesForPicker.length}
-													<div id="course-picker-listbox" class="combobox-dropdown" role="listbox">
-														{#each filteredCoursesForPicker as item, index (item.id)}
-															<button
-																id={`course-picker-option-${index}`}
-																type="button"
-																role="option"
-																aria-selected={enrollmentDraft.courseId === item.id}
-																class="combobox-option"
-																class:active={coursePickerActiveIndex === index ||
-																	enrollmentDraft.courseId === item.id}
-																onmousedown={(e) => {
-																	e.preventDefault();
-																	selectCoursePickerOption(item);
-																}}
-																onfocus={() => (coursePickerActiveIndex = index)}
-																onmouseover={() => (coursePickerActiveIndex = index)}
-															>
-																<strong>{item.name}</strong>
-																<span>{item.id} • {item.lecturer_name}</span>
-															</button>
-														{/each}
-														{#if coursePickerHasMore || coursePickerLoading}
-															<div class="combobox-footer">
-																<span class="combobox-meta">
-																	{coursePickerOptions.length} mata kuliah dimuat
-																</span>
-																<button
-																	type="button"
-																	class="combobox-more"
-																	disabled={!coursePickerHasMore || coursePickerLoading}
-																	onmousedown={(e) => {
-																		e.preventDefault();
-																		loadMoreCoursePickerOptions();
-																	}}
-																>
-																	{coursePickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
-																</button>
-															</div>
-														{/if}
-													</div>
-												{:else if coursePickerOpen}
-													<p class="combobox-empty">Mata kuliah tidak ditemukan.</p>
-												{/if}
-											</div>
-										</label>
-									</div>
-									<div class="builder-section-actions">
-										<p class="editor-note">
-											Langkah berikutnya akan menampilkan slot dan ruang yang masih bisa dipakai.
-										</p>
-										<Button
-											type="button"
-											class="primary-button"
-											disabled={!participantStepReady}
-											onclick={advanceBuilderStep}>Lanjut ke jadwal</Button
-										>
-									</div>
-								</section>
-
-								<section class:hidden-stage={builderStep !== 'time'} class="builder-section">
-									<div class="builder-section-head">
-										<h4>Tentukan hari dan jam</h4>
-										<p class="builder-note">
-											Masukkan hari dan jam final. Daftar ruang akan mengikuti slot ini.
-										</p>
-									</div>
-									<div class="editor-grid">
-										<label>
-											<span>Hari</span>
-											<select
-												{...selectedEnrollmentId
-													? updateEnrollment.fields.day.as('select')
-													: createEnrollment.fields.day.as('select')}
-												bind:value={enrollmentDraft.day}
-											>
-												{#each days as day (day)}
-													<option value={day}>{DAY_LABELS[day]}</option>
-												{/each}
-											</select>
-										</label>
-
-										<label>
-											<span>Mulai</span>
-											<input
-												type="datetime-local"
-												{...selectedEnrollmentId
-													? updateEnrollment.fields.startTime.as('text')
-													: createEnrollment.fields.startTime.as('text')}
-												bind:value={enrollmentDraft.startTime}
-											/>
-										</label>
-
-										<label>
-											<span>Selesai</span>
-											<input
-												type="datetime-local"
-												{...selectedEnrollmentId
-													? updateEnrollment.fields.endTime.as('text')
-													: createEnrollment.fields.endTime.as('text')}
-												bind:value={enrollmentDraft.endTime}
-											/>
-										</label>
-
-										<label>
-											<span>Semester</span>
-											<select
-												{...selectedEnrollmentId
-													? updateEnrollment.fields.semester.as('select')
-													: createEnrollment.fields.semester.as('select')}
-												bind:value={enrollmentDraft.semester}
-											>
-												{#each semesterOptions as semester (semester)}
-													<option value={semester}>{semester}</option>
-												{/each}
-											</select>
-										</label>
-
-										<label>
-											<span>Tahun akademik</span>
-											<input
-												{...selectedEnrollmentId
-													? updateEnrollment.fields.academicYear.as('text')
-													: createEnrollment.fields.academicYear.as('text')}
-												bind:value={enrollmentDraft.academicYear}
-											/>
-										</label>
-									</div>
-									<div class="builder-section-actions split">
-										<p class="editor-note">
-											Jika jam berubah, periksa lagi pilihan ruang di langkah berikutnya.
-										</p>
-										<div class="builder-inline-actions">
-											<Button
-												type="button"
-												variant="ghost"
-												class="ghost-button"
-												onclick={retreatBuilderStep}>Kembali</Button
-											>
-											<Button
-												type="button"
-												class="primary-button"
-												disabled={!timeStepReady}
-												onclick={advanceBuilderStep}>Lanjut ke ruang</Button
-											>
-										</div>
-									</div>
-								</section>
-
-								<section class:hidden-stage={builderStep !== 'room'} class="builder-section">
-									<div class="builder-section-head">
-										<h4>Pilih ruang yang tersedia</h4>
-										<p class="builder-note">
-											Pilih satu ruang yang tersedia untuk slot ini, lalu lanjut ke langkah tinjau.
-										</p>
-									</div>
-									<div class="builder-room-stage">
-										<div class="editor-grid builder-room-grid">
-											<label>
-												<span>Ruang</span>
-												<input
-													type="hidden"
-													{...selectedEnrollmentId
-														? updateEnrollment.fields.classRoomId.as('text')
-														: createEnrollment.fields.classRoomId.as('text')}
-													value={enrollmentDraft.classRoomId}
-												/>
-												<div
-													class="combobox-wrap"
-													onfocusout={(e) => {
-														if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-															roomPickerOpen = false;
-															roomPickerActiveIndex = -1;
-														}
-													}}
-												>
-													<input
-														type="text"
-														role="combobox"
-														class="combobox-input"
-														placeholder="Cari ruang tersedia..."
-														aria-expanded={roomPickerOpen}
-														aria-controls="room-picker-listbox"
-														aria-autocomplete="list"
-														aria-activedescendant={activeDescendantId(
-															'room-picker',
-															roomPickerActiveIndex
-														)}
-														value={enrollmentDraft.classRoomId
-															? selectedDraftRoom
-															: roomPickerSearch}
-														oninput={(e) => {
-															roomPickerSearch = (e.currentTarget as HTMLInputElement).value;
-															roomPickerActiveIndex = -1;
-															if (enrollmentDraft.classRoomId) enrollmentDraft.classRoomId = '';
-															queueRoomPickerRefresh();
-															roomPickerOpen = true;
-														}}
-														onkeydown={handleRoomPickerKeydown}
-														onfocus={() => {
-															roomPickerActiveIndex = -1;
-															roomPickerOpen = true;
-															if (!roomPickerOptions.length) {
-																queueRoomPickerRefresh(0);
-															}
-														}}
-													/>
-													{#if roomPickerIssue}
-														<p class="combobox-error">{roomPickerIssue}</p>
-													{:else if roomPickerOpen && roomPickerLoading && !roomPickerOptions.length}
-														<p class="combobox-empty">Memuat ruang kelas...</p>
-													{:else if roomPickerOpen}
-														<div id="room-picker-listbox" class="combobox-dropdown" role="listbox">
-															{#each filteredRoomsForPicker as room, index (room.id)}
-																<button
-																	id={`room-picker-option-${index}`}
-																	type="button"
-																	role="option"
-																	aria-selected={enrollmentDraft.classRoomId === room.id}
-																	class="combobox-option"
-																	class:active={roomPickerActiveIndex === index ||
-																		enrollmentDraft.classRoomId === room.id}
-																	onmousedown={(e) => {
-																		e.preventDefault();
-																		selectRoomPickerOption(room);
-																	}}
-																	onfocus={() => (roomPickerActiveIndex = index)}
-																	onmouseover={() => (roomPickerActiveIndex = index)}
-																>
-																	<strong>{room.name}</strong>
-																	<span
-																		>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span
-																	>
-																</button>
-															{/each}
-															{#if !filteredRoomsForPicker.length && !roomPickerLoading}
-																<p class="combobox-empty">Ruang tidak ditemukan untuk slot ini.</p>
-															{/if}
-															{#if roomPickerHasMore || roomPickerLoading}
-																<div class="combobox-footer">
-																	<span class="combobox-meta">
-																		{filteredRoomsForPicker.length} ruang dimuat
-																	</span>
-																	<button
-																		type="button"
-																		class="combobox-more"
-																		disabled={!roomPickerHasMore || roomPickerLoading}
-																		onmousedown={(e) => {
-																			e.preventDefault();
-																			loadMoreRoomPickerOptions();
-																		}}
-																	>
-																		{roomPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
-																	</button>
-																</div>
-															{/if}
-														</div>
-													{/if}
-												</div>
-											</label>
-										</div>
-
-										<section class="support-panel builder-support">
-											<h4>Ruang tersedia untuk slot ini</h4>
-											<div class="support-list">
-												{#if filteredRoomsForPicker.length}
-													{#each filteredRoomsForPicker as room (room.id)}
-														<div>
-															<strong>{room.name}</strong>
-															<span
-																>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span
-															>
-														</div>
-													{/each}
-													{#if roomPickerHasMore || roomPickerLoading}
-														<div class="combobox-footer support-footer">
-															<button
-																type="button"
-																class="combobox-more"
-																disabled={!roomPickerHasMore || roomPickerLoading}
-																onclick={() => loadMoreRoomPickerOptions()}
-															>
-																{roomPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
-															</button>
-														</div>
-													{/if}
-												{:else}
-													<p class="empty-copy">
-														Belum ada ruang yang tersedia untuk slot ini. Ubah jadwal atau pilih
-														slot lain.
-													</p>
-													{#if roomPickerHasMore || roomPickerLoading}
-														<div class="combobox-footer support-footer">
-															<button
-																type="button"
-																class="combobox-more"
-																disabled={!roomPickerHasMore || roomPickerLoading}
-																onclick={() => loadMoreRoomPickerOptions()}
-															>
-																{roomPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
-															</button>
-														</div>
-													{/if}
-												{/if}
-											</div>
-										</section>
-									</div>
-									<div class="builder-section-actions split">
-										<p class="editor-note">
-											Jika daftar ruang kosong, ubah jadwal lebih dulu sebelum melanjutkan.
-										</p>
-										<div class="builder-inline-actions">
-											<Button
-												type="button"
-												variant="ghost"
-												class="ghost-button"
-												onclick={retreatBuilderStep}>Kembali</Button
-											>
-											<Button
-												type="button"
-												class="primary-button"
-												disabled={!roomStepReady}
-												onclick={advanceBuilderStep}>Tinjau sebelum simpan</Button
-											>
-										</div>
-									</div>
-								</section>
-
-								<section
-									class:hidden-stage={builderStep !== 'review'}
-									class="builder-section builder-review"
-								>
-									<div class="builder-section-head">
-										<h4>Tinjau sebelum disimpan</h4>
-										<p class="builder-note">
-											Pastikan peserta, slot, dan ruang sudah benar sebelum disimpan.
-										</p>
-									</div>
-									<div class="detail-lines builder-review-grid">
-										<div>
-											<span>Mahasiswa</span>
-											<strong>{selectedDraftStudent}</strong>
-										</div>
-										<div>
-											<span>Mata kuliah</span>
-											<strong>{selectedDraftCourse}</strong>
-										</div>
-										<div>
-											<span>Slot kuliah</span>
-											<strong>{draftTimeSummary}</strong>
-										</div>
-										<div>
-											<span>Ruang</span>
-											<strong>{selectedDraftRoom}</strong>
-										</div>
-									</div>
-									<div class="builder-review-note">
-										<p class="editor-note">
-											Jika masih ragu, kembali satu langkah lalu perbaiki waktu atau ruang sebelum
-											simpan.
-										</p>
-										<div class="builder-inline-actions">
-											<Button
-												type="button"
-												variant="ghost"
-												class="ghost-button"
-												onclick={retreatBuilderStep}>Kembali</Button
-											>
-											<Button type="submit" class="primary-button builder-submit"
-												>{selectedEnrollmentId ? 'Simpan perubahan' : 'Simpan jadwal'}</Button
-											>
-										</div>
-									</div>
-								</section>
-							</form>
-						</section>
-					</div>
+					<BuilderView
+						class="workspace-shell builder-shell"
+						bind:enrollmentSearch
+						bind:scheduleDayFilter
+						bind:scheduleCourseFilter
+						bind:scheduleRoomFilter
+						bind:scheduleLecturerFilter
+						bind:scheduleSemesterFilter
+						bind:scheduleAcademicYearFilter
+						bind:scheduleCourseFilterSearch
+						bind:scheduleRoomFilterSearch
+						bind:scheduleLecturerFilterSearch
+						bind:scheduleCourseFilterOpen
+						bind:scheduleRoomFilterOpen
+						bind:scheduleLecturerFilterOpen
+						bind:builderConflictOnly
+						bind:builderStep
+						bind:studentPickerSearch
+						bind:coursePickerSearch
+						bind:roomPickerSearch
+						bind:studentPickerOpen
+						bind:coursePickerOpen
+						bind:roomPickerOpen
+						bind:enrollmentDraft
+						{builderTaskMode}
+						{selectedEnrollmentId}
+						{pendingDelete}
+						{filteredBuilderEnrollments}
+						{scheduleCardMap}
+						auditConflictCardMap={auditConflictCardMap}
+						{conflictSummaryByCardId}
+						collectionPagination={collectionPagination.enrollments}
+						{scheduleSemesterOptions}
+						{scheduleAcademicYearOptions}
+						{scheduleActiveFilterCount}
+						{scheduleCourseFilterOptions}
+						{scheduleRoomFilterOptions}
+						{filteredScheduleRoomFilterOptions}
+						{scheduleLecturerFilterOptions}
+						{scheduleCourseFilterIssue}
+						{scheduleRoomFilterIssue}
+						{scheduleLecturerFilterIssue}
+						{scheduleCourseFilterLoading}
+						{scheduleRoomFilterLoading}
+						{scheduleLecturerFilterLoading}
+						{scheduleCourseFilterHasMore}
+						{scheduleRoomFilterHasMore}
+						{scheduleLecturerFilterHasMore}
+						{selectedScheduleCourseFilterLabel}
+						{selectedScheduleRoomFilterLabel}
+						{selectedScheduleLecturerFilterLabel}
+						{selectedEnrollmentScheduleCard}
+						{selectedEnrollmentConflictSummary}
+						{selectedEnrollmentConflictGroup}
+						{selectedDraftStudent}
+						{selectedDraftCourse}
+						{selectedDraftRoom}
+						{draftTimeSummary}
+						{filteredRoomsForPicker}
+						{builderConflictCards}
+						{conflictCount}
+						studentPickerOptions={filteredStudentsForPicker}
+						coursePickerOptions={filteredCoursesForPicker}
+						{studentPickerIssue}
+						{coursePickerIssue}
+						{roomPickerIssue}
+						{studentPickerLoading}
+						{coursePickerLoading}
+						{roomPickerLoading}
+						{studentPickerHasMore}
+						{coursePickerHasMore}
+						{roomPickerHasMore}
+						{createEnrollment}
+						{updateEnrollment}
+						{createEnrollmentEnhance}
+						{updateEnrollmentEnhance}
+						{handleKeyboardClick}
+						onClearSelection={() => clearSelection('builder')}
+						onQueueEnrollmentRefresh={(delay) => queueCollectionRefresh('enrollments', delay)}
+						onQueueScheduleCourseFilterRefresh={queueScheduleCourseFilterRefresh}
+						onQueueScheduleRoomFilterRefresh={queueScheduleRoomFilterRefresh}
+						onQueueScheduleLecturerFilterRefresh={queueScheduleLecturerFilterRefresh}
+						onLoadMoreScheduleCourseFilterOptions={loadMoreScheduleCourseFilterOptions}
+						onLoadMoreScheduleRoomFilterOptions={loadMoreScheduleRoomFilterOptions}
+						onLoadMoreScheduleLecturerFilterOptions={loadMoreScheduleLecturerFilterOptions}
+						onPickEnrollment={pickEnrollment}
+						onNavigateToEntity={navigateToEntity}
+						onResetScheduleFilters={resetScheduleFilters}
+						onOpenBuilderForSchedule={openBuilderForSchedule}
+						onOpenCalendarForSchedule={openCalendarForSchedule}
+						onRequestDeleteEnrollment={() => requestDelete('enrollment', selectedEnrollmentId!)}
+						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+						onCancelDelete={() => (pendingDelete = null)}
+						onQueueStudentPickerRefresh={queueStudentPickerRefresh}
+						onQueueCoursePickerRefresh={queueCoursePickerRefresh}
+						onQueueRoomPickerRefresh={queueRoomPickerRefresh}
+						onLoadMoreStudentPickerOptions={loadMoreStudentPickerOptions}
+						onLoadMoreCoursePickerOptions={loadMoreCoursePickerOptions}
+						onLoadMoreRoomPickerOptions={loadMoreRoomPickerOptions}
+						onPagePrevious={() => void changeCollectionPage('enrollments', 'previous')}
+						onPageNext={() => void changeCollectionPage('enrollments', 'next')}
+					/>
 				{/if}
 
 				{#if activeView === 'classrooms'}
-					<div class="workspace-shell">
-						<section class="workspace-list">
-							<div class="pane-head">
-								<div>
-									<h3>Daftar ruang</h3>
-								</div>
-								<Button
-									variant="ghost"
-									size="sm"
-									class="ghost-button"
-									onclick={() => beginCreate('classrooms')}>Tambah</Button
-								>
-							</div>
-							<label class="search-box"
-								><Search size={16} /><input
-									bind:value={roomSearch}
-									oninput={() => queueCollectionRefresh('classrooms')}
-									aria-label="Cari ruang"
-									placeholder="Cari nama ruang atau jenis ruang"
-								/>{#if roomSearch}<button
-										type="button"
-										class="search-clear"
-										onclick={() => {
-											roomSearch = '';
-											queueCollectionRefresh('classrooms', 0);
-										}}><X size={14} /></button
-									>{/if}</label
-							>
-							{#if bulkCount('classrooms') > 0}
-								<div class="bulk-bar">
-									<span class="bulk-count">{bulkCount('classrooms')} ruang dipilih</span>
-									<div class="bulk-actions">
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => bulkClear('classrooms')}>Batal</Button
-										>
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => {
-												stopEditing('classrooms');
-												editorView = 'classrooms-bulk';
-											}}>Ubah</Button
-										>
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => {
-												pendingDelete = {
-													kind: 'bulk-classrooms',
-													id: bulkGetIds('classrooms').join(','),
-													label: `${bulkCount('classrooms')} ruang`,
-													message: `Anda akan menghapus ${bulkCount('classrooms')} ruang. Tindakan ini tidak dapat dibatalkan.`,
-													confirmLabel: 'Ya, hapus semua',
-													successMessage: 'Ruang terpilih berhasil dihapus.',
-													failureMessage: 'Gagal menghapus ruang terpilih.'
-												};
-											}}>Hapus</Button
-										>
-									</div>
-								</div>
-							{/if}
-							<div class="list-stack">
-								{#if filteredClassrooms.length > 1}
-									<label class="list-row select-all-row">
-										<input
-											type="checkbox"
-											checked={bulkCount('classrooms') === filteredClassrooms.length &&
-												filteredClassrooms.length > 0}
-											onchange={() =>
-												bulkToggleAll(
-													'classrooms',
-													filteredClassrooms.map((i) => i.id).filter(Boolean) as string[]
-												)}
-										/>
-										<span>Pilih semua ({filteredClassrooms.length})</span>
-									</label>
-								{/if}
-								{#each filteredClassrooms as item (item.id)}
-									<div
-										class="list-row user-row"
-										class:selected={selectedRoomId === item.id}
-										class:checked={item.id != null && bulkSelectedIds['classrooms']?.has(item.id)}
-									>
-										<label class="row-checkbox"
-											><input
-												type="checkbox"
-												checked={item.id != null && bulkSelectedIds['classrooms']?.has(item.id)}
-												onchange={() => item.id && bulkToggleId('classrooms', item.id)}
-												onclick={(e) => e.stopPropagation()}
-											/></label
-										>
-										<div
-											role="button"
-											tabindex="0"
-											class="row-content"
-											onkeydown={handleKeyboardClick}
-											onclick={() => pickClassroom(item)}
-										>
-											<div>
-												<span
-													role="button"
-													tabindex="0"
-													class="entity-link"
-													onkeydown={handleKeyboardClick}
-													onclick={(e) => {
-														e.stopPropagation();
-														navigateToEntity('classrooms', item.id, item.name);
-													}}><strong>{item.name}</strong></span
-												><span
-													>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
-												>
-											</div>
-											<small>{beautifyRoomType(item.class_room_type)}</small>
-										</div>
-									</div>
-								{/each}
-							</div>
-							<CollectionPagination
-								label="ruang"
-								pageNumber={collectionPagination.classrooms.pageNumber}
-								canPrevious={collectionPagination.classrooms.history.length > 0}
-								limit={collectionPagination.classrooms.limit}
-								itemCount={collectionPagination.classrooms.itemCount}
-								hasMore={collectionPagination.classrooms.hasMore}
-								loading={collectionPagination.classrooms.loading}
-								onPrevious={() => void changeCollectionPage('classrooms', 'previous')}
-								onNext={() => void changeCollectionPage('classrooms', 'next')}
-							/>
-						</section>
-						<section class="workspace-detail">
-							<div class="pane-head compact">
-								<div>
-									<h3>
-										{editorView === 'classrooms-bulk'
-											? 'Ubah massal ruang'
-											: selectedRoom
-												? selectedRoom.name
-												: 'Tambah ruang'}
-									</h3>
-								</div>
-								{#if currentUser.current.role === 'ADMIN'}
-									<div class="detail-actions">
-										{#if editorView === 'classrooms'}
-											<Button
-												variant="ghost"
-												size="sm"
-												class="ghost-button"
-												onclick={() => stopEditing('classrooms')}>Tutup form</Button
-											>
-										{:else if selectedRoom}
-											<Button
-												variant="ghost"
-												size="sm"
-												class="ghost-button"
-												onclick={() => beginEdit('classrooms')}>Edit</Button
-											>
-										{/if}
-										{#if selectedRoomId}
-											<Button
-												variant="destructive"
-												size="sm"
-												class="danger-button"
-												onclick={() => requestDelete('classroom', selectedRoomId!)}>Hapus</Button
-											>
-										{/if}
-									</div>
-								{/if}
-							</div>
-							{#if pendingDelete?.kind === 'classroom' && pendingDelete.id === selectedRoomId}
-								<section class="warning-panel">
-									<p class="warning-title">Hapus {pendingDelete.label}?</p>
-									<p>{pendingDelete.message}</p>
-									<div class="warning-actions">
-										<Button
-											class="danger-button"
-											variant="destructive"
-											size="sm"
-											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-											>{pendingDelete.confirmLabel}</Button
-										>
-										<Button
-											class="ghost-button"
-											variant="ghost"
-											size="sm"
-											onclick={() => (pendingDelete = null)}>Batal</Button
-										>
-									</div>
-								</section>
-							{/if}
-							{#if selectedRoom && editorView !== 'classrooms' && editorView !== 'classrooms-bulk'}<div
-									class="detail-stack"
-								>
-									<div class="detail-lines">
-										<div>
-											<span>Tipe</span><strong
-												>{beautifyRoomType(selectedRoom.class_room_type)}</strong
-											>
-										</div>
-										<div><span>Kapasitas</span><strong>{selectedRoom.capacity}</strong></div>
-										<div>
-											<span>Projector</span><strong
-												>{selectedRoom.has_projector ? 'Ya' : 'Tidak'}</strong
-											>
-										</div>
-										<div>
-											<span>AC</span><strong>{selectedRoom.has_ac ? 'Ya' : 'Tidak'}</strong>
-										</div>
-									</div>
-									<p class="detail-hint">
-										Tinjau ringkasan ruang lebih dulu. Buka form edit hanya saat data perlu diubah.
-									</p>
-								</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'classrooms'}
-								<form
-									class="editor-grid"
-									{...selectedRoomId ? updateClassRoomEnhance : createClassRoomEnhance}
-								>
-									{#if selectedRoomId}<input
-											type="hidden"
-											{...updateClassRoom.fields.id.as('text')}
-											value={selectedRoomId}
-										/>{/if}
-									<label
-										><span>Nama ruang</span><input
-											{...selectedRoomId
-												? updateClassRoom.fields.name.as('text')
-												: createClassRoom.fields.name.as('text')}
-											value={classroomDraft.name}
-										/></label
-									>
-									<label
-										><span>Tipe ruang</span><select
-											{...selectedRoomId
-												? updateClassRoom.fields.classRoomType.as('select')
-												: createClassRoom.fields.classRoomType.as('select')}
-											value={classroomDraft.classRoomType}
-											>{#each classRoomTypes as type (type)}<option value={type}
-													>{beautifyRoomType(type)}</option
-												>{/each}</select
-										></label
-									>
-									<label
-										><span>Kapasitas</span><input
-											min="1"
-											{...selectedRoomId
-												? updateClassRoom.fields.capacity.as('number')
-												: createClassRoom.fields.capacity.as('number')}
-											value={classroomDraft.capacity}
-										/></label
-									>
-									<label class="check-row"
-										><input
-											{...selectedRoomId
-												? updateClassRoom.fields.hasProjector.as('checkbox')
-												: createClassRoom.fields.hasProjector.as('checkbox')}
-											checked={classroomDraft.hasProjector}
-											onchange={(event) =>
-												(classroomDraft.hasProjector = (
-													event.currentTarget as HTMLInputElement
-												).checked)}
-										/><span>Proyektor tersedia</span></label
-									>
-									<label class="check-row"
-										><input
-											{...selectedRoomId
-												? updateClassRoom.fields.hasAC.as('checkbox')
-												: createClassRoom.fields.hasAC.as('checkbox')}
-											checked={classroomDraft.hasAC}
-											onchange={(event) =>
-												(classroomDraft.hasAC = (event.currentTarget as HTMLInputElement).checked)}
-										/><span>AC tersedia</span></label
-									>
-									<Button type="submit" class="primary-button"
-										>{selectedRoomId ? 'Simpan perubahan' : 'Tambah ruang'}</Button
-									>
-								</form>{:else if editorView === 'classrooms-bulk'}<form
-									class="editor-grid"
-									{...bulkUpdateClassRoomsEnhance}
-								>
-									<p class="editor-note">
-										Ubah tipe, kapasitas, dan fasilitas {bulkCount('classrooms')} ruang terpilih sekaligus.
-										Kosongkan field yang tidak ingin diubah.
-									</p>
-									<input type="hidden" name="ids" value={bulkGetIds('classrooms').join(',')} />
-									<label
-										><span>Tipe ruang</span><select
-											name="classRoomType"
-											value={bulkEditClassRoomType}
-											onchange={(e) =>
-												(bulkEditClassRoomType = (e.currentTarget as HTMLSelectElement)
-													.value as typeof bulkEditClassRoomType)}
-											>{#each classRoomTypes as type (type)}<option value={type}
-													>{beautifyRoomType(type)}</option
-												>{/each}</select
-										></label
-									>
-									<label
-										><span>Kapasitas</span><input
-											type="number"
-											name="capacity"
-											min="1"
-											value={bulkEditClassRoomCapacity}
-											oninput={(e) =>
-												(bulkEditClassRoomCapacity = Number(
-													(e.currentTarget as HTMLInputElement).value
-												))}
-										/></label
-									>
-									<label class="check-row"
-										><input
-											type="checkbox"
-											name="hasProjector"
-											checked={bulkEditClassRoomHasProjector}
-											onchange={(e) =>
-												(bulkEditClassRoomHasProjector = (e.currentTarget as HTMLInputElement)
-													.checked)}
-										/><span>Proyektor tersedia</span></label
-									>
-									<label class="check-row"
-										><input
-											type="checkbox"
-											name="hasAC"
-											checked={bulkEditClassRoomHasAC}
-											onchange={(e) =>
-												(bulkEditClassRoomHasAC = (e.currentTarget as HTMLInputElement).checked)}
-										/><span>AC tersedia</span></label
-									>
-									<div class="builder-inline-actions">
-										<Button
-											type="button"
-											variant="ghost"
-											class="ghost-button"
-											onclick={() => {
-												bulkClear('classrooms');
-												editorView = null;
-											}}>Batal</Button
-										>
-										<Button
-											type="submit"
-											class="primary-button"
-											disabled={bulkUpdateClassRooms.pending > 0}
-											>Simpan perubahan {bulkCount('classrooms')} ruang</Button
-										>
-									</div>
-								</form>{:else}<p class="empty-copy">
-									Pilih satu ruang untuk melihat detail, atau tambahkan ruang baru saat inventaris
-									berubah.
-								</p>{/if}
-						</section>
-					</div>
+					<ClassroomsView
+						currentRole={currentUser.current.role as AppRole}
+						bind:roomSearch
+						{filteredClassrooms}
+						{selectedRoomId}
+						{selectedRoom}
+						bulkSelectedIds={bulkSelectedIds['classrooms'] ?? new Set()}
+						bulkCount={bulkCount('classrooms')}
+						bind:classroomDraft
+						bind:bulkEditClassRoomType
+						bind:bulkEditClassRoomCapacity
+						bind:bulkEditClassRoomHasProjector
+						bind:bulkEditClassRoomHasAC
+						{editorView}
+						{pendingDelete}
+						collectionPagination={collectionPagination.classrooms}
+						{createClassRoom}
+						{updateClassRoom}
+						{bulkUpdateClassRooms}
+						{createClassRoomEnhance}
+						{updateClassRoomEnhance}
+						{bulkUpdateClassRoomsEnhance}
+						{classRoomTypes}
+						{beautifyRoomType}
+						onSearchInput={() => queueCollectionRefresh('classrooms')}
+						onClearSearch={() => {
+							roomSearch = '';
+							queueCollectionRefresh('classrooms', 0);
+						}}
+						onBeginCreate={() => beginCreate('classrooms')}
+						onBulkClear={() => bulkClear('classrooms')}
+						onOpenBulkEdit={() => {
+							stopEditing('classrooms');
+							editorView = 'classrooms-bulk';
+						}}
+						onOpenBulkDelete={() => {
+							pendingDelete = {
+								kind: 'bulk-classrooms',
+								id: bulkGetIds('classrooms').join(','),
+								label: `${bulkCount('classrooms')} ruang`,
+								message: `Anda akan menghapus ${bulkCount('classrooms')} ruang. Tindakan ini tidak dapat dibatalkan.`,
+								confirmLabel: 'Ya, hapus semua',
+								successMessage: 'Ruang terpilih berhasil dihapus.',
+								failureMessage: 'Gagal menghapus ruang terpilih.'
+							};
+						}}
+						onBulkToggleAll={(ids) => bulkToggleAll('classrooms', ids)}
+						onBulkToggleId={(id) => bulkToggleId('classrooms', id)}
+						onPickClassroom={pickClassroom}
+						{handleKeyboardClick}
+						onNavigateToEntity={navigateToEntity}
+						onBeginEdit={() => beginEdit('classrooms')}
+						onStopEditing={() => stopEditing('classrooms')}
+						onRequestDelete={() => requestDelete('classroom', selectedRoomId!)}
+						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+						onCancelDelete={() => (pendingDelete = null)}
+						onPagePrevious={() => void changeCollectionPage('classrooms', 'previous')}
+						onPageNext={() => void changeCollectionPage('classrooms', 'next')}
+					/>
 				{/if}
 
 				{#if activeView === 'courses'}
-					<div class="workspace-shell">
-						<section class="workspace-list">
-							<div class="pane-head">
-								<div>
-									<h3>Daftar mata kuliah</h3>
-								</div>
-								<Button
-									variant="ghost"
-									size="sm"
-									class="ghost-button"
-									onclick={() => beginCreate('courses')}>Tambah</Button
-								>
-							</div>
-							<label class="search-box"
-								><Search size={16} /><input
-									bind:value={courseSearch}
-									oninput={() => queueCollectionRefresh('courses')}
-									aria-label="Cari data mata kuliah"
-									placeholder="Cari kode, nama, atau dosen pengampu"
-								/>{#if courseSearch}<button
-										type="button"
-										class="search-clear"
-										onclick={() => {
-											courseSearch = '';
-											queueCollectionRefresh('courses', 0);
-										}}><X size={14} /></button
-									>{/if}</label
-							>
-							{#if bulkCount('courses') > 0}
-								<div class="bulk-bar">
-									<span class="bulk-count">{bulkCount('courses')} mata kuliah dipilih</span>
-									<div class="bulk-actions">
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => bulkClear('courses')}>Batal</Button
-										>
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => {
-												stopEditing('courses');
-												editorView = 'courses-bulk';
-											}}>Ubah</Button
-										>
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => {
-												pendingDelete = {
-													kind: 'bulk-courses',
-													id: bulkGetIds('courses').join(','),
-													label: `${bulkCount('courses')} mata kuliah`,
-													message: `Anda akan menghapus ${bulkCount('courses')} mata kuliah. Tindakan ini tidak dapat dibatalkan.`,
-													confirmLabel: 'Ya, hapus semua',
-													successMessage: 'Mata kuliah terpilih berhasil dihapus.',
-													failureMessage: 'Gagal menghapus mata kuliah terpilih.'
-												};
-											}}>Hapus</Button
-										>
-									</div>
-								</div>
-							{/if}
-							<div class="list-stack">
-								{#if filteredCourses.length > 1}
-									<label class="list-row select-all-row">
-										<input
-											type="checkbox"
-											checked={bulkCount('courses') === filteredCourses.length &&
-												filteredCourses.length > 0}
-											onchange={() =>
-												bulkToggleAll(
-													'courses',
-													filteredCourses.map((i) => i.id).filter(Boolean) as string[]
-												)}
-										/>
-										<span>Pilih semua ({filteredCourses.length})</span>
-									</label>
-								{/if}
-								{#each filteredCourses as item (item.id)}
-									<div
-										class="list-row user-row"
-										class:selected={selectedCourseId === item.id}
-										class:checked={item.id != null && bulkSelectedIds['courses']?.has(item.id)}
-									>
-										<label class="row-checkbox"
-											><input
-												type="checkbox"
-												checked={item.id != null && bulkSelectedIds['courses']?.has(item.id)}
-												onchange={() => item.id && bulkToggleId('courses', item.id)}
-												onclick={(e) => e.stopPropagation()}
-											/></label
-										>
-										<div
-											role="button"
-											tabindex="0"
-											class="row-content"
-											onkeydown={handleKeyboardClick}
-											onclick={() => pickCourse(item)}
-										>
-											<div>
-												<span
-													role="button"
-													tabindex="0"
-													class="entity-link"
-													onkeydown={handleKeyboardClick}
-													onclick={(e) => {
-														e.stopPropagation();
-														navigateToEntity('courses', item.id, item.name);
-													}}><strong>{item.id} • {item.name}</strong></span
-												><span
-													><span
-														role="button"
-														tabindex="0"
-														class="entity-link"
-														onkeydown={handleKeyboardClick}
-														onclick={(e) => {
-															e.stopPropagation();
-															navigateToEntity(
-																'studyPrograms',
-																item.study_program_id,
-																item.study_program_name
-															);
-														}}>{item.study_program_name}</span
-													>
-													•
-													<span
-														role="button"
-														tabindex="0"
-														class="entity-link"
-														onkeydown={handleKeyboardClick}
-														onclick={(e) => {
-															e.stopPropagation();
-															navigateToEntity('lecturers', item.lecturer_id, item.lecturer_name);
-														}}>{item.lecturer_name}</span
-													></span
-												>
-											</div>
-											<small>{item.credits} SKS</small>
-										</div>
-									</div>
-								{/each}
-							</div>
-							<CollectionPagination
-								label="mata kuliah"
-								pageNumber={collectionPagination.courses.pageNumber}
-								canPrevious={collectionPagination.courses.history.length > 0}
-								limit={collectionPagination.courses.limit}
-								itemCount={collectionPagination.courses.itemCount}
-								hasMore={collectionPagination.courses.hasMore}
-								loading={collectionPagination.courses.loading}
-								onPrevious={() => void changeCollectionPage('courses', 'previous')}
-								onNext={() => void changeCollectionPage('courses', 'next')}
-							/>
-						</section>
-						<section class="workspace-detail">
-							<div class="pane-head compact">
-								<div>
-									<h3>
-										{editorView === 'courses-bulk'
-											? 'Ubah massal mata kuliah'
-											: selectedCourse
-												? selectedCourse.name
-												: 'Tambah mata kuliah'}
-									</h3>
-								</div>
-								{#if currentUser.current.role === 'ADMIN'}
-									<div class="detail-actions">
-										{#if editorView === 'courses'}
-											<Button
-												variant="ghost"
-												size="sm"
-												class="ghost-button"
-												onclick={() => stopEditing('courses')}>Tutup form</Button
-											>
-										{:else if selectedCourse}
-											<Button
-												variant="ghost"
-												size="sm"
-												class="ghost-button"
-												onclick={() => beginEdit('courses')}>Edit</Button
-											>
-										{/if}
-										{#if selectedCourseId}
-											<Button
-												variant="destructive"
-												size="sm"
-												class="danger-button"
-												onclick={() => requestDelete('course', selectedCourseId!)}>Hapus</Button
-											>
-										{/if}
-									</div>
-								{/if}
-							</div>
-							{#if pendingDelete?.kind === 'course' && pendingDelete.id === selectedCourseId}
-								<section class="warning-panel">
-									<p class="warning-title">Hapus {pendingDelete.label}?</p>
-									<p>{pendingDelete.message}</p>
-									<div class="warning-actions">
-										<Button
-											class="danger-button"
-											variant="destructive"
-											size="sm"
-											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-											>{pendingDelete.confirmLabel}</Button
-										>
-										<Button
-											class="ghost-button"
-											variant="ghost"
-											size="sm"
-											onclick={() => (pendingDelete = null)}>Batal</Button
-										>
-									</div>
-								</section>
-							{/if}
-							{#if selectedCourse && editorView !== 'courses' && editorView !== 'courses-bulk'}<div
-									class="detail-stack"
-								>
-									<div class="detail-lines">
-										<div><span>Kode</span><strong>{selectedCourse.id}</strong></div>
-										<div>
-											<span>Program studi</span><span
-												role="button"
-												tabindex="0"
-												class="entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity(
-														'studyPrograms',
-														selectedCourse.study_program_id,
-														selectedCourse.study_program_name
-													);
-												}}><strong>{selectedCourse.study_program_name}</strong></span
-											>
-										</div>
-										<div>
-											<span>Dosen</span><span
-												role="button"
-												tabindex="0"
-												class="entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity(
-														'lecturers',
-														selectedCourse.lecturer_id,
-														selectedCourse.lecturer_name
-													);
-												}}><strong>{selectedCourse.lecturer_name}</strong></span
-											>
-										</div>
-										<div><span>Beban</span><strong>{selectedCourse.credits} SKS</strong></div>
-										<div>
-											<span>Peserta</span><strong>{selectedCourse.enrollment_count ?? 0}</strong>
-										</div>
-									</div>
-									<p class="detail-hint">
-										Gunakan mode tinjau untuk membaca beban kuliah dan relasi dosen sebelum membuka
-										editor.
-									</p>
-								</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'courses'}<form
-									class="editor-grid"
-									{...selectedCourseId ? updateCourseEnhance : createCourseEnhance}
-								>
-									{#if selectedCourseId}<input
-											type="hidden"
-											{...updateCourse.fields.id.as('text')}
-											value={courseDraft.id}
-										/>{:else}<p class="editor-note">
-											Kode mata kuliah dibuat otomatis saat data disimpan.
-										</p>{/if}<label
-										><span>Nama mata kuliah</span><input
-											name="name"
-											type="text"
-											value={courseDraft.name}
-										/></label
-									><label
-										><span>SKS</span><input
-											name="n:credits"
-											type="number"
-											min="1"
-											max="6"
-											value={courseDraft.credits}
-										/></label
-									><label
-										><span>Program studi</span><select
-											name="studyProgramId"
-											bind:value={courseDraft.studyProgramId}
-											><option value="">Pilih program studi</option
-											>{#if collectionIssues.studyPrograms && !studyPrograms.length}<option
-													value=""
-													disabled>{collectionIssues.studyPrograms}</option
-												>{/if}
-											>{#each studyPrograms as item (item.id)}<option value={item.id}
-													>{item.name}</option
-												>{/each}</select
-										>{#if courseDraft.studyProgramId}<span
-												role="button"
-												tabindex="0"
-												class="editor-entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity('studyPrograms', courseDraft.studyProgramId);
-												}}>Lihat prodi</span
-											>{/if}</label
-									><label
-										><span>Dosen pengampu</span><select
-											name="lecturerId"
-											bind:value={courseDraft.lecturerId}
-											><option value="">Pilih dosen</option
-											>{#if courseDraft.lecturerId && !lecturers.some((item) => item.id === courseDraft.lecturerId)}<option
-													value={courseDraft.lecturerId}
-													>{selectedCourse?.lecturer_name ?? courseDraft.lecturerId}</option
-												>{/if}
-											>{#if collectionIssues.lecturers && !lecturers.length}<option
-													value=""
-													disabled>{collectionIssues.lecturers}</option
-												>{/if}{#each lecturers as item (item.id)}<option value={item.id}
-													>{item.name}</option
-												>{/each}</select
-										>{#if courseDraft.lecturerId}<span
-												role="button"
-												tabindex="0"
-												class="editor-entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity('lecturers', courseDraft.lecturerId);
-												}}>Lihat dosen</span
-											>{/if}</label
-									>{#if courseEditorBlocked}<p class="editor-note">
-											Program studi dan dosen harus tersedia sebelum mata kuliah bisa disimpan.
-										</p>{/if}<Button
-										type="submit"
-										class="primary-button"
-										disabled={courseEditorBlocked}
-										>{selectedCourseId ? 'Simpan perubahan' : 'Tambah mata kuliah'}</Button
-									>
-								</form>{:else if editorView === 'courses-bulk'}<form
-									class="editor-grid"
-									{...bulkUpdateCoursesEnhance}
-								>
-									<p class="editor-note">
-										Ubah SKS, prodi, dan dosen {bulkCount('courses')} mata kuliah terpilih sekaligus.
-										Kosongkan field yang tidak ingin diubah.
-									</p>
-									<input type="hidden" name="ids" value={bulkGetIds('courses').join(',')} />
-									<label
-										><span>SKS</span><input
-											type="number"
-											name="credits"
-											min="1"
-											max="6"
-											value={bulkEditCourseCredits}
-											oninput={(e) =>
-												(bulkEditCourseCredits = Number(
-													(e.currentTarget as HTMLInputElement).value
-												))}
-										/></label
-									>
-									<label
-										><span>Program studi</span><select
-											name="studyProgramId"
-											value={bulkEditCourseStudyProgramId}
-											onchange={(e) =>
-												(bulkEditCourseStudyProgramId = (e.currentTarget as HTMLSelectElement)
-													.value)}
-											><option value="">Pilih program studi</option
-											>{#each studyPrograms as item (item.id)}<option value={item.id}
-													>{item.name}</option
-												>{/each}</select
-										>{#if bulkEditCourseStudyProgramId}<span
-												role="button"
-												tabindex="0"
-												class="editor-entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity('studyPrograms', bulkEditCourseStudyProgramId);
-												}}>Lihat prodi</span
-											>{/if}</label
-									>
-									<label
-										><span>Dosen pengampu</span><select
-											name="lecturerId"
-											value={bulkEditCourseLecturerId}
-											onchange={(e) =>
-												(bulkEditCourseLecturerId = (e.currentTarget as HTMLSelectElement).value)}
-											><option value="">Pilih dosen</option
-											>{#each lecturers as item (item.id)}<option value={item.id}
-													>{item.name}</option
-												>{/each}</select
-										>{#if bulkEditCourseLecturerId}<span
-												role="button"
-												tabindex="0"
-												class="editor-entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity('lecturers', bulkEditCourseLecturerId);
-												}}>Lihat dosen</span
-											>{/if}</label
-									>
-									<div class="builder-inline-actions">
-										<Button
-											type="button"
-											variant="ghost"
-											class="ghost-button"
-											onclick={() => {
-												bulkClear('courses');
-												editorView = null;
-											}}>Batal</Button
-										>
-										<Button
-											type="submit"
-											class="primary-button"
-											disabled={bulkUpdateCourses.pending > 0}
-											>Simpan perubahan {bulkCount('courses')} mata kuliah</Button
-										>
-									</div>
-								</form>{:else}<p class="empty-copy">
-									Pilih satu mata kuliah untuk melihat detail, atau tambahkan mata kuliah baru saat
-									katalog berubah.
-								</p>{/if}
-						</section>
-					</div>
+					<CoursesView
+						currentRole={currentUser.current.role as AppRole}
+						bind:courseSearch
+						{filteredCourses}
+						{selectedCourseId}
+						{selectedCourse}
+						bulkSelectedIds={bulkSelectedIds['courses'] ?? new Set()}
+						bulkCount={bulkCount('courses')}
+						bind:courseDraft
+						bind:bulkEditCourseCredits
+						bind:bulkEditCourseStudyProgramId
+						bind:bulkEditCourseLecturerId
+						{editorView}
+						{pendingDelete}
+						collectionPagination={collectionPagination.courses}
+						{updateCourseEnhance}
+						{createCourseEnhance}
+						{bulkUpdateCoursesEnhance}
+						{studyPrograms}
+						{lecturers}
+						studyProgramsIssue={collectionIssues.studyPrograms}
+						lecturersIssue={collectionIssues.lecturers}
+						{courseEditorBlocked}
+						onSearchInput={() => queueCollectionRefresh('courses')}
+						onClearSearch={() => {
+							courseSearch = '';
+							queueCollectionRefresh('courses', 0);
+						}}
+						onBeginCreate={() => beginCreate('courses')}
+						onBulkClear={() => bulkClear('courses')}
+						onOpenBulkEdit={() => {
+							stopEditing('courses');
+							editorView = 'courses-bulk';
+						}}
+						onOpenBulkDelete={() => {
+							pendingDelete = {
+								kind: 'bulk-courses',
+								id: bulkGetIds('courses').join(','),
+								label: `${bulkCount('courses')} mata kuliah`,
+								message: `Anda akan menghapus ${bulkCount('courses')} mata kuliah. Tindakan ini tidak dapat dibatalkan.`,
+								confirmLabel: 'Ya, hapus semua',
+								successMessage: 'Mata kuliah terpilih berhasil dihapus.',
+								failureMessage: 'Gagal menghapus mata kuliah terpilih.'
+							};
+						}}
+						onBulkToggleAll={(ids) => bulkToggleAll('courses', ids)}
+						onBulkToggleId={(id) => bulkToggleId('courses', id)}
+						onPickCourse={pickCourse}
+						{handleKeyboardClick}
+						onNavigateToEntity={navigateToEntity}
+						onBeginEdit={() => beginEdit('courses')}
+						onStopEditing={() => stopEditing('courses')}
+						onRequestDelete={() => requestDelete('course', selectedCourseId!)}
+						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+						onCancelDelete={() => (pendingDelete = null)}
+						onPagePrevious={() => void changeCollectionPage('courses', 'previous')}
+						onPageNext={() => void changeCollectionPage('courses', 'next')}
+					/>
 				{/if}
 
 				{#if activeView === 'students' && currentUser.current.role !== 'STUDENT'}
-					<div class="workspace-shell">
-						<section class="workspace-list">
-							<div class="pane-head">
-								<div>
-									<h3>Daftar mahasiswa aktif</h3>
-								</div>
-								<Button
-									variant="ghost"
-									size="sm"
-									class="ghost-button"
-									onclick={() => beginCreate('students')}>Tambah</Button
-								>
-							</div>
-							<label class="search-box"
-								><Search size={16} /><input
-									bind:value={studentSearch}
-									oninput={() => queueCollectionRefresh('students')}
-									aria-label="Cari data mahasiswa"
-									placeholder="Cari NRP, nama, atau program studi"
-								/>{#if studentSearch}<button
-										type="button"
-										class="search-clear"
-										onclick={() => {
-											studentSearch = '';
-											queueCollectionRefresh('students', 0);
-										}}><X size={14} /></button
-									>{/if}</label
-							>
-							{#if bulkCount('students') > 0}
-								<div class="bulk-bar">
-									<span class="bulk-count">{bulkCount('students')} mahasiswa dipilih</span>
-									<div class="bulk-actions">
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => bulkClear('students')}>Batal</Button
-										>
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => {
-												stopEditing('students');
-												editorView = 'students-bulk';
-											}}>Ubah</Button
-										>
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => {
-												pendingDelete = {
-													kind: 'bulk-students',
-													id: bulkGetIds('students').join(','),
-													label: `${bulkCount('students')} mahasiswa`,
-													message: `Anda akan menghapus ${bulkCount('students')} mahasiswa. Tindakan ini tidak dapat dibatalkan.`,
-													confirmLabel: 'Ya, hapus semua',
-													successMessage: 'Mahasiswa terpilih berhasil dihapus.',
-													failureMessage: 'Gagal menghapus mahasiswa terpilih.'
-												};
-											}}>Hapus</Button
-										>
-									</div>
-								</div>
-							{/if}
-							<div class="list-stack">
-								{#if filteredStudents.length > 1}
-									<label class="list-row select-all-row">
-										<input
-											type="checkbox"
-											checked={bulkCount('students') === filteredStudents.length &&
-												filteredStudents.length > 0}
-											onchange={() =>
-												bulkToggleAll(
-													'students',
-													filteredStudents.map((i) => i.id).filter(Boolean) as string[]
-												)}
-										/>
-										<span>Pilih semua ({filteredStudents.length})</span>
-									</label>
-								{/if}
-								{#each filteredStudents as item (item.id)}
-									<div
-										class="list-row user-row"
-										class:selected={selectedStudentId === item.id}
-										class:checked={item.id != null && bulkSelectedIds['students']?.has(item.id)}
-									>
-										<label class="row-checkbox"
-											><input
-												type="checkbox"
-												checked={item.id != null && bulkSelectedIds['students']?.has(item.id)}
-												onchange={() => item.id && bulkToggleId('students', item.id)}
-												onclick={(e) => e.stopPropagation()}
-											/></label
-										>
-										<div
-											role="button"
-											tabindex="0"
-											class="row-content"
-											onkeydown={handleKeyboardClick}
-											onclick={() => pickStudent(item)}
-										>
-											<div>
-												<span
-													role="button"
-													tabindex="0"
-													class="entity-link"
-													onkeydown={handleKeyboardClick}
-													onclick={(e) => {
-														e.stopPropagation();
-														navigateToEntity('students', item.id, item.name);
-													}}><strong>{item.name}</strong></span
-												><span
-													>{item.id} •
-													<span
-														role="button"
-														tabindex="0"
-														class="entity-link"
-														onkeydown={handleKeyboardClick}
-														onclick={(e) => {
-															e.stopPropagation();
-															navigateToEntity(
-																'studyPrograms',
-																item.study_program_id,
-																item.study_program_name
-															);
-														}}>{item.study_program_name}</span
-													></span
-												>
-											</div>
-											<small>{item.year_admitted}</small>
-										</div>
-									</div>
-								{/each}
-							</div>
-							<CollectionPagination
-								label="mahasiswa"
-								pageNumber={collectionPagination.students.pageNumber}
-								canPrevious={collectionPagination.students.history.length > 0}
-								limit={collectionPagination.students.limit}
-								itemCount={collectionPagination.students.itemCount}
-								hasMore={collectionPagination.students.hasMore}
-								loading={collectionPagination.students.loading}
-								onPrevious={() => void changeCollectionPage('students', 'previous')}
-								onNext={() => void changeCollectionPage('students', 'next')}
-							/>
-						</section>
-						<section class="workspace-detail">
-							<div class="pane-head compact">
-								<div>
-									<h3>
-										{editorView === 'students-bulk'
-											? 'Ubah massal mahasiswa'
-											: selectedStudent
-												? selectedStudent.name
-												: 'Tambah mahasiswa'}
-									</h3>
-								</div>
-								{#if currentUser.current.role === 'ADMIN'}
-									<div class="detail-actions">
-										{#if editorView === 'students'}
-											<Button
-												variant="ghost"
-												size="sm"
-												class="ghost-button"
-												onclick={() => stopEditing('students')}>Tutup form</Button
-											>
-										{:else if selectedStudent}
-											<Button
-												variant="ghost"
-												size="sm"
-												class="ghost-button"
-												onclick={() => beginEdit('students')}>Edit</Button
-											>
-										{/if}
-										{#if selectedStudentId}
-											<Button
-												variant="destructive"
-												size="sm"
-												class="danger-button"
-												onclick={() => requestDelete('student', selectedStudentId!)}>Hapus</Button
-											>
-										{/if}
-									</div>
-								{/if}
-							</div>
-							{#if pendingDelete?.kind === 'student' && pendingDelete.id === selectedStudentId}
-								<section class="warning-panel">
-									<p class="warning-title">Hapus {pendingDelete.label}?</p>
-									<p>{pendingDelete.message}</p>
-									<div class="warning-actions">
-										<Button
-											class="danger-button"
-											variant="destructive"
-											size="sm"
-											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-											>{pendingDelete.confirmLabel}</Button
-										>
-										<Button
-											class="ghost-button"
-											variant="ghost"
-											size="sm"
-											onclick={() => (pendingDelete = null)}>Batal</Button
-										>
-									</div>
-								</section>
-							{/if}
-							{#if selectedStudent && editorView !== 'students' && editorView !== 'students-bulk'}<div
-									class="detail-stack"
-								>
-									<div class="detail-lines">
-										<div><span>Email</span><strong>{selectedStudent.email}</strong></div>
-										<div>
-											<span>Program studi</span><span
-												role="button"
-												tabindex="0"
-												class="entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity(
-														'studyPrograms',
-														selectedStudent.study_program_id,
-														selectedStudent.study_program_name
-													);
-												}}><strong>{selectedStudent.study_program_name}</strong></span
-											>
-										</div>
-										<div>
-											<span>Fakultas</span><span
-												role="button"
-												tabindex="0"
-												class="entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity(
-														'faculties',
-														selectedStudent.faculty_id,
-														selectedStudent.faculty_name
-													);
-												}}><strong>{selectedStudent.faculty_name}</strong></span
-											>
-										</div>
-										<div><span>Angkatan</span><strong>{selectedStudent.year_admitted}</strong></div>
-									</div>
-									<p class="detail-hint">
-										Tinjau identitas mahasiswa lebih dulu agar perubahan data tidak bercampur dengan
-										proses baca cepat.
-									</p>
-								</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'students'}<form
-									class="editor-grid"
-									{...selectedStudentId ? updateStudentEnhance : createStudentEnhance}
-								>
-									{#if selectedStudentId}<input
-											type="hidden"
-											{...updateStudent.fields.id.as('text')}
-											value={selectedStudentId}
-										/>{/if}<label
-										><span>Nama</span><input
-											{...selectedStudentId
-												? updateStudent.fields.name.as('text')
-												: createStudent.fields.name.as('text')}
-											value={studentDraft.name}
-										/></label
-									><label
-										><span>Email</span><input
-											{...selectedStudentId
-												? updateStudent.fields.email.as('email')
-												: createStudent.fields.email.as('email')}
-											value={studentDraft.email}
-										/></label
-									><label
-										><span>Telepon</span><input
-											{...selectedStudentId
-												? updateStudent.fields.phone.as('text')
-												: createStudent.fields.phone.as('text')}
-											value={studentDraft.phone}
-										/></label
-									><label
-										><span>Alamat</span><input
-											{...selectedStudentId
-												? updateStudent.fields.address.as('text')
-												: createStudent.fields.address.as('text')}
-											value={studentDraft.address}
-										/></label
-									><label
-										><span>Angkatan</span><input
-											{...selectedStudentId
-												? updateStudent.fields.yearAdmitted.as('number')
-												: createStudent.fields.yearAdmitted.as('number')}
-											value={studentDraft.yearAdmitted}
-										/></label
-									><label
-										><span>Program studi</span><select
-											{...selectedStudentId
-												? updateStudent.fields.studyProgramId.as('select')
-												: createStudent.fields.studyProgramId.as('select')}
-											value={studentDraft.studyProgramId}
-											><option value="">Pilih program studi</option
-											>{#if collectionIssues.studyPrograms && !studyPrograms.length}<option
-													value=""
-													disabled>{collectionIssues.studyPrograms}</option
-												>{/if}
-											>{#each studyPrograms as item (item.id)}<option value={item.id}
-													>{item.name}</option
-												>{/each}</select
-										>{#if studentDraft.studyProgramId}<span
-												role="button"
-												tabindex="0"
-												class="editor-entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity('studyPrograms', studentDraft.studyProgramId);
-												}}>Lihat prodi</span
-											>{/if}</label
-									>{#if studentEditorBlocked}<p class="editor-note">
-											Program studi harus tersedia sebelum data mahasiswa bisa disimpan.
-										</p>{/if}<Button
-										type="submit"
-										class="primary-button"
-										disabled={studentEditorBlocked}
-										>{selectedStudentId ? 'Simpan perubahan' : 'Tambah mahasiswa'}</Button
-									>
-								</form>{:else if editorView === 'students-bulk'}<form
-									class="editor-grid"
-									{...bulkUpdateStudentsEnhance}
-								>
-									<p class="editor-note">
-										Ubah prodi dan angkatan {bulkCount('students')} mahasiswa terpilih sekaligus. Kosongkan
-										field yang tidak ingin diubah.
-									</p>
-									<input type="hidden" name="ids" value={bulkGetIds('students').join(',')} />
-									<label
-										><span>Program studi</span><select
-											name="studyProgramId"
-											value={bulkEditStudentStudyProgramId}
-											onchange={(e) =>
-												(bulkEditStudentStudyProgramId = (e.currentTarget as HTMLSelectElement)
-													.value)}
-											><option value="">Pilih program studi</option
-											>{#each studyPrograms as item (item.id)}<option value={item.id}
-													>{item.name}</option
-												>{/each}</select
-										>{#if bulkEditStudentStudyProgramId}<span
-												role="button"
-												tabindex="0"
-												class="editor-entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity('studyPrograms', bulkEditStudentStudyProgramId);
-												}}>Lihat prodi</span
-											>{/if}</label
-									>
-									<label
-										><span>Angkatan</span><input
-											type="number"
-											name="yearAdmitted"
-											min="1900"
-											value={bulkEditStudentYearAdmitted}
-											oninput={(e) =>
-												(bulkEditStudentYearAdmitted = Number(
-													(e.currentTarget as HTMLInputElement).value
-												))}
-										/></label
-									>
-									<div class="builder-inline-actions">
-										<Button
-											type="button"
-											variant="ghost"
-											class="ghost-button"
-											onclick={() => {
-												bulkClear('students');
-												editorView = null;
-											}}>Batal</Button
-										>
-										<Button
-											type="submit"
-											class="primary-button"
-											disabled={bulkUpdateStudents.pending > 0}
-											>Simpan perubahan {bulkCount('students')} mahasiswa</Button
-										>
-									</div>
-								</form>{:else}<p class="empty-copy">
-									Pilih satu mahasiswa untuk melihat profil, atau tambahkan mahasiswa baru saat data
-									aktif berubah.
-								</p>{/if}
-						</section>
-					</div>
+					<StudentsView
+						currentRole={currentUser.current.role as AppRole}
+						bind:studentSearch
+						{filteredStudents}
+						{selectedStudentId}
+						{selectedStudent}
+						bulkSelectedIds={bulkSelectedIds['students'] ?? new Set()}
+						bulkCount={bulkCount('students')}
+						bind:studentDraft
+						bind:bulkEditStudentStudyProgramId
+						bind:bulkEditStudentYearAdmitted
+						{editorView}
+						{pendingDelete}
+						collectionPagination={collectionPagination.students}
+						{createStudent}
+						{updateStudent}
+						{bulkUpdateStudents}
+						{createStudentEnhance}
+						{updateStudentEnhance}
+						{bulkUpdateStudentsEnhance}
+						{studyPrograms}
+						studyProgramsIssue={collectionIssues.studyPrograms}
+						{studentEditorBlocked}
+						onSearchInput={() => queueCollectionRefresh('students')}
+						onClearSearch={() => {
+							studentSearch = '';
+							queueCollectionRefresh('students', 0);
+						}}
+						onBeginCreate={() => beginCreate('students')}
+						onBulkClear={() => bulkClear('students')}
+						onOpenBulkEdit={() => {
+							stopEditing('students');
+							editorView = 'students-bulk';
+						}}
+						onOpenBulkDelete={() => {
+							pendingDelete = {
+								kind: 'bulk-students',
+								id: bulkGetIds('students').join(','),
+								label: `${bulkCount('students')} mahasiswa`,
+								message: `Anda akan menghapus ${bulkCount('students')} mahasiswa. Tindakan ini tidak dapat dibatalkan.`,
+								confirmLabel: 'Ya, hapus semua',
+								successMessage: 'Mahasiswa terpilih berhasil dihapus.',
+								failureMessage: 'Gagal menghapus mahasiswa terpilih.'
+							};
+						}}
+						onBulkToggleAll={(ids) => bulkToggleAll('students', ids)}
+						onBulkToggleId={(id) => bulkToggleId('students', id)}
+						onPickStudent={pickStudent}
+						{handleKeyboardClick}
+						onNavigateToEntity={navigateToEntity}
+						onBeginEdit={() => beginEdit('students')}
+						onStopEditing={() => stopEditing('students')}
+						onRequestDelete={() => requestDelete('student', selectedStudentId!)}
+						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+						onCancelDelete={() => (pendingDelete = null)}
+						onPagePrevious={() => void changeCollectionPage('students', 'previous')}
+						onPageNext={() => void changeCollectionPage('students', 'next')}
+					/>
 				{/if}
 
 				{#if activeView === 'lecturers'}
-					<div class="workspace-shell">
-						<section class="workspace-list">
-							<div class="pane-head">
-								<div>
-									<h3>Daftar dosen</h3>
-								</div>
-								{#if currentUser.current.role === 'ADMIN'}<Button
-										variant="ghost"
-										size="sm"
-										class="ghost-button"
-										onclick={() => beginCreate('lecturers')}>Tambah</Button
-									>{/if}
-							</div>
-							<label class="search-box"
-								><Search size={16} /><input
-									bind:value={lecturerSearch}
-									oninput={() => queueCollectionRefresh('lecturers')}
-									aria-label="Cari data dosen"
-									placeholder="Cari ID dosen, nama, atau email"
-								/>{#if lecturerSearch}<button
-										type="button"
-										class="search-clear"
-										onclick={() => {
-											lecturerSearch = '';
-											queueCollectionRefresh('lecturers', 0);
-										}}><X size={14} /></button
-									>{/if}</label
-							>
-							{#if bulkCount('lecturers') > 0}
-								<div class="bulk-bar">
-									<span class="bulk-count">{bulkCount('lecturers')} dosen dipilih</span>
-									<div class="bulk-actions">
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => bulkClear('lecturers')}>Batal</Button
-										>
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => {
-												stopEditing('lecturers');
-												editorView = 'lecturers-bulk';
-											}}>Ubah</Button
-										>
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => {
-												pendingDelete = {
-													kind: 'bulk-lecturers',
-													id: bulkGetIds('lecturers').join(','),
-													label: `${bulkCount('lecturers')} dosen`,
-													message: `Anda akan menghapus ${bulkCount('lecturers')} dosen. Tindakan ini tidak dapat dibatalkan.`,
-													confirmLabel: 'Ya, hapus semua',
-													successMessage: 'Dosen terpilih berhasil dihapus.',
-													failureMessage: 'Gagal menghapus dosen terpilih.'
-												};
-											}}>Hapus</Button
-										>
-									</div>
-								</div>
-							{/if}
-							<div class="list-stack">
-								{#if filteredLecturers.length > 1}
-									<label class="list-row select-all-row">
-										<input
-											type="checkbox"
-											checked={bulkCount('lecturers') === filteredLecturers.length &&
-												filteredLecturers.length > 0}
-											onchange={() =>
-												bulkToggleAll(
-													'lecturers',
-													filteredLecturers.map((i) => i.id).filter(Boolean) as string[]
-												)}
-										/>
-										<span>Pilih semua ({filteredLecturers.length})</span>
-									</label>
-								{/if}
-								{#each filteredLecturers as item (item.id)}
-									<div
-										class="list-row user-row"
-										class:selected={selectedLecturerId === item.id}
-										class:checked={item.id != null && bulkSelectedIds['lecturers']?.has(item.id)}
-									>
-										<label class="row-checkbox"
-											><input
-												type="checkbox"
-												checked={item.id != null && bulkSelectedIds['lecturers']?.has(item.id)}
-												onchange={() => item.id && bulkToggleId('lecturers', item.id)}
-												onclick={(e) => e.stopPropagation()}
-											/></label
-										>
-										<div
-											role="button"
-											tabindex="0"
-											class="row-content"
-											onkeydown={handleKeyboardClick}
-											onclick={() => pickLecturer(item)}
-										>
-											<div>
-												<span
-													role="button"
-													tabindex="0"
-													class="entity-link"
-													onkeydown={handleKeyboardClick}
-													onclick={(e) => {
-														e.stopPropagation();
-														navigateToEntity('lecturers', item.id, item.name);
-													}}><strong>{item.name}</strong></span
-												><span>{item.id} • {item.email}</span>
-											</div>
-											<small>{item.email}</small>
-										</div>
-									</div>
-								{/each}
-							</div>
-							<CollectionPagination
-								label="dosen"
-								pageNumber={collectionPagination.lecturers.pageNumber}
-								canPrevious={collectionPagination.lecturers.history.length > 0}
-								limit={collectionPagination.lecturers.limit}
-								itemCount={collectionPagination.lecturers.itemCount}
-								hasMore={collectionPagination.lecturers.hasMore}
-								loading={collectionPagination.lecturers.loading}
-								onPrevious={() => void changeCollectionPage('lecturers', 'previous')}
-								onNext={() => void changeCollectionPage('lecturers', 'next')}
-							/>
-						</section>
-						<section class="workspace-detail">
-							<div class="pane-head compact">
-								<div>
-									<h3>
-										{editorView === 'lecturers-bulk'
-											? 'Ubah massal dosen'
-											: selectedLecturer
-												? selectedLecturer.name
-												: 'Tambah dosen'}
-									</h3>
-								</div>
-								{#if currentUser.current.role === 'ADMIN'}
-									<div class="detail-actions">
-										{#if editorView === 'lecturers'}
-											<Button
-												variant="ghost"
-												size="sm"
-												class="ghost-button"
-												onclick={() => stopEditing('lecturers')}>Tutup form</Button
-											>
-										{:else if selectedLecturer}
-											<Button
-												variant="ghost"
-												size="sm"
-												class="ghost-button"
-												onclick={() => beginEdit('lecturers')}>Edit</Button
-											>
-										{/if}
-										{#if selectedLecturerId}
-											<Button
-												variant="destructive"
-												size="sm"
-												class="danger-button"
-												onclick={() => requestDelete('lecturer', selectedLecturerId!)}>Hapus</Button
-											>
-										{/if}
-									</div>
-								{/if}
-							</div>
-							{#if pendingDelete?.kind === 'lecturer' && pendingDelete.id === selectedLecturerId}
-								<section class="warning-panel">
-									<p class="warning-title">Hapus {pendingDelete.label}?</p>
-									<p>{pendingDelete.message}</p>
-									<div class="warning-actions">
-										<Button
-											class="danger-button"
-											variant="destructive"
-											size="sm"
-											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-											>{pendingDelete.confirmLabel}</Button
-										>
-										<Button
-											class="ghost-button"
-											variant="ghost"
-											size="sm"
-											onclick={() => (pendingDelete = null)}>Batal</Button
-										>
-									</div>
-								</section>
-							{/if}
-							{#if selectedLecturer && editorView !== 'lecturers' && editorView !== 'lecturers-bulk'}<div
-									class="detail-stack"
-								>
-									<div class="detail-lines">
-										<div><span>ID dosen</span><strong>{selectedLecturer.id}</strong></div>
-										<div><span>Email</span><strong>{selectedLecturer.email}</strong></div>
-										<div><span>Telepon</span><strong>{selectedLecturer.phone || '-'}</strong></div>
-										<div><span>Alamat</span><strong>{selectedLecturer.address || '-'}</strong></div>
-										<div>
-											<span>Jadwal aktif</span><strong
-												>{selectedLecturer.schedule_count ?? 0}</strong
-											>
-										</div>
-									</div>
-									<p class="detail-hint">
-										Mode tinjau membantu Anda membaca konteks dosen sebelum membuka form edit.
-									</p>
-								</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'lecturers'}<form
-									class="editor-grid"
-									{...selectedLecturerId ? updateLecturerEnhance : createLecturerEnhance}
-								>
-									{#if selectedLecturerId}<input
-											type="hidden"
-											{...updateLecturer.fields.id.as('text')}
-											value={lecturerDraft.id}
-										/>{:else}<p class="editor-note">
-											ID dosen dibuat otomatis saat data disimpan.
-										</p>{/if}<label
-										><span>Nama</span><input
-											{...selectedLecturerId
-												? updateLecturer.fields.name.as('text')
-												: createLecturer.fields.name.as('text')}
-											value={lecturerDraft.name}
-										/></label
-									><label
-										><span>Email</span><input
-											{...selectedLecturerId
-												? updateLecturer.fields.email.as('email')
-												: createLecturer.fields.email.as('email')}
-											value={lecturerDraft.email}
-										/></label
-									><label
-										><span>Telepon</span><input
-											{...selectedLecturerId
-												? updateLecturer.fields.phone.as('text')
-												: createLecturer.fields.phone.as('text')}
-											value={lecturerDraft.phone}
-										/></label
-									><label
-										><span>Alamat</span><input
-											{...selectedLecturerId
-												? updateLecturer.fields.address.as('text')
-												: createLecturer.fields.address.as('text')}
-											value={lecturerDraft.address}
-										/></label
-									><Button type="submit" class="primary-button"
-										>{selectedLecturerId ? 'Simpan perubahan' : 'Tambah dosen'}</Button
-									>
-								</form>{:else if editorView === 'lecturers-bulk'}<form
-									class="editor-grid"
-									{...bulkUpdateLecturersEnhance}
-								>
-									<p class="editor-note">
-										Ubah data {bulkCount('lecturers')} dosen terpilih sekaligus. Kosongkan field yang
-										tidak ingin diubah.
-									</p>
-									<input type="hidden" name="ids" value={bulkGetIds('lecturers').join(',')} />
-									<label
-										><span>Nama</span><input
-											type="text"
-											name="name"
-											value={bulkEditLecturerName}
-											oninput={(e) =>
-												(bulkEditLecturerName = (e.currentTarget as HTMLInputElement).value)}
-										/></label
-									>
-									<label
-										><span>Email</span><input
-											type="email"
-											name="email"
-											value={bulkEditLecturerEmail}
-											oninput={(e) =>
-												(bulkEditLecturerEmail = (e.currentTarget as HTMLInputElement).value)}
-										/></label
-									>
-									<label
-										><span>Telepon</span><input
-											type="text"
-											name="phone"
-											value={bulkEditLecturerPhone}
-											oninput={(e) =>
-												(bulkEditLecturerPhone = (e.currentTarget as HTMLInputElement).value)}
-										/></label
-									>
-									<label
-										><span>Alamat</span><input
-											type="text"
-											name="address"
-											value={bulkEditLecturerAddress}
-											oninput={(e) =>
-												(bulkEditLecturerAddress = (e.currentTarget as HTMLInputElement).value)}
-										/></label
-									>
-									<div class="builder-inline-actions">
-										<Button
-											type="button"
-											variant="ghost"
-											class="ghost-button"
-											onclick={() => {
-												bulkClear('lecturers');
-												editorView = null;
-											}}>Batal</Button
-										>
-										<Button
-											type="submit"
-											class="primary-button"
-											disabled={bulkUpdateLecturers.pending > 0}
-											>Simpan perubahan {bulkCount('lecturers')} dosen</Button
-										>
-									</div>
-								</form>{:else}<p class="empty-copy">
-									Pilih satu dosen untuk melihat detail, atau tambahkan dosen baru saat data
-									pengampu berubah.
-								</p>{/if}
-						</section>
-					</div>
+					<LecturersView
+						currentRole={currentUser.current.role as AppRole}
+						bind:lecturerSearch
+						{filteredLecturers}
+						{selectedLecturerId}
+						{selectedLecturer}
+						bulkSelectedIds={bulkSelectedIds['lecturers'] ?? new Set()}
+						bulkCount={bulkCount('lecturers')}
+						bind:lecturerDraft
+						bind:bulkEditLecturerName
+						bind:bulkEditLecturerEmail
+						bind:bulkEditLecturerPhone
+						bind:bulkEditLecturerAddress
+						{editorView}
+						{pendingDelete}
+						collectionPagination={collectionPagination.lecturers}
+						{createLecturer}
+						{updateLecturer}
+						{bulkUpdateLecturers}
+						{createLecturerEnhance}
+						{updateLecturerEnhance}
+						{bulkUpdateLecturersEnhance}
+						onSearchInput={() => queueCollectionRefresh('lecturers')}
+						onClearSearch={() => {
+							lecturerSearch = '';
+							queueCollectionRefresh('lecturers', 0);
+						}}
+						onBeginCreate={() => beginCreate('lecturers')}
+						onBulkClear={() => bulkClear('lecturers')}
+						onOpenBulkEdit={() => {
+							stopEditing('lecturers');
+							editorView = 'lecturers-bulk';
+						}}
+						onOpenBulkDelete={() => {
+							pendingDelete = {
+								kind: 'bulk-lecturers',
+								id: bulkGetIds('lecturers').join(','),
+								label: `${bulkCount('lecturers')} dosen`,
+								message: `Anda akan menghapus ${bulkCount('lecturers')} dosen. Tindakan ini tidak dapat dibatalkan.`,
+								confirmLabel: 'Ya, hapus semua',
+								successMessage: 'Dosen terpilih berhasil dihapus.',
+								failureMessage: 'Gagal menghapus dosen terpilih.'
+							};
+						}}
+						onBulkToggleAll={(ids) => bulkToggleAll('lecturers', ids)}
+						onBulkToggleId={(id) => bulkToggleId('lecturers', id)}
+						onPickLecturer={pickLecturer}
+						{handleKeyboardClick}
+						onNavigateToEntity={navigateToEntity}
+						onBeginEdit={() => beginEdit('lecturers')}
+						onStopEditing={() => stopEditing('lecturers')}
+						onRequestDelete={() => requestDelete('lecturer', selectedLecturerId!)}
+						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+						onCancelDelete={() => (pendingDelete = null)}
+						onPagePrevious={() => void changeCollectionPage('lecturers', 'previous')}
+						onPageNext={() => void changeCollectionPage('lecturers', 'next')}
+					/>
 				{/if}
 
 				{#if activeView === 'faculties' && currentUser.current.role !== 'STUDENT'}
-					<div class="workspace-shell">
-						<section class="workspace-list">
-							<div class="pane-head">
-								<div>
-									<h3>Daftar fakultas</h3>
-								</div>
-								<Button
-									variant="ghost"
-									size="sm"
-									class="ghost-button"
-									onclick={() => beginCreate('faculties')}>Tambah</Button
-								>
-							</div>
-							<label class="search-box"
-								><Search size={16} /><input
-									bind:value={facultySearch}
-									oninput={() => queueCollectionRefresh('faculties')}
-									aria-label="Cari data fakultas"
-									placeholder="Cari kode atau nama fakultas"
-								/>{#if facultySearch}<button
-										type="button"
-										class="search-clear"
-										onclick={() => {
-											facultySearch = '';
-											queueCollectionRefresh('faculties', 0);
-										}}><X size={14} /></button
-									>{/if}</label
-							>
-							{#if bulkCount('faculties') > 0}
-								<div class="bulk-bar">
-									<span class="bulk-count">{bulkCount('faculties')} fakultas dipilih</span>
-									<div class="bulk-actions">
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => bulkClear('faculties')}>Batal</Button
-										>
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => {
-												stopEditing('faculties');
-												editorView = 'faculties-bulk';
-											}}>Ubah</Button
-										>
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => {
-												pendingDelete = {
-													kind: 'bulk-faculties',
-													id: bulkGetIds('faculties').join(','),
-													label: `${bulkCount('faculties')} fakultas`,
-													message: `Anda akan menghapus ${bulkCount('faculties')} fakultas. Tindakan ini tidak dapat dibatalkan.`,
-													confirmLabel: 'Ya, hapus semua',
-													successMessage: 'Fakultas terpilih berhasil dihapus.',
-													failureMessage: 'Gagal menghapus fakultas terpilih.'
-												};
-											}}>Hapus</Button
-										>
-									</div>
-								</div>
-							{/if}
-							<div class="list-stack">
-								{#if filteredFaculties.length > 1}
-									<label class="list-row select-all-row">
-										<input
-											type="checkbox"
-											checked={bulkCount('faculties') === filteredFaculties.length &&
-												filteredFaculties.length > 0}
-											onchange={() =>
-												bulkToggleAll(
-													'faculties',
-													filteredFaculties.map((i) => i.id).filter(Boolean) as string[]
-												)}
-										/>
-										<span>Pilih semua ({filteredFaculties.length})</span>
-									</label>
-								{/if}
-								{#each filteredFaculties as item (item.id)}
-									<div
-										class="list-row user-row"
-										class:selected={selectedFacultyId === item.id}
-										class:checked={item.id != null && bulkSelectedIds['faculties']?.has(item.id)}
-									>
-										<label class="row-checkbox"
-											><input
-												type="checkbox"
-												checked={item.id != null && bulkSelectedIds['faculties']?.has(item.id)}
-												onchange={() => item.id && bulkToggleId('faculties', item.id)}
-												onclick={(e) => e.stopPropagation()}
-											/></label
-										>
-										<div
-											role="button"
-											tabindex="0"
-											class="row-content"
-											onkeydown={handleKeyboardClick}
-											onclick={() => pickFaculty(item)}
-										>
-											<div>
-												<span
-													role="button"
-													tabindex="0"
-													class="entity-link"
-													onkeydown={handleKeyboardClick}
-													onclick={(e) => {
-														e.stopPropagation();
-														navigateToEntity('faculties', item.id, item.name);
-													}}><strong>{item.name}</strong></span
-												><span>{item.id}</span>
-											</div>
-											<small>{item.id}</small>
-										</div>
-									</div>
-								{/each}
-							</div>
-							<CollectionPagination
-								label="fakultas"
-								pageNumber={collectionPagination.faculties.pageNumber}
-								canPrevious={collectionPagination.faculties.history.length > 0}
-								limit={collectionPagination.faculties.limit}
-								itemCount={collectionPagination.faculties.itemCount}
-								hasMore={collectionPagination.faculties.hasMore}
-								loading={collectionPagination.faculties.loading}
-								onPrevious={() => void changeCollectionPage('faculties', 'previous')}
-								onNext={() => void changeCollectionPage('faculties', 'next')}
-							/>
-						</section>
-						<section class="workspace-detail">
-							<div class="pane-head compact">
-								<div>
-									<h3>
-										{editorView === 'faculties-bulk'
-											? 'Ubah massal fakultas'
-											: selectedFaculty
-												? selectedFaculty.name
-												: 'Tambah fakultas'}
-									</h3>
-								</div>
-								{#if currentUser.current.role === 'ADMIN'}
-									<div class="detail-actions">
-										{#if editorView === 'faculties'}
-											<Button
-												variant="ghost"
-												size="sm"
-												class="ghost-button"
-												onclick={() => stopEditing('faculties')}>Tutup form</Button
-											>
-										{:else if selectedFaculty}
-											<Button
-												variant="ghost"
-												size="sm"
-												class="ghost-button"
-												onclick={() => beginEdit('faculties')}>Edit</Button
-											>
-										{/if}
-										{#if selectedFacultyId}
-											<Button
-												variant="destructive"
-												size="sm"
-												class="danger-button"
-												onclick={() => requestDelete('faculty', selectedFacultyId!)}>Hapus</Button
-											>
-										{/if}
-									</div>
-								{/if}
-							</div>
-							{#if pendingDelete?.kind === 'faculty' && pendingDelete.id === selectedFacultyId}
-								<section class="warning-panel">
-									<p class="warning-title">Hapus {pendingDelete.label}?</p>
-									<p>{pendingDelete.message}</p>
-									<div class="warning-actions">
-										<Button
-											class="danger-button"
-											variant="destructive"
-											size="sm"
-											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-											>{pendingDelete.confirmLabel}</Button
-										>
-										<Button
-											class="ghost-button"
-											variant="ghost"
-											size="sm"
-											onclick={() => (pendingDelete = null)}>Batal</Button
-										>
-									</div>
-								</section>
-							{/if}
-							{#if selectedFaculty && editorView !== 'faculties' && editorView !== 'faculties-bulk'}<div
-									class="detail-stack"
-								>
-									<div class="detail-lines">
-										<div><span>Kode</span><strong>{selectedFaculty.id}</strong></div>
-										<div>
-											<span>Program studi</span><strong
-												>{selectedFaculty.study_program_count ?? 0}</strong
-											>
-										</div>
-									</div>
-									<p class="detail-hint">
-										Tinjau ringkasan struktur lebih dulu. Buka form edit hanya untuk perubahan yang
-										memang diperlukan.
-									</p>
-								</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'faculties'}<form
-									class="editor-grid"
-									{...selectedFacultyId ? updateFacultyEnhance : createFacultyEnhance}
-								>
-									{#if selectedFacultyId}<input
-											type="hidden"
-											{...updateFaculty.fields.id.as('text')}
-											value={facultyDraft.id}
-										/>{:else}<p class="editor-note">
-											ID fakultas dibuat otomatis saat data disimpan.
-										</p>{/if}<label
-										><span>Nama fakultas</span><input
-											{...selectedFacultyId
-												? updateFaculty.fields.name.as('text')
-												: createFaculty.fields.name.as('text')}
-											value={facultyDraft.name}
-										/></label
-									><Button type="submit" class="primary-button"
-										>{selectedFacultyId ? 'Simpan perubahan' : 'Tambah fakultas'}</Button
-									>
-								</form>{:else if editorView === 'faculties-bulk'}<form
-									class="editor-grid"
-									{...bulkUpdateFacultiesEnhance}
-								>
-									<p class="editor-note">
-										Ubah nama {bulkCount('faculties')} fakultas terpilih sekaligus. Kosongkan field yang
-										tidak ingin diubah.
-									</p>
-									<input type="hidden" name="ids" value={bulkGetIds('faculties').join(',')} />
-									<label
-										><span>Nama fakultas</span><input
-											type="text"
-											name="name"
-											value={bulkEditFacultyName}
-											oninput={(e) =>
-												(bulkEditFacultyName = (e.currentTarget as HTMLInputElement).value)}
-										/></label
-									>
-									<div class="builder-inline-actions">
-										<Button
-											type="button"
-											variant="ghost"
-											class="ghost-button"
-											onclick={() => {
-												bulkClear('faculties');
-												editorView = null;
-											}}>Batal</Button
-										>
-										<Button
-											type="submit"
-											class="primary-button"
-											disabled={bulkUpdateFaculties.pending > 0}
-											>Simpan perubahan {bulkCount('faculties')} fakultas</Button
-										>
-									</div>
-								</form>{:else}<p class="empty-copy">
-									Pilih satu fakultas untuk melihat detail, atau tambahkan fakultas baru saat
-									struktur berubah.
-								</p>{/if}
-						</section>
-					</div>
+					<FacultiesView
+						currentRole={currentUser.current.role as AppRole}
+						bind:facultySearch
+						{filteredFaculties}
+						{selectedFacultyId}
+						{selectedFaculty}
+						bulkSelectedIds={bulkSelectedIds['faculties'] ?? new Set()}
+						bulkCount={bulkCount('faculties')}
+						bind:facultyDraft
+						bind:bulkEditFacultyName
+						{editorView}
+						{pendingDelete}
+						collectionPagination={collectionPagination.faculties}
+						{createFaculty}
+						{updateFaculty}
+						{bulkUpdateFaculties}
+						{createFacultyEnhance}
+						{updateFacultyEnhance}
+						{bulkUpdateFacultiesEnhance}
+						onSearchInput={() => queueCollectionRefresh('faculties')}
+						onClearSearch={() => {
+							facultySearch = '';
+							queueCollectionRefresh('faculties', 0);
+						}}
+						onBeginCreate={() => beginCreate('faculties')}
+						onBulkClear={() => bulkClear('faculties')}
+						onOpenBulkEdit={() => {
+							stopEditing('faculties');
+							editorView = 'faculties-bulk';
+						}}
+						onOpenBulkDelete={() => {
+							pendingDelete = {
+								kind: 'bulk-faculties',
+								id: bulkGetIds('faculties').join(','),
+								label: `${bulkCount('faculties')} fakultas`,
+								message: `Anda akan menghapus ${bulkCount('faculties')} fakultas. Tindakan ini tidak dapat dibatalkan.`,
+								confirmLabel: 'Ya, hapus semua',
+								successMessage: 'Fakultas terpilih berhasil dihapus.',
+								failureMessage: 'Gagal menghapus fakultas terpilih.'
+							};
+						}}
+						onBulkToggleAll={(ids) => bulkToggleAll('faculties', ids)}
+						onBulkToggleId={(id) => bulkToggleId('faculties', id)}
+						onPickFaculty={pickFaculty}
+						{handleKeyboardClick}
+						onNavigateToEntity={navigateToEntity}
+						onBeginEdit={() => beginEdit('faculties')}
+						onStopEditing={() => stopEditing('faculties')}
+						onRequestDelete={() => requestDelete('faculty', selectedFacultyId!)}
+						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+						onCancelDelete={() => (pendingDelete = null)}
+						onPagePrevious={() => void changeCollectionPage('faculties', 'previous')}
+						onPageNext={() => void changeCollectionPage('faculties', 'next')}
+					/>
 				{/if}
 
 				{#if activeView === 'studyPrograms' && currentUser.current.role !== 'STUDENT'}
-					<div class="workspace-shell">
-						<section class="workspace-list">
-							<div class="pane-head">
-								<div>
-									<h3>Daftar program studi</h3>
-								</div>
-								<Button
-									variant="ghost"
-									size="sm"
-									class="ghost-button"
-									onclick={() => beginCreate('studyPrograms')}>Tambah</Button
-								>
-							</div>
-							<label class="search-box"
-								><Search size={16} /><input
-									bind:value={studyProgramSearch}
-									oninput={() => queueCollectionRefresh('studyPrograms')}
-									aria-label="Cari data program studi"
-									placeholder="Cari kode, nama, atau fakultas"
-								/>{#if studyProgramSearch}<button
-										type="button"
-										class="search-clear"
-										onclick={() => {
-											studyProgramSearch = '';
-											queueCollectionRefresh('studyPrograms', 0);
-										}}><X size={14} /></button
-									>{/if}</label
-							>
-							{#if bulkCount('studyPrograms') > 0}
-								<div class="bulk-bar">
-									<span class="bulk-count">{bulkCount('studyPrograms')} prodi dipilih</span>
-									<div class="bulk-actions">
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => bulkClear('studyPrograms')}>Batal</Button
-										>
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => {
-												stopEditing('studyPrograms');
-												editorView = 'studyPrograms-bulk';
-											}}>Ubah</Button
-										>
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => {
-												pendingDelete = {
-													kind: 'bulk-studyPrograms',
-													id: bulkGetIds('studyPrograms').join(','),
-													label: `${bulkCount('studyPrograms')} prodi`,
-													message: `Anda akan menghapus ${bulkCount('studyPrograms')} prodi. Tindakan ini tidak dapat dibatalkan.`,
-													confirmLabel: 'Ya, hapus semua',
-													successMessage: 'Prodi terpilih berhasil dihapus.',
-													failureMessage: 'Gagal menghapus prodi terpilih.'
-												};
-											}}>Hapus</Button
-										>
-									</div>
-								</div>
-							{/if}
-							<div class="list-stack">
-								{#if filteredStudyPrograms.length > 1}
-									<label class="list-row select-all-row">
-										<input
-											type="checkbox"
-											checked={bulkCount('studyPrograms') === filteredStudyPrograms.length &&
-												filteredStudyPrograms.length > 0}
-											onchange={() =>
-												bulkToggleAll(
-													'studyPrograms',
-													filteredStudyPrograms.map((i) => i.id).filter(Boolean) as string[]
-												)}
-										/>
-										<span>Pilih semua ({filteredStudyPrograms.length})</span>
-									</label>
-								{/if}
-								{#each filteredStudyPrograms as item (item.id)}
-									<div
-										class="list-row user-row"
-										class:selected={selectedStudyProgramId === item.id}
-										class:checked={item.id != null &&
-											bulkSelectedIds['studyPrograms']?.has(item.id)}
-									>
-										<label class="row-checkbox"
-											><input
-												type="checkbox"
-												checked={item.id != null && bulkSelectedIds['studyPrograms']?.has(item.id)}
-												onchange={() => item.id && bulkToggleId('studyPrograms', item.id)}
-												onclick={(e) => e.stopPropagation()}
-											/></label
-										>
-										<div
-											role="button"
-											tabindex="0"
-											class="row-content"
-											onkeydown={handleKeyboardClick}
-											onclick={() => pickStudyProgram(item)}
-										>
-											<div>
-												<span
-													role="button"
-													tabindex="0"
-													class="entity-link"
-													onkeydown={handleKeyboardClick}
-													onclick={(e) => {
-														e.stopPropagation();
-														navigateToEntity('studyPrograms', item.id, item.name);
-													}}><strong>{item.name}</strong></span
-												><span
-													>{item.id} •
-													<span
-														role="button"
-														tabindex="0"
-														class="entity-link"
-														onkeydown={handleKeyboardClick}
-														onclick={(e) => {
-															e.stopPropagation();
-															navigateToEntity('faculties', item.faculty_id, item.faculty_name);
-														}}>{item.faculty_name}</span
-													></span
-												>
-											</div>
-											<small>{item.head ?? item.faculty_name}</small>
-										</div>
-									</div>
-								{/each}
-							</div>
-							<CollectionPagination
-								label="program studi"
-								pageNumber={collectionPagination.studyPrograms.pageNumber}
-								canPrevious={collectionPagination.studyPrograms.history.length > 0}
-								limit={collectionPagination.studyPrograms.limit}
-								itemCount={collectionPagination.studyPrograms.itemCount}
-								hasMore={collectionPagination.studyPrograms.hasMore}
-								loading={collectionPagination.studyPrograms.loading}
-								onPrevious={() => void changeCollectionPage('studyPrograms', 'previous')}
-								onNext={() => void changeCollectionPage('studyPrograms', 'next')}
-							/>
-						</section>
-						<section class="workspace-detail">
-							<div class="pane-head compact">
-								<div>
-									<h3>
-										{editorView === 'studyPrograms-bulk'
-											? 'Ubah massal program studi'
-											: selectedStudyProgram
-												? selectedStudyProgram.name
-												: 'Tambah program studi'}
-									</h3>
-								</div>
-								{#if currentUser.current.role === 'ADMIN'}
-									<div class="detail-actions">
-										{#if editorView === 'studyPrograms'}
-											<Button
-												variant="ghost"
-												size="sm"
-												class="ghost-button"
-												onclick={() => stopEditing('studyPrograms')}>Tutup form</Button
-											>
-										{:else if selectedStudyProgram}
-											<Button
-												variant="ghost"
-												size="sm"
-												class="ghost-button"
-												onclick={() => beginEdit('studyPrograms')}>Edit</Button
-											>
-										{/if}
-										{#if selectedStudyProgramId}
-											<Button
-												variant="destructive"
-												size="sm"
-												class="danger-button"
-												onclick={() => requestDelete('studyProgram', selectedStudyProgramId!)}
-												>Hapus</Button
-											>
-										{/if}
-									</div>
-								{/if}
-							</div>
-							{#if pendingDelete?.kind === 'studyProgram' && pendingDelete.id === selectedStudyProgramId}
-								<section class="warning-panel">
-									<p class="warning-title">Hapus {pendingDelete.label}?</p>
-									<p>{pendingDelete.message}</p>
-									<div class="warning-actions">
-										<Button
-											class="danger-button"
-											variant="destructive"
-											size="sm"
-											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-											>{pendingDelete.confirmLabel}</Button
-										>
-										<Button
-											class="ghost-button"
-											variant="ghost"
-											size="sm"
-											onclick={() => (pendingDelete = null)}>Batal</Button
-										>
-									</div>
-								</section>
-							{/if}
-							{#if selectedStudyProgram && editorView !== 'studyPrograms' && editorView !== 'studyPrograms-bulk'}<div
-									class="detail-stack"
-								>
-									<div class="detail-lines">
-										<div><span>ID prodi</span><strong>{selectedStudyProgram.id}</strong></div>
-										<div>
-											<span>Ketua program</span><strong>{selectedStudyProgram.head}</strong>
-										</div>
-										<div>
-											<span>Fakultas</span><span
-												role="button"
-												tabindex="0"
-												class="entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity(
-														'faculties',
-														selectedStudyProgram.faculty_id,
-														selectedStudyProgram.faculty_name
-													);
-												}}><strong>{selectedStudyProgram.faculty_name}</strong></span
-											>
-										</div>
-										<div>
-											<span>Mahasiswa</span><strong
-												>{selectedStudyProgram.student_count ?? 0}</strong
-											>
-										</div>
-									</div>
-									<p class="detail-hint">
-										Gunakan mode tinjau agar struktur prodi tetap mudah dibaca sebelum proses edit
-										dimulai.
-									</p>
-								</div>{:else if currentUser.current.role === 'ADMIN' && editorView === 'studyPrograms'}<form
-									class="editor-grid"
-									{...selectedStudyProgramId
-										? updateStudyProgramEnhance
-										: createStudyProgramEnhance}
-								>
-									{#if selectedStudyProgramId}<input
-											type="hidden"
-											{...updateStudyProgram.fields.id.as('text')}
-											value={studyProgramDraft.id}
-										/>{:else}<p class="editor-note">
-											ID program studi dibuat otomatis saat data disimpan.
-										</p>{/if}<label
-										><span>Nama prodi</span><input
-											{...selectedStudyProgramId
-												? updateStudyProgram.fields.name.as('text')
-												: createStudyProgram.fields.name.as('text')}
-											value={studyProgramDraft.name}
-										/></label
-									><label
-										><span>Ketua prodi</span><input
-											{...selectedStudyProgramId
-												? updateStudyProgram.fields.head.as('text')
-												: createStudyProgram.fields.head.as('text')}
-											value={studyProgramDraft.head}
-										/></label
-									><label
-										><span>Fakultas</span><select
-											{...selectedStudyProgramId
-												? updateStudyProgram.fields.facultyId.as('select')
-												: createStudyProgram.fields.facultyId.as('select')}
-											value={studyProgramDraft.facultyId}
-											><option value="">Pilih fakultas</option
-											>{#if collectionIssues.faculties && !faculties.length}<option
-													value=""
-													disabled>{collectionIssues.faculties}</option
-												>{/if}
-											>{#each faculties as item (item.id)}<option value={item.id}
-													>{item.name}</option
-												>{/each}</select
-										>{#if studyProgramDraft.facultyId}<span
-												role="button"
-												tabindex="0"
-												class="editor-entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity('faculties', studyProgramDraft.facultyId);
-												}}>Lihat fakultas</span
-											>{/if}</label
-									>{#if studyProgramEditorBlocked}<p class="editor-note">
-											Fakultas harus tersedia sebelum program studi bisa disimpan.
-										</p>{/if}<Button
-										type="submit"
-										class="primary-button"
-										disabled={studyProgramEditorBlocked}
-										>{selectedStudyProgramId ? 'Simpan perubahan' : 'Tambah program studi'}</Button
-									>
-								</form>{:else if editorView === 'studyPrograms-bulk'}<form
-									class="editor-grid"
-									{...bulkUpdateStudyProgramsEnhance}
-								>
-									<p class="editor-note">
-										Ubah fakultas dan ketua prodi {bulkCount('studyPrograms')} prodi terpilih sekaligus.
-										Kosongkan field yang tidak ingin diubah.
-									</p>
-									<input type="hidden" name="ids" value={bulkGetIds('studyPrograms').join(',')} />
-									<label
-										><span>Fakultas</span><select
-											name="facultyId"
-											value={bulkEditStudyProgramFacultyId}
-											onchange={(e) =>
-												(bulkEditStudyProgramFacultyId = (e.currentTarget as HTMLSelectElement)
-													.value)}
-											><option value="">Pilih fakultas</option
-											>{#each faculties as item (item.id)}<option value={item.id}
-													>{item.name}</option
-												>{/each}</select
-										>{#if bulkEditStudyProgramFacultyId}<span
-												role="button"
-												tabindex="0"
-												class="editor-entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity('faculties', bulkEditStudyProgramFacultyId);
-												}}>Lihat fakultas</span
-											>{/if}</label
-									>
-									<label
-										><span>Ketua prodi</span><input
-											type="text"
-											name="head"
-											value={bulkEditStudyProgramHead}
-											oninput={(e) =>
-												(bulkEditStudyProgramHead = (e.currentTarget as HTMLInputElement).value)}
-										/></label
-									>
-									<div class="builder-inline-actions">
-										<Button
-											type="button"
-											variant="ghost"
-											class="ghost-button"
-											onclick={() => {
-												bulkClear('studyPrograms');
-												editorView = null;
-											}}>Batal</Button
-										>
-										<Button
-											type="submit"
-											class="primary-button"
-											disabled={bulkUpdateStudyPrograms.pending > 0}
-											>Simpan perubahan {bulkCount('studyPrograms')} prodi</Button
-										>
-									</div>
-								</form>{:else}<p class="empty-copy">
-									Pilih satu program studi untuk melihat detail, atau tambahkan program studi baru
-									saat struktur akademik berubah.
-								</p>{/if}
-						</section>
-					</div>
+					<StudyProgramsView
+						currentRole={currentUser.current.role as AppRole}
+						bind:studyProgramSearch
+						{filteredStudyPrograms}
+						{selectedStudyProgramId}
+						{selectedStudyProgram}
+						bulkSelectedIds={bulkSelectedIds['studyPrograms'] ?? new Set()}
+						bulkCount={bulkCount('studyPrograms')}
+						bind:studyProgramDraft
+						bind:bulkEditStudyProgramFacultyId
+						bind:bulkEditStudyProgramHead
+						{editorView}
+						{pendingDelete}
+						collectionPagination={collectionPagination.studyPrograms}
+						{createStudyProgram}
+						{updateStudyProgram}
+						{bulkUpdateStudyPrograms}
+						{createStudyProgramEnhance}
+						{updateStudyProgramEnhance}
+						{bulkUpdateStudyProgramsEnhance}
+						{faculties}
+						facultiesIssue={collectionIssues.faculties}
+						{studyProgramEditorBlocked}
+						onSearchInput={() => queueCollectionRefresh('studyPrograms')}
+						onClearSearch={() => {
+							studyProgramSearch = '';
+							queueCollectionRefresh('studyPrograms', 0);
+						}}
+						onBeginCreate={() => beginCreate('studyPrograms')}
+						onBulkClear={() => bulkClear('studyPrograms')}
+						onOpenBulkEdit={() => {
+							stopEditing('studyPrograms');
+							editorView = 'studyPrograms-bulk';
+						}}
+						onOpenBulkDelete={() => {
+							pendingDelete = {
+								kind: 'bulk-studyPrograms',
+								id: bulkGetIds('studyPrograms').join(','),
+								label: `${bulkCount('studyPrograms')} prodi`,
+								message: `Anda akan menghapus ${bulkCount('studyPrograms')} prodi. Tindakan ini tidak dapat dibatalkan.`,
+								confirmLabel: 'Ya, hapus semua',
+								successMessage: 'Prodi terpilih berhasil dihapus.',
+								failureMessage: 'Gagal menghapus prodi terpilih.'
+							};
+						}}
+						onBulkToggleAll={(ids) => bulkToggleAll('studyPrograms', ids)}
+						onBulkToggleId={(id) => bulkToggleId('studyPrograms', id)}
+						onPickStudyProgram={pickStudyProgram}
+						{handleKeyboardClick}
+						onNavigateToEntity={navigateToEntity}
+						onBeginEdit={() => beginEdit('studyPrograms')}
+						onStopEditing={() => stopEditing('studyPrograms')}
+						onRequestDelete={() => requestDelete('studyProgram', selectedStudyProgramId!)}
+						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+						onCancelDelete={() => (pendingDelete = null)}
+						onPagePrevious={() => void changeCollectionPage('studyPrograms', 'previous')}
+						onPageNext={() => void changeCollectionPage('studyPrograms', 'next')}
+					/>
 				{/if}
 
 				{#if activeView === 'enrollments'}
-					<div class="workspace-shell">
-						<section class="workspace-list">
-							<div class="pane-head">
-								<div>
-									<h3>KRS aktif</h3>
-								</div>
-							</div>
-							<label class="search-box"
-								><Search size={16} /><input
-									bind:value={enrollmentSearch}
-									oninput={() => queueCollectionRefresh('enrollments')}
-									aria-label="Cari KRS aktif"
-									placeholder="Cari mahasiswa, mata kuliah, atau ruang"
-								/>{#if enrollmentSearch}<button
-										type="button"
-										class="search-clear"
-										onclick={() => {
-											enrollmentSearch = '';
-											queueCollectionRefresh('enrollments', 0);
-										}}><X size={14} /></button
-									>{/if}</label
-							>
-							<div class="editor-grid schedule-filter-grid list-filter-grid">
-								<label>
-									<span>Hari</span>
-									<select
-										bind:value={scheduleDayFilter}
-										onchange={() => queueCollectionRefresh('enrollments', 0)}
-									>
-										<option value="">Semua hari</option>
-										{#each days as day (day)}
-											<option value={day}>{DAY_LABELS[day]}</option>
-										{/each}
-									</select>
-								</label>
-								<label>
-									<span>Mata kuliah</span>
-									<select
-										bind:value={scheduleCourseFilter}
-										onchange={() => queueCollectionRefresh('enrollments', 0)}
-									>
-										<option value="">Semua mata kuliah</option>
-										{#each courses as item (item.id)}
-											<option value={item.id}>{item.name}</option>
-										{/each}
-									</select>
-								</label>
-								<label>
-									<span>Ruang</span>
-									<div
-										class="combobox-wrap"
-										onfocusout={(e) => {
-											if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-												scheduleRoomFilterOpen = false;
-											}
-										}}
-									>
-										<input
-											type="text"
-											class="combobox-input"
-											placeholder="Cari ruang filter..."
-											value={scheduleRoomFilter
-												? selectedScheduleRoomFilterLabel
-												: scheduleRoomFilterSearch}
-											oninput={(e) => {
-												scheduleRoomFilterSearch = (e.currentTarget as HTMLInputElement).value;
-												if (scheduleRoomFilter) {
-													scheduleRoomFilter = '';
-													queueCollectionRefresh('enrollments', 0);
-												}
-												queueScheduleRoomFilterRefresh();
-												scheduleRoomFilterOpen = true;
-											}}
-											onfocus={(e) => {
-												if (scheduleRoomFilter) {
-													(e.currentTarget as HTMLInputElement).select();
-												}
-												scheduleRoomFilterOpen = true;
-												if (!scheduleRoomFilterOptions.length) {
-													queueScheduleRoomFilterRefresh(0);
-												}
-											}}
-										/>
-										{#if scheduleRoomFilterIssue}
-											<p class="combobox-error">{scheduleRoomFilterIssue}</p>
-										{:else if scheduleRoomFilterOpen && scheduleRoomFilterLoading && !scheduleRoomFilterOptions.length}
-											<p class="combobox-empty">Memuat ruang kelas...</p>
-										{:else if scheduleRoomFilterOpen}
-											<div class="combobox-dropdown" role="listbox">
-												<button
-													type="button"
-													role="option"
-													aria-selected={!scheduleRoomFilter}
-													class="combobox-option"
-													class:active={!scheduleRoomFilter}
-													onmousedown={(e) => {
-														e.preventDefault();
-														scheduleRoomFilter = '';
-														scheduleRoomFilterSearch = '';
-														scheduleRoomFilterOpen = false;
-														queueCollectionRefresh('enrollments', 0);
-													}}
-												>
-													<strong>Semua ruang</strong>
-													<span>Hapus filter ruang</span>
-												</button>
-												{#each filteredScheduleRoomFilterOptions as item (item.id)}
-													<button
-														type="button"
-														role="option"
-														aria-selected={scheduleRoomFilter === item.id}
-														class="combobox-option"
-														class:active={scheduleRoomFilter === item.id}
-														onmousedown={(e) => {
-															e.preventDefault();
-															scheduleRoomFilter = item.id ?? '';
-															scheduleRoomFilterSearch = '';
-															scheduleRoomFilterOpen = false;
-															queueCollectionRefresh('enrollments', 0);
-														}}
-													>
-														<strong>{item.name}</strong>
-														<span
-															>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
-														>
-													</button>
-												{/each}
-												{#if !filteredScheduleRoomFilterOptions.length && !scheduleRoomFilterLoading}
-													<p class="combobox-empty">Ruang tidak ditemukan.</p>
-												{/if}
-												{#if scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
-													<div class="combobox-footer">
-														<span class="combobox-meta">
-															{scheduleRoomFilterOptions.length} opsi dimuat
-														</span>
-														<button
-															type="button"
-															class="combobox-more"
-															disabled={!scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
-															onmousedown={(e) => {
-																e.preventDefault();
-																loadMoreScheduleRoomFilterOptions();
-															}}
-														>
-															{scheduleRoomFilterLoading ? 'Memuat...' : 'Muat lebih banyak'}
-														</button>
-													</div>
-												{/if}
-											</div>
-										{/if}
-									</div>
-								</label>
-								<label>
-									<span>Dosen</span>
-									<select
-										bind:value={scheduleLecturerFilter}
-										onchange={() => queueCollectionRefresh('enrollments', 0)}
-									>
-										<option value="">Semua dosen</option>
-										{#each lecturers as item (item.id)}
-											<option value={item.id}>{item.name}</option>
-										{/each}
-									</select>
-								</label>
-								<label>
-									<span>Semester</span>
-									<select
-										bind:value={scheduleSemesterFilter}
-										onchange={() => queueCollectionRefresh('enrollments', 0)}
-									>
-										<option value="">Semua semester</option>
-										{#each scheduleSemesterOptions as item (item)}
-											<option value={item}>{item}</option>
-										{/each}
-									</select>
-								</label>
-								<label>
-									<span>Tahun akademik</span>
-									<select
-										bind:value={scheduleAcademicYearFilter}
-										onchange={() => queueCollectionRefresh('enrollments', 0)}
-									>
-										<option value="">Semua tahun</option>
-										{#each scheduleAcademicYearOptions as item (item)}
-											<option value={item}>{item}</option>
-										{/each}
-									</select>
-								</label>
-							</div>
-							<div class="list-summary schedule-filter-summary">
-								<span>{filteredEnrollments.length} KRS tampil</span>
-								<div class="schedule-filter-actions">
-									<Badge variant="secondary">{scheduleActiveFilterCount} filter aktif</Badge>
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										size="sm"
-										onclick={resetScheduleFilters}
-										disabled={scheduleActiveFilterCount === 0}
-									>
-										Hapus filter
-									</Button>
-								</div>
-							</div>
-							{#if bulkCount('enrollments') > 0}
-								<div class="bulk-bar">
-									<span class="bulk-count">{bulkCount('enrollments')} KRS dipilih</span>
-									<div class="bulk-actions">
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => bulkClear('enrollments')}>Batal</Button
-										>
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => {
-												editorView = 'enrollments-bulk';
-											}}>Ubah</Button
-										>
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => {
-												pendingDelete = {
-													kind: 'bulk-enrollments',
-													id: bulkGetIds('enrollments').join(','),
-													label: `${bulkCount('enrollments')} KRS`,
-													message: `Anda akan menghapus ${bulkCount('enrollments')} KRS. Tindakan ini tidak dapat dibatalkan.`,
-													confirmLabel: 'Ya, hapus semua',
-													successMessage: 'KRS terpilih berhasil dihapus.',
-													failureMessage: 'Gagal menghapus KRS terpilih.'
-												};
-											}}>Hapus</Button
-										>
-									</div>
-								</div>
-							{/if}
-							<div class="list-stack">
-								{#if filteredEnrollments.length > 1}
-									<label class="list-row select-all-row">
-										<input
-											type="checkbox"
-											checked={bulkCount('enrollments') === filteredEnrollments.length &&
-												filteredEnrollments.length > 0}
-											onchange={() =>
-												bulkToggleAll(
-													'enrollments',
-													filteredEnrollments.map((i) => i.id).filter(Boolean) as string[]
-												)}
-										/>
-										<span>Pilih semua ({filteredEnrollments.length})</span>
-									</label>
-								{/if}
-								{#each filteredEnrollments as item (item.id)}
-									{@const scheduleCard = item.id ? scheduleCardMap[item.id] : null}
-									<div
-										class="list-row user-row"
-										class:selected={selectedEnrollmentId === item.id}
-										class:checked={item.id != null && bulkSelectedIds['enrollments']?.has(item.id)}
-									>
-										<label class="row-checkbox"
-											><input
-												type="checkbox"
-												checked={item.id != null && bulkSelectedIds['enrollments']?.has(item.id)}
-												onchange={() => item.id && bulkToggleId('enrollments', item.id)}
-												onclick={(e) => e.stopPropagation()}
-											/></label
-										>
-										<div
-											role="button"
-											tabindex="0"
-											class="row-content"
-											onkeydown={handleKeyboardClick}
-											onclick={() => pickEnrollment(item)}
-										>
-											<div>
-												<span
-													role="button"
-													tabindex="0"
-													class="entity-link"
-													onkeydown={handleKeyboardClick}
-													onclick={(e) => {
-														e.stopPropagation();
-														navigateToEntity('students', item.student_id, item.student_name);
-													}}><strong>{item.student_name}</strong></span
-												><span
-													><span
-														role="button"
-														tabindex="0"
-														class="entity-link"
-														onkeydown={handleKeyboardClick}
-														onclick={(e) => {
-															e.stopPropagation();
-															navigateToEntity('courses', item.course_id, item.course_name);
-														}}>{item.course_name}</span
-													>
-													•
-													<span
-														role="button"
-														tabindex="0"
-														class="entity-link"
-														onkeydown={handleKeyboardClick}
-														onclick={(e) => {
-															e.stopPropagation();
-															navigateToEntity(
-																'classrooms',
-																item.class_room_id,
-																item.class_room_name
-															);
-														}}>{item.class_room_name}</span
-													></span
-												>
-												{#if item.id && scheduleCard?.hasConflict && conflictSummaryByCardId[item.id]}
-													<small class="list-conflict-copy">
-														Bentrok dengan {conflictSummaryByCardId[item.id]}
-													</small>
-												{/if}
-											</div>
-											<small>{item.semester} • {item.academic_year}</small>
-										</div>
-									</div>
-								{/each}
-							</div>
-							<CollectionPagination
-								label="KRS"
-								pageNumber={collectionPagination.enrollments.pageNumber}
-								canPrevious={collectionPagination.enrollments.history.length > 0}
-								limit={collectionPagination.enrollments.limit}
-								itemCount={collectionPagination.enrollments.itemCount}
-								hasMore={collectionPagination.enrollments.hasMore}
-								loading={collectionPagination.enrollments.loading}
-								onPrevious={() => void changeCollectionPage('enrollments', 'previous')}
-								onNext={() => void changeCollectionPage('enrollments', 'next')}
-							/>
-						</section>
-						<section class="workspace-detail">
-							<div class="pane-head compact">
-								<div>
-									<h3>
-										{editorView === 'enrollments-bulk'
-											? 'Ubah massal KRS'
-											: selectedEnrollment
-												? selectedEnrollment.course_name
-												: 'Pilih satu KRS'}
-									</h3>
-								</div>
-								{#if selectedEnrollment && editorView !== 'enrollments-bulk' && currentUser.current.role !== 'STUDENT'}
-									<div class="detail-actions">
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => openBuilderForEnrollment(selectedEnrollment)}
-										>
-											Edit di penjadwalan
-										</Button>
-									</div>
-								{/if}
-							</div>
-							{#if selectedEnrollment && editorView !== 'enrollments-bulk'}
-								<div class="detail-stack">
-									{#if selectedEnrollmentConflictSummary}
-										<p class="builder-conflict-copy">
-											Bentrok dengan {selectedEnrollmentConflictSummary}
-										</p>
-									{/if}
-									<div class="detail-lines">
-										<div>
-											<span>Mahasiswa</span><span
-												role="button"
-												tabindex="0"
-												class="entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity(
-														'students',
-														selectedEnrollment.student_id,
-														selectedEnrollment.student_name
-													);
-												}}><strong>{selectedEnrollment.student_name}</strong></span
-											>
-										</div>
-										<div>
-											<span>Mata kuliah</span><span
-												role="button"
-												tabindex="0"
-												class="entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity(
-														'courses',
-														selectedEnrollment.course_id,
-														selectedEnrollment.course_name
-													);
-												}}><strong>{selectedEnrollment.course_name}</strong></span
-											>
-										</div>
-										<div>
-											<span>Ruang</span><span
-												role="button"
-												tabindex="0"
-												class="entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity(
-														'classrooms',
-														selectedEnrollment.class_room_id,
-														selectedEnrollment.class_room_name
-													);
-												}}><strong>{selectedEnrollment.class_room_name}</strong></span
-											>
-										</div>
-										<div>
-											<span>Jadwal</span><strong
-												>{selectedEnrollment.schedule_day
-													? DAY_LABELS[selectedEnrollment.schedule_day as keyof typeof DAY_LABELS]
-													: '-'} • {formatTimeRange(
-													selectedEnrollment.schedule_start_time,
-													selectedEnrollment.schedule_end_time,
-													timezone
-												)}</strong
-											>
-										</div>
-										{#if selectedEnrollmentConflictGroup}
-											<div>
-												<span>Ruang bentrok</span><strong
-													>{selectedEnrollmentConflictGroup.rooms}</strong
-												>
-											</div>
-											<div>
-												<span>Dosen terkait</span><strong
-													>{selectedEnrollmentConflictGroup.lecturers}</strong
-												>
-											</div>
-										{/if}
-									</div>
-								</div>
-							{:else if editorView === 'enrollments-bulk'}<form
-									class="editor-grid"
-									{...bulkUpdateEnrollmentsEnhance}
-								>
-									<p class="editor-note">
-										Ubah semester dan tahun akademik {bulkCount('enrollments')} KRS terpilih sekaligus.
-										Kosongkan field yang tidak ingin diubah.
-									</p>
-									<input type="hidden" name="ids" value={bulkGetIds('enrollments').join(',')} />
-									<label
-										><span>Semester</span><select
-											name="semester"
-											bind:value={bulkEditEnrollmentSemester}
-											><option value="">Pilih semester</option
-											>{#each semesterOptions as semester (semester)}<option value={semester}
-													>{semester}</option
-												>{/each}</select
-										></label
-									>
-									<label
-										><span>Tahun akademik</span><input
-											type="text"
-											name="academicYear"
-											value={bulkEditEnrollmentAcademicYear}
-											oninput={(e) =>
-												(bulkEditEnrollmentAcademicYear = (e.currentTarget as HTMLInputElement)
-													.value)}
-										/></label
-									>
-									<div class="builder-inline-actions">
-										<Button
-											type="button"
-											variant="ghost"
-											class="ghost-button"
-											onclick={() => {
-												bulkClear('enrollments');
-												editorView = null;
-											}}>Batal</Button
-										>
-										<Button
-											type="submit"
-											class="primary-button"
-											disabled={bulkUpdateEnrollments.pending > 0}
-											>Simpan perubahan {bulkCount('enrollments')} KRS</Button
-										>
-									</div>
-								</form>{:else}<p class="empty-copy">
-									Pilih satu baris untuk melihat detail KRS.
-								</p>{/if}
-						</section>
-					</div>
+					<EnrollmentsView
+						currentRole={currentUser.current.role as AppRole}
+						bind:enrollmentSearch
+						{filteredEnrollments}
+						{selectedEnrollmentId}
+						{selectedEnrollment}
+						{selectedEnrollmentConflictSummary}
+						{selectedEnrollmentConflictGroup}
+						scheduleCardMap={scheduleCardMap}
+						conflictSummaryByCardId={conflictSummaryByCardId}
+						bind:scheduleDayFilter
+						bind:scheduleCourseFilter
+						bind:scheduleRoomFilter
+						bind:scheduleLecturerFilter
+						bind:scheduleSemesterFilter
+						bind:scheduleAcademicYearFilter
+						{courses}
+						{lecturers}
+						{scheduleSemesterOptions}
+						{scheduleAcademicYearOptions}
+						{scheduleActiveFilterCount}
+						bulkSelectedIds={bulkSelectedIds['enrollments'] ?? new Set()}
+						bulkCount={bulkCount('enrollments')}
+						{editorView}
+						{pendingDelete}
+						collectionPagination={collectionPagination.enrollments}
+						{bulkUpdateEnrollmentsEnhance}
+						{days}
+						{timezone}
+						{handleKeyboardClick}
+						onNavigateToEntity={navigateToEntity}
+						onOpenBuilderForEnrollment={openBuilderForEnrollment}
+						onSearchInput={() => queueCollectionRefresh('enrollments')}
+						onClearSearch={() => {
+							enrollmentSearch = '';
+							queueCollectionRefresh('enrollments', 0);
+						}}
+						onResetScheduleFilters={resetScheduleFilters}
+						onBulkClear={() => bulkClear('enrollments')}
+						onOpenBulkEdit={() => {
+							editorView = 'enrollments-bulk';
+						}}
+						onOpenBulkDelete={() => {
+							pendingDelete = {
+								kind: 'bulk-enrollments',
+								id: bulkGetIds('enrollments').join(','),
+								label: `${bulkCount('enrollments')} KRS`,
+								message: `Anda akan menghapus ${bulkCount('enrollments')} KRS. Tindakan ini tidak dapat dibatalkan.`,
+								confirmLabel: 'Ya, hapus semua',
+								successMessage: 'KRS terpilih berhasil dihapus.',
+								failureMessage: 'Gagal menghapus KRS terpilih.'
+							};
+						}}
+						onBulkToggleAll={(ids) => bulkToggleAll('enrollments', ids)}
+						onBulkToggleId={(id) => bulkToggleId('enrollments', id)}
+						onPickEnrollment={pickEnrollment}
+						onPagePrevious={() => void changeCollectionPage('enrollments', 'previous')}
+						onPageNext={() => void changeCollectionPage('enrollments', 'next')}
+						onDayChange={() => queueCollectionRefresh('enrollments', 0)}
+						onCourseFilterChange={() => queueCollectionRefresh('enrollments', 0)}
+						onSemesterFilterChange={() => queueCollectionRefresh('enrollments', 0)}
+						onAcademicYearFilterChange={() => queueCollectionRefresh('enrollments', 0)}
+					/>
 				{/if}
 
+
 				{#if activeView === 'grades'}
-					<div class="workspace-shell">
-						<section class="workspace-list">
-							<div class="pane-head">
-								<div>
-									<h3>Daftar nilai</h3>
-								</div>
-								{#if currentUser.current.role !== 'STUDENT'}<Button
-										variant="ghost"
-										size="sm"
-										class="ghost-button"
-										onclick={() => beginCreate('grades')}>Tambah</Button
-									>{/if}
-							</div>
-							<div class="filter-bar">
-								<label class="search-box grow"
-									><Search size={16} /><input
-										bind:value={gradeSearch}
-										oninput={() => queueCollectionRefresh('grades')}
-										aria-label="Cari data nilai"
-										placeholder="Cari mahasiswa, mata kuliah, atau nilai huruf"
-									/>{#if gradeSearch}<button
-											type="button"
-											class="search-clear"
-											onclick={() => {
-												gradeSearch = '';
-												queueCollectionRefresh('grades', 0);
-											}}><X size={14} /></button
-										>{/if}</label
-								>
-								<label class="filter-select">
-									<span>Nilai</span>
-									<select
-										bind:value={gradeLetterFilter}
-										onchange={() => queueCollectionRefresh('grades', 0)}
-									>
-										<option value="">Semua</option>
-										<option value="A">A</option>
-										<option value="B">B</option>
-										<option value="C">C</option>
-										<option value="D">D</option>
-										<option value="E">E</option>
-									</select>
-								</label>
-								<label class="filter-select">
-									<span>Mata kuliah</span>
-									<select
-										bind:value={gradeCourseFilter}
-										onchange={() => queueCollectionRefresh('grades', 0)}
-									>
-										<option value="">Semua</option>
-										{#each courses as item (item.id)}
-											<option value={item.id}>{item.name}</option>
-										{/each}
-									</select>
-								</label>
-							</div>
-							{#if bulkCount('grades') > 0}
-								<div class="bulk-bar">
-									<span class="bulk-count">{bulkCount('grades')} nilai dipilih</span>
-									<div class="bulk-actions">
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => bulkClear('grades')}>Batal</Button
-										>
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => {
-												stopEditing('grades');
-												editorView = 'grades-bulk';
-											}}>Ubah</Button
-										>
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => {
-												pendingDelete = {
-													kind: 'bulk-grades',
-													id: bulkGetIds('grades').join(','),
-													label: `${bulkCount('grades')} nilai`,
-													message: `Anda akan menghapus ${bulkCount('grades')} nilai. Tindakan ini tidak dapat dibatalkan.`,
-													confirmLabel: 'Ya, hapus semua',
-													successMessage: 'Nilai terpilih berhasil dihapus.',
-													failureMessage: 'Gagal menghapus nilai terpilih.'
-												};
-											}}>Hapus</Button
-										>
-									</div>
-								</div>
-							{/if}
-							<div class="list-stack">
-								{#if filteredGrades.length > 1}
-									<label class="list-row select-all-row">
-										<input
-											type="checkbox"
-											checked={bulkCount('grades') === filteredGrades.length &&
-												filteredGrades.length > 0}
-											onchange={() =>
-												bulkToggleAll(
-													'grades',
-													filteredGrades.map((i) => i.id).filter(Boolean) as string[]
-												)}
-										/>
-										<span>Pilih semua ({filteredGrades.length})</span>
-									</label>
-								{/if}
-								{#each filteredGrades as item (item.id)}
-									<div
-										class="list-row user-row"
-										class:selected={selectedGradeId === item.id}
-										class:checked={item.id != null && bulkSelectedIds['grades']?.has(item.id)}
-									>
-										<label class="row-checkbox"
-											><input
-												type="checkbox"
-												checked={item.id != null && bulkSelectedIds['grades']?.has(item.id)}
-												onchange={() => item.id && bulkToggleId('grades', item.id)}
-												onclick={(e) => e.stopPropagation()}
-											/></label
-										>
-										<div
-											role="button"
-											tabindex="0"
-											class="row-content"
-											onkeydown={handleKeyboardClick}
-											onclick={() => pickGrade(item)}
-										>
-											<div>
-												<span
-													role="button"
-													tabindex="0"
-													class="entity-link"
-													onkeydown={handleKeyboardClick}
-													onclick={(e) => {
-														e.stopPropagation();
-														navigateToEntity('students', item.student_id, item.student_name);
-													}}><strong>{item.student_name}</strong></span
-												><span
-													><span
-														role="button"
-														tabindex="0"
-														class="entity-link"
-														onkeydown={handleKeyboardClick}
-														onclick={(e) => {
-															e.stopPropagation();
-															navigateToEntity('courses', item.course_id, item.course_name);
-														}}>{item.course_name}</span
-													>
-													• {item.letter_grade}</span
-												>
-											</div>
-											<small>{item.total_score ?? '-'} poin</small>
-										</div>
-									</div>
-								{/each}
-							</div>
-							<CollectionPagination
-								label="nilai"
-								pageNumber={collectionPagination.grades.pageNumber}
-								canPrevious={collectionPagination.grades.history.length > 0}
-								limit={collectionPagination.grades.limit}
-								itemCount={collectionPagination.grades.itemCount}
-								hasMore={collectionPagination.grades.hasMore}
-								loading={collectionPagination.grades.loading}
-								onPrevious={() => void changeCollectionPage('grades', 'previous')}
-								onNext={() => void changeCollectionPage('grades', 'next')}
-							/>
-						</section>
-						<section class="workspace-detail">
-							<div class="pane-head compact">
-								<div>
-									<h3>
-										{editorView === 'grades-bulk'
-											? 'Ubah massal nilai'
-											: selectedGrade
-												? `${selectedGrade.student_name} • ${selectedGrade.course_name}`
-												: 'Input nilai baru'}
-									</h3>
-								</div>
-								{#if currentUser.current.role !== 'STUDENT'}
-									<div class="detail-actions">
-										{#if editorView === 'grades'}
-											<Button
-												variant="ghost"
-												size="sm"
-												class="ghost-button"
-												onclick={() => stopEditing('grades')}>Tutup form</Button
-											>
-										{:else if selectedGrade}
-											<Button
-												variant="ghost"
-												size="sm"
-												class="ghost-button"
-												onclick={() => beginEdit('grades')}>Edit</Button
-											>
-										{/if}
-										{#if selectedGradeId}
-											<Button
-												variant="destructive"
-												size="sm"
-												class="danger-button"
-												onclick={() => requestDelete('grade', selectedGradeId!)}>Hapus</Button
-											>
-										{/if}
-									</div>
-								{/if}
-							</div>
-							{#if pendingDelete?.kind === 'grade' && pendingDelete.id === selectedGradeId}
-								<section class="warning-panel">
-									<p class="warning-title">Hapus {pendingDelete.label}?</p>
-									<p>{pendingDelete.message}</p>
-									<div class="warning-actions">
-										<Button
-											class="danger-button"
-											variant="destructive"
-											size="sm"
-											onclick={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-											>{pendingDelete.confirmLabel}</Button
-										>
-										<Button
-											class="ghost-button"
-											variant="ghost"
-											size="sm"
-											onclick={() => (pendingDelete = null)}>Batal</Button
-										>
-									</div>
-								</section>
-							{/if}
-							{#if selectedGrade && editorView !== 'grades' && editorView !== 'grades-bulk'}<div
-									class="detail-stack"
-								>
-									<div class="detail-lines">
-										<div><span>Total</span><strong>{selectedGrade.total_score}</strong></div>
-										<div><span>Huruf</span><strong>{selectedGrade.letter_grade}</strong></div>
-										<div><span>Tugas</span><strong>{selectedGrade.assignment_score}</strong></div>
-										<div>
-											<span>UTS/UAS</span><strong
-												>{selectedGrade.midterm_score} / {selectedGrade.final_score}</strong
-											>
-										</div>
-									</div>
-									<p class="detail-hint">
-										Mode tinjau memisahkan peninjauan hasil dari proses edit nilai.
-									</p>
-								</div>{:else if currentUser.current.role !== 'STUDENT' && editorView === 'grades'}<form
-									class="editor-grid"
-									{...selectedGradeId ? updateGradeEnhance : createGradeEnhance}
-								>
-									{#if selectedGradeId}<input
-											type="hidden"
-											{...updateGrade.fields.id.as('text')}
-											value={gradeDraft.id}
-										/>{/if}<label
-										><span>KRS</span><select
-											{...selectedGradeId
-												? updateGrade.fields.enrollmentId.as('select')
-												: createGrade.fields.enrollmentId.as('select')}
-											value={gradeDraft.enrollmentId}
-											><option value="">Pilih KRS</option
-											>{#if collectionIssues.enrollments && !enrollments.length}<option
-													value=""
-													disabled>{collectionIssues.enrollments}</option
-												>{/if}{#each enrollments as item (item.id)}<option value={item.id}
-													>{item.student_name} • {item.course_name}</option
-												>{/each}</select
-										>{#if selectedGradeEnrollment}<span
-												role="button"
-												tabindex="0"
-												class="editor-entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity(
-														'students',
-														selectedGradeEnrollment.student_id,
-														selectedGradeEnrollment.student_name
-													);
-												}}>Lihat mahasiswa</span
-											>{/if}{#if selectedGradeEnrollment}<span
-												role="button"
-												tabindex="0"
-												class="editor-entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity(
-														'courses',
-														selectedGradeEnrollment.course_id,
-														selectedGradeEnrollment.course_name
-													);
-												}}>Lihat mata kuliah</span
-											>{/if}</label
-									><label
-										><span>Tugas</span><input
-											min="0"
-											max="100"
-											{...selectedGradeId
-												? updateGrade.fields.assignmentScore.as('number')
-												: createGrade.fields.assignmentScore.as('number')}
-											value={gradeDraft.assignmentScore}
-										/></label
-									><label
-										><span>UTS</span><input
-											min="0"
-											max="100"
-											{...selectedGradeId
-												? updateGrade.fields.midtermScore.as('number')
-												: createGrade.fields.midtermScore.as('number')}
-											value={gradeDraft.midtermScore}
-										/></label
-									><label
-										><span>UAS</span><input
-											min="0"
-											max="100"
-											{...selectedGradeId
-												? updateGrade.fields.finalScore.as('number')
-												: createGrade.fields.finalScore.as('number')}
-											value={gradeDraft.finalScore}
-										/></label
-									>{#if gradeEditorBlocked}<p class="editor-note">
-											Data KRS harus tersedia sebelum nilai bisa disimpan.
-										</p>{/if}<Button
-										type="submit"
-										class="primary-button"
-										disabled={gradeEditorBlocked}
-										>{selectedGradeId ? 'Simpan perubahan' : 'Simpan nilai'}</Button
-									>
-								</form>{:else if editorView === 'grades-bulk'}<form
-									class="editor-grid"
-									{...bulkUpdateGradesEnhance}
-								>
-									<p class="editor-note">
-										Ubah komponen nilai {bulkCount('grades')} nilai terpilih sekaligus. Total dan nilai
-										huruf akan dihitung ulang otomatis. Kosongkan field yang tidak ingin diubah.
-									</p>
-									<input type="hidden" name="ids" value={bulkGetIds('grades').join(',')} />
-									<label
-										><span>Tugas</span><input
-											type="number"
-											name="assignmentScore"
-											min="0"
-											max="100"
-											placeholder="Kosongkan jika tidak diubah"
-											value={bulkEditGradeAssignmentScore ?? ''}
-											oninput={(e) => {
-												const val = (e.currentTarget as HTMLInputElement).value;
-												bulkEditGradeAssignmentScore = val ? Number(val) : undefined;
-											}}
-										/></label
-									>
-									<label
-										><span>UTS</span><input
-											type="number"
-											name="midtermScore"
-											min="0"
-											max="100"
-											placeholder="Kosongkan jika tidak diubah"
-											value={bulkEditGradeMidtermScore ?? ''}
-											oninput={(e) => {
-												const val = (e.currentTarget as HTMLInputElement).value;
-												bulkEditGradeMidtermScore = val ? Number(val) : undefined;
-											}}
-										/></label
-									>
-									<label
-										><span>UAS</span><input
-											type="number"
-											name="finalScore"
-											min="0"
-											max="100"
-											placeholder="Kosongkan jika tidak diubah"
-											value={bulkEditGradeFinalScore ?? ''}
-											oninput={(e) => {
-												const val = (e.currentTarget as HTMLInputElement).value;
-												bulkEditGradeFinalScore = val ? Number(val) : undefined;
-											}}
-										/></label
-									>
-									<div class="builder-inline-actions">
-										<Button
-											type="button"
-											variant="ghost"
-											class="ghost-button"
-											onclick={() => {
-												bulkClear('grades');
-												editorView = null;
-											}}>Batal</Button
-										>
-										<Button
-											type="submit"
-											class="primary-button"
-											disabled={bulkUpdateGrades.pending > 0}
-											>Simpan perubahan {bulkCount('grades')} nilai</Button
-										>
-									</div>
-								</form>{:else}<p class="empty-copy">
-									Pilih satu nilai untuk melihat hasil, atau tambahkan nilai baru saat evaluasi
-									perlu dicatat.
-								</p>{/if}
-						</section>
-					</div>
+					<GradesView
+						currentRole={currentUser.current.role as AppRole}
+						bind:gradeSearch
+						{filteredGrades}
+						{selectedGradeId}
+						{selectedGrade}
+						{selectedGradeEnrollment}
+						bulkSelectedIds={bulkSelectedIds['grades'] ?? new Set()}
+						bulkCount={bulkCount('grades')}
+						bind:gradeDraft
+						bind:bulkEditGradeAssignmentScore
+						bind:bulkEditGradeMidtermScore
+						bind:bulkEditGradeFinalScore
+						bind:gradeLetterFilter
+						bind:gradeCourseFilter
+						{editorView}
+						{pendingDelete}
+						collectionPagination={collectionPagination.grades}
+						{bulkUpdateGrades}
+						{createGradeEnhance}
+						{updateGradeEnhance}
+						{bulkUpdateGradesEnhance}
+						{enrollments}
+						{courses}
+						enrollmentsIssue={collectionIssues.enrollments}
+						{gradeEditorBlocked}
+						onSearchInput={() => queueCollectionRefresh('grades')}
+						onClearSearch={() => {
+							gradeSearch = '';
+							queueCollectionRefresh('grades', 0);
+						}}
+						onBulkClear={() => bulkClear('grades')}
+						onOpenBulkEdit={() => {
+							stopEditing('grades');
+							editorView = 'grades-bulk';
+						}}
+						onOpenBulkDelete={() => {
+							pendingDelete = {
+								kind: 'bulk-grades',
+								id: bulkGetIds('grades').join(','),
+								label: `${bulkCount('grades')} nilai`,
+								message: `Anda akan menghapus ${bulkCount('grades')} nilai. Tindakan ini tidak dapat dibatalkan.`,
+								confirmLabel: 'Ya, hapus semua',
+								successMessage: 'Nilai terpilih berhasil dihapus.',
+								failureMessage: 'Gagal menghapus nilai terpilih.'
+							};
+						}}
+						onBulkToggleAll={(ids) => bulkToggleAll('grades', ids)}
+						onBulkToggleId={(id) => bulkToggleId('grades', id)}
+						onPickGrade={pickGrade}
+						{handleKeyboardClick}
+						onNavigateToEntity={navigateToEntity}
+						onBeginCreate={() => beginCreate('grades')}
+						onBeginEdit={() => beginEdit('grades')}
+						onStopEditing={() => stopEditing('grades')}
+						onRequestDelete={() => requestDelete('grade', selectedGradeId!)}
+						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
+						onCancelDelete={() => (pendingDelete = null)}
+						onPagePrevious={() => void changeCollectionPage('grades', 'previous')}
+						onPageNext={() => void changeCollectionPage('grades', 'next')}
+						onGradeLetterFilterChange={() => queueCollectionRefresh('grades', 0)}
+						onGradeCourseFilterChange={() => queueCollectionRefresh('grades', 0)}
+					/>
 				{/if}
 
 				{#if activeView === 'users' && currentUser.current.role === 'ADMIN'}
-					<div class="workspace-shell">
-						<section class="workspace-list">
-							<div class="pane-head">
-								<div>
-									<h3>Akun pengguna</h3>
-								</div>
-							</div>
-							<label class="search-box"
-								><Search size={16} /><input
-									bind:value={userSearch}
-									oninput={() => queueCollectionRefresh('users')}
-									aria-label="Cari akun pengguna"
-									placeholder="Cari email atau pemilik akun"
-								/>{#if userSearch}<button
-										type="button"
-										class="search-clear"
-										onclick={() => {
-											userSearch = '';
-											queueCollectionRefresh('users', 0);
-										}}><X size={14} /></button
-									>{/if}</label
-							>
-							{#if selectedUserIds.size > 0}
-								<div class="bulk-bar">
-									<span class="bulk-count">{selectedUserIds.size} akun dipilih</span>
-									<div class="bulk-actions">
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={clearUserSelection}>Batal</Button
-										>
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => {
-												stopEditing('users');
-												editorView = 'users-bulk-role';
-											}}>Ubah peran</Button
-										>
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => {
-												stopEditing('users');
-												editorView = 'users-bulk-password';
-											}}>Reset password</Button
-										>
-										<Button
-											variant="destructive"
-											size="sm"
-											class="danger-button"
-											onclick={() => {
-												pendingDelete = {
-													kind: 'bulk-user',
-													id: [...selectedUserIds].join(','),
-													label: `${selectedUserIds.size} akun`,
-													message: `Anda akan menghapus ${selectedUserIds.size} akun. Tindakan ini tidak dapat dibatalkan.`,
-													confirmLabel: 'Ya, hapus semua',
-													successMessage: 'Akun terpilih berhasil dihapus.',
-													failureMessage: 'Gagal menghapus akun terpilih.'
-												};
-											}}>Hapus</Button
-										>
-									</div>
-								</div>
-							{/if}
-							<div class="list-stack">
-								{#if filteredUsers.length > 1}
-									<label class="list-row select-all-row">
-										<input
-											type="checkbox"
-											checked={selectedUserIds.size === filteredUsers.length &&
-												filteredUsers.length > 0}
-											onchange={toggleAllUsers}
-										/>
-										<span>Pilih semua ({filteredUsers.length})</span>
-									</label>
-								{/if}
-								{#each filteredUsers as item (item.id)}<div
-										class="list-row user-row"
-										class:selected={selectedUserId === item.id}
-										class:checked={item.id != null && selectedUserIds.has(item.id)}
-									>
-										<label class="row-checkbox"
-											><input
-												type="checkbox"
-												checked={item.id != null && selectedUserIds.has(item.id)}
-												onchange={() => item.id && toggleUserSelection(item.id)}
-												onclick={(e) => e.stopPropagation()}
-											/></label
-										>
-										<div
-											role="button"
-											tabindex="0"
-											class="row-content"
-											onkeydown={handleKeyboardClick}
-											onclick={() => pickUser(item)}
-										>
-											<div>
-												<strong>{item.email}</strong><span
-													>{#if item.student_name}<span
-															role="button"
-															tabindex="0"
-															class="entity-link"
-															onkeydown={handleKeyboardClick}
-															onclick={(e) => {
-																e.stopPropagation();
-																navigateToEntity('students', item.student_id, item.student_name);
-															}}>{item.student_name}</span
-														>{:else if item.lecturer_name}<span
-															role="button"
-															tabindex="0"
-															class="entity-link"
-															onkeydown={handleKeyboardClick}
-															onclick={(e) => {
-																e.stopPropagation();
-																navigateToEntity('lecturers', item.lecturer_id, item.lecturer_name);
-															}}>{item.lecturer_name}</span
-														>{:else}Administrator sistem{/if}</span
-												>
-											</div>
-											<small>{item.role}</small>
-										</div>
-									</div>{/each}
-							</div>
-							<CollectionPagination
-								label="akun"
-								pageNumber={collectionPagination.users.pageNumber}
-								canPrevious={collectionPagination.users.history.length > 0}
-								limit={collectionPagination.users.limit}
-								itemCount={collectionPagination.users.itemCount}
-								hasMore={collectionPagination.users.hasMore}
-								loading={collectionPagination.users.loading}
-								onPrevious={() => void changeCollectionPage('users', 'previous')}
-								onNext={() => void changeCollectionPage('users', 'next')}
-							/>
-						</section>
-						<section class="workspace-detail">
-							<div class="pane-head compact">
-								<div>
-									<h3>{selectedUser ? selectedUser.email : 'Pilih akun'}</h3>
-								</div>
-								<div class="detail-actions">
-									{#if editorView === 'users'}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => stopEditing('users')}>Tutup form</Button
-										>
-									{:else if selectedUser}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ghost-button"
-											onclick={() => beginEdit('users')}>Ubah akun</Button
-										>
-									{/if}
-								</div>
-							</div>
-							{#if selectedUser && editorView !== 'users'}<div class="detail-stack">
-									<div class="detail-lines">
-										<div><span>Peran</span><strong>{selectedUser.role}</strong></div>
-										<div>
-											<span>Mahasiswa</span><span
-												role="button"
-												tabindex="0"
-												class="entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity(
-														'students',
-														selectedUser.student_id,
-														selectedUser.student_name
-													);
-												}}><strong>{selectedUser.student_name ?? '-'}</strong></span
-											>
-										</div>
-										<div>
-											<span>Dosen</span><span
-												role="button"
-												tabindex="0"
-												class="entity-link"
-												onkeydown={handleKeyboardClick}
-												onclick={(e) => {
-													e.stopPropagation();
-													navigateToEntity(
-														'lecturers',
-														selectedUser.lecturer_id,
-														selectedUser.lecturer_name
-													);
-												}}><strong>{selectedUser.lecturer_name ?? '-'}</strong></span
-											>
-										</div>
-									</div>
-									<p class="detail-hint">
-										Tinjau relasi akun lebih dahulu agar perubahan akses dilakukan dengan konteks
-										yang jelas.
-									</p>
-								</div>
-							{:else if selectedUser && editorView === 'users'}
-								<form class="editor-grid" {...updateUserEnhance}>
-									<p class="editor-note">
-										Perubahan akun memengaruhi akses login. Tinjau peran dan relasi identitas
-										sebelum menyimpan.
-									</p>
-									<input
-										type="hidden"
-										{...updateUser.fields.id.as('text')}
-										value={userDraft.id}
-									/><label
-										><span>Email</span><input
-											{...updateUser.fields.email.as('email')}
-											autocomplete="email"
-											value={userDraft.email}
-										/></label
-									><label
-										><span>Password baru</span><input
-											{...updateUser.fields.password.as('password')}
-											autocomplete="new-password"
-											value={userDraft.password}
-											placeholder="Biarkan kosong jika password lama tetap dipakai"
-										/></label
-									><label
-										><span>Peran akses</span><select
-											{...updateUser.fields.role.as('select')}
-											value={userDraft.role}
-											><option value="ADMIN">ADMIN</option><option value="STUDENT">STUDENT</option
-											><option value="LECTURER">LECTURER</option></select
-										></label
-									><label
-										><span>ID mahasiswa terkait</span><input
-											{...updateUser.fields.studentId.as('text')}
-											value={userDraft.studentId}
-										/></label
-									><label
-										><span>ID dosen terkait</span><input
-											{...updateUser.fields.lecturerId.as('text')}
-											value={userDraft.lecturerId}
-										/></label
-									><Button type="submit" class="primary-button">Simpan akun</Button>
-								</form>{:else if editorView === 'users-bulk-role'}<form
-									class="editor-grid"
-									{...bulkUpdateUserRoleEnhance}
-								>
-									<p class="editor-note">
-										Ubah peran {selectedUserIds.size} akun terpilih sekaligus. Perubahan berlaku pada
-										sesi berikutnya.
-									</p>
-									<input type="hidden" name="ids" value={[...selectedUserIds].join(',')} />
-									<label
-										><span>Peran baru</span><select
-											name="role"
-											value={bulkUserRole}
-											onchange={(e) =>
-												(bulkUserRole = (e.currentTarget as HTMLSelectElement)
-													.value as typeof bulkUserRole)}
-											><option value="ADMIN">Admin</option><option value="STUDENT">Mahasiswa</option
-											><option value="LECTURER">Dosen</option></select
-										></label
-									>
-									<div class="builder-inline-actions">
-										<Button
-											type="button"
-											variant="ghost"
-											class="ghost-button"
-											onclick={clearUserSelection}>Batal</Button
-										>
-										<Button
-											type="submit"
-											class="primary-button"
-											disabled={bulkUpdateUserRoles.pending > 0}
-											>Simpan peran {selectedUserIds.size} akun</Button
-										>
-									</div>
-								</form>{:else if editorView === 'users-bulk-password'}<form
-									class="editor-grid"
-									{...bulkResetPasswordEnhance}
-								>
-									<p class="editor-note">
-										Reset password {selectedUserIds.size} akun terpilih. Semua sesi aktif akan dibatalkan.
-									</p>
-									<input type="hidden" name="ids" value={[...selectedUserIds].join(',')} />
-									<label
-										><span>Password baru</span><input
-											type="password"
-											name="password"
-											value={bulkUserPassword}
-											minlength="8"
-											placeholder="Minimal 8 karakter"
-											oninput={(e) =>
-												(bulkUserPassword = (e.currentTarget as HTMLInputElement).value)}
-										/></label
-									>
-									<div class="builder-inline-actions">
-										<Button
-											type="button"
-											variant="ghost"
-											class="ghost-button"
-											onclick={clearUserSelection}>Batal</Button
-										>
-										<Button
-											type="submit"
-											class="primary-button"
-											disabled={bulkResetPasswords.pending > 0 || bulkUserPassword.length < 8}
-											>Reset password {selectedUserIds.size} akun</Button
-										>
-									</div>
-								</form>{:else}<p class="empty-copy">
-									Pilih satu akun untuk memperbarui email, peran, atau relasi identitas.
-								</p>{/if}
-						</section>
-					</div>
+					<UsersView
+						bind:userSearch
+						{filteredUsers}
+						{selectedUserId}
+						{selectedUser}
+						{selectedUserIds}
+						bind:bulkUserRole
+						bind:bulkUserPassword
+						bind:userDraft
+						{editorView}
+						collectionPagination={collectionPagination.users}
+						{updateUserEnhance}
+						{bulkUpdateUserRoleEnhance}
+						{bulkResetPasswordEnhance}
+						bulkResetPasswordsPending={bulkResetPasswords.pending > 0}
+						onSearchInput={() => queueCollectionRefresh('users')}
+						onClearSearch={() => {
+							userSearch = '';
+							queueCollectionRefresh('users', 0);
+						}}
+						onClearSelection={clearUserSelection}
+						onOpenBulkRole={() => {
+							stopEditing('users');
+							editorView = 'users-bulk-role';
+						}}
+						onOpenBulkPassword={() => {
+							stopEditing('users');
+							editorView = 'users-bulk-password';
+						}}
+						onOpenBulkDelete={() => {
+							pendingDelete = {
+								kind: 'bulk-user',
+								id: [...selectedUserIds].join(','),
+								label: `${selectedUserIds.size} akun`,
+								message: `Anda akan menghapus ${selectedUserIds.size} akun. Tindakan ini tidak dapat dibatalkan.`,
+								confirmLabel: 'Ya, hapus semua',
+								successMessage: 'Akun terpilih berhasil dihapus.',
+								failureMessage: 'Gagal menghapus akun terpilih.'
+							};
+						}}
+						onToggleAllUsers={toggleAllUsers}
+						onToggleUser={(id) => toggleUserSelection(id)}
+						onPickUser={pickUser}
+						{handleKeyboardClick}
+						onNavigateToEntity={navigateToEntity}
+						onBeginEdit={() => beginEdit('users')}
+						onStopEditing={() => stopEditing('users')}
+						onPagePrevious={() => void changeCollectionPage('users', 'previous')}
+						onPageNext={() => void changeCollectionPage('users', 'next')}
+					/>
 				{/if}
 			{/if}
 		</main>
@@ -10273,8 +5126,8 @@
 {:else}
 	<div class="login-shell">
 		<Card.Root class="login-panel">
-			<Card.Header>
-				<div class="topbar-tools">
+			<Card.Header class="login-header">
+				<div class="login-actions">
 					<Button
 						type="button"
 						variant="outline"
@@ -10293,9 +5146,9 @@
 					Lihat jadwal, ruang, dan data akademik dari satu tempat.
 				</Card.Description>
 			</Card.Header>
-			<Card.Content>
+			<Card.Content class="login-content">
 				<form class="login-form" {...loginEnhance}>
-					<div>
+					<div class="login-field">
 						<Label for="email-login">Email</Label>
 						<Input
 							id="email-login"
@@ -10304,7 +5157,7 @@
 							placeholder="nama@kampus.ac.id"
 						/>
 					</div>
-					<div>
+					<div class="login-field">
 						<Label for="password-login">Kata sandi</Label>
 						<Input
 							id="password-login"
@@ -10326,2658 +5179,3 @@
 		</Card.Root>
 	</div>
 {/if}
-
-<style>
-	:global(button),
-	:global(input),
-	:global(select) {
-		font: inherit;
-	}
-
-	.app-shell {
-		display: grid;
-		grid-template-columns: 15.75rem minmax(0, 1fr);
-		min-height: 100vh;
-		position: relative;
-	}
-
-	.rail-backdrop,
-	.rail-toggle,
-	.rail-close {
-		display: none;
-		align-items: center;
-		justify-content: center;
-		border: 1px solid var(--color-border);
-		border-radius: 0.8rem;
-		background: var(--color-panel);
-		color: inherit;
-	}
-
-	.rail {
-		display: grid;
-		grid-template-rows: auto minmax(0, 1fr) auto;
-		gap: 1.15rem;
-		padding: 1.15rem 1rem;
-		border-right: 1px solid var(--color-border);
-		background: color-mix(in oklch, var(--color-panel) 82%, var(--color-surface) 18%);
-		align-content: start;
-	}
-
-	.rail > * {
-		min-width: 0;
-	}
-
-	.rail-brand h1,
-	.topbar h2,
-	.login-title,
-	.detail-card h3,
-	.support-panel h4,
-	.workspace-detail h3,
-	.workspace-list h3 {
-		font: 600 1.3rem/1.06 var(--font-display);
-		letter-spacing: -0.035em;
-	}
-
-	.rail-brand {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		align-items: center;
-		gap: 0.35rem;
-	}
-
-	.rail-brand h1 {
-		font-size: 1.28rem;
-		line-height: 1.04;
-	}
-
-	.brand-copy,
-	.pane-copy,
-	.list-conflict-copy,
-	.builder-progress-copy span,
-	.builder-overview p,
-	.decision-notes p {
-		color: var(--color-muted-foreground);
-	}
-
-	.brand-copy,
-	.pane-copy,
-	.decision-notes p,
-	.list-conflict-copy,
-	.builder-overview p,
-	.builder-progress-copy span {
-		font-size: 0.92rem;
-		line-height: 1.45;
-	}
-
-	.rail-brand p:last-child,
-	.topbar p,
-	.login-description,
-	.detail-card p,
-	.empty-copy,
-	.workspace-copy,
-	.list-summary p,
-	.workspace-summary p {
-		color: var(--color-muted-foreground);
-	}
-
-	.warning-panel p:not(.warning-title) {
-		line-height: 1.52;
-		max-width: 66ch;
-	}
-
-	.kicker {
-		margin-bottom: 0.35rem;
-		font-size: 0.78rem;
-		font-weight: 600;
-		line-height: 1.3;
-		color: var(--color-muted-foreground);
-	}
-
-	.rail-sections,
-	.topbar-copy,
-	.decision-board,
-	.decision-lead,
-	.decision-actions,
-	.decision-notes,
-	.builder-progress,
-	.builder-form,
-	.builder-overview,
-	.builder-section,
-	.builder-section-head,
-	.builder-section-actions,
-	.builder-room-stage,
-	.detail-stack {
-		display: grid;
-	}
-
-	.rail-sections {
-		gap: 0.95rem;
-		width: 100%;
-		min-width: 0;
-		overflow: auto;
-		align-content: start;
-	}
-
-	.rail-group {
-		display: grid;
-		gap: 0.55rem;
-	}
-
-	.rail-group-title {
-		display: flex;
-		align-items: center;
-		gap: 0.55rem;
-	}
-
-	.rail-group-title strong {
-		display: block;
-		font-size: 0.83rem;
-		line-height: 1.3;
-	}
-
-	.rail-links {
-		display: grid;
-		gap: 0.22rem;
-	}
-
-	:global(.nav-item),
-	:global(.ghost-button),
-	:global(.primary-button),
-	:global(.danger-button),
-	:global(.theme-switch),
-	.list-row,
-	.feedback,
-	.user-pill {
-		border-radius: 0.8rem;
-	}
-
-	:global(.nav-item) {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.75rem;
-		padding: 0.82rem 0.88rem;
-		border: 1px solid transparent;
-		background: transparent;
-		text-align: left;
-		color: inherit;
-		justify-content: flex-start;
-		width: 100%;
-		min-width: 0;
-		height: auto;
-		white-space: normal;
-	}
-
-	.nav-link-copy {
-		display: grid;
-		min-width: 0;
-		flex: 1 1 auto;
-	}
-
-	.nav-link-copy strong {
-		display: block;
-		font-size: 0.94rem;
-		line-height: 1.25;
-		overflow-wrap: anywhere;
-	}
-
-	:global(.nav-item:hover) {
-		background: color-mix(in oklch, var(--color-surface) 82%, var(--color-panel) 18%);
-	}
-
-	:global(.nav-item:focus-visible),
-	.list-row:focus-visible,
-	.builder-progress-item:focus-visible {
-		outline: 2px solid color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
-		outline-offset: 2px;
-		border-color: color-mix(in oklch, var(--color-accent-strong) 40%, var(--color-border) 60%);
-	}
-
-	:global(.nav-item.selected) {
-		background: color-mix(in oklch, var(--color-surface) 76%, var(--color-accent-soft) 24%);
-		border-color: var(--color-accent-strong);
-	}
-
-	.main-shell {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: 1.25rem;
-		padding: 1.45rem 1.5rem;
-		align-content: start;
-		min-width: 0;
-	}
-
-	.topbar {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		gap: 1rem;
-		align-items: end;
-		padding-bottom: 0.15rem;
-		border-bottom: 1px solid color-mix(in oklch, var(--color-border) 86%, var(--color-surface) 14%);
-	}
-
-	.topbar-copy {
-		display: flex;
-		align-items: center;
-		gap: 0.42rem;
-		max-width: 52rem;
-		min-width: 0;
-		overflow: hidden;
-	}
-
-	.topbar-copy h2 {
-		font-size: 1.56rem;
-		line-height: 1.04;
-	}
-
-	.topbar-tools {
-		display: flex;
-		align-items: center;
-		gap: 0.7rem;
-		flex-wrap: wrap;
-		justify-content: end;
-		min-width: 0;
-	}
-
-	.detail-actions {
-		display: flex;
-		gap: 0.6rem;
-		flex-wrap: wrap;
-		justify-content: end;
-	}
-
-	:global(.header-action) {
-		white-space: nowrap;
-	}
-
-	:global(.theme-switch),
-	:global(.ghost-button),
-	:global(.danger-button) {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.68rem 0.9rem;
-		border: 1px solid var(--color-border);
-		background: var(--color-panel);
-		color: inherit;
-	}
-
-	:global(.theme-switch:hover),
-	:global(.ghost-button:hover),
-	:global(.danger-button:hover) {
-		background: color-mix(in oklch, var(--color-surface) 84%, var(--color-panel) 16%);
-	}
-
-	:global(.danger-button) {
-		color: var(--color-danger);
-	}
-
-	:global(.primary-button) {
-		padding: 0.82rem 1rem;
-		border: 1px solid var(--color-accent-strong);
-		background: var(--color-accent-strong);
-		color: var(--color-accent-contrast);
-	}
-
-	:global(.primary-button:hover) {
-		background: color-mix(in oklch, var(--color-accent-strong) 88%, black 12%);
-	}
-
-	:global(.primary-button:disabled) {
-		border-color: color-mix(in oklch, var(--color-border) 72%, var(--color-surface) 28%);
-		background: color-mix(in oklch, var(--color-panel) 78%, var(--color-surface) 22%);
-		color: var(--color-muted-foreground);
-	}
-
-	:global(.primary-button.wide) {
-		width: 100%;
-	}
-
-	.user-pill {
-		display: grid;
-		align-content: center;
-		gap: 0.15rem;
-		padding: 0.5rem 0.72rem;
-		border: 1px solid var(--color-border);
-		background: var(--color-panel);
-		width: fit-content;
-		max-width: 100%;
-		min-width: 0;
-	}
-
-	.user-pill span,
-	.list-row span,
-	.list-row small,
-	.detail-lines span,
-	.support-list span,
-	.editor-grid label span,
-	.feedback span {
-		color: var(--color-muted-foreground);
-	}
-
-	.user-pill-label {
-		font-size: 0.94rem;
-		line-height: 1.3;
-	}
-
-	.feedback {
-		display: flex;
-		align-items: center;
-		gap: 0.65rem;
-		padding: 0.82rem 0.95rem;
-		border: 1px solid var(--color-border);
-		background: var(--color-panel);
-	}
-
-	.feedback span {
-		font-size: 0.95rem;
-		line-height: 1.4;
-	}
-
-	.list-summary,
-	.workspace-summary {
-		display: grid;
-		gap: 0.28rem;
-		padding: 0.88rem 0.95rem;
-		border: 1px solid color-mix(in oklch, var(--color-border) 88%, var(--color-surface) 12%);
-		border-radius: 0.8rem;
-		background: color-mix(in oklch, var(--color-surface) 82%, var(--color-panel) 18%);
-	}
-
-	.list-summary span,
-	.workspace-summary span {
-		font-size: 0.79rem;
-		font-weight: 700;
-		letter-spacing: 0.01em;
-		color: var(--color-foreground-soft);
-	}
-
-	.schedule-filter-panel {
-		display: grid;
-		gap: 0.85rem;
-		padding: 0.95rem 1rem;
-		border: 1px solid color-mix(in oklch, var(--color-border) 88%, var(--color-surface) 12%);
-		border-radius: 1rem;
-		background: color-mix(in oklch, var(--color-surface) 86%, var(--color-panel) 14%);
-	}
-
-	.schedule-filter-grid {
-		grid-template-columns: repeat(4, minmax(0, 1fr));
-		align-items: end;
-	}
-
-	.list-filter-grid {
-		grid-template-columns: repeat(4, minmax(0, 1fr));
-	}
-
-	.schedule-filter-search {
-		display: grid;
-		gap: 0.45rem;
-	}
-
-	.schedule-filter-summary {
-		grid-template-columns: minmax(0, 1fr) auto;
-		align-items: center;
-		gap: 0.75rem;
-	}
-
-	.schedule-filter-actions {
-		display: flex;
-		gap: 0.6rem;
-		justify-content: flex-end;
-		align-items: center;
-		flex-wrap: wrap;
-	}
-
-	.filter-bar {
-		display: flex;
-		gap: 0.6rem;
-		align-items: end;
-		padding: 0 0 0.35rem;
-	}
-
-	.filter-bar .grow {
-		flex: 1 1 0;
-	}
-
-	.filter-select {
-		display: grid;
-		gap: 0.35rem;
-		min-width: 8rem;
-	}
-
-	.filter-select span {
-		font-size: 0.8rem;
-		font-weight: 500;
-		color: var(--color-muted-foreground);
-	}
-
-	.filter-toggle-row {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.6rem;
-		color: var(--color-muted-foreground);
-		font-size: 0.92rem;
-	}
-
-	.filter-toggle-row input {
-		margin: 0;
-		inline-size: 1rem;
-		block-size: 1rem;
-	}
-
-	.workspace-summary-strong {
-		border-color: color-mix(in oklch, var(--color-accent-strong) 18%, var(--color-border) 82%);
-		background: color-mix(in oklch, var(--color-surface) 78%, var(--color-accent-soft) 22%);
-	}
-
-	.feedback.success {
-		border-color: color-mix(in oklch, var(--color-success) 38%, var(--color-border) 62%);
-		background: color-mix(in oklch, var(--color-surface) 72%, var(--color-success-soft) 28%);
-	}
-
-	.feedback.danger {
-		border-color: color-mix(in oklch, var(--color-danger) 42%, var(--color-border) 58%);
-		background: color-mix(in oklch, var(--color-surface) 72%, var(--color-danger-soft) 28%);
-	}
-
-	.warning-panel {
-		display: grid;
-		gap: 0.75rem;
-		padding: 0.95rem 1rem;
-		border: 1px solid color-mix(in oklch, var(--color-danger) 38%, var(--color-border) 62%);
-		border-radius: var(--radius-xl);
-		background: color-mix(in oklch, var(--color-surface) 76%, var(--color-danger-soft) 24%);
-	}
-
-	.warning-panel p {
-		margin: 0;
-	}
-
-	.warning-title {
-		font-weight: 600;
-	}
-
-	.warning-actions {
-		display: flex;
-		gap: 0.65rem;
-		flex-wrap: wrap;
-	}
-
-	.support-warning {
-		display: grid;
-		gap: 0.6rem;
-		padding: 0.95rem 1rem;
-		border: 1px solid color-mix(in oklch, var(--color-danger) 20%, var(--color-border) 80%);
-		border-radius: var(--radius-xl);
-		background: color-mix(in oklch, var(--color-surface) 92%, var(--color-danger-soft) 8%);
-	}
-
-	.support-warning-list {
-		margin: 0;
-		padding-left: 1.1rem;
-		display: grid;
-		gap: 0.22rem;
-	}
-
-	.support-warning-list li {
-		line-height: 1.42;
-	}
-
-	.loading-panel,
-	.detail-card,
-	.workspace-list,
-	.workspace-detail,
-	.support-panel,
-	.login-panel {
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-xl);
-		background: var(--color-panel);
-	}
-
-	.loading-panel,
-	.detail-card,
-	.workspace-list,
-	.workspace-detail,
-	.support-panel,
-	.login-panel {
-		padding: 1.1rem;
-	}
-
-	.loading-panel {
-		display: grid;
-		align-content: start;
-		min-height: clamp(42rem, 88vh, 58rem);
-	}
-
-	.dashboard-stack,
-	.calendar-layout,
-	.workspace-shell {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: 1rem;
-		min-width: 0;
-	}
-
-	.calendar-layout {
-		min-width: 0;
-	}
-
-	.calendar-layout > * {
-		min-width: 0;
-	}
-
-	.calendar-surface {
-		display: grid;
-		gap: 1rem;
-		min-width: 0;
-	}
-
-	.surface-head {
-		display: flex;
-		justify-content: space-between;
-		gap: 1rem;
-		align-items: end;
-	}
-
-	.calendar-week-label {
-		margin: 0.28rem 0 0;
-		font-size: 0.88rem;
-		color: var(--color-muted-foreground);
-	}
-
-	.calendar-toolbar {
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: flex-end;
-		gap: 0.55rem;
-	}
-
-	.calendar-conflict-toolbar {
-		display: grid;
-		gap: 0.7rem;
-		padding: 0.9rem 1rem;
-		border: 1px solid var(--color-border);
-		border-radius: 1rem;
-		background: color-mix(in oklch, var(--color-panel) 82%, var(--color-surface) 18%);
-	}
-
-	.calendar-conflict-toolbar-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.75rem;
-	}
-
-	.calendar-conflict-toolbar-head strong {
-		font-size: 0.94rem;
-	}
-
-	.calendar-conflict-legend {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.65rem;
-	}
-
-	.calendar-conflict-chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.6rem;
-		padding: 0.6rem 0.72rem;
-		border: 1px solid var(--conflict-border, var(--color-border));
-		border-radius: 0.95rem;
-		background: color-mix(
-			in oklch,
-			var(--conflict-surface, var(--color-surface)) 78%,
-			var(--color-panel) 22%
-		);
-		color: inherit;
-		text-align: left;
-		font: inherit;
-		cursor: pointer;
-		transition:
-			transform 140ms ease,
-			box-shadow 140ms ease,
-			border-color 140ms ease,
-			opacity 140ms ease;
-	}
-
-	.calendar-conflict-chip:hover {
-		transform: translateY(-1px);
-		box-shadow: 0 10px 18px color-mix(in oklch, var(--color-shadow) 8%, transparent 92%);
-	}
-
-	.calendar-conflict-chip.selected {
-		border-color: var(--color-accent-strong);
-		box-shadow:
-			0 10px 20px color-mix(in oklch, var(--color-accent-strong) 12%, transparent 88%),
-			inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 34%, transparent 66%);
-	}
-
-	.calendar-conflict-chip-dot {
-		width: 0.7rem;
-		height: 0.7rem;
-		border-radius: 999px;
-		background: var(--conflict-border, var(--color-accent-strong));
-		box-shadow: 0 0 0 3px
-			color-mix(in oklch, var(--conflict-border, var(--color-accent-strong)) 18%, transparent 82%);
-		flex: 0 0 auto;
-	}
-
-	.calendar-conflict-chip-copy {
-		display: grid;
-		gap: 0.1rem;
-	}
-
-	.calendar-conflict-chip-copy strong {
-		font-size: 0.86rem;
-		line-height: 1.2;
-	}
-
-	.calendar-conflict-chip-copy small {
-		font-size: 0.75rem;
-		line-height: 1.25;
-		color: var(--color-muted-foreground);
-	}
-
-	.surface-head h2 {
-		font: 600 1.3rem/1.1 var(--font-display);
-		letter-spacing: -0.03em;
-	}
-
-	.surface-head p {
-		max-width: 48ch;
-		color: var(--color-muted-foreground);
-	}
-
-	.surface-kicker {
-		margin-bottom: 0.45rem;
-		font-size: 0.75rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.14em;
-		color: color-mix(in oklch, var(--color-accent-strong) 72%, var(--color-foreground) 28%);
-	}
-
-	.event-calendar-host {
-		min-width: 0;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-xl);
-		background: var(--color-panel);
-		overflow: hidden;
-	}
-
-	.calendar-loading {
-		padding: 1.2rem;
-		color: var(--color-muted-foreground);
-	}
-
-	:global(.event-calendar-host .ec) {
-		--ec-border-color: color-mix(in oklch, var(--color-border) 74%, var(--color-foreground) 26%);
-		--ec-day-bg-color: var(--color-panel);
-		--ec-bg-color: var(--color-panel);
-		--ec-body-bg-color: color-mix(in oklch, var(--color-panel) 95%, var(--color-surface) 5%);
-		--watum-grid-minor: rgba(56, 64, 81, 0.22);
-		--watum-grid-major: rgba(37, 45, 61, 0.34);
-		--ec-button-bg-color: var(--color-panel);
-		--ec-button-border-color: var(--color-border);
-		--ec-button-text-color: var(--color-foreground);
-		--ec-button-active-bg-color: var(--color-accent-strong);
-		--ec-button-active-border-color: var(--color-accent-strong);
-		--ec-button-active-text-color: var(--color-accent-contrast);
-		--ec-event-bg-color: var(--color-surface);
-		--ec-event-border-color: color-mix(in oklch, var(--color-border) 88%, var(--color-surface) 12%);
-		--ec-event-text-color: var(--color-foreground);
-		--ec-now-indicator-color: var(--color-accent-strong);
-		--ec-scrollbar-thumb-color: var(--color-border);
-		--ec-scrollbar-track-color: transparent;
-		color: var(--color-foreground);
-		font-family: var(--font-sans);
-	}
-
-	:global(.dark .event-calendar-host .ec) {
-		--ec-body-bg-color: color-mix(in oklch, var(--color-panel) 92%, var(--color-surface) 8%);
-		--ec-border-color: color-mix(in oklch, var(--color-border) 62%, var(--color-foreground) 38%);
-		--watum-grid-minor: rgba(197, 205, 218, 0.32);
-		--watum-grid-major: rgba(214, 221, 233, 0.46);
-	}
-
-	:global(.event-calendar-host .ec-toolbar) {
-		display: none;
-	}
-
-	:global(.event-calendar-host .ec-header) {
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	:global(.event-calendar-host .ec-day-head) {
-		padding: 0.95rem 1rem;
-		background: color-mix(in oklch, var(--color-panel) 82%, var(--color-surface) 18%);
-	}
-
-	:global(.event-calendar-host .watum-day-head) {
-		display: grid;
-		gap: 0.22rem;
-		text-align: left;
-	}
-
-	:global(.event-calendar-host .watum-day-head strong) {
-		font-size: 0.92rem;
-	}
-
-	:global(.event-calendar-host .watum-day-head span) {
-		color: var(--color-muted-foreground);
-		font-size: 0.84rem;
-	}
-
-	:global(.event-calendar-host .ec-time) {
-		font-size: 0.82rem;
-		color: var(--color-muted-foreground);
-	}
-
-	:global(.event-calendar-host .ec-time-grid .ec-header .ec-sidebar),
-	:global(.event-calendar-host .ec-time-grid .ec-body .ec-sidebar) {
-		inline-size: 3.9rem;
-		width: 3.9rem;
-		flex: 0 0 3.9rem;
-	}
-
-	:global(.event-calendar-host .ec-time-grid .ec-body .ec-sidebar .ec-slot) {
-		position: relative;
-	}
-
-	:global(.event-calendar-host .ec-time-grid .ec-body .ec-sidebar .ec-slot time) {
-		position: absolute;
-		top: 0;
-		right: 0.1rem;
-		transform: translateY(-50%);
-		display: inline-flex;
-		align-items: center;
-		justify-content: flex-end;
-		padding-inline: 0.12rem 0.04rem;
-		font-size: 0.78rem;
-		line-height: 1;
-		font-variant-numeric: tabular-nums;
-		background: var(--ec-bg-color);
-		color: var(--color-foreground-soft);
-		z-index: 2;
-	}
-
-	:global(.event-calendar-host .ec-scrollgrid) {
-		border: 0;
-	}
-
-	:global(.event-calendar-host .ec-time-grid .ec-header .ec-day-head),
-	:global(.event-calendar-host .ec-time-grid .ec-body .ec-day) {
-		position: relative;
-	}
-
-	:global(.event-calendar-host .ec-time-grid .ec-header .ec-day-head::after),
-	:global(.event-calendar-host .ec-time-grid .ec-body .ec-day::after) {
-		content: '';
-		position: absolute;
-		top: 0;
-		right: 0;
-		bottom: 0;
-		width: 1px;
-		pointer-events: none;
-		background: var(--watum-grid-major);
-	}
-
-	:global(.event-calendar-host .ec-time-grid .ec-body .ec-day::before) {
-		content: '';
-		position: absolute;
-		inset: 0;
-		pointer-events: none;
-		background-image:
-			repeating-linear-gradient(
-				to top,
-				var(--watum-grid-minor) 0 1px,
-				transparent 1px,
-				transparent var(--ec-slot-height)
-			),
-			repeating-linear-gradient(
-				to top,
-				var(--watum-grid-major) 0 2px,
-				transparent 2px,
-				transparent calc(var(--ec-slot-height) * var(--ec-slot-label-periodicity))
-			);
-		background-size:
-			100% var(--ec-slot-height),
-			100% calc(var(--ec-slot-height) * var(--ec-slot-label-periodicity));
-		background-repeat: repeat;
-	}
-
-	:global(.event-calendar-host .ec-time-grid .ec-body .ec-sidebar) {
-		position: relative;
-	}
-
-	:global(.event-calendar-host .ec-time-grid .ec-body .ec-sidebar::before) {
-		content: '';
-		position: absolute;
-		inset: 0;
-		pointer-events: none;
-		background-image:
-			repeating-linear-gradient(
-				to top,
-				var(--watum-grid-minor) 0 1px,
-				transparent 1px,
-				transparent var(--ec-slot-height)
-			),
-			repeating-linear-gradient(
-				to top,
-				var(--watum-grid-major) 0 2px,
-				transparent 2px,
-				transparent calc(var(--ec-slot-height) * var(--ec-slot-label-periodicity))
-			);
-		background-size:
-			100% var(--ec-slot-height),
-			100% calc(var(--ec-slot-height) * var(--ec-slot-label-periodicity));
-		background-repeat: repeat;
-	}
-
-	:global(.event-calendar-host .ec-time-grid .ec-body .ec-slot) {
-		box-shadow: inset 0 -1px 0 var(--watum-grid-minor);
-	}
-
-	:global(.event-calendar-host .ec-time-grid .ec-body .ec-slot:not(.ec-hidden):nth-child(odd)) {
-		box-shadow: inset 0 -2px 0 var(--watum-grid-major);
-	}
-
-	:global(.event-calendar-host .ec-time-grid .ec-events) {
-		padding-inline: 0.45rem;
-	}
-
-	:global(.event-calendar-host .watum-ec-event) {
-		position: relative;
-		overflow: hidden;
-		isolation: isolate;
-		border-radius: 0.95rem;
-		border: 1px solid color-mix(in oklch, var(--color-border) 88%, var(--color-surface) 12%);
-		background: var(--watum-event-surface, var(--color-surface));
-		box-shadow:
-			0 6px 16px color-mix(in oklch, var(--color-shadow) 8%, transparent 92%),
-			inset 0 0 0 1px color-mix(in oklch, var(--color-foreground) 4%, transparent 96%);
-	}
-
-	:global(.event-calendar-host .watum-ec-event::before) {
-		content: '';
-		position: absolute;
-		inset: 0 0 auto;
-		height: 0.24rem;
-		background: var(
-			--watum-lane-accent,
-			color-mix(in oklch, var(--color-accent-strong) 78%, var(--color-panel) 22%)
-		);
-		opacity: 0.95;
-	}
-
-	:global(.event-calendar-host .watum-ec-event.is-selected) {
-		border-width: 2px;
-		border-color: var(--color-accent-strong);
-		background: color-mix(in oklch, var(--color-surface) 72%, var(--color-accent-soft) 28%);
-		box-shadow:
-			0 12px 24px color-mix(in oklch, var(--color-accent-strong) 12%, transparent 88%),
-			inset 0 0 0 2px color-mix(in oklch, var(--color-accent-strong) 34%, transparent 66%);
-	}
-
-	:global(.event-calendar-host .watum-ec-event.is-dimmed) {
-		opacity: 0.32;
-		filter: saturate(0.7);
-	}
-
-	:global(.event-calendar-host .watum-ec-event.is-conflict-focus) {
-		border-width: 2px;
-		box-shadow:
-			0 16px 28px
-				color-mix(in oklch, var(--conflict-border, var(--color-danger)) 12%, transparent 88%),
-			inset 0 0 0 3px
-				color-mix(in oklch, var(--conflict-border, var(--color-danger)) 18%, transparent 82%);
-		transform: translateY(-1px);
-	}
-
-	:global(.event-calendar-host .watum-ec-event.is-conflict) {
-		border-color: var(--conflict-border, var(--color-danger));
-		background: color-mix(
-			in oklch,
-			var(--conflict-surface, var(--color-danger-soft)) 92%,
-			var(--color-panel) 8%
-		);
-	}
-
-	:global(.event-calendar-host .watum-ec-event.is-conflict.is-selected) {
-		border-width: 2px;
-		border-color: var(--color-accent-strong);
-		background: color-mix(
-			in oklch,
-			var(--conflict-surface, var(--color-danger-soft)) 70%,
-			var(--color-accent-soft) 30%
-		);
-		box-shadow:
-			0 14px 28px color-mix(in oklch, var(--color-danger) 12%, transparent 88%),
-			inset 0 0 0 3px color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
-	}
-
-	:global(.event-calendar-host .watum-ec-event[data-lane='1']) {
-		--watum-lane-accent: color-mix(
-			in oklch,
-			var(--color-accent-strong) 82%,
-			var(--color-panel) 18%
-		);
-		--watum-event-surface: color-mix(
-			in oklch,
-			var(--color-surface) 84%,
-			var(--color-accent-soft) 16%
-		);
-	}
-
-	:global(.event-calendar-host .watum-ec-event[data-lane='2']) {
-		--watum-lane-accent: color-mix(in oklch, var(--color-success) 78%, var(--color-panel) 22%);
-		--watum-event-surface: color-mix(
-			in oklch,
-			var(--color-surface) 84%,
-			var(--color-success-soft) 16%
-		);
-	}
-
-	:global(.event-calendar-host .watum-ec-event[data-lane='3']) {
-		--watum-lane-accent: oklch(0.68 0.13 62);
-		--watum-event-surface: color-mix(in oklch, var(--color-surface) 86%, oklch(0.93 0.03 62) 14%);
-	}
-
-	:global(.event-calendar-host .watum-ec-event[data-lane='4']) {
-		--watum-lane-accent: oklch(0.66 0.12 220);
-		--watum-event-surface: color-mix(in oklch, var(--color-surface) 86%, oklch(0.9 0.028 220) 14%);
-	}
-
-	:global(.event-calendar-host .watum-event-copy) {
-		display: grid;
-		gap: 0.3rem;
-		padding: 0.22rem 0.18rem 0.12rem;
-		min-width: 0;
-	}
-
-	:global(.event-calendar-host .watum-event-copy strong) {
-		font-size: 0.88rem;
-		line-height: 1.18;
-		overflow-wrap: anywhere;
-		word-break: break-word;
-	}
-
-	:global(.event-calendar-host .watum-event-copy span) {
-		font-size: 0.76rem;
-		color: var(--color-muted-foreground);
-	}
-
-	:global(.event-calendar-host .watum-event-copy small) {
-		font-size: 0.75rem;
-		line-height: 1.25;
-		color: var(--color-foreground-soft);
-	}
-
-	:global(.event-calendar-host .watum-ec-event.is-conflict .watum-event-copy strong) {
-		color: var(--conflict-ink, var(--color-danger));
-	}
-
-	:global(.event-calendar-host .watum-ec-event.is-conflict .watum-event-copy span),
-	:global(.event-calendar-host .watum-ec-event.is-conflict .watum-event-copy small) {
-		color: color-mix(
-			in oklch,
-			var(--conflict-ink, var(--color-danger)) 74%,
-			var(--color-foreground) 26%
-		);
-	}
-
-	:global(.event-calendar-host .watum-event-flag) {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: fit-content;
-		padding: 0.18rem 0.45rem;
-		border-radius: 0.5rem;
-		border: 1px solid
-			color-mix(in oklch, var(--conflict-border, var(--color-danger)) 72%, transparent 28%);
-		background: color-mix(
-			in oklch,
-			var(--conflict-surface, var(--color-danger-soft)) 82%,
-			var(--color-panel) 18%
-		);
-		color: var(--conflict-ink, var(--color-danger));
-		font-size: 0.72rem;
-		font-weight: 700;
-		line-height: 1;
-	}
-
-	.student-dashboard,
-	.student-summary-row,
-	.student-grade-items {
-		display: grid;
-		gap: 0.75rem;
-		min-width: 0;
-	}
-
-	.student-hero {
-		overflow: hidden;
-	}
-
-	.student-hero,
-	.student-summary-row div,
-	.student-grade-list {
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-xl);
-		background: var(--color-panel);
-	}
-
-	.student-hero,
-	.student-grade-list {
-		padding: 1.1rem;
-	}
-
-	.student-hero {
-		display: grid;
-		gap: 0.9rem;
-		min-width: 0;
-	}
-
-	.student-hero-copy {
-		display: grid;
-		gap: 0.25rem;
-	}
-
-	.student-hero-copy span,
-	.student-summary-row span,
-	.student-grade-items span {
-		color: var(--color-muted-foreground);
-	}
-
-	.student-hero-copy strong {
-		font: 600 1.38rem/1.08 var(--font-display);
-		letter-spacing: -0.03em;
-	}
-
-	.student-hero-copy p,
-	.student-grade-list h3 {
-		margin: 0;
-	}
-
-	.student-actions {
-		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-	}
-
-	.student-summary-row {
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-	}
-
-	.student-summary-row div {
-		padding: 0.9rem;
-		display: grid;
-		gap: 0.2rem;
-	}
-
-	.student-summary-row strong,
-	.student-grade-items strong {
-		font-size: 0.98rem;
-		line-height: 1.3;
-	}
-
-	.student-grade-list {
-		display: grid;
-		gap: 0.8rem;
-	}
-
-	.student-grade-items {
-		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-	}
-
-	.student-grade-items div {
-		display: grid;
-		gap: 0.2rem;
-		padding: 0.85rem 0.9rem;
-		border: 1px solid var(--color-border);
-		border-radius: 0.8rem;
-		background: var(--color-surface);
-	}
-
-	.decision-board {
-		grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-		gap: 1rem;
-	}
-
-	.decision-lead,
-	.decision-notes {
-		border: 1px solid var(--color-border);
-		background: var(--color-panel);
-		border-radius: var(--radius-xl);
-		padding: 1.1rem;
-		min-width: 0;
-	}
-
-	.decision-alert {
-		border-color: color-mix(in oklch, var(--color-danger) 28%, var(--color-border) 72%);
-		background: color-mix(in oklch, var(--color-panel) 82%, var(--color-danger-soft) 18%);
-	}
-
-	.decision-steady {
-		border-color: color-mix(in oklch, var(--color-success) 22%, var(--color-border) 78%);
-	}
-
-	.decision-lead {
-		gap: 0.7rem;
-	}
-
-	.decision-title {
-		font: 600 1.62rem/1.02 var(--font-display);
-		letter-spacing: -0.04em;
-		max-width: 16ch;
-	}
-
-	.decision-primary {
-		display: grid;
-		gap: 0.4rem;
-		padding: 0.95rem 1rem;
-		border: 1px solid color-mix(in oklch, var(--color-danger) 20%, var(--color-border) 80%);
-		border-radius: 0.8rem;
-		background: color-mix(in oklch, var(--color-surface) 90%, var(--color-danger-soft) 10%);
-	}
-
-	.decision-primary-steady {
-		border-color: color-mix(in oklch, var(--color-success) 18%, var(--color-border) 82%);
-		background: color-mix(in oklch, var(--color-surface) 94%, var(--color-success-soft) 6%);
-	}
-
-	.decision-primary-copy {
-		display: grid;
-		gap: 0.18rem;
-	}
-
-	.decision-primary-copy span,
-	.decision-secondary-count {
-		color: var(--color-muted-foreground);
-	}
-
-	.decision-primary-copy strong {
-		font-size: 1rem;
-		line-height: 1.35;
-	}
-
-	.decision-primary-copy p,
-	.decision-secondary-count {
-		margin: 0;
-		font-size: 0.9rem;
-		line-height: 1.4;
-	}
-
-	.conflict-card-actions {
-		margin-top: 0.2rem;
-	}
-
-	.decision-actions {
-		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-		gap: 0.65rem;
-	}
-
-	.decision-notes {
-		gap: 0;
-		align-content: start;
-	}
-
-	.decision-note-row {
-		display: grid;
-		gap: 0.2rem;
-		padding: 0.9rem 0;
-	}
-
-	.decision-note-row + .decision-note-row {
-		border-top: 1px solid var(--color-border);
-	}
-
-	.decision-notes span,
-	.builder-overview span {
-		color: var(--color-muted-foreground);
-	}
-
-	.decision-note-row strong,
-	.builder-overview strong {
-		font-size: 0.98rem;
-		line-height: 1.3;
-	}
-
-	@media (min-width: 721px) {
-		.topbar {
-			min-height: 4.35rem;
-		}
-
-		.topbar-tools {
-			min-height: 2.9rem;
-			align-content: start;
-		}
-
-		.decision-lead,
-		.decision-notes {
-			min-height: 15rem;
-		}
-
-		.decision-primary {
-			min-height: 5.9rem;
-			align-content: start;
-		}
-
-		.decision-actions {
-			min-height: 3.2rem;
-			align-content: start;
-		}
-	}
-
-	@media (min-width: 960px) {
-		.topbar-tools {
-			flex-wrap: nowrap;
-		}
-
-		.topbar-tools :global(button),
-		.topbar-tools .user-pill {
-			white-space: nowrap;
-			min-height: 2.85rem;
-		}
-
-		:global(.theme-switch) {
-			min-width: 7.8rem;
-			justify-content: center;
-		}
-	}
-
-	.builder-overview div {
-		display: grid;
-		gap: 0.24rem;
-		padding: 0.9rem;
-		border: 1px solid var(--color-border);
-		background: var(--color-surface);
-		border-radius: 0.8rem;
-	}
-
-	.builder-conflict-panel {
-		display: grid;
-		gap: 0.75rem;
-		padding: 0.75rem 0.85rem;
-	}
-
-	.builder-conflict-summary {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-		cursor: pointer;
-		list-style: none;
-	}
-
-	.builder-conflict-summary::-webkit-details-marker {
-		display: none;
-	}
-
-	.builder-conflict-summary::after {
-		content: 'Tampilkan';
-		font-size: 0.78rem;
-		font-weight: 700;
-		color: var(--color-accent-strong);
-	}
-
-	.builder-conflict-panel[open] .builder-conflict-summary::after {
-		content: 'Sembunyikan';
-	}
-
-	.builder-conflict-list {
-		display: grid;
-		gap: 0.75rem;
-		max-height: 18rem;
-		overflow: auto;
-		padding-right: 0.2rem;
-	}
-
-	.builder-conflict-card {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		gap: 0.75rem;
-		align-items: start;
-		padding: 0.9rem;
-		border: 1px solid var(--conflict-border, var(--color-border));
-		border-radius: 0.9rem;
-		background: color-mix(
-			in oklch,
-			var(--conflict-surface, var(--color-surface)) 86%,
-			var(--color-panel) 14%
-		);
-	}
-
-	.builder-conflict-card.selected {
-		box-shadow:
-			0 12px 24px color-mix(in oklch, var(--conflict-ink, var(--color-danger)) 10%, transparent 90%),
-			inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 38%, transparent 62%);
-	}
-
-	.builder-conflict-card-copy {
-		display: grid;
-		gap: 0.22rem;
-		min-width: 0;
-	}
-
-	.builder-conflict-card-copy span,
-	.builder-conflict-card-copy small {
-		color: color-mix(
-			in oklch,
-			var(--conflict-ink, var(--color-muted-foreground)) 72%,
-			var(--color-foreground) 28%
-		);
-	}
-
-	.builder-conflict-card-actions {
-		display: flex;
-		gap: 0.55rem;
-		flex-wrap: wrap;
-		justify-content: flex-end;
-	}
-
-	.metric-card {
-		position: relative;
-		overflow: hidden;
-	}
-
-	.metric-card::after {
-		content: '';
-		position: absolute;
-		inset: auto 0 0 0;
-		height: 0.18rem;
-		opacity: 0.9;
-	}
-
-	.metric-alert {
-		border-color: color-mix(in oklch, var(--color-danger) 26%, var(--color-border) 74%);
-		background: color-mix(in oklch, var(--color-surface) 88%, var(--color-danger-soft) 12%);
-	}
-
-	.metric-alert::after {
-		background: color-mix(in oklch, var(--color-danger) 78%, var(--color-accent-strong) 22%);
-	}
-
-	.metric-open {
-		border-color: color-mix(in oklch, var(--color-success) 24%, var(--color-border) 76%);
-		background: color-mix(in oklch, var(--color-surface) 90%, var(--color-success-soft) 10%);
-	}
-
-	.metric-open::after {
-		background: color-mix(in oklch, var(--color-success) 68%, var(--color-accent-strong) 32%);
-	}
-
-	.metric-schedule {
-		border-color: color-mix(in oklch, var(--color-accent-strong) 24%, var(--color-border) 76%);
-		background: color-mix(in oklch, var(--color-surface) 88%, var(--color-accent-soft) 12%);
-	}
-
-	.metric-schedule::after {
-		background: color-mix(in oklch, var(--color-accent-strong) 86%, var(--color-success) 14%);
-	}
-
-	.metric-active {
-		box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-surface) 30%, transparent 70%);
-	}
-
-	.metric-value {
-		font: 600 1.14rem/1.08 var(--font-display);
-		letter-spacing: -0.03em;
-	}
-
-	.focus-copy,
-	.detail-lines,
-	.support-list,
-	.editor-grid,
-	.login-form,
-	.list-stack,
-	.builder-snapshot,
-	.search-box,
-	.pane-head {
-		display: grid;
-		gap: 0.8rem;
-	}
-
-	.focus-copy strong,
-	.detail-lines strong,
-	.support-list strong,
-	.list-row strong {
-		font-size: 0.96rem;
-	}
-
-	.list-row strong {
-		line-height: 1.24;
-	}
-
-	.list-row small,
-	.list-row span,
-	.detail-lines span,
-	.support-list span,
-	.detail-hint,
-	.editor-note,
-	.warning-panel p:not(.warning-title) {
-		font-size: 0.91rem;
-		line-height: 1.42;
-	}
-
-	.detail-stack {
-		gap: 0.8rem;
-	}
-
-	.detail-hint {
-		margin: 0;
-		font-size: 0.9rem;
-		color: var(--color-muted-foreground);
-	}
-
-	.calendar-conflict-copy {
-		margin: 0 0 0.85rem;
-		font-size: 0.92rem;
-		line-height: 1.42;
-		color: var(--conflict-ink, var(--color-danger));
-		max-width: 72ch;
-	}
-
-	.calendar-overlap-panel {
-		display: grid;
-		gap: 0.7rem;
-	}
-
-	.calendar-overlap-panel h4 {
-		font-size: 1rem;
-		line-height: 1.15;
-	}
-
-	.calendar-overlap-list {
-		display: grid;
-		gap: 0.75rem;
-	}
-
-	.calendar-overlap-item {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		gap: 0.75rem;
-		align-items: start;
-		padding: 0.85rem 0.9rem;
-		border: 1px solid var(--color-border);
-		border-radius: 0.8rem;
-		background: var(--color-surface);
-	}
-
-	.calendar-overlap-item.conflict {
-		border-color: var(--conflict-border);
-		background: color-mix(in oklch, var(--conflict-surface) 82%, var(--color-panel) 18%);
-	}
-
-	.calendar-overlap-item.selected {
-		border-color: var(--color-accent-strong);
-		background: color-mix(in oklch, var(--color-surface) 74%, var(--color-accent-soft) 26%);
-		box-shadow:
-			0 12px 24px color-mix(in oklch, var(--color-accent-strong) 10%, transparent 90%),
-			inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 38%, transparent 62%);
-	}
-
-	.calendar-overlap-item.conflict.selected {
-		border-color: var(--color-accent-strong);
-		background: color-mix(in oklch, var(--conflict-surface) 68%, var(--color-accent-soft) 32%);
-		box-shadow:
-			0 12px 24px color-mix(in oklch, var(--color-danger) 12%, transparent 88%),
-			inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
-	}
-
-	.calendar-overlap-copy {
-		display: grid;
-		gap: 0.2rem;
-		min-width: 0;
-	}
-
-	.calendar-overlap-copy span,
-	.calendar-overlap-copy small {
-		color: var(--color-muted-foreground);
-	}
-
-	.calendar-overlap-item.conflict .calendar-overlap-copy strong {
-		color: var(--conflict-ink);
-	}
-
-	.calendar-overlap-item.conflict .calendar-overlap-copy span,
-	.calendar-overlap-item.conflict .calendar-overlap-copy small {
-		color: color-mix(in oklch, var(--conflict-ink) 72%, var(--color-foreground) 28%);
-	}
-
-	.calendar-overlap-actions {
-		display: flex;
-		gap: 0.55rem;
-		flex-wrap: wrap;
-		justify-content: flex-end;
-	}
-
-	.builder-conflict-copy {
-		margin: 0;
-		font-size: 0.9rem;
-		line-height: 1.42;
-		color: var(--conflict-ink, var(--color-danger));
-		max-width: 70ch;
-	}
-
-	.selected-danger {
-		color: var(--color-danger);
-	}
-
-	.selected-safe {
-		color: var(--color-success);
-	}
-
-	.detail-card.calendar-conflict {
-		border-color: var(--conflict-border);
-		background: color-mix(in oklch, var(--conflict-surface) 82%, var(--color-panel) 18%);
-	}
-
-	.detail-card.calendar-conflict h3 {
-		color: var(--conflict-ink);
-	}
-
-	.workspace-shell {
-		grid-template-columns: minmax(18rem, 0.78fr) minmax(0, 1.22fr);
-		align-items: stretch;
-	}
-
-	.builder-shell {
-		grid-template-columns: minmax(18rem, 0.72fr) minmax(0, 1.28fr);
-		height: clamp(32rem, calc(100dvh - 9.5rem), 56rem);
-		min-height: 0;
-		align-items: stretch;
-		overflow: hidden;
-	}
-
-	.workspace-list,
-	.workspace-detail {
-		display: grid;
-		gap: 0.9rem;
-		align-content: start;
-		min-height: 0;
-	}
-
-	.workspace-list {
-		display: grid;
-		grid-template-rows: auto auto minmax(0, 1fr);
-		gap: 0.8rem;
-	}
-
-	.workspace-list .list-stack {
-		min-height: 0;
-		overflow: auto;
-	}
-
-	.workspace-detail {
-		overflow: auto;
-	}
-
-	.builder-list {
-		display: grid;
-		grid-template-rows: auto auto auto minmax(0, 1fr);
-		gap: 0.8rem;
-		height: 100%;
-		min-height: 0;
-	}
-
-	.builder-list .list-stack {
-		height: 100%;
-		min-height: 0;
-		overflow: auto;
-		padding-right: 0.1rem;
-		scrollbar-gutter: stable;
-		overscroll-behavior: contain;
-	}
-
-	.builder-detail {
-		height: 100%;
-		min-height: 0;
-		overflow: auto;
-		border-color: color-mix(in oklch, var(--color-accent-strong) 18%, var(--color-border) 82%);
-	}
-
-	.pane-head {
-		grid-template-columns: 1fr auto;
-		align-items: start;
-	}
-
-	.pane-head.compact {
-		margin-bottom: 0.6rem;
-	}
-
-	.builder-progress {
-		grid-template-columns: repeat(4, minmax(0, 1fr));
-		gap: 0.65rem;
-	}
-
-	.builder-progress-item {
-		position: relative;
-		display: grid;
-		grid-template-columns: auto minmax(0, 1fr);
-		align-items: start;
-		gap: 0.7rem;
-		padding: 0.85rem 0.9rem;
-		border: 1px solid var(--color-border);
-		border-radius: 0.8rem;
-		background: var(--color-panel);
-		text-align: left;
-		color: inherit;
-		width: 100%;
-	}
-
-	.builder-progress-item:disabled {
-		opacity: 0.55;
-	}
-
-	.builder-progress-item.active {
-		border-color: var(--color-accent-strong);
-		background: color-mix(in oklch, var(--color-surface) 74%, var(--color-accent-soft) 26%);
-		box-shadow:
-			0 10px 24px color-mix(in oklch, var(--color-accent-strong) 10%, transparent 90%),
-			inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 34%, transparent 66%);
-		transform: translateY(-1px);
-		outline: 2px solid color-mix(in oklch, var(--color-accent-strong) 22%, transparent 78%);
-		outline-offset: 1px;
-	}
-
-	.builder-progress-item.complete {
-		border-color: color-mix(in oklch, var(--color-success) 26%, var(--color-border) 74%);
-		background: color-mix(in oklch, var(--color-surface) 90%, var(--color-success-soft) 10%);
-	}
-
-	.builder-progress-item.available:hover {
-		border-color: color-mix(in oklch, var(--color-accent-strong) 22%, var(--color-border) 78%);
-	}
-
-	.builder-progress-index {
-		display: inline-grid;
-		place-items: center;
-		width: 1.6rem;
-		height: 1.6rem;
-		border-radius: 999px;
-		background: color-mix(in oklch, var(--color-surface) 70%, var(--color-border) 30%);
-		font-size: 0.82rem;
-		font-weight: 700;
-		flex: 0 0 auto;
-	}
-
-	.builder-progress-item.active .builder-progress-index,
-	.builder-progress-item.complete .builder-progress-index {
-		background: var(--color-accent-strong);
-		color: var(--color-accent-contrast);
-	}
-
-	.builder-progress-item.active .builder-progress-copy strong {
-		color: var(--color-accent-strong);
-	}
-
-	.builder-progress-item.active .builder-progress-copy span {
-		color: color-mix(in oklch, var(--color-accent-strong) 70%, var(--color-foreground) 30%);
-	}
-
-	.builder-progress-item.active::after {
-		content: '';
-		position: absolute;
-		left: 0.85rem;
-		right: 0.85rem;
-		bottom: 0.45rem;
-		height: 0.22rem;
-		border-radius: 999px;
-		background: var(--color-accent-strong);
-		opacity: 0.92;
-	}
-
-	.builder-progress-copy {
-		display: grid;
-		gap: 0.18rem;
-		min-width: 0;
-	}
-
-	.builder-progress-copy strong {
-		font-size: 0.93rem;
-		line-height: 1.25;
-	}
-
-	.builder-progress-copy span {
-		font-size: 0.82rem;
-		line-height: 1.36;
-	}
-
-	.builder-form {
-		gap: 1rem;
-	}
-
-	.builder-overview,
-	.builder-snapshot {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-		gap: 0.75rem;
-	}
-
-	.builder-snapshot div {
-		display: grid;
-		gap: 0.24rem;
-		padding: 0.88rem 0.95rem;
-		border: 1px solid var(--color-border);
-		background: var(--color-surface);
-		border-radius: 0.8rem;
-		width: 100%;
-		max-width: none;
-	}
-
-	.builder-snapshot span {
-		color: var(--color-muted-foreground);
-	}
-
-	.builder-snapshot strong {
-		font-size: 0.98rem;
-		line-height: 1.3;
-	}
-
-	.builder-snapshot p {
-		margin: 0;
-		font-size: 0.9rem;
-		line-height: 1.42;
-		color: var(--color-muted-foreground);
-	}
-
-	.builder-section {
-		gap: 0.8rem;
-		padding: 1rem;
-		border: 1px solid var(--color-border);
-		background: var(--color-panel);
-		border-radius: var(--radius-xl);
-	}
-
-	.builder-section.hidden-stage {
-		display: none;
-	}
-
-	.builder-section:first-of-type {
-		border-color: color-mix(in oklch, var(--color-accent-strong) 20%, var(--color-border) 80%);
-	}
-
-	.builder-section:nth-of-type(2) {
-		border-color: color-mix(in oklch, var(--color-accent-strong) 14%, var(--color-border) 86%);
-	}
-
-	.builder-section:nth-of-type(3) {
-		border-color: color-mix(in oklch, var(--color-accent-strong) 12%, var(--color-border) 88%);
-	}
-
-	.builder-section-head {
-		gap: 0.25rem;
-	}
-
-	.builder-section-head h4 {
-		font: 600 1.12rem/1.08 var(--font-display);
-		letter-spacing: -0.025em;
-	}
-
-	.builder-note {
-		margin: 0;
-		max-width: 58ch;
-		color: var(--color-muted-foreground);
-		font-size: 0.91rem;
-		line-height: 1.42;
-	}
-
-	.builder-section-head p,
-	.builder-review-note p {
-		margin: 0;
-	}
-
-	.builder-section-actions {
-		gap: 0.75rem;
-		padding-top: 0.15rem;
-	}
-
-	.builder-section-actions.split {
-		grid-template-columns: minmax(0, 1fr) auto;
-		align-items: center;
-	}
-
-	.builder-inline-actions {
-		display: flex;
-		gap: 0.65rem;
-		flex-wrap: wrap;
-		justify-content: flex-end;
-	}
-
-	.panel-title {
-		font-size: 1.16rem;
-		line-height: 1.08;
-	}
-
-	.warning-title {
-		font: 600 1.04rem/1.08 var(--font-display);
-		letter-spacing: -0.02em;
-	}
-
-	.builder-room-stage {
-		grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
-		gap: 0.85rem;
-		align-items: start;
-	}
-
-	.builder-room-grid {
-		grid-template-columns: 1fr;
-	}
-
-	.builder-support {
-		padding: 0.95rem;
-	}
-
-	.builder-support .support-list {
-		max-height: clamp(11rem, 30dvh, 18rem);
-		overflow: auto;
-		padding-right: 0.1rem;
-		scrollbar-gutter: stable;
-		overscroll-behavior: contain;
-	}
-
-	.builder-review-grid {
-		margin-bottom: 0;
-	}
-
-	.builder-review-note {
-		display: grid;
-		gap: 0.7rem;
-	}
-
-	.builder-submit {
-		min-width: 13rem;
-	}
-
-	.search-box {
-		grid-template-columns: auto 1fr auto;
-		align-items: center;
-		padding: 0.7rem 0.85rem;
-		border: 1px solid var(--color-border);
-		border-radius: 0.8rem;
-		background: var(--color-surface);
-		gap: 0.55rem;
-	}
-
-	.search-box.compact {
-		padding: 0.62rem 0.75rem;
-	}
-
-	.search-box:focus-within {
-		border-color: color-mix(in oklch, var(--color-accent-strong) 46%, var(--color-border) 54%);
-		box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 18%, transparent 82%);
-	}
-
-	.search-box input,
-	.editor-grid input,
-	.editor-grid select,
-	.login-form input {
-		width: 100%;
-		padding: 0.72rem 0.85rem;
-		border: 1px solid var(--color-border);
-		border-radius: 0.8rem;
-		background: var(--color-surface);
-		color: inherit;
-	}
-
-	.editor-grid input:focus,
-	.editor-grid select:focus,
-	.login-form input:focus,
-	.search-box input:focus {
-		outline: 2px solid color-mix(in oklch, var(--color-accent-strong) 32%, transparent 68%);
-		outline-offset: 1px;
-	}
-
-	.search-box input {
-		padding: 0;
-		border: 0;
-		background: transparent;
-	}
-
-	.search-clear {
-		display: inline-grid;
-		place-items: center;
-		width: 1.6rem;
-		height: 1.6rem;
-		padding: 0;
-		border: 0;
-		border-radius: 999px;
-		background: transparent;
-		color: var(--color-muted-foreground);
-	}
-
-	.search-clear:hover {
-		background: color-mix(in oklch, var(--color-surface) 78%, var(--color-border) 22%);
-		color: var(--color-foreground);
-	}
-
-	.list-row {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		gap: 0.8rem;
-		align-items: start;
-		padding: 0.85rem 0.95rem;
-		border: 1px solid var(--color-border);
-		background: var(--color-surface);
-		text-align: left;
-		color: inherit;
-		border-radius: 0.8rem;
-	}
-
-	.list-row:hover {
-		border-color: color-mix(in oklch, var(--color-accent-strong) 16%, var(--color-border) 84%);
-	}
-
-	.list-row > div {
-		display: grid;
-		gap: 0.22rem;
-		min-width: 0;
-	}
-
-	.list-row > small {
-		justify-self: end;
-		text-align: right;
-		min-width: 0;
-	}
-
-	.list-row strong,
-	.list-row span,
-	.list-row small {
-		overflow-wrap: anywhere;
-		word-break: break-word;
-	}
-
-	.list-conflict-copy {
-		display: block;
-		line-height: 1.38;
-		color: var(--color-danger);
-	}
-
-	.list-row.selected {
-		border-color: var(--color-accent-strong);
-		box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
-	}
-
-	.user-row {
-		display: grid;
-		grid-template-columns: auto minmax(0, 1fr) auto;
-		gap: 0.5rem;
-		align-items: start;
-		padding: 0.85rem 0.95rem;
-		border: 1px solid var(--color-border);
-		background: var(--color-surface);
-		text-align: left;
-		color: inherit;
-		border-radius: 0.8rem;
-	}
-
-	.user-row:hover {
-		border-color: color-mix(in oklch, var(--color-accent-strong) 16%, var(--color-border) 84%);
-	}
-
-	.user-row.checked {
-		border-color: var(--color-accent-strong);
-		background: color-mix(in oklch, var(--color-accent-soft) 14%, var(--color-surface) 86%);
-	}
-
-	.user-row .row-checkbox {
-		display: flex;
-		align-items: flex-start;
-		padding-top: 0.2rem;
-	}
-
-	.user-row .row-checkbox input {
-		width: 1rem;
-		height: 1rem;
-	}
-
-	.user-row .row-content {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		gap: 0.5rem;
-		align-items: start;
-		min-width: 0;
-		background: none;
-		border: 0;
-		padding: 0;
-		color: inherit;
-		text-align: left;
-		cursor: pointer;
-		font: inherit;
-	}
-
-	.user-row .row-content:focus-visible {
-		outline: 2px solid color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
-		outline-offset: 2px;
-		border-radius: 0.5rem;
-	}
-
-	.user-row .row-content > div {
-		display: grid;
-		gap: 0.22rem;
-		min-width: 0;
-	}
-
-	.user-row .row-content > small {
-		justify-self: end;
-		text-align: right;
-		min-width: 0;
-	}
-
-	.select-all-row {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.55rem 0.95rem;
-		border: 1px dashed var(--color-border);
-		background: none;
-		border-radius: 0.8rem;
-		font-size: 0.82rem;
-		color: var(--color-muted-foreground);
-	}
-
-	.select-all-row input {
-		width: 1rem;
-		height: 1rem;
-	}
-
-	.bulk-bar {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.6rem;
-		padding: 0.55rem 0.8rem;
-		border: 1px solid color-mix(in oklch, var(--color-accent-strong) 32%, var(--color-border) 68%);
-		background: color-mix(in oklch, var(--color-accent-soft) 12%, var(--color-surface) 88%);
-		border-radius: 0.8rem;
-	}
-
-	.bulk-count {
-		font-size: 0.82rem;
-		font-weight: 600;
-	}
-
-	.bulk-actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.4rem;
-		margin-left: auto;
-	}
-
-	.list-row.conflict {
-		background: var(--conflict-surface);
-		border-color: var(--conflict-border);
-	}
-
-	.list-row.conflict.selected {
-		border-color: var(--color-accent-strong);
-		box-shadow: inset 0 0 0 3px color-mix(in oklch, var(--color-accent-strong) 48%, transparent 52%);
-	}
-
-	.list-row.conflict strong {
-		color: var(--conflict-ink);
-	}
-
-	.list-row.conflict .list-conflict-copy {
-		color: var(--conflict-ink);
-	}
-
-	.list-row:hover {
-		border-color: color-mix(in oklch, var(--color-accent-strong) 24%, var(--color-border) 76%);
-	}
-
-	.detail-lines {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(11rem, max-content));
-		align-items: stretch;
-		margin-bottom: 0.9rem;
-	}
-
-	.detail-lines div,
-	.support-list div {
-		display: grid;
-		gap: 0.22rem;
-		padding: 0.82rem;
-		border-radius: 0.8rem;
-		background: var(--color-surface);
-		width: 100%;
-		max-width: none;
-	}
-
-	.editor-grid {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-
-	.editor-grid label {
-		display: grid;
-		gap: 0.35rem;
-	}
-
-	.editor-grid :global(.primary-button),
-	.editor-grid .check-row,
-	.editor-note {
-		grid-column: 1 / -1;
-	}
-
-	.editor-grid .combobox-dropdown {
-		width: max-content;
-		min-width: 100%;
-		right: auto;
-		max-width: min(32rem, calc(100vw - 2rem));
-	}
-
-	.editor-note {
-		color: var(--color-muted-foreground);
-		font-size: 0.85rem;
-	}
-
-	.check-row {
-		display: flex;
-		align-items: center;
-		gap: 0.65rem;
-		padding: 0.78rem 0.85rem;
-		border: 1px solid var(--color-border);
-		border-radius: 0.8rem;
-		background: var(--color-surface);
-	}
-
-	.support-panel h4 {
-		margin-bottom: 0.8rem;
-	}
-
-	.login-shell {
-		min-height: 100vh;
-		display: grid;
-		place-items: center;
-		padding: 1.2rem;
-	}
-
-	.login-panel {
-		width: min(100%, 34rem);
-		display: grid;
-		gap: 1rem;
-	}
-
-	.login-form label {
-		display: grid;
-		gap: 0.35rem;
-	}
-
-	@media (max-width: 1080px) {
-		:global(.event-calendar-host .ec) {
-			--ec-slot-height: 30px;
-		}
-
-		:global(.event-calendar-host .ec-time-grid .ec-events) {
-			padding-inline: 0.25rem;
-		}
-
-		.app-shell {
-			grid-template-columns: 1fr;
-		}
-
-		.topbar {
-			grid-template-columns: 1fr;
-		}
-
-		.rail-backdrop {
-			display: block;
-			position: fixed;
-			inset: 0;
-			z-index: 30;
-			border: 0;
-			background: color-mix(in oklch, var(--color-shadow) 24%, transparent 76%);
-			backdrop-filter: blur(2px);
-		}
-
-		.rail {
-			position: fixed;
-			top: 0;
-			left: 0;
-			bottom: 0;
-			z-index: 40;
-			width: min(19rem, calc(100vw - 2rem));
-			max-width: calc(100vw - 2rem);
-			border-right: 1px solid var(--color-border);
-			border-bottom: 0;
-			box-shadow: 0 24px 60px color-mix(in oklch, var(--color-shadow) 20%, transparent 80%);
-			overflow: auto;
-			transform: translateX(-110%);
-			transition: transform 180ms ease;
-		}
-
-		.rail.open {
-			transform: translateX(0);
-		}
-
-		.rail-toggle,
-		.rail-close {
-			display: inline-flex;
-			width: 2.6rem;
-			height: 2.6rem;
-			padding: 0;
-		}
-
-		.rail-close {
-			justify-self: end;
-		}
-
-		.builder-progress {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-
-		.pane-head {
-			grid-template-columns: minmax(0, 1fr);
-		}
-
-		.student-summary-row,
-		.student-grade-items,
-		.student-actions {
-			grid-template-columns: minmax(0, 1fr);
-		}
-
-		.workspace-shell {
-			grid-template-columns: minmax(0, 1fr);
-		}
-
-		.builder-shell {
-			height: auto;
-			min-height: 0;
-		}
-
-		.builder-list .list-stack,
-		.builder-detail {
-			max-height: none;
-			min-height: 0;
-		}
-
-		.decision-board,
-		.builder-room-stage {
-			grid-template-columns: minmax(0, 1fr);
-		}
-	}
-
-	@media (max-width: 720px) {
-		.main-shell,
-		.rail {
-			padding: 1rem;
-		}
-
-		.main-shell {
-			overflow: visible;
-		}
-
-		.decision-board,
-		.decision-lead,
-		.decision-notes,
-		.topbar,
-		.pane-head,
-		.summary-stats {
-			grid-template-columns: minmax(0, 1fr) !important;
-		}
-
-		.decision-lead,
-		.decision-notes,
-		.decision-primary,
-		.decision-actions,
-		.decision-title {
-			min-width: 0;
-			max-width: 100%;
-		}
-
-		.event-calendar-host {
-			overflow-x: auto;
-			overflow-y: hidden;
-			-webkit-overflow-scrolling: touch;
-			overscroll-behavior-x: contain;
-		}
-
-		:global(.event-calendar-host .ec) {
-			--ec-slot-height: 38px;
-			min-width: 68rem;
-		}
-
-		:global(.event-calendar-host .ec-time-grid .ec-header .ec-sidebar),
-		:global(.event-calendar-host .ec-time-grid .ec-body .ec-sidebar) {
-			inline-size: 3.35rem;
-			width: 3.35rem;
-			flex: 0 0 3.35rem;
-		}
-
-		:global(.event-calendar-host .ec-day-head) {
-			padding: 0.8rem 0.7rem;
-		}
-
-		:global(.event-calendar-host .watum-day-head strong) {
-			font-size: 0.84rem;
-		}
-
-		:global(.event-calendar-host .watum-day-head span) {
-			font-size: 0.72rem;
-		}
-
-		.topbar,
-		.pane-head {
-			grid-template-columns: minmax(0, 1fr);
-			display: grid;
-		}
-
-		.topbar-tools {
-			display: grid;
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-			gap: 0.6rem;
-			width: 100%;
-		}
-
-		.topbar-copy h2 {
-			font-size: 1.48rem;
-		}
-
-		.builder-progress,
-		.builder-snapshot,
-		.editor-grid,
-		.detail-lines,
-		.decision-actions,
-		.decision-board {
-			grid-template-columns: minmax(0, 1fr);
-		}
-
-		.builder-section-actions.split {
-			grid-template-columns: minmax(0, 1fr);
-		}
-
-		.schedule-filter-summary {
-			grid-template-columns: minmax(0, 1fr);
-		}
-
-		.filter-bar {
-			flex-direction: column;
-			align-items: stretch;
-		}
-
-		.schedule-filter-grid,
-		.list-filter-grid {
-			grid-template-columns: minmax(0, 1fr);
-		}
-
-		.builder-inline-actions {
-			justify-content: stretch;
-		}
-
-		.builder-inline-actions :global(button),
-		.builder-section-actions :global(button),
-		.topbar-tools :global(button) {
-			width: 100%;
-		}
-
-		.list-row {
-			display: grid;
-			grid-template-columns: minmax(0, 1fr);
-			gap: 0.45rem;
-			align-items: start;
-		}
-
-		.list-row > small {
-			justify-self: start;
-			text-align: left;
-		}
-
-		.user-pill {
-			width: 100%;
-			min-width: 0;
-		}
-
-		.warning-actions > * {
-			flex: 1 1 100%;
-		}
-
-		.workspace-list .list-stack {
-			max-height: clamp(14rem, 36dvh, 22rem);
-			overflow: auto;
-		}
-	}
-
-	/* --- Shimmer skeleton --- */
-	@keyframes shimmer {
-		from {
-			background-position: -200% 0;
-		}
-		to {
-			background-position: 200% 0;
-		}
-	}
-
-	.skeleton {
-		border-radius: 0.5rem;
-		background: linear-gradient(
-			90deg,
-			var(--color-surface) 0%,
-			color-mix(in oklch, var(--color-surface) 68%, var(--color-border) 32%) 50%,
-			var(--color-surface) 100%
-		);
-		background-size: 200% 100%;
-		animation: shimmer 1.6s ease-in-out infinite;
-	}
-
-	.skeleton-rows {
-		display: grid;
-		gap: 0.75rem;
-	}
-
-	.skeleton-title {
-		height: 1.3rem;
-		width: 38%;
-	}
-
-	.skeleton-text {
-		height: 0.8rem;
-		width: 60%;
-	}
-
-	.skeleton-row {
-		height: 3.1rem;
-		width: 100%;
-	}
-
-	/* --- Searchable combobox --- */
-	.combobox-wrap {
-		position: relative;
-	}
-
-	.combobox-input {
-		width: 100%;
-		padding: 0.72rem 0.85rem;
-		border: 1px solid var(--color-border);
-		border-radius: 0.8rem;
-		background: var(--color-surface);
-		color: inherit;
-		font: inherit;
-	}
-
-	.combobox-input:focus {
-		outline: 2px solid color-mix(in oklch, var(--color-accent-strong) 32%, transparent 68%);
-		outline-offset: 1px;
-		border-color: color-mix(in oklch, var(--color-accent-strong) 38%, var(--color-border) 62%);
-	}
-
-	.combobox-dropdown {
-		position: absolute;
-		z-index: 20;
-		top: calc(100% + 0.35rem);
-		left: 0;
-		right: 0;
-		max-height: clamp(12rem, 34dvh, 20rem);
-		overflow-y: auto;
-		scrollbar-gutter: stable;
-		overscroll-behavior: contain;
-		border: 1px solid var(--color-border);
-		border-radius: 0.8rem;
-		background: var(--color-panel);
-		box-shadow: 0 8px 24px color-mix(in oklch, var(--color-shadow) 18%, transparent 82%);
-		display: grid;
-		gap: 0.1rem;
-		padding: 0.35rem;
-	}
-
-	.combobox-option {
-		display: grid;
-		gap: 0.12rem;
-		padding: 0.6rem 0.75rem;
-		border-radius: 0.55rem;
-		border: 1px solid transparent;
-		text-align: left;
-		background: transparent;
-		color: inherit;
-		cursor: pointer;
-		font: inherit;
-	}
-
-	.combobox-option:hover,
-	.combobox-option.active {
-		background: color-mix(in oklch, var(--color-surface) 76%, var(--color-accent-soft) 24%);
-		border-color: color-mix(in oklch, var(--color-accent-strong) 14%, var(--color-border) 86%);
-	}
-
-	.combobox-option strong {
-		font-size: 0.9rem;
-		line-height: 1.25;
-	}
-
-	.combobox-option span {
-		font-size: 0.8rem;
-		color: var(--color-muted-foreground);
-	}
-
-	.combobox-error {
-		margin: 0.35rem 0 0;
-		font-size: 0.86rem;
-		color: var(--color-danger);
-	}
-
-	.combobox-empty {
-		margin: 0.35rem 0 0;
-		font-size: 0.86rem;
-		color: var(--color-muted-foreground);
-	}
-
-	.combobox-footer {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.6rem;
-		padding: 0.45rem 0.35rem 0.2rem;
-		border-top: 1px solid color-mix(in oklch, var(--color-border) 88%, transparent 12%);
-	}
-
-	.combobox-meta {
-		font-size: 0.78rem;
-		color: var(--color-muted-foreground);
-	}
-
-	.combobox-more {
-		border: 1px solid var(--color-border);
-		border-radius: 999px;
-		padding: 0.3rem 0.7rem;
-		background: transparent;
-		color: inherit;
-		font: inherit;
-		font-size: 0.78rem;
-		cursor: pointer;
-	}
-
-	.combobox-more:disabled {
-		opacity: 0.48;
-		cursor: default;
-	}
-
-	.combobox-pagination {
-		display: flex;
-		gap: 0.45rem;
-	}
-
-	.support-footer {
-		padding-inline: 0;
-	}
-
-	/* --- Feedback dismiss --- */
-	.feedback {
-		align-items: center;
-	}
-
-	.feedback-dismiss {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		margin-left: auto;
-		flex: 0 0 auto;
-		width: 1.55rem;
-		height: 1.55rem;
-		border: 0;
-		border-radius: 0.35rem;
-		background: transparent;
-		color: inherit;
-		font-size: 1.05rem;
-		line-height: 1;
-		cursor: pointer;
-		opacity: 0.55;
-		transition:
-			opacity 120ms ease,
-			background 120ms ease;
-	}
-
-	.feedback-dismiss:hover {
-		opacity: 1;
-		background: color-mix(in oklch, var(--color-foreground) 8%, transparent 92%);
-	}
-
-	/* --- Support warning retry head --- */
-	.support-warning-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.75rem;
-	}
-
-	/* --- Entity links --- */
-	.entity-link {
-		background: none;
-		border: none;
-		padding: 0;
-		margin: 0;
-		color: inherit;
-		font: inherit;
-		cursor: pointer;
-		text-decoration: underline;
-		text-decoration-color: transparent;
-		text-underline-offset: 2px;
-		transition: text-decoration-color 120ms ease;
-		justify-self: start;
-	}
-	.entity-link:hover,
-	.entity-link:focus-visible {
-		text-decoration-color: currentColor;
-	}
-	.entity-link:focus-visible,
-	.editor-entity-link:focus-visible {
-		outline: 2px solid color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
-		outline-offset: 2px;
-		border-radius: 0.25rem;
-	}
-	.entity-link strong {
-		font-weight: 600;
-	}
-
-	.editor-entity-link {
-		font-size: 0.8rem;
-		color: var(--color-accent-strong);
-		cursor: pointer;
-		text-decoration: underline;
-		text-decoration-color: transparent;
-		text-underline-offset: 2px;
-		transition: text-decoration-color 120ms ease;
-		justify-self: start;
-	}
-	.editor-entity-link:hover,
-	.editor-entity-link:focus-visible {
-		text-decoration-color: currentColor;
-	}
-</style>
