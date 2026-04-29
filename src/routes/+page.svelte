@@ -219,6 +219,8 @@
 		successMessage: string;
 		failureMessage: string;
 	};
+
+	const semesterOptions = ['GANJIL', 'GENAP'] as const;
 	type NavigationGroupId =
 		| 'overview'
 		| 'planning'
@@ -831,10 +833,15 @@
 			day: 'SENIN',
 			startTime: '',
 			endTime: '',
-			semester: 'Ganjil',
+			semester: 'GANJIL',
 			academicYear: '2025/2026',
 			timezone
 		};
+	}
+
+	function normalizeSemesterValue(value: string | null | undefined) {
+		const normalized = value?.trim().toUpperCase() ?? '';
+		return normalized.startsWith('GEN') ? 'GENAP' : 'GANJIL';
 	}
 
 	function emptyGradeDraft() {
@@ -2575,6 +2582,39 @@
 	});
 
 	$effect(() => {
+		const userId = currentUser.current?.id ?? null;
+		if (!userId || activeView !== 'builder' || builderStep !== 'participant') return;
+		const _deps = [selectedEnrollmentId, builderStep, activeView];
+		void _deps;
+		if (!studentPickerOptions.length) queueStudentPickerRefresh(0);
+		if (!coursePickerOptions.length) queueCoursePickerRefresh(0);
+	});
+
+	$effect(() => {
+		const userId = currentUser.current?.id ?? null;
+		if (!userId || !['calendar', 'builder', 'enrollments'].includes(activeView)) return;
+		const _deps = [activeView];
+		void _deps;
+		if (!scheduleCourseFilterOptions.length) queueScheduleCourseFilterRefresh(0);
+		if (!scheduleRoomFilterOptions.length) queueScheduleRoomFilterRefresh(0);
+		if (!scheduleLecturerFilterOptions.length) queueScheduleLecturerFilterRefresh(0);
+	});
+
+	$effect(() => {
+		const userId = currentUser.current?.id ?? null;
+		if (!userId || builderStep !== 'room' || !timeStepReady) return;
+		const _deps = [
+			enrollmentDraft.day,
+			enrollmentDraft.startTime,
+			enrollmentDraft.endTime,
+			roomPickerSearch,
+			selectedEnrollmentId
+		];
+		void _deps;
+		queueRoomPickerRefresh(0);
+	});
+
+	$effect(() => {
 		if (!browser) return;
 		if (mobileRailOpen) {
 			previousBodyOverflow = document.body.style.overflow;
@@ -3094,9 +3134,12 @@
 	const filteredCoursesForPicker = $derived(coursePickerOptions);
 	const filteredGrades = $derived(grades);
 	const filteredUsers = $derived(users);
+	const roomPickerSourceOptions = $derived.by(() => {
+		return mergeItemsById(classrooms, roomPickerOptions);
+	});
 
 	const availableRoomOptions = $derived.by(() => {
-		const roomOptions = roomPickerOptions;
+		const roomOptions = roomPickerSourceOptions;
 		if (!enrollmentDraft.startTime || !enrollmentDraft.endTime) return roomOptions;
 		const startMinutes = toMinutes(parseISO(enrollmentDraft.startTime, timezone), timezone);
 		const endMinutes = toMinutes(parseISO(enrollmentDraft.endTime, timezone), timezone);
@@ -3115,7 +3158,17 @@
 			(room) => room.id === enrollmentDraft.classRoomId || availableRoomIds.has(room.id)
 		);
 	});
-	const filteredRoomsForPicker = $derived(availableRoomOptions);
+	const filteredRoomsForPicker = $derived.by(() => {
+		const q = normalizedSearchValue(roomPickerSearch);
+		if (!q) return availableRoomOptions;
+
+		return availableRoomOptions.filter(
+			(room) =>
+				matchesText(room.name, q) ||
+				matchesText(beautifyRoomType(room.class_room_type), q) ||
+				matchesText(String(room.capacity ?? ''), q)
+		);
+	});
 	const filteredScheduleRoomFilterOptions = $derived(scheduleRoomFilterOptions);
 	const participantStepReady = $derived(
 		Boolean(enrollmentDraft.studentId && enrollmentDraft.courseId)
@@ -3390,7 +3443,7 @@
 				? formatDateTimeInput(item.schedule_start_time, timezone)
 				: '',
 			endTime: item.schedule_end_time ? formatDateTimeInput(item.schedule_end_time, timezone) : '',
-			semester: item.semester ?? 'Ganjil',
+			semester: normalizeSemesterValue(item.semester),
 			academicYear: item.academic_year ?? '2025/2026',
 			timezone
 		};
@@ -6254,7 +6307,7 @@
 									<div>
 										<span>Waktu</span>
 										<strong>{draftTimeSummary}</strong>
-										<p>{availableRoomOptions.length} ruang tersedia untuk slot ini</p>
+										<p>{filteredRoomsForPicker.length} ruang tersedia untuk slot ini</p>
 									</div>
 									<div>
 										<span>Ruang</span>
@@ -6574,12 +6627,16 @@
 
 										<label>
 											<span>Semester</span>
-											<input
+											<select
 												{...selectedEnrollmentId
-													? updateEnrollment.fields.semester.as('text')
-													: createEnrollment.fields.semester.as('text')}
+													? updateEnrollment.fields.semester.as('select')
+													: createEnrollment.fields.semester.as('select')}
 												bind:value={enrollmentDraft.semester}
-											/>
+											>
+												{#each semesterOptions as semester (semester)}
+													<option value={semester}>{semester}</option>
+												{/each}
+											</select>
 										</label>
 
 										<label>
@@ -9440,13 +9497,14 @@
 									</p>
 									<input type="hidden" name="ids" value={bulkGetIds('enrollments').join(',')} />
 									<label
-										><span>Semester</span><input
-											type="text"
+										><span>Semester</span><select
 											name="semester"
-											value={bulkEditEnrollmentSemester}
-											oninput={(e) =>
-												(bulkEditEnrollmentSemester = (e.currentTarget as HTMLInputElement).value)}
-										/></label
+											bind:value={bulkEditEnrollmentSemester}
+											><option value="">Pilih semester</option
+											>{#each semesterOptions as semester (semester)}<option value={semester}
+													>{semester}</option
+												>{/each}</select
+										></label
 									>
 									<label
 										><span>Tahun akademik</span><input
