@@ -717,6 +717,8 @@ export const deleteGrade = command(v.string(), async (id) => {
 export const bulkDeleteGrades = command(v.pipe(v.string(), v.minLength(1)), async (idsParam) => {
 	const user = await requireRole(['LECTURER', 'ADMIN']);
 	const ids = idsParam.split(',').filter(Boolean);
+	if (!ids.length) throw error(400, 'Tidak ada nilai dipilih');
+	if (ids.length > 200) throw error(400, 'Maksimal 200 nilai sekaligus');
 	const results: Array<{ id: string; ok: boolean; message?: string }> = [];
 	for (const id of ids) {
 		const [grade] = await selectGrades(getPool(), {
@@ -767,6 +769,7 @@ export const bulkUpdateGrades = form(
 		const user = await requireRole(['LECTURER', 'ADMIN']);
 		const ids = data.ids.split(',').filter(Boolean);
 		if (!ids.length) throw error(400, 'Tidak ada nilai dipilih');
+		if (ids.length > 200) throw error(400, 'Maksimal 200 nilai sekaligus');
 		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
 		await withTransaction(async (conn) => {
 			for (const id of ids) {

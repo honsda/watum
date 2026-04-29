@@ -99,6 +99,9 @@ function getJwtSecret() {
 
 function getJwtIssuer() {
 	if (!env.JWT_ISSUER) {
+		if (env.NODE_ENV === 'production') {
+			throw new Error('JWT_ISSUER is required in production');
+		}
 		console.warn('JWT_ISSUER environment variable is not set — JWT issuer validation is disabled');
 		return undefined;
 	}

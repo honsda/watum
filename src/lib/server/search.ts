@@ -26,6 +26,8 @@ export function fulltextSearchPattern(value: string | null | undefined): string 
 	if (!trimmed) return undefined;
 	return trimmed
 		.split(/\s+/)
+		.map((w) => w.replace(/[+\-<>()~*"@]/g, ' ').trim())
+		.filter(Boolean)
 		.map((w) => w + '*')
 		.join(' ');
 }

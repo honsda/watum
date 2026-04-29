@@ -3,6 +3,7 @@ import { browser } from '$app/environment';
 const REFRESH_ENDPOINT_PATH = '/auth/refresh';
 const PROACTIVE_REFRESH_INTERVAL_MS = 4 * 60 * 1000; // 4 minutes
 const REFRESH_UNAVAILABLE_COOLDOWN_MS = 30 * 1000; // 30 seconds
+const AUTH_FETCH_PATCH = Symbol.for('watum.authFetchPatch');
 
 let accessToken: string | null = null;
 let refreshPromise: Promise<string | null> | null = null;
@@ -10,8 +11,7 @@ let fetchInstalled = false;
 let refreshUnavailable = false;
 let refreshUnavailableAt = 0;
 let proactiveRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-
-const nativeFetch = browser ? window.fetch.bind(window) : fetch;
+let baseFetch: typeof fetch = fetch;
 
 function resolveUrl(input: RequestInfo | URL) {
 	if (input instanceof URL) {
@@ -41,7 +41,7 @@ function buildAuthorizedRequest(baseRequest: Request, token: string) {
 }
 
 async function requestNewAccessToken() {
-	const response = await nativeFetch(REFRESH_ENDPOINT_PATH, {
+	const response = await baseFetch(REFRESH_ENDPOINT_PATH, {
 		method: 'POST',
 		credentials: 'same-origin',
 		headers: {
@@ -136,13 +136,19 @@ function installAuthFetch() {
 	}
 
 	fetchInstalled = true;
+	const currentFetch = window.fetch as typeof window.fetch & { [AUTH_FETCH_PATCH]?: boolean };
+	if (currentFetch[AUTH_FETCH_PATCH]) {
+		baseFetch = currentFetch.bind(window);
+		return;
+	}
+	baseFetch = currentFetch.bind(window);
 
 	document.addEventListener('visibilitychange', handleVisibilityChange);
 
-	window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+	const wrappedFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = resolveUrl(input);
 		if (!shouldAttachAccessToken(url)) {
-			return nativeFetch(input, init);
+			return baseFetch(input, init);
 		}
 
 		const baseRequest = input instanceof Request ? input : new Request(input, init);
@@ -156,7 +162,7 @@ function installAuthFetch() {
 		const initialRequest = token
 			? buildAuthorizedRequest(baseRequest.clone(), token)
 			: baseRequest.clone();
-		let response = await nativeFetch(initialRequest);
+		let response = await baseFetch(initialRequest);
 
 		if (existingAuthorization || response.status !== 401) {
 			return response;
@@ -167,9 +173,12 @@ function installAuthFetch() {
 			return response;
 		}
 
-		response = await nativeFetch(buildAuthorizedRequest(baseRequest.clone(), refreshedToken));
+		response = await baseFetch(buildAuthorizedRequest(baseRequest.clone(), refreshedToken));
 		return response;
 	};
+
+	wrappedFetch[AUTH_FETCH_PATCH] = true;
+	window.fetch = wrappedFetch;
 }
 
 installAuthFetch();

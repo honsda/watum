@@ -5,6 +5,8 @@ export type SelectStudentScheduleConflictParams = {
 	day: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
 	startTime: Date | string;
 	endTime: Date | string;
+	semester?: string;
+	academicYear?: string;
 	excludeEnrollmentId?: string;
 };
 
@@ -29,6 +31,15 @@ export async function selectStudentScheduleConflict(
 	AND e.schedule_end_time > ?
 	`;
 	const values: unknown[] = [params.studentId, params.day, params.endTime, params.startTime];
+
+	if (params.semester) {
+		sql += ` AND e.semester = ?`;
+		values.push(params.semester);
+	}
+	if (params.academicYear) {
+		sql += ` AND e.academic_year = ?`;
+		values.push(params.academicYear);
+	}
 
 	if (params.excludeEnrollmentId) {
 		sql += ` AND e.id <> ?`;

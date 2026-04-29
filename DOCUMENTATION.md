@@ -3,8 +3,8 @@
 > **Project**: Watum Academic Scheduling System  
 > **Stack**: SvelteKit 2.x, MariaDB (MySQL), Bun, TypeScript  
 > **Scale**: Stress-tested to 10,000,000 rows (enrollments)  
-> **Last Updated**: 2026-04-28
-> **Recent Changes**: Added Section 12 (UI Entity Links & Accessibility), updated Appendix with a11y trade-off documentation
+> **Last Updated**: 2026-04-29
+> **Recent Changes**: Resolved entity-link accessibility warnings, hardened enrollment creation and term-scoped conflict checks, documented editor combobox search behavior and TanStack Query decision
 
 ---
 
@@ -424,21 +424,21 @@ WHERE e.schedule_day <> s.day
 
 22 migration files in `src/lib/server/migrations/`:
 
-| File                                            | Purpose                                                  |
-| ----------------------------------------------- | -------------------------------------------------------- |
-| `001_schema.sql`                                | Base schema + indexes                                    |
-| `002_refresh_tokens.sql`                        | Session management                                       |
-| `003-003`                                       | Refresh token indexes                                    |
-| `004-009`                                       | Schedule overlap + large dataset indexes                 |
-| `010-011`                                       | Conflict audit integer keys                              |
-| `012`                                           | **Denormalized schedule columns + covering indexes**     |
-| `013-016`                                       | Index cleanup + fulltext search                          |
-| `017`                                           | Time column optimizations                                |
-| `018_optimize_triggers.sql`                     | Conditional trigger guards                               |
-| `019_drop_courses_au_trigger.sql`               | Dropped cascade trigger (later restored)                 |
-| `020_recreate_courses_au_trigger.sql`           | Restored trigger with optimized query                    |
-| `021_grades_constraints.sql`                    | Grade score CHECK constraints + total_score auto trigger |
-| `022_enrollment_course_lecturer_index.sql`      | Composite index for lecturer cascade trigger performance |
+| File                                       | Purpose                                                  |
+| ------------------------------------------ | -------------------------------------------------------- |
+| `001_schema.sql`                           | Base schema + indexes                                    |
+| `002_refresh_tokens.sql`                   | Session management                                       |
+| `003-003`                                  | Refresh token indexes                                    |
+| `004-009`                                  | Schedule overlap + large dataset indexes                 |
+| `010-011`                                  | Conflict audit integer keys                              |
+| `012`                                      | **Denormalized schedule columns + covering indexes**     |
+| `013-016`                                  | Index cleanup + fulltext search                          |
+| `017`                                      | Time column optimizations                                |
+| `018_optimize_triggers.sql`                | Conditional trigger guards                               |
+| `019_drop_courses_au_trigger.sql`          | Dropped cascade trigger (later restored)                 |
+| `020_recreate_courses_au_trigger.sql`      | Restored trigger with optimized query                    |
+| `021_grades_constraints.sql`               | Grade score CHECK constraints + total_score auto trigger |
+| `022_enrollment_course_lecturer_index.sql` | Composite index for lecturer cascade trigger performance |
 
 ---
 
@@ -555,11 +555,11 @@ Views are scoped by user role at three layers:
 
 Role access matrix:
 
-| Role       | Views                                                                                               |
-| ---------- | --------------------------------------------------------------------------------------------------- |
+| Role       | Views                                                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ADMIN`    | All 12 views (dashboard, calendar, builder, classrooms, courses, students, lecturers, faculties, studyPrograms, enrollments, grades, users) |
-| `LECTURER` | All except `users`; read-only on students, faculties, studyPrograms                                 |
-| `STUDENT`  | dashboard, calendar, classrooms, courses, lecturers, enrollments, grades                            |
+| `LECTURER` | All except `users`; read-only on students, faculties, studyPrograms                                                                         |
+| `STUDENT`  | dashboard, calendar, classrooms, courses, lecturers, enrollments, grades                                                                    |
 
 ### 4.5 Non-Blocking UI Refreshes
 
@@ -748,11 +748,11 @@ It does not yet contain names or full enrollment rows. This keeps the expensive 
 
 The `HAVING` predicate differs by conflict type because the semantics of "double-booking" depend on the resource:
 
-| Conflict type | HAVING predicate                        | Rationale                                                                                                            |
-| ------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Room          | `COUNT(*) > 1`                          | Any room double-booking is a real conflict — even two sections of the same course consuming the same physical space  |
-| Student       | `MIN(course_id) != MAX(course_id)`      | A student enrolled twice in the same course at the same slot is data corruption, not a real conflict                 |
-| Lecturer      | `MIN(course_id) != MAX(course_id)`      | A lecturer teaching one course with hundreds of students is normal; only multiple distinct courses indicate conflict |
+| Conflict type | HAVING predicate                   | Rationale                                                                                                            |
+| ------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Room          | `COUNT(*) > 1`                     | Any room double-booking is a real conflict — even two sections of the same course consuming the same physical space  |
+| Student       | `MIN(course_id) != MAX(course_id)` | A student enrolled twice in the same course at the same slot is data corruption, not a real conflict                 |
+| Lecturer      | `MIN(course_id) != MAX(course_id)` | A lecturer teaching one course with hundreds of students is normal; only multiple distinct courses indicate conflict |
 
 Student and lecturer conflicts previously used `COUNT(DISTINCT course_id) > 1`, which builds a hash table to track distinct values per group. The `MIN/MAX` approach avoids this overhead — for non-NULL values it is semantically equivalent but significantly faster on large groups because it only tracks two values instead of all distinct values.
 
@@ -1146,37 +1146,37 @@ This section documents every type, constant, and function in the server conflict
 
 #### 6.12.1 Type Definitions
 
-| Type | Purpose |
-| ---- | ------- |
-| `ConflictAuditType` | Union `'room' \| 'student' \| 'lecturer'`. Identifies which resource dimension is being audited. |
-| `ConflictAuditFilters` | All optional filter fields accepted by the audit pipeline. See §6.3.1 for field descriptions. |
-| `ConflictAuditMember` | A single hydrated enrollment row inside a conflict group, with all display names resolved (student, course, lecturer, room). |
-| `ConflictAuditGroup` | One conflict instance: a resource + time window + sampled members. This is what the UI renders. |
-| `ConflictAuditResult` | Top-level return value containing applied filters, aggregate summary, truncation flag, and hydrated groups. |
-| `AuditScanRow` | Raw database row shape returned by seed collection and hydration queries. Uses snake_case column names. |
-| `ConflictAuditGroupSeed` | Lightweight pre-hydration representation of a conflict group. Contains only audit keys, time window, and member count — no display names. |
-| `HydratedMemberRow` | Subset of `AuditScanRow` after hydration, guaranteed to have student/course/lecturer/room display names. |
-| `CacheEntry` | In-memory cache slot: `{ version, storedAt, result }`. The version is checked against the global `auditCacheVersion` to detect invalidation. |
+| Type                     | Purpose                                                                                                                                      |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ConflictAuditType`      | Union `'room' \| 'student' \| 'lecturer'`. Identifies which resource dimension is being audited.                                             |
+| `ConflictAuditFilters`   | All optional filter fields accepted by the audit pipeline. See §6.3.1 for field descriptions.                                                |
+| `ConflictAuditMember`    | A single hydrated enrollment row inside a conflict group, with all display names resolved (student, course, lecturer, room).                 |
+| `ConflictAuditGroup`     | One conflict instance: a resource + time window + sampled members. This is what the UI renders.                                              |
+| `ConflictAuditResult`    | Top-level return value containing applied filters, aggregate summary, truncation flag, and hydrated groups.                                  |
+| `AuditScanRow`           | Raw database row shape returned by seed collection and hydration queries. Uses snake_case column names.                                      |
+| `ConflictAuditGroupSeed` | Lightweight pre-hydration representation of a conflict group. Contains only audit keys, time window, and member count — no display names.    |
+| `HydratedMemberRow`      | Subset of `AuditScanRow` after hydration, guaranteed to have student/course/lecturer/room display names.                                     |
+| `CacheEntry`             | In-memory cache slot: `{ version, storedAt, result }`. The version is checked against the global `auditCacheVersion` to detect invalidation. |
 
 #### 6.12.2 Constants
 
-| Constant | Value | Purpose |
-| -------- | ----- | ------- |
-| `AUDIT_CACHE_TTL_MS` | `300_000` (5 minutes) | Stale cache entries are returned immediately while a background refresh is scheduled. |
-| `DEFAULT_HYDRATED_MEMBERS_PER_GROUP` | `40` | Default cap on hydrated members per group when no explicit `memberSampleSize` is provided. |
-| `MAX_HYDRATED_MEMBERS_PER_GROUP` | `40` | Hard ceiling. Requests above 40 are clamped to 40 to prevent unbounded hydration. |
-| `AUDIT_CACHE_MAX_SIZE` | `200` | LRU bound. After 200 entries, oldest entries are evicted by insertion order. |
+| Constant                             | Value                 | Purpose                                                                                    |
+| ------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------ |
+| `AUDIT_CACHE_TTL_MS`                 | `300_000` (5 minutes) | Stale cache entries are returned immediately while a background refresh is scheduled.      |
+| `DEFAULT_HYDRATED_MEMBERS_PER_GROUP` | `40`                  | Default cap on hydrated members per group when no explicit `memberSampleSize` is provided. |
+| `MAX_HYDRATED_MEMBERS_PER_GROUP`     | `40`                  | Hard ceiling. Requests above 40 are clamped to 40 to prevent unbounded hydration.          |
+| `AUDIT_CACHE_MAX_SIZE`               | `200`                 | LRU bound. After 200 entries, oldest entries are evicted by insertion order.               |
 
 #### 6.12.3 Cache State
 
 The module maintains four module-level mutable structures:
 
-| Symbol | Type | Purpose |
-| ------ | ---- | ------- |
-| `auditCache` | `Map<string, CacheEntry>` | Completed audit results keyed by normalized filter JSON. |
-| `auditCacheInsertionOrder` | `string[]` | Tracks insertion order so `pruneAuditCache()` can evict oldest entries. |
-| `inFlightAudits` | `Map<string, Promise<ConflictAuditResult>>` | Deduplicates concurrent requests for the same cache key. If two requests arrive with identical filters while the first is still computing, the second awaits the same promise. |
-| `auditCacheVersion` | `number` | Monotonically incremented by `invalidateConflictAuditCache()`. Cached entries whose `version` does not match the current global version are treated as stale. |
+| Symbol                     | Type                                        | Purpose                                                                                                                                                                        |
+| -------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `auditCache`               | `Map<string, CacheEntry>`                   | Completed audit results keyed by normalized filter JSON.                                                                                                                       |
+| `auditCacheInsertionOrder` | `string[]`                                  | Tracks insertion order so `pruneAuditCache()` can evict oldest entries.                                                                                                        |
+| `inFlightAudits`           | `Map<string, Promise<ConflictAuditResult>>` | Deduplicates concurrent requests for the same cache key. If two requests arrive with identical filters while the first is still computing, the second awaits the same promise. |
+| `auditCacheVersion`        | `number`                                    | Monotonically incremented by `invalidateConflictAuditCache()`. Cached entries whose `version` does not match the current global version are treated as stale.                  |
 
 #### 6.12.4 Cache Management Functions
 
@@ -1196,7 +1196,7 @@ Builds a deterministic JSON string from all filter fields. Focus enrollment IDs 
 
 Clamps the client-requested `memberSampleSize` to the range `[1, MAX_HYDRATED_MEMBERS_PER_GROUP]`. Returns `null` if the filter does not specify a sample size, which causes hydration to use `DEFAULT_HYDRATED_MEMBERS_PER_GROUP`.
 
-**`invalidateConflictAuditCache()`** *(exported)*
+**`invalidateConflictAuditCache()`** _(exported)_
 
 Invalidates the entire cache in O(1):
 
@@ -1230,6 +1230,7 @@ Academic year is converted to a 4-digit numeric start year via `CAST(SUBSTRING(?
 **`getConflictResourceColumn(type)`**
 
 Returns the denormalized audit column for a conflict type:
+
 - `'room'` → `'e.class_room_audit_sk'`
 - `'student'` → `'e.student_audit_sk'`
 - `'lecturer'` → `'e.lecturer_audit_sk'`
@@ -1237,6 +1238,7 @@ Returns the denormalized audit column for a conflict type:
 **`getConflictForceIndex(type)`**
 
 Returns the covering index name for a conflict type:
+
 - `'room'` → `'idx_enrollments_room_conflict'`
 - `'student'` → `'idx_enrollments_student_conflict'`
 - `'lecturer'` → `'idx_enrollments_lecturer_conflict'`
@@ -1249,7 +1251,7 @@ Creates a deterministic string key from a seed's resource ID, academic year, sem
 
 **`collectConflictGroupSeeds(pool, conflictType, filters)`**
 
-*Phase 1 — Discovery.* Performs the expensive index-only aggregation that finds all conflict windows for a single conflict type.
+_Phase 1 — Discovery._ Performs the expensive index-only aggregation that finds all conflict windows for a single conflict type.
 
 1. Builds the `WHERE` clause via `buildEnrollmentOnlyWhere(filters)`.
 2. Chooses the resource column and covering index via `getConflictResourceColumn()` and `getConflictForceIndex()`.
@@ -1262,7 +1264,7 @@ This function is called once per conflict type. The three calls run in parallel 
 
 **`loadMemberRowsForSeeds(pool, seeds, focusSet, memberSampleSize)`**
 
-*Phase 2 — Hydration.* Fetches display-ready member rows for a list of seeds.
+_Phase 2 — Hydration._ Fetches display-ready member rows for a list of seeds.
 
 Key behaviors:
 
@@ -1277,7 +1279,7 @@ Returns the input seeds with `memberRows` populated.
 
 **`filterSeedsByFocus(pool, seeds, focusSet)`**
 
-*Phase 3 — Focus scoping.* When `focusEnrollmentIds` is provided, this function narrows the full seed list to only seeds that contain at least one focused enrollment.
+_Phase 3 — Focus scoping._ When `focusEnrollmentIds` is provided, this function narrows the full seed list to only seeds that contain at least one focused enrollment.
 
 Algorithm:
 
@@ -1289,7 +1291,7 @@ This is more efficient than hydrating all seeds and then filtering, because it a
 
 **`sampleGroupMembers(group, focusSet, memberSampleSize)`**
 
-*Phase 4 — Sampling.* Culls a group's `memberRows` down to the requested sample size while preserving focus rows.
+_Phase 4 — Sampling._ Culls a group's `memberRows` down to the requested sample size while preserving focus rows.
 
 1. If `memberSampleSize` is `null`, return all rows.
 2. If the group has fewer rows than the sample size, return all rows.
@@ -1301,7 +1303,7 @@ Because a `Map` is used with `enrollment_id` as the key, duplicates are impossib
 
 **`hydrateConflictGroupSeeds(groups, focusSet, memberSampleSize)`**
 
-*Phase 5 — Group assembly.* Converts seeds + sampled rows into final `ConflictAuditGroup` objects.
+_Phase 5 — Group assembly._ Converts seeds + sampled rows into final `ConflictAuditGroup` objects.
 
 Per group:
 
@@ -1318,7 +1320,7 @@ Returns an array of `ConflictAuditGroup` ready for the UI.
 
 **`computeAudit(pool, filters)`**
 
-*Orchestrator.* Runs the full six-phase pipeline:
+_Orchestrator._ Runs the full six-phase pipeline:
 
 1. **Select types**: If `filters.conflictType` is set, audit only that type; otherwise audit all three.
 2. **Parallel seed collection**: `Promise.all` over `collectConflictGroupSeeds()` for each type.
@@ -1342,9 +1344,9 @@ Called when a cache entry exists but is past its TTL. It:
 
 The caller (`auditEnrollmentConflicts`) returns the stale cached result immediately, so the UI never waits for the refresh.
 
-**`auditEnrollmentConflicts(pool, filters)`** *(exported)*
+**`auditEnrollmentConflicts(pool, filters)`** _(exported)_
 
-*Public entry point.* Implements the full cache-aware read path:
+_Public entry point._ Implements the full cache-aware read path:
 
 1. Build the cache key via `createAuditCacheKey(filters)`.
 2. Check `auditCache` for a matching entry with the current `auditCacheVersion`.
@@ -1422,11 +1424,11 @@ Background refresh promises are fire-and-forget. If the server restarts, the cac
 
 Typical memory footprint per cached audit result:
 
-| Filter set | Groups hydrated | Members per group | Estimated cache entry size |
-| ---------- | --------------- | ----------------- | -------------------------- |
-| Full audit (no limit) | 1,000 | 10 | ~2–4 MB |
-| Lecturer-scoped | 200 | 10 | ~400–800 KB |
-| Focused (10 IDs) | 5 | 10 | ~20–40 KB |
+| Filter set            | Groups hydrated | Members per group | Estimated cache entry size |
+| --------------------- | --------------- | ----------------- | -------------------------- |
+| Full audit (no limit) | 1,000           | 10                | ~2–4 MB                    |
+| Lecturer-scoped       | 200             | 10                | ~400–800 KB                |
+| Focused (10 IDs)      | 5               | 10                | ~20–40 KB                  |
 
 At the LRU bound of 200 entries, worst-case cache memory is ~400–800 MB. In practice, most workloads hit far fewer distinct filter combinations because the UI scopes by academic year + semester, which dramatically reduces cardinality.
 
@@ -1436,13 +1438,13 @@ At the LRU bound of 200 entries, worst-case cache memory is ~400–800 MB. In pr
 
 ### 7.1 Database Optimizations
 
-| Optimization             | Impact                                                        |
-| ------------------------ | ------------------------------------------------------------- |
-| **Covering indexes**     | Conflict scans are index-only, no row lookups                 |
-| **Denormalized columns** | Eliminates JOINs in aggregation queries                       |
-| **Conditional triggers** | Skips 552k unnecessary SELECTs per lecturer change            |
-| **Keyset pagination**    | `cursor`-based pagination instead of OFFSET (avoids skipping) |
-| **Fulltext indexes**     | `MATCH ... AGAINST` for name search                           |
+| Optimization             | Impact                                                                                                                        |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Covering indexes**     | Conflict scans are index-only, no row lookups                                                                                 |
+| **Denormalized columns** | Eliminates JOINs in aggregation queries                                                                                       |
+| **Conditional triggers** | Skips 552k unnecessary SELECTs per lecturer change                                                                            |
+| **Keyset pagination**    | `cursor`-based pagination instead of OFFSET (avoids skipping)                                                                 |
+| **Fulltext indexes**     | `MATCH ... AGAINST` for name search                                                                                           |
 | **Composite indexes**    | `idx_schedules_room_day_time` for room availability checks; `idx_enrollments_course_lecturer` for trigger cascade performance |
 
 #### 7.1.1 Index Families
@@ -1506,7 +1508,7 @@ That is why composite indexes such as `idx_schedules_room_day_time` matter. They
 | Optimization              | Impact                                                                   |
 | ------------------------- | ------------------------------------------------------------------------ |
 | **Query batching**        | SvelteKit batches identical queries in the same tick                     |
-| **Conflict audit cache**  | 5-minute TTL avoids re-scanning; stale-while-revalidate     |
+| **Conflict audit cache**  | 5-minute TTL avoids re-scanning; stale-while-revalidate                  |
 | **Content-visibility**    | `content-visibility: auto` on list rows                                  |
 | **Enrollment lookup Map** | O(1) instead of O(n) `.find()`                                           |
 | **Available rooms Set**   | O(n) instead of O(n²) room filtering                                     |
@@ -1739,15 +1741,15 @@ The server authentication module implements a dual-token architecture: short-liv
 
 #### 8.1.1 Security Model and Threat Mitigations
 
-| Threat | Mitigation | Implementation |
-| ------ | ---------- | --------------- |
-| Token theft (XSS) | Access token stored only in memory; refresh token is `httpOnly` | Client `accessToken` variable; server sets `httpOnly` cookie |
-| Token theft (network) | Context binding to User-Agent | `ctx` JWT claim = SHA-256(User-Agent) |
-| Replay attack | Refresh token rotation + single-use | Old token deleted from DB on refresh; `FOR UPDATE` lock |
-| Session fixation | Per-context refresh tokens | `setSession()` deletes only same-context tokens |
-| Password change lag | Password versioning in JWT | `pwdv` claim invalidated when hash changes |
-| CSRF | `sameSite: 'strict'` cookie | Cookie only sent on same-site requests |
-| Cookie name confusion | Multi-name read + cleanup | Reads all known names; deletes stale names on set |
+| Threat                | Mitigation                                                      | Implementation                                               |
+| --------------------- | --------------------------------------------------------------- | ------------------------------------------------------------ |
+| Token theft (XSS)     | Access token stored only in memory; refresh token is `httpOnly` | Client `accessToken` variable; server sets `httpOnly` cookie |
+| Token theft (network) | Context binding to User-Agent                                   | `ctx` JWT claim = SHA-256(User-Agent)                        |
+| Replay attack         | Refresh token rotation + single-use                             | Old token deleted from DB on refresh; `FOR UPDATE` lock      |
+| Session fixation      | Per-context refresh tokens                                      | `setSession()` deletes only same-context tokens              |
+| Password change lag   | Password versioning in JWT                                      | `pwdv` claim invalidated when hash changes                   |
+| CSRF                  | `sameSite: 'strict'` cookie                                     | Cookie only sent on same-site requests                       |
+| Cookie name confusion | Multi-name read + cleanup                                       | Reads all known names; deletes stale names on set            |
 
 #### 8.1.2 Type Definitions
 
@@ -1755,13 +1757,13 @@ The server authentication module implements a dual-token architecture: short-liv
 
 ```typescript
 interface User {
-  id: string;                    // UUID from users table
-  email: string;
-  role: 'ADMIN' | 'STUDENT' | 'LECTURER';
-  studentId: string | null;      // Nullable FK to students
-  lecturerId: string | null;     // Nullable FK to lecturers
-  student: { id: string; name: string } | null;
-  lecturer: { id: string; name: string } | null;
+	id: string; // UUID from users table
+	email: string;
+	role: 'ADMIN' | 'STUDENT' | 'LECTURER';
+	studentId: string | null; // Nullable FK to students
+	lecturerId: string | null; // Nullable FK to lecturers
+	student: { id: string; name: string } | null;
+	lecturer: { id: string; name: string } | null;
 }
 ```
 
@@ -1771,9 +1773,9 @@ The `student` and `lecturer` objects are eagerly loaded by the SQL builder (`sel
 
 ```typescript
 interface AccessTokenPayload {
-  userId: string;           // JWT 'sub' claim
-  contextBinding: string;   // JWT 'ctx' claim (SHA-256 of UA)
-  passwordVersion: string;  // JWT 'pwdv' claim (SHA-256 of password hash)
+	userId: string; // JWT 'sub' claim
+	contextBinding: string; // JWT 'ctx' claim (SHA-256 of UA)
+	passwordVersion: string; // JWT 'pwdv' claim (SHA-256 of password hash)
 }
 ```
 
@@ -1781,11 +1783,11 @@ interface AccessTokenPayload {
 
 ```typescript
 interface RefreshTokenRow extends RowDataPacket {
-  id: string;              // UUID primary key
-  user_id: string;
-  token_hash: string;      // SHA-256 of "refresh:" + opaque token
-  context_binding: string; // SHA-256 of UA at creation time
-  expires_at: Date | string;
+	id: string; // UUID primary key
+	user_id: string;
+	token_hash: string; // SHA-256 of "refresh:" + opaque token
+	context_binding: string; // SHA-256 of UA at creation time
+	expires_at: Date | string;
 }
 ```
 
@@ -1793,32 +1795,32 @@ interface RefreshTokenRow extends RowDataPacket {
 
 ```typescript
 interface AuthenticatedLoginResult {
-  user: User;
-  passwordHash: string;    // Raw hash from DB, needed for password versioning
+	user: User;
+	passwordHash: string; // Raw hash from DB, needed for password versioning
 }
 ```
 
 #### 8.1.3 Constants and Environment
 
-| Constant | Value | Purpose | Mutable? |
-| -------- | ----- | ------- | -------- |
-| `ACCESS_TOKEN_TTL_SECONDS` | `300` | Access token lifetime in seconds | No |
-| `REFRESH_TOKEN_TTL_SECONDS` | `2_592_000` | Refresh token lifetime (30 days) | No |
-| `ACCESS_CONTEXT_BINDING_CLAIM` | `'ctx'` | JWT custom claim key for context | No |
-| `PASSWORD_VERSION_CLAIM` | `'pwdv'` | JWT custom claim key for password version | No |
-| `REFRESH_TOKEN_COOKIE_NAME` | `'refresh_token'` | Base cookie name | No |
-| `SECURE_REFRESH_TOKEN_COOKIE_NAME` | `'__Secure-refresh_token'` | Prefixed name for HTTPS | No |
-| `LEGACY_HOST_REFRESH_TOKEN_COOKIE_NAME` | `'__Host-refresh_token'` | Legacy prefixed name | No |
-| `REFRESH_TOKEN_COOKIE_PATH` | `'/auth'` | Cookie path scope | No |
-| `LEGACY_SESSION_COOKIE_NAMES` | `['session_token', '__Host-session_token', 'session_id']` | Pre-migration cleanup targets | No |
+| Constant                                | Value                                                     | Purpose                                   | Mutable? |
+| --------------------------------------- | --------------------------------------------------------- | ----------------------------------------- | -------- |
+| `ACCESS_TOKEN_TTL_SECONDS`              | `300`                                                     | Access token lifetime in seconds          | No       |
+| `REFRESH_TOKEN_TTL_SECONDS`             | `2_592_000`                                               | Refresh token lifetime (30 days)          | No       |
+| `ACCESS_CONTEXT_BINDING_CLAIM`          | `'ctx'`                                                   | JWT custom claim key for context          | No       |
+| `PASSWORD_VERSION_CLAIM`                | `'pwdv'`                                                  | JWT custom claim key for password version | No       |
+| `REFRESH_TOKEN_COOKIE_NAME`             | `'refresh_token'`                                         | Base cookie name                          | No       |
+| `SECURE_REFRESH_TOKEN_COOKIE_NAME`      | `'__Secure-refresh_token'`                                | Prefixed name for HTTPS                   | No       |
+| `LEGACY_HOST_REFRESH_TOKEN_COOKIE_NAME` | `'__Host-refresh_token'`                                  | Legacy prefixed name                      | No       |
+| `REFRESH_TOKEN_COOKIE_PATH`             | `'/auth'`                                                 | Cookie path scope                         | No       |
+| `LEGACY_SESSION_COOKIE_NAMES`           | `['session_token', '__Host-session_token', 'session_id']` | Pre-migration cleanup targets             | No       |
 
 **Environment Variables:**
 
-| Variable | Required | Default | Used By |
-| -------- | -------- | ------- | ------- |
-| `JWT_SECRET` | Yes | — | `getJwtSecret()` — HS256 signing key |
-| `JWT_ISSUER` | No | `undefined` | `getJwtIssuer()` — optional issuer validation |
-| `NODE_ENV` | No | — | `useSecureCookies()` — forces secure in production |
+| Variable     | Required | Default     | Used By                                            |
+| ------------ | -------- | ----------- | -------------------------------------------------- |
+| `JWT_SECRET` | Yes      | —           | `getJwtSecret()` — HS256 signing key               |
+| `JWT_ISSUER` | No       | `undefined` | `getJwtIssuer()` — optional issuer validation      |
+| `NODE_ENV`   | No       | —           | `useSecureCookies()` — forces secure in production |
 
 #### 8.1.4 Cryptographic Primitives
 
@@ -1827,12 +1829,14 @@ interface AuthenticatedLoginResult {
 Creates a SHA-256 digest of the input, encoded as `base64url` (URL-safe Base64 without padding). This is the single hashing primitive used throughout the auth module.
 
 **Properties:**
+
 - Deterministic: same input always produces same output
 - One-way: cannot be reversed to recover the original
 - Collision-resistant: SHA-256 provides 256-bit security
 - URL-safe: `base64url` encoding avoids `+`, `/`, and `=` characters
 
 **Used for:**
+
 - Refresh token hashing (with domain prefix)
 - Context binding (User-Agent fingerprint)
 - Password versioning (fingerprint of password hash)
@@ -1854,6 +1858,7 @@ return randomBytes(48).toString('base64url');
 Generates a 48-byte (384-bit) cryptographically secure random value using Node.js `crypto.randomBytes()`. Encoded as `base64url`, this produces a 64-character string.
 
 **Entropy analysis:**
+
 - 48 bytes = 384 bits
 - Collision probability at 1 billion tokens: ≈ 2^-325 (negligible)
 - Brute-force resistance: 2^384 operations (computationally infeasible)
@@ -1867,6 +1872,7 @@ return hashValue(passwordHash);
 Creates a stable fingerprint of the user's current password hash. When a user changes their password, the stored hash changes, so this version changes. All previously issued access tokens contain the old `passwordVersion` in their `pwdv` claim, causing `getUser()` to reject them.
 
 **Invalidation cascade:**
+
 1. Admin resets user's password
 2. Database password hash changes
 3. `getUser()` computes `getPasswordVersion(newHash)` for future tokens
@@ -1883,6 +1889,7 @@ return hashValue(['access-context-v2', userAgent].join('\n'));
 Binds tokens to the User-Agent string of the requesting browser/device. This prevents a stolen access token from being used on a different device, because the context binding in the JWT will not match the new device's User-Agent.
 
 **Limitations:**
+
 - User-Agent can be spoofed (but this requires active attacker control)
 - Browser upgrades may change UA string (rare edge case, user re-logs in)
 - Does not protect against same-browser attacks (e.g., malicious extensions)
@@ -1921,7 +1928,7 @@ Returns a deduplicated array of all cookie names that might contain a refresh to
 
 **`getPreferredRefreshTokenCookieName(url: URL): string`**
 
-Returns `__Secure-refresh_token` for HTTPS/production, `refresh_token` otherwise. This is the "canonical" name used when *writing* cookies.
+Returns `__Secure-refresh_token` for HTTPS/production, `refresh_token` otherwise. This is the "canonical" name used when _writing_ cookies.
 
 **`getRefreshTokenCookieOptions(url: URL): CookieOptions`**
 
@@ -1935,6 +1942,7 @@ Returns `__Secure-refresh_token` for HTTPS/production, `refresh_token` otherwise
 ```
 
 **Security properties:**
+
 - `path: '/auth'`: Cookie is only sent to `/auth/*` endpoints, reducing attack surface
 - `httpOnly: true`: JavaScript cannot read the cookie (XSS protection)
 - `sameSite: 'strict'`: Cookie is not sent on cross-site requests (CSRF protection)
@@ -1977,12 +1985,12 @@ Signs a JWT with the HS256 algorithm. The payload structure:
 
 ```json
 {
-  "sub": "<user-id>",
-  "ctx": "<sha256-of-user-agent>",
-  "pwdv": "<sha256-of-password-hash>",
-  "iat": 1234567890,
-  "exp": 1234568190,
-  "iss": "<optional-issuer>"
+	"sub": "<user-id>",
+	"ctx": "<sha256-of-user-agent>",
+	"pwdv": "<sha256-of-password-hash>",
+	"iat": 1234567890,
+	"exp": 1234568190,
+	"iss": "<optional-issuer>"
 }
 ```
 
@@ -2003,6 +2011,7 @@ Signs a JWT with the HS256 algorithm. The payload structure:
 Verifies a JWT and extracts its claims. Uses `jwtVerify` from the `jose` library.
 
 **Verification steps:**
+
 1. Verify signature with `JWT_SECRET`
 2. Verify `exp` (expiration) — 5 minutes from issuance
 3. Verify `iss` (issuer) — only if `JWT_ISSUER` is configured
@@ -2028,6 +2037,7 @@ Persists a refresh token to the database.
 | `expiresAt` | `Date` | Expiration timestamp (30 days from now) |
 
 **SQL:**
+
 ```sql
 INSERT INTO refresh_tokens (id, user_id, token_hash, context_binding, expires_at)
 VALUES (?, ?, ?, ?, ?)
@@ -2043,7 +2053,7 @@ Wraps the typed SQL builder:
 
 ```typescript
 const [user] = await selectUsers(connection, {
-  where: [['id', '=', userId]]
+	where: [['id', '=', userId]]
 });
 return user ?? null;
 ```
@@ -2099,6 +2109,7 @@ Request arrives
 ```
 
 **Failure points (all return null):**
+
 1. No `Authorization` header
 2. Header is not `Bearer <token>` format
 3. JWT signature invalid
@@ -2116,7 +2127,7 @@ Request arrives
 ```typescript
 const user = await getUser();
 if (!user) {
-  throw error(401, 'Unauthorized');
+	throw error(401, 'Unauthorized');
 }
 return user;
 ```
@@ -2128,16 +2139,17 @@ Throws SvelteKit `HttpError` with status 401. The error propagates to the client
 ```typescript
 const user = await requireUser();
 if (!roles.includes(user.role)) {
-  throw error(403, 'Forbidden');
+	throw error(403, 'Forbidden');
 }
 return user;
 ```
 
 **Usage pattern in remote functions:**
+
 ```typescript
 export const getEnrollmentConflictAudit = query(conflictAuditSchema, async (filters) => {
-  const user = await requireRole(['ADMIN', 'LECTURER']);
-  // ... proceed with audit
+	const user = await requireRole(['ADMIN', 'LECTURER']);
+	// ... proceed with audit
 });
 ```
 
@@ -2150,18 +2162,20 @@ Creates a new authenticated session. This is called after successful login.
 **Execution flow:**
 
 1. **Generate refresh token:**
+
    ```typescript
-   const refreshToken = createOpaqueToken();        // 48 random bytes
+   const refreshToken = createOpaqueToken(); // 48 random bytes
    const refreshTokenHash = hashRefreshToken(refreshToken);
    const contextBinding = getRequestContextBinding();
    const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000);
    ```
 
 2. **Database transaction:**
+
    ```sql
    -- Delete existing tokens for this user + context (other devices unaffected)
    DELETE FROM refresh_tokens WHERE user_id = ? AND context_binding = ?
-   
+
    -- Insert new token
    INSERT INTO refresh_tokens (id, user_id, token_hash, context_binding, expires_at)
    VALUES (?, ?, ?, ?, ?)
@@ -2189,6 +2203,7 @@ Rotates the refresh token and issues a new access token. Called by `POST /auth/r
 2. **Hash token:** `hashRefreshToken(refreshToken)`
 
 3. **Database transaction with `FOR UPDATE`:**
+
    ```sql
    SELECT id, user_id, token_hash, context_binding, expires_at
    FROM refresh_tokens
@@ -2196,6 +2211,7 @@ Rotates the refresh token and issues a new access token. Called by `POST /auth/r
    LIMIT 1
    FOR UPDATE
    ```
+
    The `FOR UPDATE` lock prevents race conditions where two concurrent refresh requests for the same token both succeed.
 
 4. **Validate token row:**
@@ -2209,6 +2225,7 @@ Rotates the refresh token and issues a new access token. Called by `POST /auth/r
    - No password? → `DELETE` token → return null
 
 6. **Rotate (delete old, insert new):**
+
    ```sql
    DELETE FROM refresh_tokens WHERE id = <old-id>;
    INSERT INTO refresh_tokens (...) VALUES (...);  -- new token
@@ -2241,6 +2258,7 @@ DELETE FROM refresh_tokens WHERE user_id = ?
 ```
 
 Deletes all refresh tokens for a user. Used when:
+
 - Admin resets a user's password
 - Admin deletes a user account
 - Security incident response
@@ -2254,6 +2272,7 @@ Deletes all refresh tokens for a user. Used when:
 Verifies user credentials using Argon2.
 
 **Execution flow:**
+
 1. Query user by email using `selectUsers` with `where: [['email', '=', email]]`
 2. If no user found → return `null`
 3. If user found but no password → return `null`
@@ -2262,6 +2281,7 @@ Verifies user credentials using Argon2.
 6. Return `{ user: mapUser(user), passwordHash: user.password }`
 
 **Timing attacks:** The function is not constant-time. However:
+
 - Argon2 verification is inherently slow (~50-100ms)
 - Network latency dominates (>20ms for most connections)
 - The `find()` query time is not correlated with password correctness
@@ -2280,6 +2300,7 @@ return { success: true, user: result.user, accessToken };
 ```
 
 **Side effects:**
+
 - Writes to `refresh_tokens` table (transaction)
 - Sets `refresh_token` cookie
 - Does NOT set the access token cookie (sent in JSON response body)
@@ -2307,8 +2328,8 @@ return token;
 ```typescript
 const { cookies, url } = getRequestEvent();
 for (const cookieName of getRefreshTokenCookieNames(url)) {
-  const token = cookies.get(cookieName);
-  if (token) return token;
+	const token = cookies.get(cookieName);
+	if (token) return token;
 }
 return null;
 ```
@@ -2323,14 +2344,14 @@ The client auth module manages the in-memory access token lifecycle and transpar
 
 #### 8.2.1 Module State
 
-| Symbol | Type | Initial | Purpose |
-| ------ | ---- | ------- | ------- |
-| `accessToken` | `string \| null` | `null` | Current in-memory access token. **Never persisted** to localStorage, cookies, or sessionStorage. Lost on page reload. |
-| `refreshPromise` | `Promise<string \| null> \| null` | `null` | Deduplicates concurrent refresh requests. Multiple simultaneous calls to `ensureAccessToken()` all await the same promise. |
-| `fetchInstalled` | `boolean` | `false` | Prevents double-intercepting `window.fetch` if the module is hot-reloaded or imported multiple times. |
-| `refreshUnavailable` | `boolean` | `false` | Circuit-breaker flag. Set to `true` when the refresh endpoint returns a definitive rejection (401/403/204). Prevents hammering the server with doomed refresh requests. |
-| `refreshUnavailableAt` | `number` | `0` | Timestamp (ms since epoch) when `refreshUnavailable` was set. Used with the 30-second cooldown to allow occasional retry. |
-| `proactiveRefreshTimer` | `ReturnType<typeof setTimeout> \| null` | `null` | Timer handle for the next proactive refresh. Cleared and reset on every successful token acquisition. |
+| Symbol                  | Type                                    | Initial | Purpose                                                                                                                                                                 |
+| ----------------------- | --------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `accessToken`           | `string \| null`                        | `null`  | Current in-memory access token. **Never persisted** to localStorage, cookies, or sessionStorage. Lost on page reload.                                                   |
+| `refreshPromise`        | `Promise<string \| null> \| null`       | `null`  | Deduplicates concurrent refresh requests. Multiple simultaneous calls to `ensureAccessToken()` all await the same promise.                                              |
+| `fetchInstalled`        | `boolean`                               | `false` | Prevents double-intercepting `window.fetch` if the module is hot-reloaded or imported multiple times.                                                                   |
+| `refreshUnavailable`    | `boolean`                               | `false` | Circuit-breaker flag. Set to `true` when the refresh endpoint returns a definitive rejection (401/403/204). Prevents hammering the server with doomed refresh requests. |
+| `refreshUnavailableAt`  | `number`                                | `0`     | Timestamp (ms since epoch) when `refreshUnavailable` was set. Used with the 30-second cooldown to allow occasional retry.                                               |
+| `proactiveRefreshTimer` | `ReturnType<typeof setTimeout> \| null` | `null`  | Timer handle for the next proactive refresh. Cleared and reset on every successful token acquisition.                                                                   |
 
 **State persistence:** None. All state is held in module-level variables. A full page reload resets everything. The user must re-authenticate (or the refresh cookie must re-establish the session) after reload.
 
@@ -2350,14 +2371,15 @@ The client auth module can be modeled as a state machine with four states:
             cooldown expires         └────────────────┘
 ```
 
-| State | `accessToken` | `refreshUnavailable` | Behavior |
-| ----- | ------------- | -------------------- | -------- |
-| `NO_TOKEN` | `null` | `false` | Will attempt refresh on next request |
-| `HAS_TOKEN` | `<string>` | `false` | Uses cached token; proactive refresh scheduled |
-| `REFRESH_FAILED` | `null` | `true` | Blocked for 30s; returns null to callers |
-| `RECOVERING` | `null` | `false` | Cooldown expired; will attempt refresh again |
+| State            | `accessToken` | `refreshUnavailable` | Behavior                                       |
+| ---------------- | ------------- | -------------------- | ---------------------------------------------- |
+| `NO_TOKEN`       | `null`        | `false`              | Will attempt refresh on next request           |
+| `HAS_TOKEN`      | `<string>`    | `false`              | Uses cached token; proactive refresh scheduled |
+| `REFRESH_FAILED` | `null`        | `true`               | Blocked for 30s; returns null to callers       |
+| `RECOVERING`     | `null`        | `false`              | Cooldown expired; will attempt refresh again   |
 
 State transitions are triggered by:
+
 - **Login success** → `setAccessToken()` → `HAS_TOKEN`
 - **Token expiry** → `verifyAccessToken()` rejects → automatic refresh attempt
 - **Refresh rejects** (401/403/204) → `REFRESH_FAILED`
@@ -2370,8 +2392,8 @@ State transitions are triggered by:
 
 ```typescript
 export function setAccessToken(token: string | null) {
-  accessToken = token;
-  refreshUnavailable = token == null;
+	accessToken = token;
+	refreshUnavailable = token == null;
 }
 ```
 
@@ -2381,6 +2403,7 @@ export function setAccessToken(token: string | null) {
 | `token` | `string \| null` | The access token from the server login response, or `null` to clear |
 
 **Side effects:**
+
 - Sets `accessToken`
 - Clears `refreshUnavailable` flag (if token is non-null)
 - Does NOT schedule proactive refresh (login flow handles this separately)
@@ -2391,12 +2414,13 @@ export function setAccessToken(token: string | null) {
 
 ```typescript
 export function clearAccessToken() {
-  accessToken = null;
-  refreshUnavailable = true;
+	accessToken = null;
+	refreshUnavailable = true;
 }
 ```
 
 **Side effects:**
+
 - Clears `accessToken`
 - Sets `refreshUnavailable = true` (prevents automatic refresh attempts)
 - Does NOT clear the refresh cookie (that's the server's responsibility via `clearSession()`)
@@ -2437,21 +2461,22 @@ return refreshPromise;
 Calls the refresh endpoint and handles all response codes.
 
 **Request:**
+
 ```typescript
-POST /auth/refresh
-Credentials: same-origin
-Accept: application/json
+POST / auth / refresh;
+Credentials: same - origin;
+Accept: application / json;
 ```
 
 **Response handling:**
 
-| Status | Meaning | Action |
-| ------ | ------- | ------ |
-| `200 OK` | Session valid, new token issued | Parse `accessToken` from JSON, store it, schedule proactive refresh, return it |
-| `204 No Content` | No active session (no refresh cookie) | Set `refreshUnavailable = true`, record timestamp, return `null` |
-| `401 Unauthorized` | Invalid/expired refresh token | Set `refreshUnavailable = true`, record timestamp, return `null` |
-| `403 Forbidden` | Context mismatch or revoked | Set `refreshUnavailable = true`, record timestamp, return `null` |
-| Other 4xx/5xx | Transient error | Do NOT set `refreshUnavailable` (allows retry), return `null` |
+| Status             | Meaning                               | Action                                                                         |
+| ------------------ | ------------------------------------- | ------------------------------------------------------------------------------ |
+| `200 OK`           | Session valid, new token issued       | Parse `accessToken` from JSON, store it, schedule proactive refresh, return it |
+| `204 No Content`   | No active session (no refresh cookie) | Set `refreshUnavailable = true`, record timestamp, return `null`               |
+| `401 Unauthorized` | Invalid/expired refresh token         | Set `refreshUnavailable = true`, record timestamp, return `null`               |
+| `403 Forbidden`    | Context mismatch or revoked           | Set `refreshUnavailable = true`, record timestamp, return `null`               |
+| Other 4xx/5xx      | Transient error                       | Do NOT set `refreshUnavailable` (allows retry), return `null`                  |
 
 **Why distinguish 401/403/204 from other errors?** These status codes indicate definitive session rejection. Other errors (500, 502, 503, network timeout) might be transient, so we allow immediate retry.
 
@@ -2459,11 +2484,14 @@ Accept: application/json
 
 ```typescript
 function scheduleProactiveRefresh() {
-  if (!browser) return;
-  if (proactiveRefreshTimer) clearTimeout(proactiveRefreshTimer);
-  proactiveRefreshTimer = setTimeout(() => {
-    void ensureAccessToken(true);  // force refresh
-  }, 4 * 60 * 1000);  // 4 minutes
+	if (!browser) return;
+	if (proactiveRefreshTimer) clearTimeout(proactiveRefreshTimer);
+	proactiveRefreshTimer = setTimeout(
+		() => {
+			void ensureAccessToken(true); // force refresh
+		},
+		4 * 60 * 1000
+	); // 4 minutes
 }
 ```
 
@@ -2475,23 +2503,24 @@ function scheduleProactiveRefresh() {
 
 ```typescript
 function handleVisibilityChange() {
-  if (!browser || document.hidden) return;
-  
-  // Cooldown expired → allow retry
-  if (refreshUnavailable && Date.now() - refreshUnavailableAt >= 30000) {
-    refreshUnavailable = false;
-  }
-  
-  // No token and refresh available → try to get one
-  if (!accessToken && !refreshUnavailable) {
-    void ensureAccessToken();
-  }
+	if (!browser || document.hidden) return;
+
+	// Cooldown expired → allow retry
+	if (refreshUnavailable && Date.now() - refreshUnavailableAt >= 30000) {
+		refreshUnavailable = false;
+	}
+
+	// No token and refresh available → try to get one
+	if (!accessToken && !refreshUnavailable) {
+		void ensureAccessToken();
+	}
 }
 ```
 
 **Event listener:** Registered on `document.visibilitychange` by `installAuthFetch()`.
 
 **Use cases:**
+
 1. User switches away for >30 minutes → token expires → returns to tab → `handleVisibilityChange()` triggers refresh
 2. User switches away during network outage → refresh fails → `refreshUnavailable` set → returns after 30s → cooldown expired → retry allowed
 3. User has multiple tabs → one tab refreshes successfully → other tabs still have old token in memory → but the fetch interceptor handles 401 retry, so this is fine
@@ -2503,6 +2532,7 @@ function handleVisibilityChange() {
 Replaces `window.fetch` with an intercepting wrapper. Called automatically when the module loads (at the bottom: `installAuthFetch()`).
 
 **Idempotency:**
+
 ```typescript
 if (!browser || fetchInstalled) return;
 fetchInstalled = true;
@@ -2537,13 +2567,13 @@ window.fetch(input, init)
 
 **Request classification:**
 
-| URL Pattern | Classification | Auth Attached? | 401 Retry? |
-| ----------- | --------------- | -------------- | ---------- |
-| `/_app/remote/*` | Same-origin remote | Yes | Yes |
-| `/auth/*` | Auth endpoint | Yes (except `/auth/refresh`) | Yes |
-| `/api/*` | API endpoint | Yes | Yes |
-| Cross-origin | External | No | No |
-| Already has `Authorization` | Custom auth | No | No |
+| URL Pattern                 | Classification     | Auth Attached?               | 401 Retry? |
+| --------------------------- | ------------------ | ---------------------------- | ---------- |
+| `/_app/remote/*`            | Same-origin remote | Yes                          | Yes        |
+| `/auth/*`                   | Auth endpoint      | Yes (except `/auth/refresh`) | Yes        |
+| `/api/*`                    | API endpoint       | Yes                          | Yes        |
+| Cross-origin                | External           | No                           | No         |
+| Already has `Authorization` | Custom auth        | No                           | No         |
 
 **`buildAuthorizedRequest(baseRequest: Request, token: string): Request`**
 
@@ -2558,6 +2588,7 @@ Clones the request to avoid mutating the original. The `Request` constructor cop
 **`resolveUrl(input: RequestInfo | URL): URL`**
 
 Normalizes inputs:
+
 - `URL` → returned as-is
 - `Request` → `new URL(input.url, window.location.origin)`
 - `string` → `new URL(input, window.location.origin)`
@@ -2586,12 +2617,12 @@ The interceptor implements **exactly one** automatic retry on 401:
 
 ```typescript
 if (existingAuthorization || response.status !== 401) {
-  return response;
+	return response;
 }
 
 const refreshedToken = await ensureAccessToken(true);
 if (!refreshedToken || refreshedToken === token) {
-  return response;  // Can't help; return original 401
+	return response; // Can't help; return original 401
 }
 
 response = await nativeFetch(buildAuthorizedRequest(baseRequest.clone(), refreshedToken));
@@ -2606,17 +2637,17 @@ return response;
 
 #### 8.2.7 Error Recovery Matrix
 
-| Scenario | Client State | Server Response | Client Action | Result |
-| -------- | ------------ | --------------- | ------------- | ------ |
-| Normal operation | `HAS_TOKEN` | `200` | Use token | Success |
-| Token expired | `HAS_TOKEN` | `401` | Refresh, retry | Success |
-| Refresh valid | `HAS_TOKEN` | `200` (refresh) | New token, retry | Success |
-| Refresh expired | `HAS_TOKEN` | `204` | Set unavailable | Redirect to login |
-| Session revoked | `HAS_TOKEN` | `401` (refresh) | Set unavailable | Redirect to login |
-| Server error | `HAS_TOKEN` | `500` | Return error to caller | Error UI |
-| Tab backgrounded | `HAS_TOKEN` → `NO_TOKEN` | — | Visibility change handler | Refresh or login |
-| Logout clicked | `HAS_TOKEN` | `200` (logout) | Clear token | Login page |
-| Password changed | `HAS_TOKEN` | `401` (refresh) | Set unavailable | Redirect to login |
+| Scenario         | Client State             | Server Response | Client Action             | Result            |
+| ---------------- | ------------------------ | --------------- | ------------------------- | ----------------- |
+| Normal operation | `HAS_TOKEN`              | `200`           | Use token                 | Success           |
+| Token expired    | `HAS_TOKEN`              | `401`           | Refresh, retry            | Success           |
+| Refresh valid    | `HAS_TOKEN`              | `200` (refresh) | New token, retry          | Success           |
+| Refresh expired  | `HAS_TOKEN`              | `204`           | Set unavailable           | Redirect to login |
+| Session revoked  | `HAS_TOKEN`              | `401` (refresh) | Set unavailable           | Redirect to login |
+| Server error     | `HAS_TOKEN`              | `500`           | Return error to caller    | Error UI          |
+| Tab backgrounded | `HAS_TOKEN` → `NO_TOKEN` | —               | Visibility change handler | Refresh or login  |
+| Logout clicked   | `HAS_TOKEN`              | `200` (logout)  | Clear token               | Login page        |
+| Password changed | `HAS_TOKEN`              | `401` (refresh) | Set unavailable           | Redirect to login |
 
 ---
 
@@ -2626,13 +2657,13 @@ The database module wraps `mysql2/promise` with connection pooling, automatic re
 
 #### 8.3.1 Design Goals
 
-| Goal | Implementation |
-| ---- | -------------- |
-| Transparent failover | Proxy pattern allows pool swap without restarting the app |
-| No query loss | Retired pools get a 5-second grace period before closing |
-| Bounded retry | Max 3 retries with linear backoff (300ms, 600ms, 900ms) |
-| Prevent runaway queries | Hard limit of 5000 rows per list query |
-| Transaction safety | `withTransaction()` handles commit/rollback/release |
+| Goal                    | Implementation                                            |
+| ----------------------- | --------------------------------------------------------- |
+| Transparent failover    | Proxy pattern allows pool swap without restarting the app |
+| No query loss           | Retired pools get a 5-second grace period before closing  |
+| Bounded retry           | Max 3 retries with linear backoff (300ms, 600ms, 900ms)   |
+| Prevent runaway queries | Hard limit of 5000 rows per list query                    |
+| Transaction safety      | `withTransaction()` handles commit/rollback/release       |
 
 #### 8.3.2 Type Definitions
 
@@ -2640,10 +2671,10 @@ The database module wraps `mysql2/promise` with connection pooling, automatic re
 
 ```typescript
 export type LimitedListResult<T> = {
-  items: T[];           // Visible items (at most `limit`)
-  limit: number;        // The applied limit
-  hasMore: boolean;     // True if more items exist beyond `items`
-  nextCursor: string | null;  // Cursor for the next page, or null
+	items: T[]; // Visible items (at most `limit`)
+	limit: number; // The applied limit
+	hasMore: boolean; // True if more items exist beyond `items`
+	nextCursor: string | null; // Cursor for the next page, or null
 };
 ```
 
@@ -2653,14 +2684,14 @@ Re-exported from `mysql2/promise` for convenience. `RowDataPacket` is the base i
 
 #### 8.3.3 Constants
 
-| Constant | Value | Source | Purpose |
-| -------- | ----- | ------ | ------- |
-| `MAX_RETRIES` | `3` | Hardcoded | Maximum retry attempts for timeout errors |
-| `RETRY_DELAY_MS` | `300` | Hardcoded | Base delay; actual delay = `delay * attempt` |
-| `RETIRED_POOL_GRACE_MS` | `5000` | Hardcoded | Grace period before closing a recycled pool |
-| `DEFAULT_LIST_QUERY_LIMIT` | `120` | `env.DB_LIST_QUERY_LIMIT` | Default page size |
-| `MAX_LIST_QUERY_LIMIT` | `5000` | `env.DB_MAX_LIST_QUERY_LIMIT` | Hard ceiling on page size |
-| `CONNECT_TIMEOUT_MS` | `10000` | `env.DB_CONNECT_TIMEOUT` | Connection timeout in ms |
+| Constant                   | Value   | Source                        | Purpose                                      |
+| -------------------------- | ------- | ----------------------------- | -------------------------------------------- |
+| `MAX_RETRIES`              | `3`     | Hardcoded                     | Maximum retry attempts for timeout errors    |
+| `RETRY_DELAY_MS`           | `300`   | Hardcoded                     | Base delay; actual delay = `delay * attempt` |
+| `RETIRED_POOL_GRACE_MS`    | `5000`  | Hardcoded                     | Grace period before closing a recycled pool  |
+| `DEFAULT_LIST_QUERY_LIMIT` | `120`   | `env.DB_LIST_QUERY_LIMIT`     | Default page size                            |
+| `MAX_LIST_QUERY_LIMIT`     | `5000`  | `env.DB_MAX_LIST_QUERY_LIMIT` | Hard ceiling on page size                    |
+| `CONNECT_TIMEOUT_MS`       | `10000` | `env.DB_CONNECT_TIMEOUT`      | Connection timeout in ms                     |
 
 #### 8.3.4 Connection Pool Architecture
 
@@ -2692,22 +2723,22 @@ Returns a `Proxy` object that dynamically delegates to the current active pool. 
 
 **Proxy behavior by method:**
 
-| Property | Behavior |
-| -------- | -------- |
-| `query` | Directly calls `ensurePool().query(...)` |
-| `execute` | Directly calls `ensurePool().execute(...)` |
-| `getConnection` | Wraps with `withRetry()`, recycles pool on timeout |
-| `end` | Clears current pool, closes all retired pools |
-| *(other)* | Dynamically bound to current pool via `bindPoolMethod()` |
+| Property        | Behavior                                                 |
+| --------------- | -------------------------------------------------------- |
+| `query`         | Directly calls `ensurePool().query(...)`                 |
+| `execute`       | Directly calls `ensurePool().execute(...)`               |
+| `getConnection` | Wraps with `withRetry()`, recycles pool on timeout       |
+| `end`           | Clears current pool, closes all retired pools            |
+| _(other)_       | Dynamically bound to current pool via `bindPoolMethod()` |
 
 **`ensurePool(): Pool`**
 
 ```typescript
 function ensurePool(): Pool {
-  if (!pool) {
-    pool = createBasePool();
-  }
-  return pool;
+	if (!pool) {
+		pool = createBasePool();
+	}
+	return pool;
 }
 ```
 
@@ -2741,6 +2772,7 @@ Creates a `mysql2/promise` pool with these options:
 Gracefully replaces the current pool without dropping in-flight queries.
 
 **Execution:**
+
 1. If already recycling (`recyclePromise` exists), await it and return
 2. Create a new pool and assign to `pool`
 3. Add the old pool to `retiredPools` Set
@@ -2765,12 +2797,12 @@ Generic retry wrapper with linear backoff.
 
 **Retry schedule:**
 
-| Attempt | Delay | Total elapsed (worst case) |
-| ------- | ----- | -------------------------- |
-| 1 (initial) | 0ms | 0ms |
-| 2 | 300ms | 300ms |
-| 3 | 600ms | 900ms |
-| 4 (final) | 900ms | 1800ms |
+| Attempt     | Delay | Total elapsed (worst case) |
+| ----------- | ----- | -------------------------- |
+| 1 (initial) | 0ms   | 0ms                        |
+| 2           | 300ms | 300ms                      |
+| 3           | 600ms | 900ms                      |
+| 4 (final)   | 900ms | 1800ms                     |
 
 **Delay formula:** `RETRY_DELAY_MS * attempt`
 
@@ -2786,18 +2818,18 @@ Used for all read operations. If a timeout occurs, the pool is recycled before t
 
 Detects retryable errors:
 
-| Error | Code | Retryable? |
-| ----- | ---- | ---------- |
-| Pool is closed | Message match | Yes |
-| ETIMEDOUT | `'ETIMEDOUT'` | Yes |
-| ECONNRESET | `'ECONNRESET'` | Yes |
-| ECONNREFUSED | `'ECONNREFUSED'` | Yes |
-| EPIPE | `'EPIPE'` | Yes |
-| PROTOCOL_CONNECTION_LOST | `'PROTOCOL_CONNECTION_LOST'` | Yes |
-| PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR | `'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR'` | Yes |
-| SyntaxError | — | No |
-| Foreign key violation | — | No |
-| Unique constraint violation | — | No |
+| Error                              | Code                                   | Retryable? |
+| ---------------------------------- | -------------------------------------- | ---------- |
+| Pool is closed                     | Message match                          | Yes        |
+| ETIMEDOUT                          | `'ETIMEDOUT'`                          | Yes        |
+| ECONNRESET                         | `'ECONNRESET'`                         | Yes        |
+| ECONNREFUSED                       | `'ECONNREFUSED'`                       | Yes        |
+| EPIPE                              | `'EPIPE'`                              | Yes        |
+| PROTOCOL_CONNECTION_LOST           | `'PROTOCOL_CONNECTION_LOST'`           | Yes        |
+| PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR | `'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR'` | Yes        |
+| SyntaxError                        | —                                      | No         |
+| Foreign key violation              | —                                      | No         |
+| Unique constraint violation        | —                                      | No         |
 
 #### 8.3.6 Transactions
 
@@ -2811,6 +2843,7 @@ Executes a function inside a database transaction.
 | `fn` | `(conn: PoolConnection) => Promise<T>` | The transaction body |
 
 **Execution flow:**
+
 1. `const conn = await getConnection()` — gets a connection from the pool
 2. `await conn.beginTransaction()` — starts transaction
 3. `const result = await fn(conn)` — executes user code
@@ -2818,10 +2851,12 @@ Executes a function inside a database transaction.
 5. `conn.release()` — releases connection back to pool
 
 **Error handling:**
+
 - If `fn()` throws: `await conn.rollback()` then re-throw
 - In `finally`: always `conn.release()` (even if commit/rollback failed)
 
 **Usage example:**
+
 ```typescript
 await withTransaction(async (connection) => {
   await connection.query('DELETE FROM refresh_tokens WHERE user_id = ?', [userId]);
@@ -2830,6 +2865,7 @@ await withTransaction(async (connection) => {
 ```
 
 **Isolation level:** Uses MariaDB default (`REPEATABLE READ`). For operations that need stricter isolation, set it inside `fn`:
+
 ```typescript
 await conn.query('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
 ```
@@ -2842,10 +2878,10 @@ Clamps requested limits to a safe range.
 
 ```typescript
 export function getListQueryLimit(requestedLimit?: number): number {
-  if (requestedLimit == null || !Number.isFinite(requestedLimit) || requestedLimit <= 0) {
-    return DEFAULT_LIST_QUERY_LIMIT;  // 120
-  }
-  return Math.min(MAX_LIST_QUERY_LIMIT, Math.trunc(requestedLimit));
+	if (requestedLimit == null || !Number.isFinite(requestedLimit) || requestedLimit <= 0) {
+		return DEFAULT_LIST_QUERY_LIMIT; // 120
+	}
+	return Math.min(MAX_LIST_QUERY_LIMIT, Math.trunc(requestedLimit));
 }
 ```
 
@@ -2867,8 +2903,8 @@ Normalizes cursor input:
 
 ```typescript
 export function getListQueryCursor(requestedCursor?: string | null): string | undefined {
-  const trimmed = requestedCursor?.trim();
-  return trimmed ? trimmed : undefined;
+	const trimmed = requestedCursor?.trim();
+	return trimmed ? trimmed : undefined;
 }
 ```
 
@@ -2886,6 +2922,7 @@ Converts a raw item array into a paginated result.
 | `getCursor` | `(item: T) => string \| null \| undefined` | Extracts cursor from an item |
 
 **Logic:**
+
 1. `visibleItems = items.slice(0, limit)`
 2. `hasMore = items.length > limit` (the `+1` item indicates more exist)
 3. `nextCursor = hasMore ? getCursor(lastVisibleItem) : null`
@@ -2899,6 +2936,7 @@ Merges multiple sorted result arrays, deduplicates, re-sorts, and paginates.
 **Use case:** When a single query cannot serve a list efficiently. For example, combining results from multiple filtered subqueries.
 
 **Algorithm:**
+
 1. Merge all arrays into a single list
 2. Deduplicate using `getKey(item)` and a `Set`
 3. Sort by `getKey` using `localeCompare`
@@ -2915,15 +2953,16 @@ Gets a connection from the pool via the proxy. The proxy wraps `getConnection()`
 
 ```typescript
 getConnection: () =>
-  withRetry(
-    () => ensurePool().getConnection(),
-    () => recyclePool()
-  )
+	withRetry(
+		() => ensurePool().getConnection(),
+		() => recyclePool()
+	);
 ```
 
 **`closePool(): Promise<void>`**
 
 Closes all pools:
+
 1. If `poolProxy` exists, call `poolProxy.end()`
 2. The proxy's `end()` handler clears `pool`, collects all retired pools, and calls `end()` on each
 
@@ -2931,12 +2970,13 @@ Closes all pools:
 
 #### 8.3.9 Module-Level State
 
-| Symbol | Type | Purpose |
-| ------ | ---- | ------- |
-| `pool` | `Pool \| null` | Current active pool |
-| `poolProxy` | `Pool \| null` | The Proxy object returned by `getPool()` |
-| `retiredPools` | `Set<Pool>` | Pools scheduled for closure after grace period |
-| `recyclePromise` | `Promise<void> \| null` | Deduplicates concurrent recycle operations |
+| Symbol           | Type                    | Purpose                                        |
+| ---------------- | ----------------------- | ---------------------------------------------- |
+| `pool`           | `Pool \| null`          | Current active pool                            |
+| `poolProxy`      | `Pool \| null`          | The Proxy object returned by `getPool()`       |
+| `retiredPools`   | `Set<Pool>`             | Pools scheduled for closure after grace period |
+| `recyclePromise` | `Promise<void> \| null` | Deduplicates concurrent recycle operations     |
+
 - `end()` → closes the current pool and all retired pools.
 - All other methods → dynamically bound to the current pool.
 
@@ -2949,6 +2989,7 @@ Lazily creates the pool on first access.
 **`createBasePool()`**
 
 Creates a `mysql2/promise` pool with these options:
+
 - `connectionLimit`: 200 (configurable via `DB_CONNECTION_LIMIT`)
 - `maxIdle`: 200
 - `idleTimeout`: 60,000ms
@@ -2961,6 +3002,7 @@ Creates a `mysql2/promise` pool with these options:
 **`recyclePool()`**
 
 Gracefully replaces the current pool:
+
 1. If already recycling, await the existing promise.
 2. Create a new pool and assign it to `pool`.
 3. Add the old pool to `retiredPools`.
@@ -2975,6 +3017,7 @@ Gets a connection from the pool via `getPool().getConnection()`. The proxy wraps
 **`withTransaction(fn)`**
 
 Executes a function inside a database transaction:
+
 1. Gets a connection.
 2. Begins transaction.
 3. Executes `fn(connection)`.
@@ -2990,45 +3033,48 @@ Closes the current pool and all retired pools. Used in graceful shutdown hooks.
 
 #### 8.3.4 Retry Logic
 
-**`withRetry(fn, onRetry?)`** *(exported)*
+**`withRetry(fn, onRetry?)`** _(exported)_
 
 Generic retry wrapper with exponential-ish backoff:
+
 - Retries up to 3 times.
 - Only retries `isTimeoutError()` conditions.
 - Delay = `RETRY_DELAY_MS * attempt` (300ms, 600ms, 900ms).
 - Calls optional `onRetry` callback before each retry.
 
-**`retryRead(fn)`** *(exported)*
+**`retryRead(fn)`** _(exported)_
 
 Convenience wrapper: `withRetry(fn, () => recyclePool())`. Used for read operations that should recycle the pool on timeout.
 
 **`isTimeoutError(err)`**
 
 Detects retryable database errors:
+
 - `Pool is closed.`
 - `ETIMEDOUT`, `ECONNRESET`, `ECONNREFUSED`, `EPIPE`
 - `PROTOCOL_CONNECTION_LOST`, `PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR`
 
 #### 8.3.5 Pagination Helpers
 
-**`getListQueryLimit(requestedLimit?)`** *(exported)*
+**`getListQueryLimit(requestedLimit?)`** _(exported)_
 
 Clamps requested limits to `[1, MAX_LIST_QUERY_LIMIT]`. Returns `DEFAULT_LIST_QUERY_LIMIT` for invalid inputs. This prevents unbounded queries that could crash the server.
 
-**`getListQueryCursor(requestedCursor?)`** *(exported)*
+**`getListQueryCursor(requestedCursor?)`** _(exported)_
 
 Normalizes cursor input: trims whitespace, returns `undefined` for empty strings.
 
-**`toLimitedListResult(items, limit, getCursor)`** *(exported)*
+**`toLimitedListResult(items, limit, getCursor)`** _(exported)_
 
 Converts a raw item array into `LimitedListResult<T>`:
+
 1. Slice to `limit` items.
 2. Set `hasMore = items.length > limit`.
 3. Compute `nextCursor` from the last visible item via `getCursor()`.
 
 This is the standard pagination wrapper used by all list endpoints.
 
-**`mergeLimitedListResult(resultSets, limit, getKey)`** *(exported)*
+**`mergeLimitedListResult(resultSets, limit, getKey)`** _(exported)_
 
 Merges multiple sorted result arrays (e.g. from parallel queries), deduplicates by key, re-sorts, and applies pagination.
 
@@ -3052,23 +3098,23 @@ export type AppRole = 'ADMIN' | 'LECTURER' | 'STUDENT';
 
 ```typescript
 export type ScheduleCard = {
-  id: string;
-  day: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
-  course: string;           // Course name
-  lecturer: string;         // Lecturer name
-  room: string;             // Room name
-  student: string;          // Student name
-  semester: string;
-  academicYear: string;
-  startLabel: string;       // Formatted time, e.g. "08:00"
-  endLabel: string;         // Formatted time, e.g. "10:00"
-  startMinutes: number;     // Minutes since midnight
-  endMinutes: number;
-  durationMinutes: number;  // endMinutes - startMinutes
-  hasConflict: boolean;     // Set by buildScheduleCards()
-  conflictGroupId: string | null;
-  conflictTone: number | null;  // Index into CONFLICT_TONES
-  original: SelectEnrollmentsResult;  // Raw database row
+	id: string;
+	day: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
+	course: string; // Course name
+	lecturer: string; // Lecturer name
+	room: string; // Room name
+	student: string; // Student name
+	semester: string;
+	academicYear: string;
+	startLabel: string; // Formatted time, e.g. "08:00"
+	endLabel: string; // Formatted time, e.g. "10:00"
+	startMinutes: number; // Minutes since midnight
+	endMinutes: number;
+	durationMinutes: number; // endMinutes - startMinutes
+	hasConflict: boolean; // Set by buildScheduleCards()
+	conflictGroupId: string | null;
+	conflictTone: number | null; // Index into CONFLICT_TONES
+	original: SelectEnrollmentsResult; // Raw database row
 };
 ```
 
@@ -3076,38 +3122,39 @@ export type ScheduleCard = {
 
 ```typescript
 export type RoomMetric = {
-  id: string;
-  name: string;
-  type: string;
-  capacity: number;
-  hasProjector: boolean;
-  hasAC: boolean;
-  utilizationPercent: number;   // 0-100
-  scheduledBlocks: number;
-  occupiedMinutes: number;
-  nextUse: string;              // Human-readable "Day, HH:mm"
-  isAvailableNow: boolean;
-  conflictCount: number;
-  currentCourse: string;
-  nextUseDay?: Day | null;
-  nextUseStartTime?: string | null;
-  nextUseCourse?: string | null;
+	id: string;
+	name: string;
+	type: string;
+	capacity: number;
+	hasProjector: boolean;
+	hasAC: boolean;
+	utilizationPercent: number; // 0-100
+	scheduledBlocks: number;
+	occupiedMinutes: number;
+	nextUse: string; // Human-readable "Day, HH:mm"
+	isAvailableNow: boolean;
+	conflictCount: number;
+	currentCourse: string;
+	nextUseDay?: Day | null;
+	nextUseStartTime?: string | null;
+	nextUseCourse?: string | null;
 };
 ```
 
 #### 8.4.2 Constants
 
-| Constant | Value | Purpose |
-| -------- | ----- | ------- |
-| `DAY_ORDER` | `['SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU']` | Canonical day ordering for schedules and calendar grids |
-| `DAY_LABELS` | `{ SENIN: 'Senin', SELASA: 'Selasa', ... }` | Display labels for days |
-| `CONFLICT_TONES` | Array of 8 OKLCH color objects | Visual color palette for conflict groups |
-| `DAY_WINDOW_MINUTES` | `780` (13 hours: 7:00–20:00) | Operating hours per day |
-| `WEEK_WINDOW_MINUTES` | `4680` (6 × 780) | Total operating minutes per week |
+| Constant              | Value                                                    | Purpose                                                 |
+| --------------------- | -------------------------------------------------------- | ------------------------------------------------------- |
+| `DAY_ORDER`           | `['SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU']` | Canonical day ordering for schedules and calendar grids |
+| `DAY_LABELS`          | `{ SENIN: 'Senin', SELASA: 'Selasa', ... }`              | Display labels for days                                 |
+| `CONFLICT_TONES`      | Array of 8 OKLCH color objects                           | Visual color palette for conflict groups                |
+| `DAY_WINDOW_MINUTES`  | `780` (13 hours: 7:00–20:00)                             | Operating hours per day                                 |
+| `WEEK_WINDOW_MINUTES` | `4680` (6 × 780)                                         | Total operating minutes per week                        |
 
 **Conflict Tone Palette:**
 
 Each tone is an object with OKLCH colors:
+
 ```typescript
 { surface: 'oklch(0.95 0.032 18)', border: 'oklch(0.8 0.092 18)', ink: 'oklch(0.53 0.168 18)' }
 ```
@@ -3121,11 +3168,13 @@ The 8 tones use hues spaced around the color wheel (18°, 72°, 145°, 205°, 25
 Converts a time value to minutes since midnight.
 
 **Input handling:**
+
 - `Date` object → formatted to `"HH:mm"` in target timezone, then parsed
 - `string` (TIME or datetime) → formatted to `"HH:mm"`, then parsed
 - `null` / `undefined` → returns `0`
 
 **Implementation:**
+
 ```typescript
 const formatted = formatDateTime(value, 'time', timezone);
 const [hours, minutes] = formatted.split(':').map(Number);
@@ -3133,6 +3182,7 @@ return hours * 60 + minutes;
 ```
 
 **Edge cases:**
+
 - MariaDB TIME strings like `'13:00:00.000'` are handled by `formatDateTime()`
 - Dates before/after midnight are not clamped (not needed for schedule data)
 
@@ -3154,6 +3204,7 @@ Transforms raw enrollment rows into display-ready cards and detects visual confl
 **Phase 1: Card creation**
 
 Filters out rows missing required fields, then maps each row:
+
 ```typescript
 {
   id: item.id,
@@ -3188,23 +3239,23 @@ const ranks = cards.map(() => 0);
 
 ```typescript
 const find = (index: number): number => {
-  if (parents[index] === index) return index;
-  parents[index] = find(parents[index]);  // Path compression
-  return parents[index];
+	if (parents[index] === index) return index;
+	parents[index] = find(parents[index]); // Path compression
+	return parents[index];
 };
 
 const unite = (leftIndex: number, rightIndex: number) => {
-  const leftRoot = find(leftIndex);
-  const rightRoot = find(rightIndex);
-  if (leftRoot === rightRoot) return;
-  if (ranks[leftRoot] < ranks[rightRoot]) {
-    parents[leftRoot] = rightRoot;
-  } else if (ranks[leftRoot] > ranks[rightRoot]) {
-    parents[rightRoot] = leftRoot;
-  } else {
-    parents[rightRoot] = leftRoot;
-    ranks[leftRoot] += 1;
-  }
+	const leftRoot = find(leftIndex);
+	const rightRoot = find(rightIndex);
+	if (leftRoot === rightRoot) return;
+	if (ranks[leftRoot] < ranks[rightRoot]) {
+		parents[leftRoot] = rightRoot;
+	} else if (ranks[leftRoot] > ranks[rightRoot]) {
+		parents[rightRoot] = leftRoot;
+	} else {
+		parents[rightRoot] = leftRoot;
+		ranks[leftRoot] += 1;
+	}
 };
 ```
 
@@ -3217,80 +3268,82 @@ let componentRepresentative = sortedIndexes[0];
 let componentEnd = cards[componentRepresentative].endMinutes;
 
 for (let position = 1; position < sortedIndexes.length; position++) {
-  const currentIndex = sortedIndexes[position];
-  const currentCard = cards[currentIndex];
+	const currentIndex = sortedIndexes[position];
+	const currentCard = cards[currentIndex];
 
-  if (currentCard.startMinutes < componentEnd) {
-    // Overlap detected
-    unite(componentRepresentative, currentIndex);
-    componentEnd = Math.max(componentEnd, currentCard.endMinutes);
-  } else {
-    // No overlap, start new component
-    componentRepresentative = currentIndex;
-    componentEnd = currentCard.endMinutes;
-  }
+	if (currentCard.startMinutes < componentEnd) {
+		// Overlap detected
+		unite(componentRepresentative, currentIndex);
+		componentEnd = Math.max(componentEnd, currentCard.endMinutes);
+	} else {
+		// No overlap, start new component
+		componentRepresentative = currentIndex;
+		componentEnd = currentCard.endMinutes;
+	}
 }
 ```
 
 **Phase 5: Group coloring**
 
 After union-find, group cards by root:
+
 ```typescript
 const groupsByRoot = new Map<number, ScheduleCard[]>();
 for (let index = 0; index < cards.length; index++) {
-  const root = find(index);
-  const group = groupsByRoot.get(root) ?? [];
-  group.push(cards[index]);
-  groupsByRoot.set(root, group);
+	const root = find(index);
+	const group = groupsByRoot.get(root) ?? [];
+	group.push(cards[index]);
+	groupsByRoot.set(root, group);
 }
 
 let conflictIndex = 0;
 for (const group of groupsByRoot.values()) {
-  if (group.length < 2) continue;
-  const tone = conflictIndex;
-  const groupId = `conflict-${conflictIndex + 1}`;
-  for (const card of group) {
-    card.hasConflict = true;
-    card.conflictGroupId = groupId;
-    card.conflictTone = tone;
-  }
-  conflictIndex++;
+	if (group.length < 2) continue;
+	const tone = conflictIndex;
+	const groupId = `conflict-${conflictIndex + 1}`;
+	for (const card of group) {
+		card.hasConflict = true;
+		card.conflictGroupId = groupId;
+		card.conflictTone = tone;
+	}
+	conflictIndex++;
 }
 ```
 
 **Complexity analysis:**
 
-| Phase | Time | Space |
-| ----- | ---- | ----- |
-| Card creation | O(n) | O(n) |
-| Union-Find init | O(n) | O(n) |
-| Per-day bucketing | O(n) | O(n) |
-| Per-bucket sorting | O(n log n) total | O(n) |
-| Union operations | O(n α(n)) ≈ O(n) | O(1) extra |
-| Group coloring | O(n α(n)) ≈ O(n) | O(n) |
-| **Total** | **O(n log n)** | **O(n)** |
+| Phase              | Time             | Space      |
+| ------------------ | ---------------- | ---------- |
+| Card creation      | O(n)             | O(n)       |
+| Union-Find init    | O(n)             | O(n)       |
+| Per-day bucketing  | O(n)             | O(n)       |
+| Per-bucket sorting | O(n log n) total | O(n)       |
+| Union operations   | O(n α(n)) ≈ O(n) | O(1) extra |
+| Group coloring     | O(n α(n)) ≈ O(n) | O(n)       |
+| **Total**          | **O(n log n)**   | **O(n)**   |
 
 Where α(n) is the inverse Ackermann function, effectively a small constant (< 5) for all practical n.
 
 **Important distinction from server audit:**
 
-| Aspect | Client (`buildScheduleCards`) | Server (`auditEnrollmentConflicts`) |
-| ------ | ------------------------------ | ----------------------------------- |
-| Scope | Only loaded cards | All enrollments in database |
+| Aspect            | Client (`buildScheduleCards`)                 | Server (`auditEnrollmentConflicts`) |
+| ----------------- | --------------------------------------------- | ----------------------------------- |
+| Scope             | Only loaded cards                             | All enrollments in database         |
 | Overlap detection | Interval overlap (08:00-10:00 vs 09:00-11:00) | Exact window match (same start+end) |
-| Algorithm | Union-Find with interval sweep | SQL GROUP BY with covering index |
-| Data volume | Hundreds of cards | Millions of rows |
-| Purpose | Visual highlighting | Authoritative correctness |
+| Algorithm         | Union-Find with interval sweep                | SQL GROUP BY with covering index    |
+| Data volume       | Hundreds of cards                             | Millions of rows                    |
+| Purpose           | Visual highlighting                           | Authoritative correctness           |
 
 **`schedulesOverlap(left, right): boolean`**
 
 Pure interval overlap predicate:
+
 ```typescript
 return (
-  left.id !== right.id &&
-  left.day === right.day &&
-  left.startMinutes < right.endMinutes &&
-  right.startMinutes < left.endMinutes
+	left.id !== right.id &&
+	left.day === right.day &&
+	left.startMinutes < right.endMinutes &&
+	right.startMinutes < left.endMinutes
 );
 ```
 
@@ -3316,11 +3369,11 @@ Groups cards by `DAY_ORDER` and sorts each group by `startMinutes`:
 
 ```typescript
 return DAY_ORDER.map((day) => ({
-  day,
-  label: DAY_LABELS[day],
-  items: cards
-    .filter((card) => card.day === day)
-    .sort((left, right) => left.startMinutes - right.startMinutes)
+	day,
+	label: DAY_LABELS[day],
+	items: cards
+		.filter((card) => card.day === day)
+		.sort((left, right) => left.startMinutes - right.startMinutes)
 }));
 ```
 
@@ -3343,15 +3396,16 @@ Computes real-time metrics for each classroom.
 
 Role-specific sorting:
 
-| Role | Primary sort | Secondary sort | Rationale |
-| ---- | ------------ | --------------- | --------- |
-| ADMIN | `utilizationPercent` ↓ | `conflictCount` ↓ | Admins care about overused, conflicted rooms |
+| Role     | Primary sort                    | Secondary sort         | Rationale                                                         |
+| -------- | ------------------------------- | ---------------------- | ----------------------------------------------------------------- |
+| ADMIN    | `utilizationPercent` ↓          | `conflictCount` ↓      | Admins care about overused, conflicted rooms                      |
 | LECTURER | `isAvailableNow` ↓ (true first) | `utilizationPercent` ↑ | Lecturers want available rooms; low utilization = more free slots |
-| STUDENT | `capacity` ↓ | — | Students want the biggest room |
+| STUDENT  | `capacity` ↓                    | —                      | Students want the biggest room                                    |
 
 **`occupancyCopy(role): { title: string }`**
 
 Returns localized titles:
+
 - ADMIN → `"Utilisasi ruang minggu ini"`
 - LECTURER → `"Ruang kosong yang siap dipakai"`
 - STUDENT → `"Ketersediaan ruang"`
@@ -3363,11 +3417,11 @@ Filters rooms available during a specific time slot.
 ```typescript
 const occupiedRoomIds = new Set<string>();
 for (const card of cards) {
-  if (excludedCardId && card.id === excludedCardId) continue;
-  if (card.day !== day) continue;
-  if (!(card.startMinutes < endMinutes && startMinutes < card.endMinutes)) continue;
-  const roomId = card.original.class_room_id;
-  if (roomId) occupiedRoomIds.add(roomId);
+	if (excludedCardId && card.id === excludedCardId) continue;
+	if (card.day !== day) continue;
+	if (!(card.startMinutes < endMinutes && startMinutes < card.endMinutes)) continue;
+	const roomId = card.original.class_room_id;
+	if (roomId) occupiedRoomIds.add(roomId);
 }
 return classrooms.filter((room) => !room.id || !occupiedRoomIds.has(room.id));
 ```
@@ -3381,9 +3435,9 @@ return classrooms.filter((room) => !room.id || !occupiedRoomIds.has(room.id));
 ```typescript
 if (!value) return 'Tidak diketahui';
 return value
-  .replaceAll('_', ' ')
-  .toLowerCase()
-  .replace(/(^|\s)\S/g, (part) => part.toUpperCase());
+	.replaceAll('_', ' ')
+	.toLowerCase()
+	.replace(/(^|\s)\S/g, (part) => part.toUpperCase());
 ```
 
 Examples:
@@ -3398,6 +3452,7 @@ Examples:
 **`matchesText(value, query): boolean`**
 
 Case-insensitive substring search. Empty queries match everything:
+
 ```typescript
 if (!query.trim()) return true;
 return (value ?? '').toLowerCase().includes(query.trim().toLowerCase());
@@ -3406,6 +3461,7 @@ return (value ?? '').toLowerCase().includes(query.trim().toLowerCase());
 **`formatMinutes(minutes: number): string`**
 
 Formats minutes into Indonesian duration text:
+
 ```typescript
 const hours = Math.floor(minutes / 60);
 const remainder = minutes % 60;
@@ -3439,13 +3495,13 @@ dayjs.extend(duration);
 import 'dayjs/locale/id';
 ```
 
-| Plugin | Purpose |
-| ------ | ------- |
-| `utc` | Convert dates to UTC for storage |
-| `timezone` | Parse and format in `Asia/Jakarta` |
+| Plugin              | Purpose                                      |
+| ------------------- | -------------------------------------------- |
+| `utc`               | Convert dates to UTC for storage             |
+| `timezone`          | Parse and format in `Asia/Jakarta`           |
 | `customParseFormat` | Parse `<input type="datetime-local">` values |
-| `localeData` | Indonesian month/day names |
-| `duration` | Duration calculations for time ranges |
+| `localeData`        | Indonesian month/day names                   |
+| `duration`          | Duration calculations for time ranges        |
 
 **Locale:** `id` (Indonesian) — month names like "Januari", "Februari", etc.
 
@@ -3502,13 +3558,14 @@ Detects MariaDB TIME strings like `"13:00:00"` or simple `"13:00"`.
 Parses ISO datetime strings with timezone-aware handling.
 
 **Logic:**
+
 ```typescript
 if (!hasExplicitTimezone(isoStr) && sourceTimezone) {
-  // datetime-local input: parse in source timezone, convert to UTC
-  const parsed = dayjs.tz(isoStr, 'YYYY-MM-DDTHH:mm', sourceTimezone);
-  if (parsed.isValid()) {
-    return parsed.utc().toDate();
-  }
+	// datetime-local input: parse in source timezone, convert to UTC
+	const parsed = dayjs.tz(isoStr, 'YYYY-MM-DDTHH:mm', sourceTimezone);
+	if (parsed.isValid()) {
+		return parsed.utc().toDate();
+	}
 }
 // Has explicit timezone or no sourceTimezone: parse directly
 return dayjs(isoStr).utc().toDate();
@@ -3532,39 +3589,44 @@ The primary display formatting function.
 **Input type detection:**
 
 1. **TIME strings** (`isTimeOnly(value)`):
+
    ```typescript
    const [hours = '00', minutes = '00'] = value.split(':');
    const time = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
    const dayjsDate = dayjs.tz(`2000-01-01T${time}`, timezone);
    ```
+
    Uses a reference date (2000-01-01) because TIME values have no date component.
 
 2. **Strings with explicit timezone**:
+
    ```typescript
-   dayjs(value).tz(timezone)
+   dayjs(value).tz(timezone);
    ```
 
 3. **Strings without timezone**:
+
    ```typescript
-   dayjs.tz(value, timezone)
+   dayjs.tz(value, timezone);
    ```
 
 4. **Date / Dayjs objects**:
    ```typescript
-   dayjs(value).tz(timezone)
+   dayjs(value).tz(timezone);
    ```
 
 **Format modes:**
 
-| Mode | Output example | Use case |
-| ---- | --------------- | -------- |
-| `'time'` | `"08:00"` | Schedule labels, time pickers |
-| `'date'` | `"15 Agustus 2025"` | Date displays |
-| `'full'` | `"15 Agustus 2025 08:00"` | Full datetime displays |
+| Mode     | Output example            | Use case                      |
+| -------- | ------------------------- | ----------------------------- |
+| `'time'` | `"08:00"`                 | Schedule labels, time pickers |
+| `'date'` | `"15 Agustus 2025"`       | Date displays                 |
+| `'full'` | `"15 Agustus 2025 08:00"` | Full datetime displays        |
 
 **MariaDB TIME handling edge case:**
 
 MariaDB stores TIME as `"HH:MM:SS"` (or `"HH:MM:SS.000"`). When formatting for display:
+
 - We only need hours and minutes
 - Seconds are truncated (schedules use minute granularity)
 - The reference date `2000-01-01` is arbitrary but ensures timezone conversion works correctly
@@ -3574,6 +3636,7 @@ MariaDB stores TIME as `"HH:MM:SS"` (or `"HH:MM:SS.000"`). When formatting for d
 Formats a value for `<input type="datetime-local">`.
 
 **TIME strings:**
+
 ```typescript
 const [hours = '00', minutes = '00'] = value.split(':');
 return `2000-01-01T${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
@@ -3582,6 +3645,7 @@ return `2000-01-01T${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
 Returns `"2000-01-01THH:mm"` for TIME inputs. The reference date is required because `datetime-local` inputs need a date component.
 
 **Other values:**
+
 ```typescript
 return dayjs(value).tz(timezone).format('YYYY-MM-DDTHH:mm');
 ```
@@ -3593,6 +3657,7 @@ const duration = dayjs.duration(dayjs(endDate).diff(dayjs(startDate)));
 ```
 
 Returns formatted duration:
+
 - `'short'` → `"HH:mm"` (e.g., `"02:30"`)
 - `'full'` → `"DD HH:mm"` (e.g., `"01 02:30"`)
 - `'simple'` → `"HH"` (e.g., `"2"`)
@@ -3601,32 +3666,32 @@ Returns formatted duration:
 
 ```typescript
 {
-  hours: number;      // 0-23
-  minutes: number;    // 0-59
-  day: number;        // 1-31
-  month: number;      // 1-12
-  year: number;
-  dayOfWeek: number;  // 0=Sunday, 1=Monday, ..., 6=Saturday
+	hours: number; // 0-23
+	minutes: number; // 0-59
+	day: number; // 1-31
+	month: number; // 1-12
+	year: number;
+	dayOfWeek: number; // 0=Sunday, 1=Monday, ..., 6=Saturday
 }
 ```
 
 **`dayOfWeek` mapping:**
 
-| JavaScript `dayOfWeek` | Day | `DAY_ORDER` index |
-| ---------------------- | --- | ----------------- |
-| 0 | Sunday | — (not in DAY_ORDER) |
-| 1 | Monday | 0 (`SENIN`) |
-| 2 | Tuesday | 1 (`SELASA`) |
-| 3 | Wednesday | 2 (`RABU`) |
-| 4 | Thursday | 3 (`KAMIS`) |
-| 5 | Friday | 4 (`JUMAT`) |
-| 6 | Saturday | 5 (`SABTU`) |
+| JavaScript `dayOfWeek` | Day       | `DAY_ORDER` index    |
+| ---------------------- | --------- | -------------------- |
+| 0                      | Sunday    | — (not in DAY_ORDER) |
+| 1                      | Monday    | 0 (`SENIN`)          |
+| 2                      | Tuesday   | 1 (`SELASA`)         |
+| 3                      | Wednesday | 2 (`RABU`)           |
+| 4                      | Thursday  | 3 (`KAMIS`)          |
+| 5                      | Friday    | 4 (`JUMAT`)          |
+| 6                      | Saturday  | 5 (`SABTU`)          |
 
 Since `DAY_ORDER` starts with `SENIN` (Monday), the conversion is:
+
 ```typescript
-const currentDay = dayOfWeek >= 1 && dayOfWeek <= DAY_ORDER.length
-  ? DAY_ORDER[dayOfWeek - 1]
-  : null;
+const currentDay =
+	dayOfWeek >= 1 && dayOfWeek <= DAY_ORDER.length ? DAY_ORDER[dayOfWeek - 1] : null;
 ```
 
 Sunday has no schedule (universities are closed), so it maps to `null`.
@@ -3639,10 +3704,10 @@ A lightweight global loading state tracker that intercepts `fetch` to show/hide 
 
 #### 8.6.1 Module State
 
-| Symbol | Type | Initial | Purpose |
-| ------ | ---- | ------- | ------- |
-| `pendingCount` | `number` | `0` | Number of in-flight tracked requests. Reactive via `$state`. |
-| `interceptorInstalled` | `boolean` | `false` | Prevents double installation on hot reload. |
+| Symbol                 | Type      | Initial | Purpose                                                      |
+| ---------------------- | --------- | ------- | ------------------------------------------------------------ |
+| `pendingCount`         | `number`  | `0`     | Number of in-flight tracked requests. Reactive via `$state`. |
+| `interceptorInstalled` | `boolean` | `false` | Prevents double installation on hot reload.                  |
 
 #### 8.6.2 Exported Functions
 
@@ -3652,20 +3717,25 @@ Returns a reactive object with getters:
 
 ```typescript
 return {
-  get isLoading() { return pendingCount > 0; },
-  get count() { return pendingCount; }
+	get isLoading() {
+		return pendingCount > 0;
+	},
+	get count() {
+		return pendingCount;
+	}
 };
 ```
 
 **Usage in Svelte components:**
+
 ```svelte
 <script>
-  import { getLoadingState } from '$lib/client/loading.svelte';
-  const loading = getLoadingState();
+	import { getLoadingState } from '$lib/client/loading.svelte';
+	const loading = getLoadingState();
 </script>
 
 {#if loading.isLoading}
-  <div class="spinner">Loading...</div>
+	<div class="spinner">Loading...</div>
 {/if}
 ```
 
@@ -3688,6 +3758,7 @@ The `Math.max(0, ...)` clamp prevents negative counts from race conditions (e.g.
 Replaces `window.fetch` with an intercepting wrapper.
 
 **Idempotency:**
+
 ```typescript
 if (!browser || interceptorInstalled) return;
 interceptorInstalled = true;
@@ -3696,23 +3767,21 @@ interceptorInstalled = true;
 **Request classification logic:**
 
 ```typescript
-const url = typeof input === 'string'
-  ? input
-  : input instanceof URL
-    ? input.href
-    : input.url;
+const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 
 const isRemote = url.includes('/_app/remote/');
-const isApi = url.startsWith(window.location.origin)
-  && (url.includes('/auth/') || url.includes('/api/'));
+const isApi =
+	url.startsWith(window.location.origin) && (url.includes('/auth/') || url.includes('/api/'));
 ```
 
 **Tracked requests:**
+
 - SvelteKit remote function calls (`/_app/remote/*`)
 - Auth endpoints (`/auth/*`)
 - API endpoints (`/api/*`)
 
 **Untracked requests:**
+
 - Static assets (`/_app/immutable/*`)
 - External APIs
 - Same-origin non-API requests
@@ -3721,12 +3790,12 @@ const isApi = url.startsWith(window.location.origin)
 
 ```typescript
 if (isRemote || isApi) {
-  incrementLoading();
-  try {
-    return await nativeFetch(input, init);
-  } finally {
-    decrementLoading();
-  }
+	incrementLoading();
+	try {
+		return await nativeFetch(input, init);
+	} finally {
+		decrementLoading();
+	}
 }
 return nativeFetch(input, init);
 ```
@@ -3734,10 +3803,11 @@ return nativeFetch(input, init);
 **Race condition safety:** Uses `try/finally` to ensure `decrementLoading()` is called even if the request throws. This prevents the spinner from getting stuck.
 
 **Integration:** Called once in `+layout.svelte`:
+
 ```svelte
 <script>
-  import { installLoadingInterceptor } from '$lib/client/loading.svelte';
-  installLoadingInterceptor();
+	import { installLoadingInterceptor } from '$lib/client/loading.svelte';
+	installLoadingInterceptor();
 </script>
 ```
 
@@ -3807,9 +3877,13 @@ Alternative JMeter test plan with the same transaction mix.
 ## 10. Deployment & Operations
 
 ### 10.1 Runtime
+
 ### 10.2 Environment Variables
+
 ### 10.3 Coolify Deployment
+
 ### 10.4 Build & Preview
+
 ### 10.5 Database Maintenance
 
 ```bash
@@ -3837,7 +3911,7 @@ ALTER TABLE enrollments ADD INDEX idx_enrollments_lecturer_conflict (...);
 watum/
 ├── src/
 │   ├── routes/                          # SvelteKit routes (all views in +page.svelte)
-│   │   ├── +page.svelte                 # Main dashboard (~11700 lines)
+│   │   ├── +page.svelte                 # Main dashboard (~12800 lines)
 │   │   ├── +layout.svelte               # Root layout (fonts, auth, loading spinner)
 │   │   ├── auth/
 │   │   │   ├── data.remote.ts           # loginUser, logoutUser, getCurrentUser
@@ -3918,30 +3992,64 @@ The application implements clickable entity links across all views to enable rap
 #### Implementation Pattern
 
 - **Navigation mechanism**: `activateView('viewId')` — switches the SPA to the target entity's tab
-- **Element type**: `<span class="entity-link">` with an `onclick` handler
-- **Event handling**: All links call `e.stopPropagation()` to prevent triggering parent row-selection handlers when nested inside clickable list rows
-- **Styling**: `.entity-link` uses `text-decoration: underline` with `transparent` default color and `currentColor` on hover, giving a subtle but discoverable affordance
+- **Element type**: `<span role="button" tabindex="0" class="entity-link">` with an `onclick` handler
+- **Keyboard support**: `handleEntityLinkKeydown()` activates links on `Enter` or `Space`
+- **Event handling**: Nested links call `e.stopPropagation()` to prevent triggering parent row-selection handlers
+- **Styling**: `.entity-link` and `.editor-entity-link` use subtle underline affordances plus visible `:focus-visible` outlines
 
 #### Coverage
 
 Entity links are present in:
+
 - **Dashboard** (`+page.svelte`): next schedule course → courses, room → classrooms
 - **Calendar detail panel**: course → courses, room → classrooms, lecturer → lecturers; conflict peer cards link to all related entities
 - **Builder enrollments list**: course → courses, student → students, room → classrooms
 - **Collection list rows**: courses (study program → studyPrograms, lecturer → lecturers), students (study program → studyPrograms), study programs (faculty → faculties), enrollments (student → students, course → courses, room → classrooms), grades (student → students, course → courses), users (student → students, lecturer → lecturers)
 - **Detail panels**: enrollment (student, course, room), grade (implicit via list), course (study program, lecturer), student (study program, faculty), study program (faculty), user (student, lecturer)
 
-#### Why `<span>` instead of `<button>` or `<a>`
+#### Why `<span role="button">` instead of `<button>` or `<a>`
 
-Entity links are frequently nested inside clickable list-row `<button>` elements. HTML does not allow nested buttons — browsers will break the DOM structure. Using `<a>` would require an `href` (the app uses SPA view switching, not navigation) and would still create nested interactive element issues. The `<span>` with `onclick` + `e.stopPropagation()` is the pragmatic compromise that keeps markup valid while preserving both row-click and link-click behaviors.
+Entity links are frequently nested inside clickable list-row `<button>` elements. HTML does not allow nested buttons, and browsers can repair invalid nested-button markup in surprising ways. `<a>` would require real `href` values, but the app currently uses SPA view switching rather than route navigation for these entity jumps.
 
-### 12.2 Accessibility Trade-off
+The current compromise keeps the DOM structure stable while addressing accessibility requirements:
 
-`svelte-check` reports 86 warnings for `.entity-link` spans:
-- `a11y_click_events_have_key_events` — clickable elements should respond to keyboard events (Enter/Space)
-- `a11y_no_static_element_interactions` — a `<span>` is not semantically interactive
+- `role="button"` exposes the element as interactive to assistive technology.
+- `tabindex="0"` makes the link keyboard-focusable.
+- `handleEntityLinkKeydown()` supports `Enter` and `Space` activation.
+- `:focus-visible` styling makes keyboard focus visible.
+- `e.stopPropagation()` preserves the parent row's “click anywhere to select” behavior.
 
-**Why this is accepted**: Restructuring every list row to make entity links sibling elements outside the row button would break the existing "click anywhere on the row to select" interaction pattern and require significant layout changes. The alternative (using `<button>`) produces invalid HTML. The spans work correctly for mouse and touch users, and the only downside is these lint warnings.
+`bun run check` currently reports **0 accessibility warnings** for this pattern.
+
+### 12.2 Editor Search Combobox Behavior
+
+The enrollment editor uses searchable comboboxes for student, course, and room selection. These inputs have two separate responsibilities:
+
+- Store the selected entity ID in the hidden form field / draft state (`studentId`, `courseId`, `classRoomId`).
+- Keep a human-readable search string in the visible input (`studentPickerSearch`, `coursePickerSearch`, `roomPickerSearch`).
+
+Important behavior:
+
+- Autopopulated search values use plain searchable names, not display-only strings such as `Name • ID` or `Course • Lecturer`.
+- Selecting a combobox option no longer clears the visible search text; it keeps the selected entity name.
+- When editing an existing enrollment, `pickEnrollment()` populates the picker searches from the known student, course, and room names.
+- If the user types into a populated picker, the selected ID is cleared so the new search can resolve to a different entity.
+
+This avoids a common failure mode where display strings containing separators and metadata are sent back as search queries and return “not found”.
+
+### 12.3 Data Fetching and TanStack Query Decision
+
+Watum currently uses SvelteKit remote queries and forms (`query`, `.run()`, `.refresh()`, `form`, `command`) as the primary data layer. The app also maintains local UI state for pagination, filters, combobox options, loading flags, and conflict-audit cache behavior.
+
+TanStack Query is not currently part of the stack. It is not worth adding unless client-side cache orchestration becomes a dominant problem.
+
+Current recommendation:
+
+- Keep SvelteKit remote queries as the source of truth for server data access.
+- Prefer extracting repeated picker/list state into reusable helpers or components before adding another data-fetching library.
+- Reconsider TanStack Query only if the app needs richer client-side invalidation, optimistic updates, stale-time control, offline-friendly retries, or shared query state across many independently mounted components.
+
+Adding TanStack Query now would duplicate concerns already handled by SvelteKit remote queries and the existing server-side conflict-audit cache.
 
 ---
 
@@ -3992,9 +4100,45 @@ Entity links are frequently nested inside clickable list-row `<button>` elements
 
 ### Issue: `svelte-check` a11y warnings for `.entity-link` spans
 
-**Cause**: Entity links use `<span onclick={...}>` nested inside clickable list-row `<button>` elements. Svelte's a11y linter flags `a11y_click_events_have_key_events` and `a11y_no_static_element_interactions` because `<span>` is not semantically interactive and lacks keyboard handlers.
+**Cause**: Entity links originally used `<span onclick={...}>` inside clickable list rows. Svelte's a11y linter flagged `a11y_click_events_have_key_events` and `a11y_no_static_element_interactions` because plain spans were not keyboard-operable or semantically interactive.
 
-**Why accepted**: Nested `<button>` elements are invalid HTML (browsers break the DOM). `<a>` tags would require `href` values and still create nested-interactive issues. Restructuring list rows to make links siblings outside the row button would break the "click anywhere to select" pattern. The spans correctly handle mouse/touch via `e.stopPropagation()` and are the pragmatic compromise for an SPA with view-switching navigation.
+**Fix**: Entity spans now use `role="button"`, `tabindex="0"`, and `onkeydown={handleEntityLinkKeydown}`. The shared handler activates links on `Enter` and `Space`, and CSS adds visible focus styling. `bun run check` reports `0 errors and 0 warnings`.
+
+### Issue: Autopopulated editor searches return “not found”
+
+**Cause**: Enrollment editor pickers populated visible search fields with display labels containing metadata separators, such as `Student Name • student-id` or `Course Name • Lecturer Name`. Those labels were later reused as raw search queries and did not match prefix-search behavior.
+
+**Fix**: Picker search fields now store plain entity names. Selecting an option keeps the visible name instead of clearing the search text.
+
+### Issue: Students could create schedules directly through remote forms
+
+**Cause**: The builder UI was hidden from students, but `createEnrollment` still accepted the `STUDENT` role server-side. A crafted remote request could create a schedule with arbitrary room/day/time data.
+
+**Fix**: `createEnrollment` is now restricted to `ADMIN` and `LECTURER` roles. The server no longer trusts students to create scheduling records directly.
+
+### Issue: Enrollment conflict validation rejected schedules across different terms
+
+**Cause**: Runtime room/student/lecturer conflict queries only checked day/time overlap and resource identity. They did not scope checks by `semester` and `academic_year`, even though the conflict-audit pipeline already used term-aware denormalized fields.
+
+**Fix**: Runtime conflict queries now include `semester` and `academic_year`, so only conflicts within the same academic term are rejected.
+
+### Issue: Duplicate enrollment uniqueness ignored academic year
+
+**Cause**: The original unique key used `(student_id, course_id, semester)` and the application duplicate check matched the same fields, which blocked retaking the same course in the same semester label across a different academic year.
+
+**Fix**: A migration now changes enrollment uniqueness to `(student_id, course_id, semester, academic_year)`, and application duplicate checks use the same four fields.
+
+### Issue: Internal `/test` route exposed manual remote-function tooling in production
+
+**Cause**: The `/test` route shipped a large manual testing page that imported many remote functions and auth helpers.
+
+**Fix**: The route is now dev-only via `src/routes/test/+page.server.ts` and returns `404` outside development mode.
+
+### Issue: Benchmark/audit scripts contained committed secrets or hardcoded admin passwords
+
+**Cause**: Several scripts embedded credentials directly in source.
+
+**Fix**: Scripts now read credentials from environment variables. `.env.example` documents `DB_CONNECTION_LIMIT`, `DB_QUEUE_LIMIT`, `WATUM_ADMIN_EMAIL`, and `WATUM_ADMIN_PASSWORD` for local benchmarking and audit tooling.
 
 ---
 

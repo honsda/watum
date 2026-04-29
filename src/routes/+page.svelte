@@ -2,7 +2,7 @@
 	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
-	import { onMount, untrack, tick } from 'svelte';
+	import { onDestroy, onMount, untrack, tick } from 'svelte';
 	import type { Component } from 'svelte';
 	import { clearAccessToken, ensureAccessToken, setAccessToken } from '$lib/client/auth';
 	import {
@@ -579,6 +579,12 @@
 		activeView = 'builder';
 	}
 
+	function openBuilderForEnrollment(item: SelectEnrollmentsResult | null | undefined) {
+		if (!item) return;
+		pickEnrollment(item);
+		activeView = 'builder';
+	}
+
 	function openCalendarForSchedule(card: ScheduleCard | null | undefined) {
 		if (!card) return;
 		focusSchedule(card);
@@ -622,6 +628,44 @@
 		if (!allowedViews.includes(view)) return;
 		activeView = view;
 		mobileRailOpen = false;
+	}
+
+	function handleKeyboardClick(event: KeyboardEvent) {
+		if (event.key !== 'Enter' && event.key !== ' ') return;
+		event.preventDefault();
+		event.stopPropagation();
+		(event.currentTarget as HTMLElement).click();
+	}
+
+	function clampActiveIndex(nextIndex: number, count: number) {
+		if (count <= 0) return -1;
+		if (nextIndex < 0) return count - 1;
+		if (nextIndex >= count) return 0;
+		return nextIndex;
+	}
+
+	function activeDescendantId(prefix: string, index: number) {
+		return index >= 0 ? `${prefix}-option-${index}` : undefined;
+	}
+
+	function clearRefreshTimers() {
+		if (!browser) return;
+		for (const timer of Object.values(collectionRefreshTimers)) {
+			if (timer != null) window.clearTimeout(timer);
+		}
+		if (conflictAuditRefreshTimer != null) window.clearTimeout(conflictAuditRefreshTimer);
+		if (studentPickerRefreshTimer != null) window.clearTimeout(studentPickerRefreshTimer);
+		if (coursePickerRefreshTimer != null) window.clearTimeout(coursePickerRefreshTimer);
+		if (scheduleCourseFilterRefreshTimer != null) {
+			window.clearTimeout(scheduleCourseFilterRefreshTimer);
+		}
+		if (scheduleLecturerFilterRefreshTimer != null) {
+			window.clearTimeout(scheduleLecturerFilterRefreshTimer);
+		}
+		if (roomPickerRefreshTimer != null) window.clearTimeout(roomPickerRefreshTimer);
+		if (scheduleRoomFilterRefreshTimer != null) {
+			window.clearTimeout(scheduleRoomFilterRefreshTimer);
+		}
 	}
 
 	function navigateToEntity(view: ViewId, id: string | null | undefined, name?: string) {
@@ -885,6 +929,8 @@
 	let coursePickerSearch = $state('');
 	let studentPickerOpen = $state(false);
 	let coursePickerOpen = $state(false);
+	let studentPickerActiveIndex = $state(-1);
+	let coursePickerActiveIndex = $state(-1);
 	let studentPickerOptions = $state<SelectStudentsResult[]>([]);
 	let coursePickerOptions = $state<SelectCoursesResult[]>([]);
 	let studentPickerLoading = $state(false);
@@ -901,6 +947,7 @@
 	let coursePickerRequestToken = 0;
 	let roomPickerSearch = $state('');
 	let roomPickerOpen = $state(false);
+	let roomPickerActiveIndex = $state(-1);
 	let roomPickerOptions = $state<SelectClassRoomsResult[]>([]);
 	let roomPickerLoading = $state(false);
 	let roomPickerIssue = $state<string | null>(null);
@@ -949,6 +996,9 @@
 	let scheduleCourseFilterOpen = $state(false);
 	let scheduleRoomFilterOpen = $state(false);
 	let scheduleLecturerFilterOpen = $state(false);
+	let scheduleCourseFilterActiveIndex = $state(-1);
+	let scheduleRoomFilterActiveIndex = $state(-1);
+	let scheduleLecturerFilterActiveIndex = $state(-1);
 	let scheduleCourseFilterOptions = $state<SelectCoursesResult[]>([]);
 	let scheduleLecturerFilterOptions = $state<SelectLecturersResult[]>([]);
 	let scheduleCourseFilterLoading = $state(false);
@@ -983,6 +1033,7 @@
 	let selectedConflictGroupId = $state<string | null>(null);
 	let calendarWeekOffset = $state(0);
 	let mobileRailOpen = $state(false);
+	let previousBodyOverflow = '';
 	let selectedRoomId = $state<string | null>(null);
 	let selectedCourseId = $state<string | null>(null);
 	let selectedStudentId = $state<string | null>(null);
@@ -1465,6 +1516,13 @@
 		})();
 	});
 
+	onDestroy(() => {
+		clearRefreshTimers();
+		if (browser) {
+			document.body.style.overflow = '';
+		}
+	});
+
 	async function ensureCalendarLoaded() {
 		if (EventCalendarComponent) return;
 		if (calendarLoadPromise) {
@@ -1526,24 +1584,7 @@
 		scheduleRoomFilterIssue = null;
 		scheduleRoomFilterHasMore = false;
 		scheduleRoomFilterNextCursor = null;
-		if (browser) {
-			for (const timer of Object.values(collectionRefreshTimers)) {
-				if (timer != null) window.clearTimeout(timer);
-			}
-			if (conflictAuditRefreshTimer != null) window.clearTimeout(conflictAuditRefreshTimer);
-			if (studentPickerRefreshTimer != null) window.clearTimeout(studentPickerRefreshTimer);
-			if (coursePickerRefreshTimer != null) window.clearTimeout(coursePickerRefreshTimer);
-			if (scheduleCourseFilterRefreshTimer != null) {
-				window.clearTimeout(scheduleCourseFilterRefreshTimer);
-			}
-			if (scheduleLecturerFilterRefreshTimer != null) {
-				window.clearTimeout(scheduleLecturerFilterRefreshTimer);
-			}
-			if (roomPickerRefreshTimer != null) window.clearTimeout(roomPickerRefreshTimer);
-			if (scheduleRoomFilterRefreshTimer != null) {
-				window.clearTimeout(scheduleRoomFilterRefreshTimer);
-			}
-		}
+		clearRefreshTimers();
 		collectionRefreshTimers = {};
 		conflictAuditRefreshTimer = null;
 		studentPickerRefreshTimer = null;
@@ -1572,6 +1613,12 @@
 		scheduleLecturerFilterNextCursor = null;
 		roomPickerSearch = '';
 		roomPickerOpen = false;
+		studentPickerActiveIndex = -1;
+		coursePickerActiveIndex = -1;
+		roomPickerActiveIndex = -1;
+		scheduleCourseFilterActiveIndex = -1;
+		scheduleRoomFilterActiveIndex = -1;
+		scheduleLecturerFilterActiveIndex = -1;
 		scheduleCourseFilterSearch = '';
 		scheduleRoomFilterSearch = '';
 		scheduleLecturerFilterSearch = '';
@@ -1930,6 +1977,216 @@
 			scheduleRoomFilterRefreshTimer = null;
 			void refreshScheduleRoomFilterOptions(null);
 		}, delay);
+	}
+
+	function selectScheduleCourseFilterOption(item: SelectCoursesResult | null) {
+		scheduleCourseFilter = item?.id ?? '';
+		scheduleCourseFilterSearch = item?.name ?? '';
+		scheduleCourseFilterActiveIndex = -1;
+		scheduleCourseFilterOpen = false;
+		queueCollectionRefresh('enrollments', 0);
+	}
+
+	function selectScheduleRoomFilterOption(item: SelectClassRoomsResult | null) {
+		scheduleRoomFilter = item?.id ?? '';
+		scheduleRoomFilterSearch = item?.name ?? '';
+		scheduleRoomFilterActiveIndex = -1;
+		scheduleRoomFilterOpen = false;
+		queueCollectionRefresh('enrollments', 0);
+	}
+
+	function selectScheduleLecturerFilterOption(item: SelectLecturersResult | null) {
+		scheduleLecturerFilter = item?.id ?? '';
+		scheduleLecturerFilterSearch = item?.name ?? '';
+		scheduleLecturerFilterActiveIndex = -1;
+		scheduleLecturerFilterOpen = false;
+		queueCollectionRefresh('enrollments', 0);
+	}
+
+	function selectStudentPickerOption(item: SelectStudentsResult) {
+		enrollmentDraft.studentId = item.id ?? '';
+		studentPickerSearch = item.name ?? '';
+		studentPickerActiveIndex = -1;
+		studentPickerOpen = false;
+	}
+
+	function selectCoursePickerOption(item: SelectCoursesResult) {
+		enrollmentDraft.courseId = item.id ?? '';
+		coursePickerSearch = item.name ?? '';
+		coursePickerActiveIndex = -1;
+		coursePickerOpen = false;
+	}
+
+	function selectRoomPickerOption(item: SelectClassRoomsResult) {
+		enrollmentDraft.classRoomId = item.id ?? '';
+		roomPickerSearch = item.name ?? '';
+		roomPickerActiveIndex = -1;
+		roomPickerOpen = false;
+	}
+
+	function handleScheduleCourseFilterKeydown(event: KeyboardEvent) {
+		const optionCount = scheduleCourseFilterOptions.length + 1;
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			event.preventDefault();
+			scheduleCourseFilterOpen = true;
+			if (!scheduleCourseFilterOptions.length) queueScheduleCourseFilterRefresh(0);
+			const delta = event.key === 'ArrowDown' ? 1 : -1;
+			scheduleCourseFilterActiveIndex = clampActiveIndex(
+				scheduleCourseFilterActiveIndex + delta,
+				optionCount
+			);
+			return;
+		}
+		if (event.key === 'Enter' && scheduleCourseFilterOpen) {
+			event.preventDefault();
+			if (scheduleCourseFilterActiveIndex === 0) {
+				selectScheduleCourseFilterOption(null);
+				return;
+			}
+			const item = scheduleCourseFilterOptions[scheduleCourseFilterActiveIndex - 1];
+			if (item) selectScheduleCourseFilterOption(item);
+			return;
+		}
+		if (event.key === 'Escape') {
+			scheduleCourseFilterOpen = false;
+			scheduleCourseFilterActiveIndex = -1;
+		}
+	}
+
+	function handleScheduleRoomFilterKeydown(event: KeyboardEvent) {
+		const optionCount = filteredScheduleRoomFilterOptions.length + 1;
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			event.preventDefault();
+			scheduleRoomFilterOpen = true;
+			if (!scheduleRoomFilterOptions.length) queueScheduleRoomFilterRefresh(0);
+			const delta = event.key === 'ArrowDown' ? 1 : -1;
+			scheduleRoomFilterActiveIndex = clampActiveIndex(
+				scheduleRoomFilterActiveIndex + delta,
+				optionCount
+			);
+			return;
+		}
+		if (event.key === 'Enter' && scheduleRoomFilterOpen) {
+			event.preventDefault();
+			if (scheduleRoomFilterActiveIndex === 0) {
+				selectScheduleRoomFilterOption(null);
+				return;
+			}
+			const item = filteredScheduleRoomFilterOptions[scheduleRoomFilterActiveIndex - 1];
+			if (item) selectScheduleRoomFilterOption(item);
+			return;
+		}
+		if (event.key === 'Escape') {
+			scheduleRoomFilterOpen = false;
+			scheduleRoomFilterActiveIndex = -1;
+		}
+	}
+
+	function handleScheduleLecturerFilterKeydown(event: KeyboardEvent) {
+		const optionCount = scheduleLecturerFilterOptions.length + 1;
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			event.preventDefault();
+			scheduleLecturerFilterOpen = true;
+			if (!scheduleLecturerFilterOptions.length) queueScheduleLecturerFilterRefresh(0);
+			const delta = event.key === 'ArrowDown' ? 1 : -1;
+			scheduleLecturerFilterActiveIndex = clampActiveIndex(
+				scheduleLecturerFilterActiveIndex + delta,
+				optionCount
+			);
+			return;
+		}
+		if (event.key === 'Enter' && scheduleLecturerFilterOpen) {
+			event.preventDefault();
+			if (scheduleLecturerFilterActiveIndex === 0) {
+				selectScheduleLecturerFilterOption(null);
+				return;
+			}
+			const item = scheduleLecturerFilterOptions[scheduleLecturerFilterActiveIndex - 1];
+			if (item) selectScheduleLecturerFilterOption(item);
+			return;
+		}
+		if (event.key === 'Escape') {
+			scheduleLecturerFilterOpen = false;
+			scheduleLecturerFilterActiveIndex = -1;
+		}
+	}
+
+	function handleStudentPickerKeydown(event: KeyboardEvent) {
+		const optionCount = filteredStudentsForPicker.length;
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			event.preventDefault();
+			studentPickerOpen = true;
+			if (!studentPickerOptions.length) queueStudentPickerRefresh(0);
+			if (optionCount > 0) {
+				const delta = event.key === 'ArrowDown' ? 1 : -1;
+				studentPickerActiveIndex = clampActiveIndex(studentPickerActiveIndex + delta, optionCount);
+			}
+			return;
+		}
+		if (event.key === 'Enter' && studentPickerOpen) {
+			const item = filteredStudentsForPicker[studentPickerActiveIndex];
+			if (item) {
+				event.preventDefault();
+				selectStudentPickerOption(item);
+			}
+			return;
+		}
+		if (event.key === 'Escape') {
+			studentPickerOpen = false;
+			studentPickerActiveIndex = -1;
+		}
+	}
+
+	function handleCoursePickerKeydown(event: KeyboardEvent) {
+		const optionCount = filteredCoursesForPicker.length;
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			event.preventDefault();
+			coursePickerOpen = true;
+			if (!coursePickerOptions.length) queueCoursePickerRefresh(0);
+			if (optionCount > 0) {
+				const delta = event.key === 'ArrowDown' ? 1 : -1;
+				coursePickerActiveIndex = clampActiveIndex(coursePickerActiveIndex + delta, optionCount);
+			}
+			return;
+		}
+		if (event.key === 'Enter' && coursePickerOpen) {
+			const item = filteredCoursesForPicker[coursePickerActiveIndex];
+			if (item) {
+				event.preventDefault();
+				selectCoursePickerOption(item);
+			}
+			return;
+		}
+		if (event.key === 'Escape') {
+			coursePickerOpen = false;
+			coursePickerActiveIndex = -1;
+		}
+	}
+
+	function handleRoomPickerKeydown(event: KeyboardEvent) {
+		const optionCount = filteredRoomsForPicker.length;
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			event.preventDefault();
+			roomPickerOpen = true;
+			if (!roomPickerOptions.length) queueRoomPickerRefresh(0);
+			if (optionCount > 0) {
+				const delta = event.key === 'ArrowDown' ? 1 : -1;
+				roomPickerActiveIndex = clampActiveIndex(roomPickerActiveIndex + delta, optionCount);
+			}
+			return;
+		}
+		if (event.key === 'Enter' && roomPickerOpen) {
+			const item = filteredRoomsForPicker[roomPickerActiveIndex];
+			if (item) {
+				event.preventDefault();
+				selectRoomPickerOption(item);
+			}
+			return;
+		}
+		if (event.key === 'Escape') {
+			roomPickerOpen = false;
+			roomPickerActiveIndex = -1;
+		}
 	}
 
 	async function refreshCourses(cursor = collectionPagination.courses.currentCursor) {
@@ -2319,9 +2576,14 @@
 
 	$effect(() => {
 		if (!browser) return;
-		document.body.style.overflow = mobileRailOpen ? 'hidden' : '';
+		if (mobileRailOpen) {
+			previousBodyOverflow = document.body.style.overflow;
+			document.body.style.overflow = 'hidden';
+		} else {
+			document.body.style.overflow = previousBodyOverflow;
+		}
 		return () => {
-			document.body.style.overflow = '';
+			document.body.style.overflow = previousBodyOverflow;
 		};
 	});
 
@@ -2611,6 +2873,9 @@
 	);
 	const selectedGrade = $derived(
 		grades.find((item) => item.id === selectedGradeId) ?? selectedGradeRecord ?? null
+	);
+	const selectedGradeEnrollment = $derived(
+		enrollments.find((item) => item.id === gradeDraft.enrollmentId) ?? null
 	);
 	const selectedUser = $derived(
 		users.find((item) => item.id === selectedUserId) ?? selectedUserRecord ?? null
@@ -3131,17 +3396,9 @@
 		};
 		const pickedStudent = item.student_id ? studentPickerLookup.get(item.student_id) : undefined;
 		const pickedCourse = item.course_id ? coursePickerLookup.get(item.course_id) : undefined;
-		studentPickerSearch = pickedStudent
-			? `${pickedStudent.name} • ${pickedStudent.id}`
-			: item.student_name
-				? `${item.student_name} • ${item.student_id}`
-				: '';
-		coursePickerSearch = pickedCourse
-			? `${pickedCourse.name} • ${pickedCourse.lecturer_name}`
-			: item.course_name
-				? `${item.course_name} • ${item.lecturer_name ?? ''}`
-				: '';
-		roomPickerSearch = '';
+		studentPickerSearch = pickedStudent?.name ?? item.student_name ?? '';
+		coursePickerSearch = pickedCourse?.name ?? item.course_name ?? '';
+		roomPickerSearch = item.class_room_name ?? '';
 		studentPickerOpen = false;
 		coursePickerOpen = false;
 		roomPickerOpen = false;
@@ -4606,7 +4863,10 @@
 										<span>Kelas berikutnya</span>
 										<strong
 											>{#if nextSchedule}<span
+													role="button"
+													tabindex="0"
 													class="entity-link"
+													onkeydown={handleKeyboardClick}
 													onclick={() => activateView('courses')}>{nextSchedule.course}</span
 												>{:else}Belum ada kelas terjadwal{/if}</strong
 										>
@@ -4615,7 +4875,10 @@
 												{DAY_LABELS[nextSchedule.day]} • {nextSchedule.startLabel} - {nextSchedule.endLabel}
 												•
 												<span
+													role="button"
+													tabindex="0"
 													class="entity-link"
+													onkeydown={handleKeyboardClick}
 													onclick={() =>
 														navigateToEntity(
 															'classrooms',
@@ -4651,7 +4914,10 @@
 										<span>Ruang yang dipakai</span>
 										<strong
 											>{#if nextSchedule}<span
+													role="button"
+													tabindex="0"
 													class="entity-link"
+													onkeydown={handleKeyboardClick}
 													onclick={() =>
 														navigateToEntity(
 															'courses',
@@ -4738,7 +5004,10 @@
 											<div class="decision-primary-copy">
 												<span>Kelas berikutnya</span>
 												<span
+													role="button"
+													tabindex="0"
 													class="entity-link"
+													onkeydown={handleKeyboardClick}
 													onclick={() =>
 														navigateToEntity(
 															'courses',
@@ -4750,7 +5019,10 @@
 													{DAY_LABELS[nextSchedule.day]} • {nextSchedule.startLabel} - {nextSchedule.endLabel}
 													•
 													<span
+														role="button"
+														tabindex="0"
 														class="entity-link"
+														onkeydown={handleKeyboardClick}
 														onclick={() =>
 															navigateToEntity(
 																'classrooms',
@@ -4784,7 +5056,10 @@
 										<span>Kelas berikutnya</span>
 										<strong
 											>{#if nextSchedule}<span
+													role="button"
+													tabindex="0"
 													class="entity-link"
+													onkeydown={handleKeyboardClick}
 													onclick={() => activateView('courses')}>{nextSchedule.course}</span
 												>{:else}Belum ada kelas terjadwal{/if}</strong
 										>
@@ -4889,7 +5164,10 @@
 													queueScheduleRoomFilterRefresh();
 													scheduleRoomFilterOpen = true;
 												}}
-												onfocus={() => {
+												onfocus={(e) => {
+													if (scheduleRoomFilter) {
+														(e.currentTarget as HTMLInputElement).select();
+													}
 													scheduleRoomFilterOpen = true;
 													if (!scheduleRoomFilterOptions.length) {
 														queueScheduleRoomFilterRefresh(0);
@@ -5101,7 +5379,10 @@
 									<div>
 										<h3>
 											<span
+												role="button"
+												tabindex="0"
 												class="entity-link"
+												onkeydown={handleKeyboardClick}
 												onclick={() =>
 													navigateToEntity(
 														'courses',
@@ -5136,7 +5417,10 @@
 									</div>
 									<div>
 										<span>Ruang</span><span
+											role="button"
+											tabindex="0"
 											class="entity-link"
+											onkeydown={handleKeyboardClick}
 											onclick={() =>
 												navigateToEntity(
 													'classrooms',
@@ -5147,7 +5431,10 @@
 									</div>
 									<div>
 										<span>Dosen</span><span
+											role="button"
+											tabindex="0"
 											class="entity-link"
+											onkeydown={handleKeyboardClick}
 											onclick={() =>
 												navigateToEntity(
 													'lecturers',
@@ -5192,14 +5479,20 @@
 												>
 													<div class="calendar-overlap-copy">
 														<span
+															role="button"
+															tabindex="0"
 															class="entity-link"
+															onkeydown={handleKeyboardClick}
 															onclick={() =>
 																navigateToEntity('courses', peer.original.course_id, peer.course)}
 															><strong>{peer.course}</strong></span
 														>
 														<span
 															><span
+																role="button"
+																tabindex="0"
 																class="entity-link"
+																onkeydown={handleKeyboardClick}
 																onclick={() =>
 																	navigateToEntity(
 																		'students',
@@ -5209,7 +5502,10 @@
 															>
 															•
 															<span
+																role="button"
+																tabindex="0"
 																class="entity-link"
+																onkeydown={handleKeyboardClick}
 																onclick={() =>
 																	navigateToEntity(
 																		'lecturers',
@@ -5219,7 +5515,10 @@
 															>
 															•
 															<span
+																role="button"
+																tabindex="0"
 																class="entity-link"
+																onkeydown={handleKeyboardClick}
 																onclick={() =>
 																	navigateToEntity(
 																		'classrooms',
@@ -5370,18 +5669,28 @@
 										onfocusout={(e) => {
 											if (!e.currentTarget.contains(e.relatedTarget as Node)) {
 												scheduleCourseFilterOpen = false;
+												scheduleCourseFilterActiveIndex = -1;
 											}
 										}}
 									>
 										<input
 											type="text"
+											role="combobox"
 											class="combobox-input"
 											placeholder="Cari mata kuliah filter..."
+											aria-expanded={scheduleCourseFilterOpen}
+											aria-controls="schedule-course-filter-listbox"
+											aria-autocomplete="list"
+											aria-activedescendant={activeDescendantId(
+												'schedule-course-filter',
+												scheduleCourseFilterActiveIndex
+											)}
 											value={scheduleCourseFilter
 												? selectedScheduleCourseFilterLabel
 												: scheduleCourseFilterSearch}
 											oninput={(e) => {
 												scheduleCourseFilterSearch = (e.currentTarget as HTMLInputElement).value;
+												scheduleCourseFilterActiveIndex = -1;
 												if (scheduleCourseFilter) {
 													scheduleCourseFilter = '';
 													queueCollectionRefresh('enrollments', 0);
@@ -5389,7 +5698,12 @@
 												scheduleCourseFilterOpen = true;
 												queueScheduleCourseFilterRefresh();
 											}}
-											onfocus={() => {
+											onkeydown={handleScheduleCourseFilterKeydown}
+											onfocus={(e) => {
+												if (scheduleCourseFilter) {
+													(e.currentTarget as HTMLInputElement).select();
+												}
+												scheduleCourseFilterActiveIndex = -1;
 												scheduleCourseFilterOpen = true;
 												queueScheduleCourseFilterRefresh(0);
 											}}
@@ -5399,38 +5713,44 @@
 										{:else if scheduleCourseFilterOpen && scheduleCourseFilterLoading && !scheduleCourseFilterOptions.length}
 											<p class="combobox-empty">Memuat mata kuliah...</p>
 										{:else if scheduleCourseFilterOpen}
-											<div class="combobox-dropdown" role="listbox">
+											<div
+												id="schedule-course-filter-listbox"
+												class="combobox-dropdown"
+												role="listbox"
+											>
 												<button
+													id="schedule-course-filter-option-0"
 													type="button"
 													role="option"
 													aria-selected={!scheduleCourseFilter}
 													class="combobox-option"
-													class:active={!scheduleCourseFilter}
+													class:active={scheduleCourseFilterActiveIndex === 0 ||
+														!scheduleCourseFilter}
 													onmousedown={(e) => {
 														e.preventDefault();
-														scheduleCourseFilter = '';
-														scheduleCourseFilterSearch = '';
-														scheduleCourseFilterOpen = false;
-														queueCollectionRefresh('enrollments', 0);
+														selectScheduleCourseFilterOption(null);
 													}}
+													onfocus={() => (scheduleCourseFilterActiveIndex = 0)}
+													onmouseover={() => (scheduleCourseFilterActiveIndex = 0)}
 												>
 													<strong>Semua mata kuliah</strong>
 													<span>Hapus filter mata kuliah</span>
 												</button>
-												{#each scheduleCourseFilterOptions as item (item.id)}
+												{#each scheduleCourseFilterOptions as item, index (item.id)}
 													<button
+														id={`schedule-course-filter-option-${index + 1}`}
 														type="button"
 														role="option"
 														aria-selected={scheduleCourseFilter === item.id}
 														class="combobox-option"
-														class:active={scheduleCourseFilter === item.id}
+														class:active={scheduleCourseFilterActiveIndex === index + 1 ||
+															scheduleCourseFilter === item.id}
 														onmousedown={(e) => {
 															e.preventDefault();
-															scheduleCourseFilter = item.id ?? '';
-															scheduleCourseFilterSearch = '';
-															scheduleCourseFilterOpen = false;
-															queueCollectionRefresh('enrollments', 0);
+															selectScheduleCourseFilterOption(item);
 														}}
+														onfocus={() => (scheduleCourseFilterActiveIndex = index + 1)}
+														onmouseover={() => (scheduleCourseFilterActiveIndex = index + 1)}
 													>
 														<strong>{item.name}</strong>
 														<span>{item.id} • {item.lecturer_name}</span>
@@ -5468,18 +5788,28 @@
 										onfocusout={(e) => {
 											if (!e.currentTarget.contains(e.relatedTarget as Node)) {
 												scheduleRoomFilterOpen = false;
+												scheduleRoomFilterActiveIndex = -1;
 											}
 										}}
 									>
 										<input
 											type="text"
+											role="combobox"
 											class="combobox-input"
 											placeholder="Cari ruang filter..."
+											aria-expanded={scheduleRoomFilterOpen}
+											aria-controls="schedule-room-filter-listbox"
+											aria-autocomplete="list"
+											aria-activedescendant={activeDescendantId(
+												'schedule-room-filter',
+												scheduleRoomFilterActiveIndex
+											)}
 											value={scheduleRoomFilter
 												? selectedScheduleRoomFilterLabel
 												: scheduleRoomFilterSearch}
 											oninput={(e) => {
 												scheduleRoomFilterSearch = (e.currentTarget as HTMLInputElement).value;
+												scheduleRoomFilterActiveIndex = -1;
 												if (scheduleRoomFilter) {
 													scheduleRoomFilter = '';
 													queueCollectionRefresh('enrollments', 0);
@@ -5487,7 +5817,12 @@
 												queueScheduleRoomFilterRefresh();
 												scheduleRoomFilterOpen = true;
 											}}
-											onfocus={() => {
+											onkeydown={handleScheduleRoomFilterKeydown}
+											onfocus={(e) => {
+												if (scheduleRoomFilter) {
+													(e.currentTarget as HTMLInputElement).select();
+												}
+												scheduleRoomFilterActiveIndex = -1;
 												scheduleRoomFilterOpen = true;
 												if (!scheduleRoomFilterOptions.length) {
 													queueScheduleRoomFilterRefresh(0);
@@ -5499,38 +5834,43 @@
 										{:else if scheduleRoomFilterOpen && scheduleRoomFilterLoading && !scheduleRoomFilterOptions.length}
 											<p class="combobox-empty">Memuat ruang kelas...</p>
 										{:else if scheduleRoomFilterOpen}
-											<div class="combobox-dropdown" role="listbox">
+											<div
+												id="schedule-room-filter-listbox"
+												class="combobox-dropdown"
+												role="listbox"
+											>
 												<button
+													id="schedule-room-filter-option-0"
 													type="button"
 													role="option"
 													aria-selected={!scheduleRoomFilter}
 													class="combobox-option"
-													class:active={!scheduleRoomFilter}
+													class:active={scheduleRoomFilterActiveIndex === 0 || !scheduleRoomFilter}
 													onmousedown={(e) => {
 														e.preventDefault();
-														scheduleRoomFilter = '';
-														scheduleRoomFilterSearch = '';
-														scheduleRoomFilterOpen = false;
-														queueCollectionRefresh('enrollments', 0);
+														selectScheduleRoomFilterOption(null);
 													}}
+													onfocus={() => (scheduleRoomFilterActiveIndex = 0)}
+													onmouseover={() => (scheduleRoomFilterActiveIndex = 0)}
 												>
 													<strong>Semua ruang</strong>
 													<span>Hapus filter ruang</span>
 												</button>
-												{#each filteredScheduleRoomFilterOptions as item (item.id)}
+												{#each filteredScheduleRoomFilterOptions as item, index (item.id)}
 													<button
+														id={`schedule-room-filter-option-${index + 1}`}
 														type="button"
 														role="option"
 														aria-selected={scheduleRoomFilter === item.id}
 														class="combobox-option"
-														class:active={scheduleRoomFilter === item.id}
+														class:active={scheduleRoomFilterActiveIndex === index + 1 ||
+															scheduleRoomFilter === item.id}
 														onmousedown={(e) => {
 															e.preventDefault();
-															scheduleRoomFilter = item.id ?? '';
-															scheduleRoomFilterSearch = '';
-															scheduleRoomFilterOpen = false;
-															queueCollectionRefresh('enrollments', 0);
+															selectScheduleRoomFilterOption(item);
 														}}
+														onfocus={() => (scheduleRoomFilterActiveIndex = index + 1)}
+														onmouseover={() => (scheduleRoomFilterActiveIndex = index + 1)}
 													>
 														<strong>{item.name}</strong>
 														<span
@@ -5570,18 +5910,28 @@
 										onfocusout={(e) => {
 											if (!e.currentTarget.contains(e.relatedTarget as Node)) {
 												scheduleLecturerFilterOpen = false;
+												scheduleLecturerFilterActiveIndex = -1;
 											}
 										}}
 									>
 										<input
 											type="text"
+											role="combobox"
 											class="combobox-input"
 											placeholder="Cari dosen filter..."
+											aria-expanded={scheduleLecturerFilterOpen}
+											aria-controls="schedule-lecturer-filter-listbox"
+											aria-autocomplete="list"
+											aria-activedescendant={activeDescendantId(
+												'schedule-lecturer-filter',
+												scheduleLecturerFilterActiveIndex
+											)}
 											value={scheduleLecturerFilter
 												? selectedScheduleLecturerFilterLabel
 												: scheduleLecturerFilterSearch}
 											oninput={(e) => {
 												scheduleLecturerFilterSearch = (e.currentTarget as HTMLInputElement).value;
+												scheduleLecturerFilterActiveIndex = -1;
 												if (scheduleLecturerFilter) {
 													scheduleLecturerFilter = '';
 													queueCollectionRefresh('enrollments', 0);
@@ -5589,7 +5939,12 @@
 												scheduleLecturerFilterOpen = true;
 												queueScheduleLecturerFilterRefresh();
 											}}
-											onfocus={() => {
+											onkeydown={handleScheduleLecturerFilterKeydown}
+											onfocus={(e) => {
+												if (scheduleLecturerFilter) {
+													(e.currentTarget as HTMLInputElement).select();
+												}
+												scheduleLecturerFilterActiveIndex = -1;
 												scheduleLecturerFilterOpen = true;
 												queueScheduleLecturerFilterRefresh(0);
 											}}
@@ -5599,38 +5954,44 @@
 										{:else if scheduleLecturerFilterOpen && scheduleLecturerFilterLoading && !scheduleLecturerFilterOptions.length}
 											<p class="combobox-empty">Memuat dosen...</p>
 										{:else if scheduleLecturerFilterOpen}
-											<div class="combobox-dropdown" role="listbox">
+											<div
+												id="schedule-lecturer-filter-listbox"
+												class="combobox-dropdown"
+												role="listbox"
+											>
 												<button
+													id="schedule-lecturer-filter-option-0"
 													type="button"
 													role="option"
 													aria-selected={!scheduleLecturerFilter}
 													class="combobox-option"
-													class:active={!scheduleLecturerFilter}
+													class:active={scheduleLecturerFilterActiveIndex === 0 ||
+														!scheduleLecturerFilter}
 													onmousedown={(e) => {
 														e.preventDefault();
-														scheduleLecturerFilter = '';
-														scheduleLecturerFilterSearch = '';
-														scheduleLecturerFilterOpen = false;
-														queueCollectionRefresh('enrollments', 0);
+														selectScheduleLecturerFilterOption(null);
 													}}
+													onfocus={() => (scheduleLecturerFilterActiveIndex = 0)}
+													onmouseover={() => (scheduleLecturerFilterActiveIndex = 0)}
 												>
 													<strong>Semua dosen</strong>
 													<span>Hapus filter dosen</span>
 												</button>
-												{#each scheduleLecturerFilterOptions as item (item.id)}
+												{#each scheduleLecturerFilterOptions as item, index (item.id)}
 													<button
+														id={`schedule-lecturer-filter-option-${index + 1}`}
 														type="button"
 														role="option"
 														aria-selected={scheduleLecturerFilter === item.id}
 														class="combobox-option"
-														class:active={scheduleLecturerFilter === item.id}
+														class:active={scheduleLecturerFilterActiveIndex === index + 1 ||
+															scheduleLecturerFilter === item.id}
 														onmousedown={(e) => {
 															e.preventDefault();
-															scheduleLecturerFilter = item.id ?? '';
-															scheduleLecturerFilterSearch = '';
-															scheduleLecturerFilterOpen = false;
-															queueCollectionRefresh('enrollments', 0);
+															selectScheduleLecturerFilterOption(item);
 														}}
+														onfocus={() => (scheduleLecturerFilterActiveIndex = index + 1)}
+														onmouseover={() => (scheduleLecturerFilterActiveIndex = index + 1)}
 													>
 														<strong>{item.name}</strong>
 														<span>{item.id} • {item.email}</span>
@@ -5719,8 +6080,10 @@
 									{@const scheduleCard = item.id
 										? (scheduleCardMap[item.id] ?? auditConflictCardMap[item.id])
 										: null}
-									<button
-										type="button"
+									<div
+										role="button"
+										tabindex="0"
+										onkeydown={handleKeyboardClick}
 										class:selected={selectedEnrollmentId === item.id}
 										class:conflict={Boolean(scheduleCard?.hasConflict)}
 										class="list-row"
@@ -5729,7 +6092,10 @@
 									>
 										<div>
 											<span
+												role="button"
+												tabindex="0"
 												class="entity-link"
+												onkeydown={handleKeyboardClick}
 												onclick={(e) => {
 													e.stopPropagation();
 													navigateToEntity('courses', item.course_id, item.course_name);
@@ -5737,7 +6103,10 @@
 											>
 											<span
 												><span
+													role="button"
+													tabindex="0"
 													class="entity-link"
+													onkeydown={handleKeyboardClick}
 													onclick={(e) => {
 														e.stopPropagation();
 														navigateToEntity('students', item.student_id, item.student_name);
@@ -5745,7 +6114,10 @@
 												>
 												•
 												<span
+													role="button"
+													tabindex="0"
 													class="entity-link"
+													onkeydown={handleKeyboardClick}
 													onclick={(e) => {
 														e.stopPropagation();
 														navigateToEntity(
@@ -5771,7 +6143,7 @@
 												timezone
 											)}</small
 										>
-									</button>
+									</div>
 								{/each}
 							</div>
 							<CollectionPagination
@@ -5961,23 +6333,35 @@
 												onfocusout={(e) => {
 													if (!e.currentTarget.contains(e.relatedTarget as Node)) {
 														studentPickerOpen = false;
+														studentPickerActiveIndex = -1;
 													}
 												}}
 											>
 												<input
 													type="text"
+													role="combobox"
 													class="combobox-input"
 													placeholder="Cari mahasiswa..."
+													aria-expanded={studentPickerOpen}
+													aria-controls="student-picker-listbox"
+													aria-autocomplete="list"
+													aria-activedescendant={activeDescendantId(
+														'student-picker',
+														studentPickerActiveIndex
+													)}
 													value={enrollmentDraft.studentId
-														? `${selectedDraftStudent} • ${enrollmentDraft.studentId}`
+														? selectedDraftStudent
 														: studentPickerSearch}
 													oninput={(e) => {
 														studentPickerSearch = (e.currentTarget as HTMLInputElement).value;
+														studentPickerActiveIndex = -1;
 														if (enrollmentDraft.studentId) enrollmentDraft.studentId = '';
 														studentPickerOpen = true;
 														queueStudentPickerRefresh();
 													}}
+													onkeydown={handleStudentPickerKeydown}
 													onfocus={() => {
+														studentPickerActiveIndex = -1;
 														studentPickerOpen = true;
 														queueStudentPickerRefresh(0);
 													}}
@@ -5987,20 +6371,22 @@
 												{:else if studentPickerOpen && studentPickerLoading && !filteredStudentsForPicker.length}
 													<p class="combobox-empty">Memuat mahasiswa...</p>
 												{:else if studentPickerOpen && filteredStudentsForPicker.length}
-													<div class="combobox-dropdown" role="listbox">
-														{#each filteredStudentsForPicker as item (item.id)}
+													<div id="student-picker-listbox" class="combobox-dropdown" role="listbox">
+														{#each filteredStudentsForPicker as item, index (item.id)}
 															<button
+																id={`student-picker-option-${index}`}
 																type="button"
 																role="option"
 																aria-selected={enrollmentDraft.studentId === item.id}
 																class="combobox-option"
-																class:active={enrollmentDraft.studentId === item.id}
+																class:active={studentPickerActiveIndex === index ||
+																	enrollmentDraft.studentId === item.id}
 																onmousedown={(e) => {
 																	e.preventDefault();
-																	enrollmentDraft.studentId = item.id ?? '';
-																	studentPickerSearch = '';
-																	studentPickerOpen = false;
+																	selectStudentPickerOption(item);
 																}}
+																onfocus={() => (studentPickerActiveIndex = index)}
+																onmouseover={() => (studentPickerActiveIndex = index)}
 															>
 																<strong>{item.name}</strong>
 																<span>{item.id}</span>
@@ -6045,23 +6431,35 @@
 												onfocusout={(e) => {
 													if (!e.currentTarget.contains(e.relatedTarget as Node)) {
 														coursePickerOpen = false;
+														coursePickerActiveIndex = -1;
 													}
 												}}
 											>
 												<input
 													type="text"
+													role="combobox"
 													class="combobox-input"
 													placeholder="Cari mata kuliah..."
+													aria-expanded={coursePickerOpen}
+													aria-controls="course-picker-listbox"
+													aria-autocomplete="list"
+													aria-activedescendant={activeDescendantId(
+														'course-picker',
+														coursePickerActiveIndex
+													)}
 													value={enrollmentDraft.courseId
-														? `${selectedDraftCourse} • ${coursePickerLookup.get(enrollmentDraft.courseId)?.lecturer_name ?? selectedEnrollmentRecord?.lecturer_name ?? ''}`
+														? selectedDraftCourse
 														: coursePickerSearch}
 													oninput={(e) => {
 														coursePickerSearch = (e.currentTarget as HTMLInputElement).value;
+														coursePickerActiveIndex = -1;
 														if (enrollmentDraft.courseId) enrollmentDraft.courseId = '';
 														coursePickerOpen = true;
 														queueCoursePickerRefresh();
 													}}
+													onkeydown={handleCoursePickerKeydown}
 													onfocus={() => {
+														coursePickerActiveIndex = -1;
 														coursePickerOpen = true;
 														queueCoursePickerRefresh(0);
 													}}
@@ -6071,20 +6469,22 @@
 												{:else if coursePickerOpen && coursePickerLoading && !filteredCoursesForPicker.length}
 													<p class="combobox-empty">Memuat mata kuliah...</p>
 												{:else if coursePickerOpen && filteredCoursesForPicker.length}
-													<div class="combobox-dropdown" role="listbox">
-														{#each filteredCoursesForPicker as item (item.id)}
+													<div id="course-picker-listbox" class="combobox-dropdown" role="listbox">
+														{#each filteredCoursesForPicker as item, index (item.id)}
 															<button
+																id={`course-picker-option-${index}`}
 																type="button"
 																role="option"
 																aria-selected={enrollmentDraft.courseId === item.id}
 																class="combobox-option"
-																class:active={enrollmentDraft.courseId === item.id}
+																class:active={coursePickerActiveIndex === index ||
+																	enrollmentDraft.courseId === item.id}
 																onmousedown={(e) => {
 																	e.preventDefault();
-																	enrollmentDraft.courseId = item.id ?? '';
-																	coursePickerSearch = '';
-																	coursePickerOpen = false;
+																	selectCoursePickerOption(item);
 																}}
+																onfocus={() => (coursePickerActiveIndex = index)}
+																onmouseover={() => (coursePickerActiveIndex = index)}
 															>
 																<strong>{item.name}</strong>
 																<span>{item.id} • {item.lecturer_name}</span>
@@ -6142,7 +6542,7 @@
 												{...selectedEnrollmentId
 													? updateEnrollment.fields.day.as('select')
 													: createEnrollment.fields.day.as('select')}
-												value={enrollmentDraft.day}
+												bind:value={enrollmentDraft.day}
 											>
 												{#each days as day (day)}
 													<option value={day}>{DAY_LABELS[day]}</option>
@@ -6157,7 +6557,7 @@
 												{...selectedEnrollmentId
 													? updateEnrollment.fields.startTime.as('text')
 													: createEnrollment.fields.startTime.as('text')}
-												value={enrollmentDraft.startTime}
+												bind:value={enrollmentDraft.startTime}
 											/>
 										</label>
 
@@ -6168,7 +6568,7 @@
 												{...selectedEnrollmentId
 													? updateEnrollment.fields.endTime.as('text')
 													: createEnrollment.fields.endTime.as('text')}
-												value={enrollmentDraft.endTime}
+												bind:value={enrollmentDraft.endTime}
 											/>
 										</label>
 
@@ -6178,7 +6578,7 @@
 												{...selectedEnrollmentId
 													? updateEnrollment.fields.semester.as('text')
 													: createEnrollment.fields.semester.as('text')}
-												value={enrollmentDraft.semester}
+												bind:value={enrollmentDraft.semester}
 											/>
 										</label>
 
@@ -6188,7 +6588,7 @@
 												{...selectedEnrollmentId
 													? updateEnrollment.fields.academicYear.as('text')
 													: createEnrollment.fields.academicYear.as('text')}
-												value={enrollmentDraft.academicYear}
+												bind:value={enrollmentDraft.academicYear}
 											/>
 										</label>
 									</div>
@@ -6236,23 +6636,35 @@
 													onfocusout={(e) => {
 														if (!e.currentTarget.contains(e.relatedTarget as Node)) {
 															roomPickerOpen = false;
+															roomPickerActiveIndex = -1;
 														}
 													}}
 												>
 													<input
 														type="text"
+														role="combobox"
 														class="combobox-input"
 														placeholder="Cari ruang tersedia..."
+														aria-expanded={roomPickerOpen}
+														aria-controls="room-picker-listbox"
+														aria-autocomplete="list"
+														aria-activedescendant={activeDescendantId(
+															'room-picker',
+															roomPickerActiveIndex
+														)}
 														value={enrollmentDraft.classRoomId
 															? selectedDraftRoom
 															: roomPickerSearch}
 														oninput={(e) => {
 															roomPickerSearch = (e.currentTarget as HTMLInputElement).value;
+															roomPickerActiveIndex = -1;
 															if (enrollmentDraft.classRoomId) enrollmentDraft.classRoomId = '';
 															queueRoomPickerRefresh();
 															roomPickerOpen = true;
 														}}
+														onkeydown={handleRoomPickerKeydown}
 														onfocus={() => {
+															roomPickerActiveIndex = -1;
 															roomPickerOpen = true;
 															if (!roomPickerOptions.length) {
 																queueRoomPickerRefresh(0);
@@ -6264,20 +6676,22 @@
 													{:else if roomPickerOpen && roomPickerLoading && !roomPickerOptions.length}
 														<p class="combobox-empty">Memuat ruang kelas...</p>
 													{:else if roomPickerOpen}
-														<div class="combobox-dropdown" role="listbox">
-															{#each filteredRoomsForPicker as room (room.id)}
+														<div id="room-picker-listbox" class="combobox-dropdown" role="listbox">
+															{#each filteredRoomsForPicker as room, index (room.id)}
 																<button
+																	id={`room-picker-option-${index}`}
 																	type="button"
 																	role="option"
 																	aria-selected={enrollmentDraft.classRoomId === room.id}
 																	class="combobox-option"
-																	class:active={enrollmentDraft.classRoomId === room.id}
+																	class:active={roomPickerActiveIndex === index ||
+																		enrollmentDraft.classRoomId === room.id}
 																	onmousedown={(e) => {
 																		e.preventDefault();
-																		enrollmentDraft.classRoomId = room.id ?? '';
-																		roomPickerSearch = '';
-																		roomPickerOpen = false;
+																		selectRoomPickerOption(room);
 																	}}
+																	onfocus={() => (roomPickerActiveIndex = index)}
+																	onmouseover={() => (roomPickerActiveIndex = index)}
 																>
 																	<strong>{room.name}</strong>
 																	<span
@@ -6526,10 +6940,19 @@
 												onclick={(e) => e.stopPropagation()}
 											/></label
 										>
-										<button type="button" class="row-content" onclick={() => pickClassroom(item)}>
+										<div
+											role="button"
+											tabindex="0"
+											class="row-content"
+											onkeydown={handleKeyboardClick}
+											onclick={() => pickClassroom(item)}
+										>
 											<div>
 												<span
+													role="button"
+													tabindex="0"
 													class="entity-link"
+													onkeydown={handleKeyboardClick}
 													onclick={(e) => {
 														e.stopPropagation();
 														navigateToEntity('classrooms', item.id, item.name);
@@ -6539,7 +6962,7 @@
 												>
 											</div>
 											<small>{beautifyRoomType(item.class_room_type)}</small>
-										</button>
+										</div>
 									</div>
 								{/each}
 							</div>
@@ -6874,17 +7297,29 @@
 												onclick={(e) => e.stopPropagation()}
 											/></label
 										>
-										<button type="button" class="row-content" onclick={() => pickCourse(item)}>
+										<div
+											role="button"
+											tabindex="0"
+											class="row-content"
+											onkeydown={handleKeyboardClick}
+											onclick={() => pickCourse(item)}
+										>
 											<div>
 												<span
+													role="button"
+													tabindex="0"
 													class="entity-link"
+													onkeydown={handleKeyboardClick}
 													onclick={(e) => {
 														e.stopPropagation();
 														navigateToEntity('courses', item.id, item.name);
 													}}><strong>{item.id} • {item.name}</strong></span
 												><span
 													><span
+														role="button"
+														tabindex="0"
 														class="entity-link"
+														onkeydown={handleKeyboardClick}
 														onclick={(e) => {
 															e.stopPropagation();
 															navigateToEntity(
@@ -6896,7 +7331,10 @@
 													>
 													•
 													<span
+														role="button"
+														tabindex="0"
 														class="entity-link"
+														onkeydown={handleKeyboardClick}
 														onclick={(e) => {
 															e.stopPropagation();
 															navigateToEntity('lecturers', item.lecturer_id, item.lecturer_name);
@@ -6905,7 +7343,7 @@
 												>
 											</div>
 											<small>{item.credits} SKS</small>
-										</button>
+										</div>
 									</div>
 								{/each}
 							</div>
@@ -6988,7 +7426,10 @@
 										<div><span>Kode</span><strong>{selectedCourse.id}</strong></div>
 										<div>
 											<span>Program studi</span><span
+												role="button"
+												tabindex="0"
 												class="entity-link"
+												onkeydown={handleKeyboardClick}
 												onclick={(e) => {
 													e.stopPropagation();
 													navigateToEntity(
@@ -7001,7 +7442,10 @@
 										</div>
 										<div>
 											<span>Dosen</span><span
+												role="button"
+												tabindex="0"
 												class="entity-link"
+												onkeydown={handleKeyboardClick}
 												onclick={(e) => {
 													e.stopPropagation();
 													navigateToEntity(
@@ -7057,7 +7501,16 @@
 											>{#each studyPrograms as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if courseDraft.studyProgramId}<span
+												role="button"
+												tabindex="0"
+												class="editor-entity-link"
+												onkeydown={handleKeyboardClick}
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('studyPrograms', courseDraft.studyProgramId);
+												}}>Lihat prodi</span
+											>{/if}</label
 									><label
 										><span>Dosen pengampu</span><select
 											name="lecturerId"
@@ -7073,7 +7526,16 @@
 												>{/if}{#each lecturers as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if courseDraft.lecturerId}<span
+												role="button"
+												tabindex="0"
+												class="editor-entity-link"
+												onkeydown={handleKeyboardClick}
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('lecturers', courseDraft.lecturerId);
+												}}>Lihat dosen</span
+											>{/if}</label
 									>{#if courseEditorBlocked}<p class="editor-note">
 											Program studi dan dosen harus tersedia sebelum mata kuliah bisa disimpan.
 										</p>{/if}<Button
@@ -7115,7 +7577,16 @@
 											>{#each studyPrograms as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if bulkEditCourseStudyProgramId}<span
+												role="button"
+												tabindex="0"
+												class="editor-entity-link"
+												onkeydown={handleKeyboardClick}
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('studyPrograms', bulkEditCourseStudyProgramId);
+												}}>Lihat prodi</span
+											>{/if}</label
 									>
 									<label
 										><span>Dosen pengampu</span><select
@@ -7127,7 +7598,16 @@
 											>{#each lecturers as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if bulkEditCourseLecturerId}<span
+												role="button"
+												tabindex="0"
+												class="editor-entity-link"
+												onkeydown={handleKeyboardClick}
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('lecturers', bulkEditCourseLecturerId);
+												}}>Lihat dosen</span
+											>{/if}</label
 									>
 									<div class="builder-inline-actions">
 										<Button
@@ -7251,10 +7731,19 @@
 												onclick={(e) => e.stopPropagation()}
 											/></label
 										>
-										<button type="button" class="row-content" onclick={() => pickStudent(item)}>
+										<div
+											role="button"
+											tabindex="0"
+											class="row-content"
+											onkeydown={handleKeyboardClick}
+											onclick={() => pickStudent(item)}
+										>
 											<div>
 												<span
+													role="button"
+													tabindex="0"
 													class="entity-link"
+													onkeydown={handleKeyboardClick}
 													onclick={(e) => {
 														e.stopPropagation();
 														navigateToEntity('students', item.id, item.name);
@@ -7262,7 +7751,10 @@
 												><span
 													>{item.id} •
 													<span
+														role="button"
+														tabindex="0"
 														class="entity-link"
+														onkeydown={handleKeyboardClick}
 														onclick={(e) => {
 															e.stopPropagation();
 															navigateToEntity(
@@ -7275,7 +7767,7 @@
 												>
 											</div>
 											<small>{item.year_admitted}</small>
-										</button>
+										</div>
 									</div>
 								{/each}
 							</div>
@@ -7358,7 +7850,10 @@
 										<div><span>Email</span><strong>{selectedStudent.email}</strong></div>
 										<div>
 											<span>Program studi</span><span
+												role="button"
+												tabindex="0"
 												class="entity-link"
+												onkeydown={handleKeyboardClick}
 												onclick={(e) => {
 													e.stopPropagation();
 													navigateToEntity(
@@ -7371,7 +7866,10 @@
 										</div>
 										<div>
 											<span>Fakultas</span><span
+												role="button"
+												tabindex="0"
 												class="entity-link"
+												onkeydown={handleKeyboardClick}
 												onclick={(e) => {
 													e.stopPropagation();
 													navigateToEntity(
@@ -7445,7 +7943,16 @@
 											>{#each studyPrograms as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if studentDraft.studyProgramId}<span
+												role="button"
+												tabindex="0"
+												class="editor-entity-link"
+												onkeydown={handleKeyboardClick}
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('studyPrograms', studentDraft.studyProgramId);
+												}}>Lihat prodi</span
+											>{/if}</label
 									>{#if studentEditorBlocked}<p class="editor-note">
 											Program studi harus tersedia sebelum data mahasiswa bisa disimpan.
 										</p>{/if}<Button
@@ -7474,7 +7981,16 @@
 											>{#each studyPrograms as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if bulkEditStudentStudyProgramId}<span
+												role="button"
+												tabindex="0"
+												class="editor-entity-link"
+												onkeydown={handleKeyboardClick}
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('studyPrograms', bulkEditStudentStudyProgramId);
+												}}>Lihat prodi</span
+											>{/if}</label
 									>
 									<label
 										><span>Angkatan</span><input
@@ -7610,10 +8126,19 @@
 												onclick={(e) => e.stopPropagation()}
 											/></label
 										>
-										<button type="button" class="row-content" onclick={() => pickLecturer(item)}>
+										<div
+											role="button"
+											tabindex="0"
+											class="row-content"
+											onkeydown={handleKeyboardClick}
+											onclick={() => pickLecturer(item)}
+										>
 											<div>
 												<span
+													role="button"
+													tabindex="0"
 													class="entity-link"
+													onkeydown={handleKeyboardClick}
 													onclick={(e) => {
 														e.stopPropagation();
 														navigateToEntity('lecturers', item.id, item.name);
@@ -7621,7 +8146,7 @@
 												><span>{item.id} • {item.email}</span>
 											</div>
 											<small>{item.email}</small>
-										</button>
+										</div>
 									</div>
 								{/each}
 							</div>
@@ -7922,10 +8447,19 @@
 												onclick={(e) => e.stopPropagation()}
 											/></label
 										>
-										<button type="button" class="row-content" onclick={() => pickFaculty(item)}>
+										<div
+											role="button"
+											tabindex="0"
+											class="row-content"
+											onkeydown={handleKeyboardClick}
+											onclick={() => pickFaculty(item)}
+										>
 											<div>
 												<span
+													role="button"
+													tabindex="0"
 													class="entity-link"
+													onkeydown={handleKeyboardClick}
 													onclick={(e) => {
 														e.stopPropagation();
 														navigateToEntity('faculties', item.id, item.name);
@@ -7933,7 +8467,7 @@
 												><span>{item.id}</span>
 											</div>
 											<small>{item.id}</small>
-										</button>
+										</div>
 									</div>
 								{/each}
 							</div>
@@ -8185,14 +8719,19 @@
 												onclick={(e) => e.stopPropagation()}
 											/></label
 										>
-										<button
-											type="button"
+										<div
+											role="button"
+											tabindex="0"
 											class="row-content"
+											onkeydown={handleKeyboardClick}
 											onclick={() => pickStudyProgram(item)}
 										>
 											<div>
 												<span
+													role="button"
+													tabindex="0"
 													class="entity-link"
+													onkeydown={handleKeyboardClick}
 													onclick={(e) => {
 														e.stopPropagation();
 														navigateToEntity('studyPrograms', item.id, item.name);
@@ -8200,7 +8739,10 @@
 												><span
 													>{item.id} •
 													<span
+														role="button"
+														tabindex="0"
 														class="entity-link"
+														onkeydown={handleKeyboardClick}
 														onclick={(e) => {
 															e.stopPropagation();
 															navigateToEntity('faculties', item.faculty_id, item.faculty_name);
@@ -8209,7 +8751,7 @@
 												>
 											</div>
 											<small>{item.head ?? item.faculty_name}</small>
-										</button>
+										</div>
 									</div>
 								{/each}
 							</div>
@@ -8296,7 +8838,10 @@
 										</div>
 										<div>
 											<span>Fakultas</span><span
+												role="button"
+												tabindex="0"
 												class="entity-link"
+												onkeydown={handleKeyboardClick}
 												onclick={(e) => {
 													e.stopPropagation();
 													navigateToEntity(
@@ -8357,7 +8902,16 @@
 											>{#each faculties as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if studyProgramDraft.facultyId}<span
+												role="button"
+												tabindex="0"
+												class="editor-entity-link"
+												onkeydown={handleKeyboardClick}
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('faculties', studyProgramDraft.facultyId);
+												}}>Lihat fakultas</span
+											>{/if}</label
 									>{#if studyProgramEditorBlocked}<p class="editor-note">
 											Fakultas harus tersedia sebelum program studi bisa disimpan.
 										</p>{/if}<Button
@@ -8386,7 +8940,16 @@
 											>{#each faculties as item (item.id)}<option value={item.id}
 													>{item.name}</option
 												>{/each}</select
-										></label
+										>{#if bulkEditStudyProgramFacultyId}<span
+												role="button"
+												tabindex="0"
+												class="editor-entity-link"
+												onkeydown={handleKeyboardClick}
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity('faculties', bulkEditStudyProgramFacultyId);
+												}}>Lihat fakultas</span
+											>{/if}</label
 									>
 									<label
 										><span>Ketua prodi</span><input
@@ -8496,7 +9059,10 @@
 												queueScheduleRoomFilterRefresh();
 												scheduleRoomFilterOpen = true;
 											}}
-											onfocus={() => {
+											onfocus={(e) => {
+												if (scheduleRoomFilter) {
+													(e.currentTarget as HTMLInputElement).select();
+												}
 												scheduleRoomFilterOpen = true;
 												if (!scheduleRoomFilterOptions.length) {
 													queueScheduleRoomFilterRefresh(0);
@@ -8692,17 +9258,29 @@
 												onclick={(e) => e.stopPropagation()}
 											/></label
 										>
-										<button type="button" class="row-content" onclick={() => pickEnrollment(item)}>
+										<div
+											role="button"
+											tabindex="0"
+											class="row-content"
+											onkeydown={handleKeyboardClick}
+											onclick={() => pickEnrollment(item)}
+										>
 											<div>
 												<span
+													role="button"
+													tabindex="0"
 													class="entity-link"
+													onkeydown={handleKeyboardClick}
 													onclick={(e) => {
 														e.stopPropagation();
 														navigateToEntity('students', item.student_id, item.student_name);
 													}}><strong>{item.student_name}</strong></span
 												><span
 													><span
+														role="button"
+														tabindex="0"
 														class="entity-link"
+														onkeydown={handleKeyboardClick}
 														onclick={(e) => {
 															e.stopPropagation();
 															navigateToEntity('courses', item.course_id, item.course_name);
@@ -8710,7 +9288,10 @@
 													>
 													•
 													<span
+														role="button"
+														tabindex="0"
 														class="entity-link"
+														onkeydown={handleKeyboardClick}
 														onclick={(e) => {
 															e.stopPropagation();
 															navigateToEntity(
@@ -8728,7 +9309,7 @@
 												{/if}
 											</div>
 											<small>{item.semester} • {item.academic_year}</small>
-										</button>
+										</div>
 									</div>
 								{/each}
 							</div>
@@ -8755,6 +9336,18 @@
 												: 'Pilih satu KRS'}
 									</h3>
 								</div>
+								{#if selectedEnrollment && editorView !== 'enrollments-bulk' && currentUser.current.role !== 'STUDENT'}
+									<div class="detail-actions">
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											onclick={() => openBuilderForEnrollment(selectedEnrollment)}
+										>
+											Edit di penjadwalan
+										</Button>
+									</div>
+								{/if}
 							</div>
 							{#if selectedEnrollment && editorView !== 'enrollments-bulk'}
 								<div class="detail-stack">
@@ -8766,7 +9359,10 @@
 									<div class="detail-lines">
 										<div>
 											<span>Mahasiswa</span><span
+												role="button"
+												tabindex="0"
 												class="entity-link"
+												onkeydown={handleKeyboardClick}
 												onclick={(e) => {
 													e.stopPropagation();
 													navigateToEntity(
@@ -8779,7 +9375,10 @@
 										</div>
 										<div>
 											<span>Mata kuliah</span><span
+												role="button"
+												tabindex="0"
 												class="entity-link"
+												onkeydown={handleKeyboardClick}
 												onclick={(e) => {
 													e.stopPropagation();
 													navigateToEntity(
@@ -8792,7 +9391,10 @@
 										</div>
 										<div>
 											<span>Ruang</span><span
+												role="button"
+												tabindex="0"
 												class="entity-link"
+												onkeydown={handleKeyboardClick}
 												onclick={(e) => {
 													e.stopPropagation();
 													navigateToEntity(
@@ -9005,17 +9607,29 @@
 												onclick={(e) => e.stopPropagation()}
 											/></label
 										>
-										<button type="button" class="row-content" onclick={() => pickGrade(item)}>
+										<div
+											role="button"
+											tabindex="0"
+											class="row-content"
+											onkeydown={handleKeyboardClick}
+											onclick={() => pickGrade(item)}
+										>
 											<div>
 												<span
+													role="button"
+													tabindex="0"
 													class="entity-link"
+													onkeydown={handleKeyboardClick}
 													onclick={(e) => {
 														e.stopPropagation();
 														navigateToEntity('students', item.student_id, item.student_name);
 													}}><strong>{item.student_name}</strong></span
 												><span
 													><span
+														role="button"
+														tabindex="0"
 														class="entity-link"
+														onkeydown={handleKeyboardClick}
 														onclick={(e) => {
 															e.stopPropagation();
 															navigateToEntity('courses', item.course_id, item.course_name);
@@ -9025,7 +9639,7 @@
 												>
 											</div>
 											<small>{item.total_score ?? '-'} poin</small>
-										</button>
+										</div>
 									</div>
 								{/each}
 							</div>
@@ -9138,7 +9752,33 @@
 												>{/if}{#each enrollments as item (item.id)}<option value={item.id}
 													>{item.student_name} • {item.course_name}</option
 												>{/each}</select
-										></label
+										>{#if selectedGradeEnrollment}<span
+												role="button"
+												tabindex="0"
+												class="editor-entity-link"
+												onkeydown={handleKeyboardClick}
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity(
+														'students',
+														selectedGradeEnrollment.student_id,
+														selectedGradeEnrollment.student_name
+													);
+												}}>Lihat mahasiswa</span
+											>{/if}{#if selectedGradeEnrollment}<span
+												role="button"
+												tabindex="0"
+												class="editor-entity-link"
+												onkeydown={handleKeyboardClick}
+												onclick={(e) => {
+													e.stopPropagation();
+													navigateToEntity(
+														'courses',
+														selectedGradeEnrollment.course_id,
+														selectedGradeEnrollment.course_name
+													);
+												}}>Lihat mata kuliah</span
+											>{/if}</label
 									><label
 										><span>Tugas</span><input
 											min="0"
@@ -9344,17 +9984,30 @@
 												onchange={() => item.id && toggleUserSelection(item.id)}
 												onclick={(e) => e.stopPropagation()}
 											/></label
-										><button type="button" class="row-content" onclick={() => pickUser(item)}
-											><div>
+										>
+										<div
+											role="button"
+											tabindex="0"
+											class="row-content"
+											onkeydown={handleKeyboardClick}
+											onclick={() => pickUser(item)}
+										>
+											<div>
 												<strong>{item.email}</strong><span
 													>{#if item.student_name}<span
+															role="button"
+															tabindex="0"
 															class="entity-link"
+															onkeydown={handleKeyboardClick}
 															onclick={(e) => {
 																e.stopPropagation();
 																navigateToEntity('students', item.student_id, item.student_name);
 															}}>{item.student_name}</span
 														>{:else if item.lecturer_name}<span
+															role="button"
+															tabindex="0"
 															class="entity-link"
+															onkeydown={handleKeyboardClick}
 															onclick={(e) => {
 																e.stopPropagation();
 																navigateToEntity('lecturers', item.lecturer_id, item.lecturer_name);
@@ -9362,8 +10015,8 @@
 														>{:else}Administrator sistem{/if}</span
 												>
 											</div>
-											<small>{item.role}</small></button
-										>
+											<small>{item.role}</small>
+										</div>
 									</div>{/each}
 							</div>
 							<CollectionPagination
@@ -9406,7 +10059,10 @@
 										<div><span>Peran</span><strong>{selectedUser.role}</strong></div>
 										<div>
 											<span>Mahasiswa</span><span
+												role="button"
+												tabindex="0"
 												class="entity-link"
+												onkeydown={handleKeyboardClick}
 												onclick={(e) => {
 													e.stopPropagation();
 													navigateToEntity(
@@ -9419,7 +10075,10 @@
 										</div>
 										<div>
 											<span>Dosen</span><span
+												role="button"
+												tabindex="0"
 												class="entity-link"
+												onkeydown={handleKeyboardClick}
 												onclick={(e) => {
 													e.stopPropagation();
 													navigateToEntity(
@@ -11628,6 +12287,12 @@
 		font: inherit;
 	}
 
+	.user-row .row-content:focus-visible {
+		outline: 2px solid color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
+		outline-offset: 2px;
+		border-radius: 0.5rem;
+	}
+
 	.user-row .row-content > div {
 		display: grid;
 		gap: 0.22rem;
@@ -11733,6 +12398,13 @@
 	.editor-grid .check-row,
 	.editor-note {
 		grid-column: 1 / -1;
+	}
+
+	.editor-grid .combobox-dropdown {
+		width: max-content;
+		min-width: 100%;
+		right: auto;
+		max-width: min(32rem, calc(100vw - 2rem));
 	}
 
 	.editor-note {
@@ -11873,8 +12545,7 @@
 		}
 
 		.main-shell {
-			overflow: hidden;
-			overflow-x: clip;
+			overflow: visible;
 		}
 
 		.decision-board,
@@ -11904,7 +12575,7 @@
 
 		:global(.event-calendar-host .ec) {
 			--ec-slot-height: 38px;
-			min-width: 112rem;
+			min-width: 68rem;
 		}
 
 		:global(.event-calendar-host .ec-time-grid .ec-header .ec-sidebar),
@@ -12221,11 +12892,34 @@
 		text-decoration-color: transparent;
 		text-underline-offset: 2px;
 		transition: text-decoration-color 120ms ease;
+		justify-self: start;
 	}
-	.entity-link:hover {
+	.entity-link:hover,
+	.entity-link:focus-visible {
 		text-decoration-color: currentColor;
+	}
+	.entity-link:focus-visible,
+	.editor-entity-link:focus-visible {
+		outline: 2px solid color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
+		outline-offset: 2px;
+		border-radius: 0.25rem;
 	}
 	.entity-link strong {
 		font-weight: 600;
+	}
+
+	.editor-entity-link {
+		font-size: 0.8rem;
+		color: var(--color-accent-strong);
+		cursor: pointer;
+		text-decoration: underline;
+		text-decoration-color: transparent;
+		text-underline-offset: 2px;
+		transition: text-decoration-color 120ms ease;
+		justify-self: start;
+	}
+	.editor-entity-link:hover,
+	.editor-entity-link:focus-visible {
+		text-decoration-color: currentColor;
 	}
 </style>
