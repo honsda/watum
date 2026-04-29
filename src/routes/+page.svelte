@@ -5992,10 +5992,7 @@
 														studentPickerOpen = true;
 														queueStudentPickerRefresh();
 													}}
-													onfocus={(e) => {
-														if (enrollmentDraft.studentId) {
-															(e.currentTarget as HTMLInputElement).select();
-														}
+													onfocus={() => {
 														studentPickerOpen = true;
 														queueStudentPickerRefresh(0);
 													}}
@@ -6079,10 +6076,7 @@
 														coursePickerOpen = true;
 														queueCoursePickerRefresh();
 													}}
-													onfocus={(e) => {
-														if (enrollmentDraft.courseId) {
-															(e.currentTarget as HTMLInputElement).select();
-														}
+													onfocus={() => {
 														coursePickerOpen = true;
 														queueCoursePickerRefresh(0);
 													}}
@@ -6273,10 +6267,7 @@
 															queueRoomPickerRefresh();
 															roomPickerOpen = true;
 														}}
-														onfocus={(e) => {
-															if (enrollmentDraft.classRoomId) {
-																(e.currentTarget as HTMLInputElement).select();
-															}
+														onfocus={() => {
 															roomPickerOpen = true;
 															if (!roomPickerOptions.length) {
 																queueRoomPickerRefresh(0);
