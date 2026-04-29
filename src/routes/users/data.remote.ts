@@ -27,6 +27,8 @@ import {
 	insertUser,
 	insertStudent,
 	insertLecturer,
+	updateStudent as updateStudentDb,
+	updateLecturer as updateLecturerDb,
 	deleteUser as deleteUserDb
 } from '$lib/server/sql';
 import { type SelectUsersResult, type SelectUsersWhere } from '$lib/server/sql';
@@ -394,6 +396,12 @@ export const updateUser = form(
 			if (existingStudentUser && existingStudentUser.id !== data.id) {
 				throw error(400, 'Mahasiswa tersebut sudah memiliki akun user');
 			}
+			const [existingStudentEmail] = await selectStudents(getPool(), {
+				where: [['email', '=', data.email]]
+			});
+			if (existingStudentEmail && existingStudentEmail.id !== data.studentId) {
+				throw error(400, 'Email sudah digunakan oleh mahasiswa lain');
+			}
 		}
 
 		if (data.role === 'LECTURER') {
@@ -412,6 +420,12 @@ export const updateUser = form(
 			if (existingLecturerUser && existingLecturerUser.id !== data.id) {
 				throw error(400, 'Dosen tersebut sudah memiliki akun user');
 			}
+			const [existingLecturerEmail] = await selectLecturers(getPool(), {
+				where: [['email', '=', data.email]]
+			});
+			if (existingLecturerEmail && existingLecturerEmail.id !== data.lecturerId) {
+				throw error(400, 'Email sudah digunakan oleh dosen lain');
+			}
 		}
 
 		// if (user.role !== data.role) {
@@ -426,17 +440,53 @@ export const updateUser = form(
 			await revokeRefreshTokensForUser(data.id);
 		}
 
-		await updateUserDb(
-			getPool(),
-			{
-				email: data.email,
-				password: data.password ? await hash(data.password) : (user.password ?? ''),
-				role: data.role,
-				student_id: data.role === 'STUDENT' ? (data.studentId ?? undefined) : undefined,
-				lecturer_id: data.role === 'LECTURER' ? (data.lecturerId ?? undefined) : undefined
-			},
-			{ id: data.id }
-		);
+		await withTransaction(async (conn) => {
+			await updateUserDb(
+				conn,
+				{
+					email: data.email,
+					password: data.password ? await hash(data.password) : (user.password ?? ''),
+					role: data.role,
+					student_id: data.role === 'STUDENT' ? (data.studentId ?? undefined) : undefined,
+					lecturer_id: data.role === 'LECTURER' ? (data.lecturerId ?? undefined) : undefined
+				},
+				{ id: data.id }
+			);
+
+			if (data.role === 'STUDENT' && data.studentId) {
+				const [student] = await selectStudents(conn, { where: [['id', '=', data.studentId]] });
+				if (student) {
+					await updateStudentDb(
+						conn,
+						{
+							name: student.name ?? '',
+							email: data.email,
+							phone: student.phone ?? undefined,
+							address: student.address ?? undefined,
+							year_admitted: student.year_admitted ?? 2024,
+							study_program_id: student.study_program_id ?? ''
+						},
+						{ id: data.studentId }
+					);
+				}
+			}
+
+			if (data.role === 'LECTURER' && data.lecturerId) {
+				const [lecturer] = await selectLecturers(conn, { where: [['id', '=', data.lecturerId]] });
+				if (lecturer) {
+					await updateLecturerDb(
+						conn,
+						{
+							name: lecturer.name ?? '',
+							email: data.email,
+							phone: lecturer.phone ?? undefined,
+							address: lecturer.address ?? undefined
+						},
+						{ id: data.lecturerId }
+					);
+				}
+			}
+		});
 
 		await getUsers().refresh();
 		return { success: true, id: data.id };
@@ -476,6 +526,14 @@ export const bulkUpdateUserRoles = form(
 				const [user] = await selectUsers(conn, { where: [['id', '=', id]] });
 				if (!user) {
 					outcomes.push({ id, ok: false, message: 'User tidak ditemukan' });
+					continue;
+				}
+				if (data.role === 'STUDENT' && !user.student_id) {
+					outcomes.push({ id, ok: false, message: 'Akun tidak terhubung ke mahasiswa' });
+					continue;
+				}
+				if (data.role === 'LECTURER' && !user.lecturer_id) {
+					outcomes.push({ id, ok: false, message: 'Akun tidak terhubung ke dosen' });
 					continue;
 				}
 				await updateUserDb(

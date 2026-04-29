@@ -750,10 +750,7 @@ export const getEnrollmentConflictAudit = query(conflictAuditSchema, async (filt
 });
 
 export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
-	const user = await requireRole(['ADMIN', 'LECTURER', 'STUDENT']);
-	if (user.role === 'STUDENT' && data.studentId !== user.studentId) {
-		throw error(403, 'Anda tidak berhak membuat KRS untuk mahasiswa lain');
-	}
+	const user = await requireRole(['ADMIN', 'LECTURER']);
 
 	const [[student], [course], [classRoom]] = await Promise.all([
 		selectStudents(getPool(), { where: [['id', '=', data.studentId]] }),
@@ -794,27 +791,34 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 			classRoomId: data.classRoomId,
 			day: data.day,
 			startTime: startDate,
-			endTime: endDate
+			endTime: endDate,
+			semester: data.semester,
+			academicYear: data.academicYear
 		}),
 		selectEnrollments(getPool(), {
 			select: { id: true },
 			where: [
 				['student_id', '=', data.studentId],
 				['course_id', '=', data.courseId],
-				['semester', '=', data.semester]
+				['semester', '=', data.semester],
+				['academic_year', '=', data.academicYear]
 			]
 		}),
 		selectStudentScheduleConflict(getPool(), {
 			studentId: data.studentId,
 			day: data.day,
 			startTime: startDate,
-			endTime: endDate
+			endTime: endDate,
+			semester: data.semester,
+			academicYear: data.academicYear
 		}),
 		selectLecturerScheduleConflict(getPool(), {
 			lecturerId: course.lecturer_id,
 			day: data.day,
 			startTime: startDate,
-			endTime: endDate
+			endTime: endDate,
+			semester: data.semester,
+			academicYear: data.academicYear
 		})
 	]);
 	const [existing] = existingRows;
@@ -844,7 +848,11 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 	}
 
 	if (existing) {
-		invalid(issue.courseId('Mahasiswa sudah terdaftar di mata kuliah ini pada semester yang sama'));
+		invalid(
+			issue.courseId(
+				'Mahasiswa sudah terdaftar di mata kuliah ini pada semester dan tahun akademik yang sama'
+			)
+		);
 	}
 
 	const scheduleId = randomUUID();
@@ -872,7 +880,7 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 	invalidateConflictAuditCache();
 
 	await getEnrollments().refresh();
-	return { success: true, enrollmentId: enrollmentId, scheduleId: scheduleId };
+	return { success: true, id: enrollmentId, enrollmentId: enrollmentId, scheduleId: scheduleId };
 });
 
 export const updateEnrollment = form(
@@ -929,6 +937,8 @@ export const updateEnrollment = form(
 				day: data.day,
 				startTime: startDate,
 				endTime: endDate,
+				semester: data.semester,
+				academicYear: data.academicYear,
 				excludeScheduleId: enrollment.schedule_id ?? undefined
 			}),
 			selectStudentScheduleConflict(getPool(), {
@@ -936,6 +946,8 @@ export const updateEnrollment = form(
 				day: data.day,
 				startTime: startDate,
 				endTime: endDate,
+				semester: data.semester,
+				academicYear: data.academicYear,
 				excludeEnrollmentId: data.id
 			}),
 			selectLecturerScheduleConflict(getPool(), {
@@ -943,6 +955,8 @@ export const updateEnrollment = form(
 				day: data.day,
 				startTime: startDate,
 				endTime: endDate,
+				semester: data.semester,
+				academicYear: data.academicYear,
 				excludeScheduleId: enrollment.schedule_id ?? undefined
 			}),
 			selectEnrollments(getPool(), {
@@ -950,7 +964,8 @@ export const updateEnrollment = form(
 				where: [
 					['student_id', '=', data.studentId],
 					['course_id', '=', data.courseId],
-					['semester', '=', data.semester]
+					['semester', '=', data.semester],
+					['academic_year', '=', data.academicYear]
 				]
 			})
 		]);
@@ -981,7 +996,9 @@ export const updateEnrollment = form(
 
 		if (existing && existing.id !== data.id) {
 			invalid(
-				issue.courseId('Mahasiswa sudah terdaftar di mata kuliah ini pada semester yang sama')
+				issue.courseId(
+					'Mahasiswa sudah terdaftar di mata kuliah ini pada semester dan tahun akademik yang sama'
+				)
 			);
 		}
 		await withTransaction(async (conn) => {
@@ -1040,6 +1057,8 @@ export const bulkDeleteEnrollments = command(
 	async (idsParam) => {
 		const user = await requireRole(['ADMIN', 'LECTURER']);
 		const ids = idsParam.split(',').filter(Boolean);
+		if (!ids.length) throw error(400, 'Tidak ada KRS dipilih');
+		if (ids.length > 200) throw error(400, 'Maksimal 200 KRS sekaligus');
 		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
 		await withTransaction(async (conn) => {
 			for (const id of ids) {
@@ -1079,6 +1098,7 @@ export const bulkUpdateEnrollments = form(
 		const user = await requireRole(['ADMIN', 'LECTURER']);
 		const ids = data.ids.split(',').filter(Boolean);
 		if (!ids.length) throw error(400, 'Tidak ada KRS dipilih');
+		if (ids.length > 200) throw error(400, 'Maksimal 200 KRS sekaligus');
 		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
 		await withTransaction(async (conn) => {
 			for (const id of ids) {

@@ -1,5 +1,7 @@
 import { browser } from '$app/environment';
 
+const LOADING_FETCH_PATCH = Symbol.for('watum.loadingFetchPatch');
+
 let pendingCount = $state(0);
 
 export function getLoadingState() {
@@ -27,9 +29,11 @@ export function installLoadingInterceptor() {
 	if (!browser || interceptorInstalled) return;
 	interceptorInstalled = true;
 
-	const nativeFetch = window.fetch.bind(window);
+	const currentFetch = window.fetch as typeof window.fetch & { [LOADING_FETCH_PATCH]?: boolean };
+	if (currentFetch[LOADING_FETCH_PATCH]) return;
+	const wrappedBaseFetch = currentFetch.bind(window);
 
-	window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+	const wrappedFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 
 		// Only track same-origin requests to remote endpoints and API calls
@@ -40,13 +44,16 @@ export function installLoadingInterceptor() {
 			if (isRemote || isApi) {
 				incrementLoading();
 				try {
-					return await nativeFetch(input, init);
+					return await wrappedBaseFetch(input, init);
 				} finally {
 					decrementLoading();
 				}
 			}
 		}
 
-		return nativeFetch(input, init);
+		return wrappedBaseFetch(input, init);
 	};
+
+	wrappedFetch[LOADING_FETCH_PATCH] = true;
+	window.fetch = wrappedFetch;
 }

@@ -212,6 +212,8 @@ export const bulkDeleteStudyPrograms = command(
 	async (idsParam) => {
 		await requireRole(['ADMIN']);
 		const ids = idsParam.split(',').filter(Boolean);
+		if (!ids.length) throw error(400, 'Tidak ada prodi dipilih');
+		if (ids.length > 200) throw error(400, 'Maksimal 200 prodi sekaligus');
 		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
 		for (const id of ids) {
 			const [sp] = await selectStudyPrograms(getPool(), {
@@ -245,6 +247,7 @@ export const bulkUpdateStudyPrograms = form(
 		await requireRole(['ADMIN']);
 		const ids = data.ids.split(',').filter(Boolean);
 		if (!ids.length) throw error(400, 'Tidak ada prodi dipilih');
+		if (ids.length > 200) throw error(400, 'Maksimal 200 prodi sekaligus');
 		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
 		for (const id of ids) {
 			const [sp] = await selectStudyPrograms(getPool(), { where: [['id', '=', id]] });

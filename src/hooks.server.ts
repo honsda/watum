@@ -8,6 +8,9 @@ function getPublicOrigin(event: Parameters<Handle>[0]['event']): string {
 	if (trustedOrigin) {
 		return trustedOrigin;
 	}
+	if (process.env.NODE_ENV === 'production') {
+		return event.url.origin;
+	}
 	const forwardedProto = event.request.headers.get('x-forwarded-proto');
 	const forwardedHost =
 		event.request.headers.get('x-forwarded-host') ?? event.request.headers.get('host');

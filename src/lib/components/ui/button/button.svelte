@@ -59,6 +59,7 @@
 		href = undefined,
 		type = 'button',
 		disabled,
+		onclick,
 		children,
 		...restProps
 	}: ButtonProps = $props();
@@ -77,6 +78,14 @@
 		aria-disabled={disabled}
 		role={disabled ? 'link' : undefined}
 		tabindex={disabled ? -1 : undefined}
+		onclick={(event) => {
+			if (disabled) {
+				event.preventDefault();
+				event.stopPropagation();
+				return;
+			}
+			onclick?.(event);
+		}}
 		{...restProps}
 	>
 		{@render children?.()}
@@ -88,6 +97,7 @@
 		class={cn(buttonVariants({ variant, size }), className)}
 		{type}
 		{disabled}
+		{onclick}
 		{...restProps}
 	>
 		{@render children?.()}

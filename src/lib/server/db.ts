@@ -153,10 +153,10 @@ function poolOptions(): PoolOptions {
 		port: parseInt(env.DB_PORT || '3306'),
 		timezone: '+00:00',
 		waitForConnections: true,
-		connectionLimit: toPositiveInt(env.DB_CONNECTION_LIMIT, 200),
-		maxIdle: toPositiveInt(env.DB_CONNECTION_LIMIT, 200),
+		connectionLimit: toPositiveInt(env.DB_CONNECTION_LIMIT, 50),
+		maxIdle: toPositiveInt(env.DB_CONNECTION_LIMIT, 50),
 		idleTimeout: 60000,
-		queueLimit: 0,
+		queueLimit: toPositiveInt(env.DB_QUEUE_LIMIT, 500),
 		enableKeepAlive: true,
 		keepAliveInitialDelay: 10000,
 		connectTimeout: CONNECT_TIMEOUT_MS

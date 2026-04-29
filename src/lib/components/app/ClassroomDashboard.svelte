@@ -45,7 +45,8 @@
 	const copy = $derived(occupancyCopy(role));
 	const sortedMetrics = $derived(sortRoomsForRole(metrics, role));
 	const selectedRoom = $derived(sortedMetrics.find((room) => room.id === selectedRoomId) ?? null);
-	const pageCount = $derived(Math.ceil(total / pageSize));
+	const safePageSize = $derived(Math.max(1, pageSize));
+	const pageCount = $derived(Math.ceil(total / safePageSize));
 	const canGoPrevious = $derived(canPrevious || page > 1);
 	const canGoNext = $derived(hasMore);
 </script>
@@ -106,23 +107,26 @@
 
 		<div class="room-list" role="list">
 			{#each sortedMetrics as room (room.id)}
-				<button
-					type="button"
-					class:selected={selectedRoomId === room.id}
-					class="room-row"
-					onclick={() => onPickRoom?.(room.id)}
-				>
-					<div class="room-copy">
-						<strong>{room.name}</strong>
-						<span>{room.type} • kapasitas {room.capacity}</span>
-					</div>
-					<div class="room-meta">
-						<span class:active={room.isAvailableNow} class="status-pill">
-							{room.isAvailableNow ? 'Kosong' : 'Terpakai'}
-						</span>
-						<strong>{room.utilizationPercent}%</strong>
-					</div>
-				</button>
+				<div role="listitem">
+					<button
+						type="button"
+						aria-pressed={selectedRoomId === room.id}
+						class:selected={selectedRoomId === room.id}
+						class="room-row"
+						onclick={() => onPickRoom?.(room.id)}
+					>
+						<div class="room-copy">
+							<strong>{room.name}</strong>
+							<span>{room.type} • kapasitas {room.capacity}</span>
+						</div>
+						<div class="room-meta">
+							<span class:active={room.isAvailableNow} class="status-pill">
+								{room.isAvailableNow ? 'Kosong' : 'Terpakai'}
+							</span>
+							<strong>{room.utilizationPercent}%</strong>
+						</div>
+					</button>
+				</div>
 			{/each}
 		</div>
 	</div>

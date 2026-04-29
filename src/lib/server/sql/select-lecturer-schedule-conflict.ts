@@ -5,6 +5,8 @@ export type SelectLecturerScheduleConflictParams = {
 	day: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
 	startTime: Date | string;
 	endTime: Date | string;
+	semester?: string;
+	academicYear?: string;
 	excludeScheduleId?: string;
 };
 
@@ -30,6 +32,15 @@ export async function selectLecturerScheduleConflict(
 	AND sch.end_time > ?
 	`;
 	const values: unknown[] = [params.lecturerId, params.day, params.endTime, params.startTime];
+
+	if (params.semester) {
+		sql += ` AND e.semester = ?`;
+		values.push(params.semester);
+	}
+	if (params.academicYear) {
+		sql += ` AND e.academic_year = ?`;
+		values.push(params.academicYear);
+	}
 
 	if (params.excludeScheduleId) {
 		sql += ` AND sch.id <> ?`;

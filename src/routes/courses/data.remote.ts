@@ -278,6 +278,8 @@ export const deleteCourse = command(v.string(), async (id) => {
 export const bulkDeleteCourses = command(v.pipe(v.string(), v.minLength(1)), async (idsParam) => {
 	await requireRole(['ADMIN']);
 	const ids = idsParam.split(',').filter(Boolean);
+	if (!ids.length) throw error(400, 'Tidak ada mata kuliah dipilih');
+	if (ids.length > 200) throw error(400, 'Maksimal 200 mata kuliah sekaligus');
 	const results: Array<{ id: string; ok: boolean; message?: string }> = [];
 	for (const id of ids) {
 		const [course] = await selectCourses(getPool(), { where: [['id', '=', id]] });
@@ -310,6 +312,7 @@ export const bulkUpdateCourses = form(
 		await requireRole(['ADMIN']);
 		const ids = data.ids.split(',').filter(Boolean);
 		if (!ids.length) throw error(400, 'Tidak ada mata kuliah dipilih');
+		if (ids.length > 200) throw error(400, 'Maksimal 200 mata kuliah sekaligus');
 		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
 		for (const id of ids) {
 			const [course] = await selectCourses(getPool(), { where: [['id', '=', id]] });
