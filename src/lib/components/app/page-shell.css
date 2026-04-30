@@ -2216,6 +2216,43 @@ select {
 	gap: 0.35rem;
 }
 
+@media (max-width: 1280px) {
+	.workspace-shell {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.builder-shell {
+		height: auto;
+		min-height: 0;
+	}
+
+	.builder-list .list-stack,
+	.builder-detail {
+		max-height: none;
+		min-height: 0;
+	}
+
+	.builder-progress {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.builder-room-stage,
+	.decision-board {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.student-summary-row,
+	.student-grade-items,
+	.student-actions {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.schedule-filter-grid,
+	.list-filter-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
 @media (max-width: 1080px) {
 	.event-calendar-host .ec {
 		--ec-slot-height: 30px;
@@ -2275,38 +2312,84 @@ select {
 		justify-self: end;
 	}
 
-	.builder-progress {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-
 	.pane-head {
 		grid-template-columns: minmax(0, 1fr);
 	}
 
+	.topbar-tools {
+		gap: 0.55rem;
+	}
+
+	.topbar-tools button,
+	.topbar-tools .user-pill {
+		min-width: 0;
+	}
+}
+
+@media (max-width: 900px) {
 	.student-summary-row,
 	.student-grade-items,
-	.student-actions {
+	.student-actions,
+	.builder-progress,
+	.builder-snapshot,
+	.editor-grid,
+	.detail-lines,
+	.decision-actions,
+	.decision-board {
 		grid-template-columns: minmax(0, 1fr);
 	}
 
-	.workspace-shell {
+	.builder-section-actions.split,
+	.schedule-filter-summary {
 		grid-template-columns: minmax(0, 1fr);
 	}
 
-	.builder-shell {
-		height: auto;
-		min-height: 0;
-	}
-
-	.builder-list .list-stack,
-	.builder-detail {
-		max-height: none;
-		min-height: 0;
-	}
-
-	.decision-board,
-	.builder-room-stage {
+	.schedule-filter-grid,
+	.list-filter-grid {
 		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.topbar-tools {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.6rem;
+		width: 100%;
+	}
+
+	.builder-inline-actions {
+		justify-content: stretch;
+	}
+
+	.builder-inline-actions button,
+	.builder-section-actions button,
+	.topbar-tools button {
+		width: 100%;
+	}
+
+	.list-row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.45rem;
+		align-items: start;
+	}
+
+	.list-row > small {
+		justify-self: start;
+		text-align: left;
+	}
+
+	.user-pill {
+		width: 100%;
+		min-width: 0;
+	}
+
+	.warning-actions > * {
+		flex: 1 1 100%;
+	}
+
+	.workspace-list .list-stack {
+		max-height: clamp(14rem, 36dvh, 22rem);
+		overflow: auto;
 	}
 }
 
@@ -2376,79 +2459,18 @@ select {
 	}
 
 	.topbar-tools {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.6rem;
-		width: 100%;
+		grid-template-columns: minmax(0, 1fr);
 	}
 
 	.topbar-copy h2 {
 		font-size: 1.48rem;
 	}
 
-	.builder-progress,
-	.builder-snapshot,
-	.editor-grid,
-	.detail-lines,
-	.decision-actions,
-	.decision-board {
-		grid-template-columns: minmax(0, 1fr);
-	}
-
-	.builder-section-actions.split {
-		grid-template-columns: minmax(0, 1fr);
-	}
-
-	.schedule-filter-summary {
-		grid-template-columns: minmax(0, 1fr);
-	}
-
 	.filter-bar {
 		flex-direction: column;
 		align-items: stretch;
 	}
-
-	.schedule-filter-grid,
-	.list-filter-grid {
-		grid-template-columns: minmax(0, 1fr);
 	}
-
-	.builder-inline-actions {
-		justify-content: stretch;
-	}
-
-	.builder-inline-actions button,
-	.builder-section-actions button,
-	.topbar-tools button {
-		width: 100%;
-	}
-
-	.list-row {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: 0.45rem;
-		align-items: start;
-	}
-
-	.list-row > small {
-		justify-self: start;
-		text-align: left;
-	}
-
-	.user-pill {
-		width: 100%;
-		min-width: 0;
-	}
-
-	.warning-actions > * {
-		flex: 1 1 100%;
-	}
-
-	.workspace-list .list-stack {
-		max-height: clamp(14rem, 36dvh, 22rem);
-		overflow: auto;
-	}
-}
 
 /* --- Shimmer skeleton --- */
 @keyframes shimmer {
