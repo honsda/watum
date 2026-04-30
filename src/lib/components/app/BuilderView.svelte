@@ -314,14 +314,16 @@
 	let coursePickerActiveIndex = $state(-1);
 	let roomPickerActiveIndex = $state(-1);
 
-	const participantStepReady = $derived(Boolean(enrollmentDraft.studentId && enrollmentDraft.courseId));
+	const participantStepReady = $derived(
+		Boolean(enrollmentDraft.studentId && enrollmentDraft.courseId)
+	);
 	const timeStepReady = $derived(
 		Boolean(
 			enrollmentDraft.day &&
-				enrollmentDraft.startTime &&
-				enrollmentDraft.endTime &&
-				enrollmentDraft.semester &&
-				enrollmentDraft.academicYear
+			enrollmentDraft.startTime &&
+			enrollmentDraft.endTime &&
+			enrollmentDraft.semester &&
+			enrollmentDraft.academicYear
 		) && enrollmentDraft.startTime < enrollmentDraft.endTime
 	);
 	const roomStepReady = $derived(Boolean(enrollmentDraft.classRoomId));
@@ -752,7 +754,8 @@
 							{/if}
 							{#if scheduleCourseFilterHasMore || scheduleCourseFilterLoading}
 								<div class="combobox-footer">
-									<span class="combobox-meta">{scheduleCourseFilterOptions.length} opsi dimuat</span>
+									<span class="combobox-meta">{scheduleCourseFilterOptions.length} opsi dimuat</span
+									>
 									<button
 										type="button"
 										class="combobox-more"
@@ -976,7 +979,9 @@
 							{/if}
 							{#if scheduleLecturerFilterHasMore || scheduleLecturerFilterLoading}
 								<div class="combobox-footer">
-									<span class="combobox-meta">{scheduleLecturerFilterOptions.length} opsi dimuat</span>
+									<span class="combobox-meta"
+										>{scheduleLecturerFilterOptions.length} opsi dimuat</span
+									>
 									<button
 										type="button"
 										class="combobox-more"
@@ -1005,7 +1010,10 @@
 			</label>
 			<label>
 				<span>Tahun akademik</span>
-				<select bind:value={scheduleAcademicYearFilter} onchange={() => onQueueEnrollmentRefresh(0)}>
+				<select
+					bind:value={scheduleAcademicYearFilter}
+					onchange={() => onQueueEnrollmentRefresh(0)}
+				>
 					<option value="">Semua tahun</option>
 					{#each scheduleAcademicYearOptions as item (item)}
 						<option value={item}>{item}</option>
@@ -1025,7 +1033,9 @@
 				{#if builderConflictOnly}
 					<Badge variant="secondary">Bentrok saja</Badge>
 				{/if}
-				<Badge variant="secondary">{scheduleActiveFilterCount + Number(builderConflictOnly)} filter aktif</Badge>
+				<Badge variant="secondary"
+					>{scheduleActiveFilterCount + Number(builderConflictOnly)} filter aktif</Badge
+				>
 				<Button
 					class="ghost-button"
 					variant="ghost"
@@ -1040,7 +1050,9 @@
 
 		<div class="list-stack">
 			{#each filteredBuilderEnrollments as item (item.id)}
-				{@const scheduleCard = item.id ? scheduleCardMap[item.id] ?? auditConflictCardMap[item.id] : null}
+				{@const scheduleCard = item.id
+					? (scheduleCardMap[item.id] ?? auditConflictCardMap[item.id])
+					: null}
 				<div
 					role="button"
 					tabindex="0"
@@ -1086,10 +1098,18 @@
 							></span
 						>
 						{#if item.id && scheduleCard?.hasConflict && conflictSummaryByCardId[item.id]}
-							<small class="list-conflict-copy">Bentrok dengan {conflictSummaryByCardId[item.id]}</small>
+							<small class="list-conflict-copy"
+								>Bentrok dengan {conflictSummaryByCardId[item.id]}</small
+							>
 						{/if}
 					</div>
-					<small>{item.schedule_day ? DAY_LABELS[item.schedule_day as keyof typeof DAY_LABELS] : '-'} • {formatTimeRange(item.schedule_start_time, item.schedule_end_time, enrollmentDraft.timezone)}</small>
+					<small
+						>{item.schedule_day ? DAY_LABELS[item.schedule_day as keyof typeof DAY_LABELS] : '-'} • {formatTimeRange(
+							item.schedule_start_time,
+							item.schedule_end_time,
+							enrollmentDraft.timezone
+						)}</small
+					>
 				</div>
 			{/each}
 		</div>
@@ -1125,8 +1145,11 @@
 				{/if}
 			</div>
 			{#if selectedEnrollmentId}
-				<Button variant="destructive" size="sm" class="danger-button" onclick={onRequestDeleteEnrollment}
-					>Hapus</Button
+				<Button
+					variant="destructive"
+					size="sm"
+					class="danger-button"
+					onclick={onRequestDeleteEnrollment}>Hapus</Button
 				>
 			{/if}
 		</div>
@@ -1163,17 +1186,24 @@
 			{/each}
 		</div>
 
-		<form class="builder-form" {...(selectedEnrollmentId ? updateEnrollmentEnhance : createEnrollmentEnhance)}>
+		<form
+			class="builder-form"
+			{...selectedEnrollmentId ? updateEnrollmentEnhance : createEnrollmentEnhance}
+		>
 			<input
 				type="hidden"
-				{...(selectedEnrollmentId
+				{...selectedEnrollmentId
 					? updateEnrollmentForm().fields.timezone.as('text')
-					: createEnrollmentForm().fields.timezone.as('text'))}
+					: createEnrollmentForm().fields.timezone.as('text')}
 				value={enrollmentDraft.timezone}
 			/>
 
 			{#if selectedEnrollmentId}
-				<input type="hidden" {...updateEnrollmentForm().fields.id?.as('text')} value={enrollmentDraft.id} />
+				<input
+					type="hidden"
+					{...updateEnrollmentForm().fields.id?.as('text')}
+					value={enrollmentDraft.id}
+				/>
 			{/if}
 
 			<section class="builder-snapshot">
@@ -1217,10 +1247,20 @@
 									{/if}
 								</div>
 								<div class="builder-conflict-card-actions">
-									<Button class="ghost-button" variant="ghost" size="sm" onclick={() => onOpenBuilderForSchedule(group.representative)}>
+									<Button
+										class="ghost-button"
+										variant="ghost"
+										size="sm"
+										onclick={() => onOpenBuilderForSchedule(group.representative)}
+									>
 										Buka di penjadwalan
 									</Button>
-									<Button class="ghost-button" variant="ghost" size="sm" onclick={() => onOpenCalendarForSchedule(group.representative)}>
+									<Button
+										class="ghost-button"
+										variant="ghost"
+										size="sm"
+										onclick={() => onOpenCalendarForSchedule(group.representative)}
+									>
 										Buka di kalender
 									</Button>
 								</div>
@@ -1233,16 +1273,18 @@
 			<section class:hidden-stage={builderStep !== 'participant'} class="builder-section">
 				<div class="builder-section-head">
 					<h4>Pilih peserta dan mata kuliah</h4>
-					<p class="builder-note">Pilih mahasiswa dan mata kuliah dulu agar cek waktu dan ruang tetap relevan.</p>
+					<p class="builder-note">
+						Pilih mahasiswa dan mata kuliah dulu agar cek waktu dan ruang tetap relevan.
+					</p>
 				</div>
 				<div class="editor-grid">
 					<label>
 						<span>Mahasiswa</span>
 						<input
 							type="hidden"
-							{...(selectedEnrollmentId
+							{...selectedEnrollmentId
 								? updateEnrollmentForm().fields.studentId.as('text')
-								: createEnrollmentForm().fields.studentId.as('text'))}
+								: createEnrollmentForm().fields.studentId.as('text')}
 							value={enrollmentDraft.studentId}
 						/>
 						<div
@@ -1262,7 +1304,10 @@
 								aria-expanded={studentPickerOpen}
 								aria-controls="student-picker-listbox"
 								aria-autocomplete="list"
-								aria-activedescendant={activeDescendantId('student-picker', studentPickerActiveIndex)}
+								aria-activedescendant={activeDescendantId(
+									'student-picker',
+									studentPickerActiveIndex
+								)}
 								value={enrollmentDraft.studentId ? selectedDraftStudent : studentPickerSearch}
 								oninput={(e) => {
 									studentPickerSearch = (e.currentTarget as HTMLInputElement).value;
@@ -1291,7 +1336,8 @@
 											role="option"
 											aria-selected={enrollmentDraft.studentId === item.id}
 											class="combobox-option"
-											class:active={studentPickerActiveIndex === index || enrollmentDraft.studentId === item.id}
+											class:active={studentPickerActiveIndex === index ||
+												enrollmentDraft.studentId === item.id}
 											onmousedown={(e) => {
 												e.preventDefault();
 												selectStudentPickerOption(item);
@@ -1305,7 +1351,9 @@
 									{/each}
 									{#if studentPickerHasMore || studentPickerLoading}
 										<div class="combobox-footer">
-											<span class="combobox-meta">{studentPickerOptions.length} mahasiswa dimuat</span>
+											<span class="combobox-meta"
+												>{studentPickerOptions.length} mahasiswa dimuat</span
+											>
 											<button
 												type="button"
 												class="combobox-more"
@@ -1330,9 +1378,9 @@
 						<span>Mata kuliah</span>
 						<input
 							type="hidden"
-							{...(selectedEnrollmentId
+							{...selectedEnrollmentId
 								? updateEnrollmentForm().fields.courseId.as('text')
-								: createEnrollmentForm().fields.courseId.as('text'))}
+								: createEnrollmentForm().fields.courseId.as('text')}
 							value={enrollmentDraft.courseId}
 						/>
 						<div
@@ -1381,7 +1429,8 @@
 											role="option"
 											aria-selected={enrollmentDraft.courseId === item.id}
 											class="combobox-option"
-											class:active={coursePickerActiveIndex === index || enrollmentDraft.courseId === item.id}
+											class:active={coursePickerActiveIndex === index ||
+												enrollmentDraft.courseId === item.id}
 											onmousedown={(e) => {
 												e.preventDefault();
 												selectCoursePickerOption(item);
@@ -1395,7 +1444,9 @@
 									{/each}
 									{#if coursePickerHasMore || coursePickerLoading}
 										<div class="combobox-footer">
-											<span class="combobox-meta">{coursePickerOptions.length} mata kuliah dimuat</span>
+											<span class="combobox-meta"
+												>{coursePickerOptions.length} mata kuliah dimuat</span
+											>
 											<button
 												type="button"
 												class="combobox-more"
@@ -1417,9 +1468,14 @@
 					</label>
 				</div>
 				<div class="builder-section-actions">
-					<p class="editor-note">Langkah berikutnya akan menampilkan slot dan ruang yang masih bisa dipakai.</p>
-					<Button type="button" class="primary-button" disabled={!participantStepReady} onclick={advanceBuilderStep}
-						>Lanjut ke jadwal</Button
+					<p class="editor-note">
+						Langkah berikutnya akan menampilkan slot dan ruang yang masih bisa dipakai.
+					</p>
+					<Button
+						type="button"
+						class="primary-button"
+						disabled={!participantStepReady}
+						onclick={advanceBuilderStep}>Lanjut ke jadwal</Button
 					>
 				</div>
 			</section>
@@ -1427,15 +1483,17 @@
 			<section class:hidden-stage={builderStep !== 'time'} class="builder-section">
 				<div class="builder-section-head">
 					<h4>Tentukan hari dan jam</h4>
-					<p class="builder-note">Masukkan hari dan jam final. Daftar ruang akan mengikuti slot ini.</p>
+					<p class="builder-note">
+						Masukkan hari dan jam final. Daftar ruang akan mengikuti slot ini.
+					</p>
 				</div>
 				<div class="editor-grid">
 					<label>
 						<span>Hari</span>
 						<select
-							{...(selectedEnrollmentId
+							{...selectedEnrollmentId
 								? updateEnrollmentForm().fields.day.as('select')
-								: createEnrollmentForm().fields.day.as('select'))}
+								: createEnrollmentForm().fields.day.as('select')}
 							bind:value={enrollmentDraft.day}
 						>
 							{#each days as day (day)}
@@ -1448,9 +1506,9 @@
 						<span>Mulai</span>
 						<input
 							type="datetime-local"
-							{...(selectedEnrollmentId
+							{...selectedEnrollmentId
 								? updateEnrollmentForm().fields.startTime.as('text')
-								: createEnrollmentForm().fields.startTime.as('text'))}
+								: createEnrollmentForm().fields.startTime.as('text')}
 							bind:value={enrollmentDraft.startTime}
 						/>
 					</label>
@@ -1459,9 +1517,9 @@
 						<span>Selesai</span>
 						<input
 							type="datetime-local"
-							{...(selectedEnrollmentId
+							{...selectedEnrollmentId
 								? updateEnrollmentForm().fields.endTime.as('text')
-								: createEnrollmentForm().fields.endTime.as('text'))}
+								: createEnrollmentForm().fields.endTime.as('text')}
 							bind:value={enrollmentDraft.endTime}
 						/>
 					</label>
@@ -1469,9 +1527,9 @@
 					<label>
 						<span>Semester</span>
 						<select
-							{...(selectedEnrollmentId
+							{...selectedEnrollmentId
 								? updateEnrollmentForm().fields.semester.as('select')
-								: createEnrollmentForm().fields.semester.as('select'))}
+								: createEnrollmentForm().fields.semester.as('select')}
 							bind:value={enrollmentDraft.semester}
 						>
 							<option value="GANJIL">GANJIL</option>
@@ -1482,21 +1540,26 @@
 					<label>
 						<span>Tahun akademik</span>
 						<input
-							{...(selectedEnrollmentId
+							{...selectedEnrollmentId
 								? updateEnrollmentForm().fields.academicYear.as('text')
-								: createEnrollmentForm().fields.academicYear.as('text'))}
+								: createEnrollmentForm().fields.academicYear.as('text')}
 							bind:value={enrollmentDraft.academicYear}
 						/>
 					</label>
 				</div>
 				<div class="builder-section-actions split">
-					<p class="editor-note">Jika jam berubah, periksa lagi pilihan ruang di langkah berikutnya.</p>
+					<p class="editor-note">
+						Jika jam berubah, periksa lagi pilihan ruang di langkah berikutnya.
+					</p>
 					<div class="builder-inline-actions">
 						<Button type="button" variant="ghost" class="ghost-button" onclick={retreatBuilderStep}
 							>Kembali</Button
 						>
-						<Button type="button" class="primary-button" disabled={!timeStepReady} onclick={advanceBuilderStep}
-							>Lanjut ke ruang</Button
+						<Button
+							type="button"
+							class="primary-button"
+							disabled={!timeStepReady}
+							onclick={advanceBuilderStep}>Lanjut ke ruang</Button
 						>
 					</div>
 				</div>
@@ -1505,7 +1568,9 @@
 			<section class:hidden-stage={builderStep !== 'room'} class="builder-section">
 				<div class="builder-section-head">
 					<h4>Pilih ruang yang tersedia</h4>
-					<p class="builder-note">Pilih satu ruang yang tersedia untuk slot ini, lalu lanjut ke langkah tinjau.</p>
+					<p class="builder-note">
+						Pilih satu ruang yang tersedia untuk slot ini, lalu lanjut ke langkah tinjau.
+					</p>
 				</div>
 				<div class="builder-room-stage">
 					<div class="editor-grid builder-room-grid">
@@ -1513,9 +1578,9 @@
 							<span>Ruang</span>
 							<input
 								type="hidden"
-								{...(selectedEnrollmentId
+								{...selectedEnrollmentId
 									? updateEnrollmentForm().fields.classRoomId.as('text')
-									: createEnrollmentForm().fields.classRoomId.as('text'))}
+									: createEnrollmentForm().fields.classRoomId.as('text')}
 								value={enrollmentDraft.classRoomId}
 							/>
 							<div
@@ -1566,7 +1631,8 @@
 												role="option"
 												aria-selected={enrollmentDraft.classRoomId === room.id}
 												class="combobox-option"
-												class:active={roomPickerActiveIndex === index || enrollmentDraft.classRoomId === room.id}
+												class:active={roomPickerActiveIndex === index ||
+													enrollmentDraft.classRoomId === room.id}
 												onmousedown={(e) => {
 													e.preventDefault();
 													selectRoomPickerOption(room);
@@ -1575,7 +1641,9 @@
 												onmouseover={() => (roomPickerActiveIndex = index)}
 											>
 												<strong>{room.name}</strong>
-												<span>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span>
+												<span
+													>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span
+												>
 											</button>
 										{/each}
 										{#if !filteredRoomsForPicker.length && !roomPickerLoading}
@@ -1583,7 +1651,9 @@
 										{/if}
 										{#if roomPickerHasMore || roomPickerLoading}
 											<div class="combobox-footer">
-												<span class="combobox-meta">{filteredRoomsForPicker.length} ruang dimuat</span>
+												<span class="combobox-meta"
+													>{filteredRoomsForPicker.length} ruang dimuat</span
+												>
 												<button
 													type="button"
 													class="combobox-more"
@@ -1610,21 +1680,34 @@
 								{#each filteredRoomsForPicker as room (room.id)}
 									<div>
 										<strong>{room.name}</strong>
-										<span>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span>
+										<span>{beautifyRoomType(room.class_room_type)} • kapasitas {room.capacity}</span
+										>
 									</div>
 								{/each}
 								{#if roomPickerHasMore || roomPickerLoading}
 									<div class="combobox-footer support-footer">
-										<button type="button" class="combobox-more" disabled={!roomPickerHasMore || roomPickerLoading} onclick={onLoadMoreRoomPickerOptions}>
+										<button
+											type="button"
+											class="combobox-more"
+											disabled={!roomPickerHasMore || roomPickerLoading}
+											onclick={onLoadMoreRoomPickerOptions}
+										>
 											{roomPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
 										</button>
 									</div>
 								{/if}
 							{:else}
-								<p class="empty-copy">Belum ada ruang yang tersedia untuk slot ini. Ubah jadwal atau pilih slot lain.</p>
+								<p class="empty-copy">
+									Belum ada ruang yang tersedia untuk slot ini. Ubah jadwal atau pilih slot lain.
+								</p>
 								{#if roomPickerHasMore || roomPickerLoading}
 									<div class="combobox-footer support-footer">
-										<button type="button" class="combobox-more" disabled={!roomPickerHasMore || roomPickerLoading} onclick={onLoadMoreRoomPickerOptions}>
+										<button
+											type="button"
+											class="combobox-more"
+											disabled={!roomPickerHasMore || roomPickerLoading}
+											onclick={onLoadMoreRoomPickerOptions}
+										>
 											{roomPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
 										</button>
 									</div>
@@ -1634,13 +1717,18 @@
 					</section>
 				</div>
 				<div class="builder-section-actions split">
-					<p class="editor-note">Jika daftar ruang kosong, ubah jadwal lebih dulu sebelum melanjutkan.</p>
+					<p class="editor-note">
+						Jika daftar ruang kosong, ubah jadwal lebih dulu sebelum melanjutkan.
+					</p>
 					<div class="builder-inline-actions">
 						<Button type="button" variant="ghost" class="ghost-button" onclick={retreatBuilderStep}
 							>Kembali</Button
 						>
-						<Button type="button" class="primary-button" disabled={!roomStepReady} onclick={advanceBuilderStep}
-							>Tinjau sebelum simpan</Button
+						<Button
+							type="button"
+							class="primary-button"
+							disabled={!roomStepReady}
+							onclick={advanceBuilderStep}>Tinjau sebelum simpan</Button
 						>
 					</div>
 				</div>
@@ -1649,7 +1737,9 @@
 			<section class:hidden-stage={builderStep !== 'review'} class="builder-section builder-review">
 				<div class="builder-section-head">
 					<h4>Tinjau sebelum disimpan</h4>
-					<p class="builder-note">Pastikan peserta, slot, dan ruang sudah benar sebelum disimpan.</p>
+					<p class="builder-note">
+						Pastikan peserta, slot, dan ruang sudah benar sebelum disimpan.
+					</p>
 				</div>
 				<div class="detail-lines builder-review-grid">
 					<div>
@@ -1670,7 +1760,9 @@
 					</div>
 				</div>
 				<div class="builder-review-note">
-					<p class="editor-note">Jika masih ragu, kembali satu langkah lalu perbaiki waktu atau ruang sebelum simpan.</p>
+					<p class="editor-note">
+						Jika masih ragu, kembali satu langkah lalu perbaiki waktu atau ruang sebelum simpan.
+					</p>
 					<div class="builder-inline-actions">
 						<Button type="button" variant="ghost" class="ghost-button" onclick={retreatBuilderStep}
 							>Kembali</Button
@@ -1690,6 +1782,8 @@
 		display: grid;
 		grid-template-columns: minmax(18rem, 0.78fr) minmax(0, 1.22fr);
 		align-items: stretch;
+		gap: 1rem;
+		min-width: 0;
 	}
 
 	.builder-shell {
@@ -1723,10 +1817,13 @@
 	.workspace-detail {
 		align-content: start;
 		min-height: 0;
+		min-width: 0;
 	}
 
 	.workspace-list {
-		grid-template-rows: auto auto auto auto minmax(0, 1fr);
+		display: flex;
+		flex-direction: column;
+		gap: 0.8rem;
 	}
 
 	.workspace-detail {
@@ -1734,12 +1831,15 @@
 	}
 
 	.builder-list {
+		flex: 1 1 auto;
 		height: 100%;
 		min-height: 0;
 	}
 
 	.builder-list .list-stack {
+		flex: 1 1 auto;
 		height: 100%;
+		min-width: 0;
 		min-height: 0;
 		overflow: auto;
 		padding-right: 0.1rem;
@@ -1767,8 +1867,12 @@
 	}
 
 	.pane-head {
-		grid-template-columns: 1fr auto;
+		grid-template-columns: minmax(0, 1fr) auto;
 		align-items: start;
+	}
+
+	.pane-head > :first-child {
+		min-width: 0;
 	}
 
 	.pane-head.compact {
@@ -1802,6 +1906,7 @@
 	}
 
 	.search-box input {
+		min-width: 0;
 		padding: 0;
 		border: 0;
 		background: transparent;
@@ -1836,6 +1941,10 @@
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 
+	.schedule-filter-grid.list-filter-grid {
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+	}
+
 	.editor-grid label {
 		display: grid;
 		gap: 0.35rem;
@@ -1850,7 +1959,8 @@
 
 	.filter-toggle-row {
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
+		flex-wrap: wrap;
 		gap: 0.7rem;
 		padding: 0.78rem 0.85rem;
 		border: 1px solid var(--color-border);
@@ -1860,6 +1970,11 @@
 
 	.filter-toggle-row input {
 		margin: 0;
+	}
+
+	.filter-toggle-row span {
+		min-width: 0;
+		overflow-wrap: anywhere;
 	}
 
 	.list-summary {
@@ -1875,13 +1990,35 @@
 	.builder-conflict-card-actions,
 	.warning-actions {
 		display: flex;
+		align-items: flex-start;
 		gap: 0.65rem;
 		flex-wrap: wrap;
+		min-width: 0;
 	}
 
 	.builder-inline-actions,
 	.builder-conflict-card-actions {
 		justify-content: flex-end;
+	}
+
+	.schedule-filter-actions :global([data-slot='button']),
+	.builder-inline-actions :global([data-slot='button']),
+	.builder-conflict-card-actions :global([data-slot='button']),
+	.warning-actions :global([data-slot='button']) {
+		min-width: 0;
+		max-width: 100%;
+		flex-shrink: 1;
+		white-space: normal;
+		height: auto;
+	}
+
+	.schedule-filter-actions :global([data-slot='badge']),
+	.builder-conflict-summary :global([data-slot='badge']) {
+		min-width: 0;
+		max-width: 100%;
+		flex-shrink: 1;
+		white-space: normal;
+		height: auto;
 	}
 
 	.list-row {
@@ -1989,7 +2126,7 @@
 	}
 
 	.builder-progress {
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
 		gap: 0.65rem;
 	}
 
@@ -2059,8 +2196,12 @@
 	}
 
 	.builder-snapshot {
-		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
 		gap: 0.75rem;
+	}
+
+	.detail-lines {
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
 	}
 
 	.builder-snapshot div,
@@ -2072,6 +2213,18 @@
 		border: 1px solid var(--color-border);
 		border-radius: 0.8rem;
 		background: var(--color-surface);
+		min-width: 0;
+	}
+
+	.detail-lines strong,
+	.detail-lines span,
+	.support-list strong,
+	.support-list span,
+	.builder-snapshot strong,
+	.builder-snapshot span,
+	.builder-snapshot p {
+		overflow-wrap: anywhere;
+		word-break: break-word;
 	}
 
 	.builder-section {
@@ -2096,12 +2249,12 @@
 	}
 
 	.builder-section-actions.split {
-		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-columns: minmax(0, 1fr) minmax(0, auto);
 		align-items: center;
 	}
 
 	.builder-room-stage {
-		grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
 		gap: 0.85rem;
 		align-items: start;
 	}
@@ -2135,7 +2288,7 @@
 	}
 
 	.builder-submit {
-		min-width: 13rem;
+		min-width: min(100%, 13rem);
 	}
 
 	.builder-conflict-panel {
@@ -2146,11 +2299,16 @@
 
 	.builder-conflict-summary {
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
+		flex-wrap: wrap;
 		justify-content: space-between;
 		gap: 1rem;
 		cursor: pointer;
 		list-style: none;
+	}
+
+	.builder-conflict-summary > :first-child {
+		min-width: 0;
 	}
 
 	.builder-conflict-summary::-webkit-details-marker {
@@ -2162,6 +2320,7 @@
 		font-size: 0.78rem;
 		font-weight: 700;
 		color: var(--color-accent-strong);
+		margin-left: auto;
 	}
 
 	.builder-conflict-panel[open] .builder-conflict-summary::after {
@@ -2178,13 +2337,17 @@
 
 	.builder-conflict-card {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-columns: minmax(0, 1fr) minmax(0, auto);
 		gap: 0.75rem;
 		align-items: start;
 		padding: 0.9rem;
 		border: 1px solid var(--conflict-border, var(--color-border));
 		border-radius: 0.9rem;
-		background: color-mix(in oklch, var(--conflict-surface, var(--color-surface)) 86%, var(--color-panel) 14%);
+		background: color-mix(
+			in oklch,
+			var(--conflict-surface, var(--color-surface)) 86%,
+			var(--color-panel) 14%
+		);
 	}
 
 	.builder-conflict-card.selected {
@@ -2201,7 +2364,17 @@
 
 	.builder-conflict-card-copy span,
 	.builder-conflict-card-copy small {
-		color: color-mix(in oklch, var(--conflict-ink, var(--color-muted-foreground)) 72%, var(--color-foreground) 28%);
+		color: color-mix(
+			in oklch,
+			var(--conflict-ink, var(--color-muted-foreground)) 72%,
+			var(--color-foreground) 28%
+		);
+		overflow-wrap: anywhere;
+		word-break: break-word;
+	}
+
+	.builder-conflict-card-actions {
+		min-width: 0;
 	}
 
 	.combobox-wrap {
@@ -2217,9 +2390,10 @@
 		z-index: 20;
 		top: calc(100% + 0.45rem);
 		left: 0;
-		width: max-content;
+		right: 0;
+		width: auto;
 		min-width: 100%;
-		max-width: min(32rem, calc(100vw - 2rem));
+		max-width: none;
 		max-height: 20rem;
 		overflow: auto;
 		padding: 0.35rem;
@@ -2233,6 +2407,7 @@
 		display: grid;
 		gap: 0.18rem;
 		width: 100%;
+		min-width: 0;
 		padding: 0.75rem 0.8rem;
 		border: 0;
 		border-radius: 0.7rem;
@@ -2248,6 +2423,12 @@
 
 	.combobox-option strong {
 		font-size: 0.9rem;
+	}
+
+	.combobox-option strong,
+	.combobox-option span {
+		overflow-wrap: anywhere;
+		word-break: break-word;
 	}
 
 	.combobox-option span,
@@ -2272,8 +2453,13 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		flex-wrap: wrap;
 		gap: 0.75rem;
 		padding: 0.55rem 0.45rem 0.15rem;
+	}
+
+	.combobox-footer > * {
+		min-width: 0;
 	}
 
 	.combobox-more {
@@ -2288,7 +2474,7 @@
 		opacity: 0.6;
 	}
 
-	@media (max-width: 960px) {
+	@media (max-width: 1280px) {
 		.workspace-shell,
 		.builder-shell,
 		.builder-room-stage,
@@ -2301,10 +2487,6 @@
 			overflow: visible;
 		}
 
-		.builder-progress {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-
 		.builder-inline-actions {
 			justify-content: stretch;
 		}
@@ -2312,16 +2494,44 @@
 		.builder-inline-actions :global(button) {
 			flex: 1 1 12rem;
 		}
-	}
 
-	@media (max-width: 640px) {
-		.builder-progress {
+		.builder-conflict-card {
 			grid-template-columns: 1fr;
 		}
 
+		.builder-conflict-card-actions {
+			justify-content: flex-start;
+		}
+	}
+
+	@media (max-width: 900px) {
 		.list-summary,
 		.schedule-filter-actions {
 			align-items: stretch;
+		}
+
+		.schedule-filter-grid.list-filter-grid,
+		.editor-grid,
+		.detail-lines {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.combobox-dropdown {
+			left: 0;
+			right: 0;
+			width: auto;
+			min-width: 0;
+			max-width: none;
+		}
+
+		.builder-conflict-summary::after {
+			content: none;
+		}
+
+		.builder-conflict-card-actions :global([data-slot='button']),
+		.builder-inline-actions :global([data-slot='button']),
+		.schedule-filter-actions :global([data-slot='button']) {
+			width: 100%;
 		}
 
 		.list-row {
