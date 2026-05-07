@@ -1,10 +1,10 @@
 # Watum — Comprehensive Technical Documentation
 
 > **Project**: Watum Academic Scheduling System  
-> **Stack**: SvelteKit 2.x, MariaDB (MySQL), Bun, TypeScript  
-> **Scale**: Stress-tested to 10,000,000 rows (enrollments)  
-> **Last Updated**: 2026-04-29
-> **Recent Changes**: Resolved entity-link accessibility warnings, hardened enrollment creation and term-scoped conflict checks, documented editor combobox search behavior and TanStack Query decision
+> **Stack**: SvelteKit 2.x, MariaDB (MySQL), Bun, TypeScript, mdsvex  
+> **Scale**: Live development dataset currently contains ~2.75M enrollments; stress seeding targets 10M total rows  
+> **Last Updated**: 2026-04-30
+> **Recent Changes**: Extracted major app views from `+page.svelte`, moved shared shell styling into imported CSS, added mdsvex docs routes, and refreshed documentation to match the current database snapshot and stress-seed behavior
 
 ---
 
@@ -75,23 +75,25 @@ The system is architected to scale to **10 million enrollment rows** while maint
 
 ## 3. Database Architecture
 
-### 3.1 Schema Overview
+### 3.1 Current Database Snapshot
 
-The database uses **InnoDB** with **utf8mb4** collation. There are 10 core tables:
+The database uses **InnoDB** with **utf8mb4** collation. The table below reflects the **current configured development/stress database** queried on **2026-04-30**.
 
-| Table            | Rows (stress) | Purpose                 |
-| ---------------- | ------------- | ----------------------- |
-| `faculties`      | 3             | Faculty/Fakultas        |
-| `study_programs` | 6             | Study programs/Prodi    |
-| `students`       | 1,500,000     | Students                |
-| `lecturers`      | 250           | Lecturers               |
-| `courses`        | 48            | Courses/Mata Kuliah     |
-| `class_rooms`    | 71,636        | Classrooms              |
-| `schedules`      | 48            | Schedule slots          |
-| `enrollments`    | 2,750,779     | KRS enrollments         |
-| `grades`         | 2,750,779     | Grades/Nilai            |
-| `users`          | 1,250,606     | Authentication accounts |
-| `refresh_tokens` | ~200          | Active sessions         |
+| Table            | Current rows | Purpose                 |
+| ---------------- | ------------ | ----------------------- |
+| `faculties`      | 3            | Faculty/Fakultas        |
+| `study_programs` | 6            | Study programs/Prodi    |
+| `students`       | 1,250,354    | Students                |
+| `lecturers`      | 251          | Lecturers               |
+| `courses`        | 48           | Courses/Mata Kuliah     |
+| `class_rooms`    | 71,636       | Classrooms              |
+| `schedules`      | 2,750,777    | Schedule slots          |
+| `enrollments`    | 2,750,777    | KRS enrollments         |
+| `grades`         | 1,925,533    | Grades/Nilai            |
+| `users`          | 1,250,606    | Authentication accounts |
+| `refresh_tokens` | 13           | Active sessions         |
+
+These counts are **environment-specific**. They should not be treated as fixed schema-level constants. In particular, the stress seed script derives row counts from formulas and optional overrides, so a different target or override value will produce a different snapshot.
 
 ### 3.2 ID Strategy
 
@@ -516,31 +518,32 @@ export const deleteCourse = command(v.string(), async (id) => { ... });
 - Argon2id (m=65536, t=3, p=4)
 - Password version claim in JWT — if admin resets password, old tokens invalidate
 
-### 4.3 Single-Page Dashboard Architecture
+### 4.3 Route Controller and Extracted View Architecture
 
-The entire application is a **single page** (`src/routes/+page.svelte`, ~11700 lines) with view switching:
+The authenticated application is still orchestrated from a **single route controller** (`src/routes/+page.svelte`), but the heavy view markup has been extracted into dedicated components. The route now coordinates shared state, remote-function wiring, selection sync, and cross-view refresh behavior.
 
 ```
 +page.svelte
-├── Ringkasan (Dashboard)
-│   ├── Admin totals (rooms, students, lecturers, users)
-│   ├── Classroom utilization summary
-│   └── Weekly room utilization list (paginated)
-├── Kalender Mingguan (Weekly Calendar)
-├── Pengelolaan (Management)
-│   ├── Students, Lecturers, Faculties, Study Programs
-│   ├── Courses, Classrooms
-│   └── Users
-├── Penjadwalan (Scheduling)
-│   ├── Schedule builder with conflict audit
-│   └── Enrollment form with conflict preview
-├── Perkuliahan (Lectures)
-├── KRS (Enrollments)
-├── Nilai (Grades)
-└── Akun (Account)
+├── auth shell, tokens, and role-based navigation
+├── shared schedule/filter/search state
+├── remote query / form orchestration
+├── selection sync across calendar, builder, and detail panels
+└── extracted app views
+    ├── DashboardView.svelte
+    ├── CalendarView.svelte
+    ├── BuilderView.svelte
+    ├── ClassroomsView.svelte
+    ├── CoursesView.svelte
+    ├── StudentsView.svelte
+    ├── LecturersView.svelte
+    ├── FacultiesView.svelte
+    ├── StudyProgramsView.svelte
+    ├── EnrollmentsView.svelte
+    ├── GradesView.svelte
+    └── UsersView.svelte
 ```
 
-**State management**: Uses Svelte 5 runes (`$state`, `$derived`) locally within the page component. No external state library.
+**State management**: Uses Svelte 5 runes (`$state`, `$derived`) in the route controller, with extracted child views kept mostly presentational.
 
 ### 4.4 Role-Scoped View Access
 
@@ -3823,14 +3826,18 @@ Generates deterministic fake data:
 bun seed:stress
 ```
 
-**Default targets**:
+**Default behavior**:
 
-- 10,000,000 total rows
-- 1,500,000 students
-- 250 lecturers
-- 48 courses (8 per study program)
-- ~69,000 enrollments per course
-- ~2,750,000 grades
+- Targets **10,000,000 total rows** by default
+- Derives **student count** from that row target unless `STRESS_SEED_COUNT` is explicitly set
+- Computes:
+  - `enrollments = students * 2 + floor((students + 4) / 5)`
+  - `schedules = enrollments`
+  - `grades` for roughly 70% of eligible enrollments
+  - `lecturers = max(48, ceil(students / 5000))`
+  - `class_rooms` from enrollment volume and available slot capacity
+
+This means the stress dataset is **not defined by one fixed table-count snapshot**. The live database currently in use has `1,250,354` students and `2,750,777` enrollments, which corresponds to a run using a lower effective student target than the default 10M-row derivation.
 
 **Tunable via env**:
 
@@ -3910,9 +3917,10 @@ ALTER TABLE enrollments ADD INDEX idx_enrollments_lecturer_conflict (...);
 ```
 watum/
 ├── src/
-│   ├── routes/                          # SvelteKit routes (all views in +page.svelte)
-│   │   ├── +page.svelte                 # Main dashboard (~12800 lines)
+│   ├── routes/                          # SvelteKit routes
+│   │   ├── +page.svelte                 # Main authenticated route controller (~5.2k lines)
 │   │   ├── +layout.svelte               # Root layout (fonts, auth, loading spinner)
+│   │   ├── docs/                        # mdsvex-powered in-app documentation
 │   │   ├── auth/
 │   │   │   ├── data.remote.ts           # loginUser, logoutUser, getCurrentUser
 │   │   │   └── ...
@@ -3932,9 +3940,14 @@ watum/
 │   │   └── test/
 │   │       └── +page.svelte             # API testing playground
 │   ├── lib/
+│   │   ├── app/
+│   │   │   └── navigation.ts            # Role-based view catalog and shell metadata
 │   │   ├── client/
 │   │   │   ├── auth.ts                  # Access token management, fetch interceptor
+│   │   │   ├── form-enhancers.ts        # Shared remote-form success/error helpers
 │   │   │   └── loading.svelte.ts        # Global loading state
+│   │   ├── components/
+│   │   │   └── app/                     # Extracted dashboard/calendar/builder/CRUD views
 │   │   ├── server/
 │   │   │   ├── db.ts                    # Connection pool, transaction helper
 │   │   │   ├── auth.ts                  # JWT, refresh tokens, password hashing
@@ -3967,7 +3980,7 @@ watum/
 │   ├── benchmark-suite.mjs              # HTTP load tester
 │   ├── benchmark-loader.mjs             # ESM loader for benchmark
 │   └── benchmark-env.mjs                # Environment defaults
-├── stress-seed.ts                       # 10M-row stress data generator
+├── stress-seed.ts                       # Formula-driven stress data generator targeting 10M total rows
 ├── Dockerfile                           # Multi-stage Bun build
 ├── docker-entrypoint.sh                 # Coolify startup (ORIGIN, HOST_HEADER, migrations)
 ├── bun.lock                             # Bun lockfile (replaced package-lock.json)

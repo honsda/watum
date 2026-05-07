@@ -569,6 +569,9 @@ export const createGrade = form(gradeSchema, async (data, issue) => {
 		if (!enrollment) {
 			throw error(404, 'Data KRS tidak ditemukan');
 		}
+		if (enrollment.status !== 'APPROVED') {
+			invalid(issue.enrollmentId('Nilai hanya dapat dibuat untuk KRS yang sudah disetujui'));
+		}
 
 		if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
 			throw error(403, 'Anda tidak berhak menginput nilai untuk mata kuliah ini');

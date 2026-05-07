@@ -85,7 +85,8 @@
 		onPagePrevious,
 		onPageNext,
 		onGradeLetterFilterChange,
-		onGradeCourseFilterChange
+		onGradeCourseFilterChange,
+		studentStudyProgramId = null
 	}: {
 		currentRole: AppRole;
 		gradeSearch: string;
@@ -115,7 +116,11 @@
 		updateGradeEnhance: EnhancedAction;
 		bulkUpdateGradesEnhance: EnhancedAction;
 		enrollments: SelectEnrollmentsResult[];
-		courses: Array<{ id?: string | null; name?: string | null }>;
+		courses: Array<{
+			id?: string | null;
+			name?: string | null;
+			study_program_id?: string | null;
+		}>;
 		enrollmentsIssue: string | undefined;
 		gradeEditorBlocked: boolean;
 		onSearchInput: () => void;
@@ -138,7 +143,14 @@
 		onPageNext: () => void;
 		onGradeLetterFilterChange: () => void;
 		onGradeCourseFilterChange: () => void;
+		studentStudyProgramId?: string | null;
 	} = $props();
+
+	const gradeCourses = $derived(
+		studentStudyProgramId
+			? courses.filter((c) => c.study_program_id === studentStudyProgramId)
+			: courses
+	);
 </script>
 
 <div class="workspace-shell">
@@ -179,7 +191,7 @@
 				<span>Mata kuliah</span>
 				<select bind:value={gradeCourseFilter} onchange={onGradeCourseFilterChange}>
 					<option value="">Semua</option>
-					{#each courses as item (item.id)}
+					{#each gradeCourses as item (item.id)}
 						<option value={item.id}>{item.name}</option>
 					{/each}
 				</select>
@@ -338,9 +350,11 @@
 				{#if selectedGradeId}<input type="hidden" name="id" value={gradeDraft.id} />{/if}
 				<label
 					><span>KRS</span><select bind:value={gradeDraft.enrollmentId}
-						><option value="">Pilih KRS</option>{#if enrollmentsIssue && !enrollments.length}<option
+						><option value="">Pilih KRS disetujui</option>{#if enrollmentsIssue && !enrollments.length}<option
 								value=""
 								disabled>{enrollmentsIssue}</option
+							>{:else if !enrollments.length}<option value="" disabled
+								>Tidak ada KRS yang sudah disetujui</option
 							>{/if}{#each enrollments as item (item.id)}<option value={item.id}
 								>{item.student_name} • {item.course_name}</option
 							>{/each}</select

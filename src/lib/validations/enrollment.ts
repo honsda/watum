@@ -16,3 +16,18 @@ export const enrollmentSchema = v.object({
 	semester: requiredField('Semester wajib diisi'),
 	academicYear: requiredField('Tahun akademik wajib diisi')
 });
+
+export const studentEnrollmentRequestSchema = v.object({
+	courseId: requiredField('Mata kuliah wajib dipilih'),
+	semester: requiredField('Semester wajib diisi'),
+	academicYear: requiredField('Tahun akademik wajib diisi')
+});
+
+export const approveEnrollmentSchema = v.object({
+	id: v.string(),
+	classRoomId: requiredField('Ruang kelas wajib dipilih'),
+	timezone: v.optional(v.string()),
+	day: v.picklist(days),
+	startTime: requiredField('Waktu mulai wajib diisi'),
+	endTime: requiredField('Waktu selesai wajib diisi')
+});

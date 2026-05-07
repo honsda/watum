@@ -21,6 +21,7 @@
 	import { Search, X } from '@lucide/svelte';
 
 	type BuilderStep = 'participant' | 'time' | 'room' | 'review';
+	type BuilderMode = 'create' | 'edit' | 'approve';
 
 	type FieldAccessor = {
 		as: (...args: unknown[]) => Record<string, unknown>;
@@ -37,6 +38,17 @@
 			endTime: FieldAccessor;
 			semester: FieldAccessor;
 			academicYear: FieldAccessor;
+			timezone: FieldAccessor;
+		};
+	};
+
+	type ApprovalFormState = {
+		fields: {
+			id: FieldAccessor;
+			classRoomId: FieldAccessor;
+			day: FieldAccessor;
+			startTime: FieldAccessor;
+			endTime: FieldAccessor;
 			timezone: FieldAccessor;
 		};
 	};
@@ -85,29 +97,60 @@
 		details: { count: number; lecturers: string; rooms: string } | null;
 	};
 
+	type BuilderViewFilterState = {
+		enrollmentSearch: string;
+		scheduleDayFilter: string;
+		scheduleCourseFilter: string;
+		scheduleRoomFilter: string;
+		scheduleLecturerFilter: string;
+		scheduleSemesterFilter: string;
+		scheduleAcademicYearFilter: string;
+		scheduleCourseFilterSearch: string;
+		scheduleRoomFilterSearch: string;
+		scheduleLecturerFilterSearch: string;
+		scheduleCourseFilterOpen: boolean;
+		scheduleRoomFilterOpen: boolean;
+		scheduleLecturerFilterOpen: boolean;
+		builderConflictOnly: boolean;
+	};
+
+	type BuilderViewWorkflowState = {
+		builderStep: BuilderStep;
+		studentPickerSearch: string;
+		coursePickerSearch: string;
+		roomPickerSearch: string;
+		studentPickerOpen: boolean;
+		coursePickerOpen: boolean;
+		roomPickerOpen: boolean;
+	};
+
 	let {
 		class: className = '',
-		enrollmentSearch = $bindable(''),
-		scheduleDayFilter = $bindable(''),
-		scheduleCourseFilter = $bindable(''),
-		scheduleRoomFilter = $bindable(''),
-		scheduleLecturerFilter = $bindable(''),
-		scheduleSemesterFilter = $bindable(''),
-		scheduleAcademicYearFilter = $bindable(''),
-		scheduleCourseFilterSearch = $bindable(''),
-		scheduleRoomFilterSearch = $bindable(''),
-		scheduleLecturerFilterSearch = $bindable(''),
-		scheduleCourseFilterOpen = $bindable(false),
-		scheduleRoomFilterOpen = $bindable(false),
-		scheduleLecturerFilterOpen = $bindable(false),
-		builderConflictOnly = $bindable(false),
-		builderStep = $bindable<BuilderStep>('participant'),
-		studentPickerSearch = $bindable(''),
-		coursePickerSearch = $bindable(''),
-		roomPickerSearch = $bindable(''),
-		studentPickerOpen = $bindable(false),
-		coursePickerOpen = $bindable(false),
-		roomPickerOpen = $bindable(false),
+		filterState = $bindable<BuilderViewFilterState>({
+			enrollmentSearch: '',
+			scheduleDayFilter: '',
+			scheduleCourseFilter: '',
+			scheduleRoomFilter: '',
+			scheduleLecturerFilter: '',
+			scheduleSemesterFilter: '',
+			scheduleAcademicYearFilter: '',
+			scheduleCourseFilterSearch: '',
+			scheduleRoomFilterSearch: '',
+			scheduleLecturerFilterSearch: '',
+			scheduleCourseFilterOpen: false,
+			scheduleRoomFilterOpen: false,
+			scheduleLecturerFilterOpen: false,
+			builderConflictOnly: false
+		}),
+		workflowState = $bindable<BuilderViewWorkflowState>({
+			builderStep: 'participant',
+			studentPickerSearch: '',
+			coursePickerSearch: '',
+			roomPickerSearch: '',
+			studentPickerOpen: false,
+			coursePickerOpen: false,
+			roomPickerOpen: false
+		}),
 		enrollmentDraft = $bindable<EnrollmentDraft>({
 			id: '',
 			studentId: '',
@@ -170,8 +213,11 @@
 		roomPickerHasMore,
 		createEnrollment,
 		updateEnrollment,
+		approveEnrollment,
+		builderMode,
 		createEnrollmentEnhance,
 		updateEnrollmentEnhance,
+		approveEnrollmentEnhance,
 		handleKeyboardClick,
 		onClearSelection,
 		onQueueEnrollmentRefresh,
@@ -199,27 +245,8 @@
 		onPageNext
 	}: {
 		class?: string;
-		enrollmentSearch: string;
-		scheduleDayFilter: string;
-		scheduleCourseFilter: string;
-		scheduleRoomFilter: string;
-		scheduleLecturerFilter: string;
-		scheduleSemesterFilter: string;
-		scheduleAcademicYearFilter: string;
-		scheduleCourseFilterSearch: string;
-		scheduleRoomFilterSearch: string;
-		scheduleLecturerFilterSearch: string;
-		scheduleCourseFilterOpen: boolean;
-		scheduleRoomFilterOpen: boolean;
-		scheduleLecturerFilterOpen: boolean;
-		builderConflictOnly: boolean;
-		builderStep: BuilderStep;
-		studentPickerSearch: string;
-		coursePickerSearch: string;
-		roomPickerSearch: string;
-		studentPickerOpen: boolean;
-		coursePickerOpen: boolean;
-		roomPickerOpen: boolean;
+		filterState: BuilderViewFilterState;
+		workflowState: BuilderViewWorkflowState;
 		enrollmentDraft: EnrollmentDraft;
 		builderTaskMode: boolean;
 		selectedEnrollmentId: string | null;
@@ -271,8 +298,11 @@
 		roomPickerHasMore: boolean;
 		createEnrollment: unknown;
 		updateEnrollment: unknown;
+		approveEnrollment: unknown;
+		builderMode: BuilderMode;
 		createEnrollmentEnhance: EnhancedAction;
 		updateEnrollmentEnhance: EnhancedAction;
+		approveEnrollmentEnhance: EnhancedAction;
 		handleKeyboardClick: (event: KeyboardEvent) => void;
 		onClearSelection: () => void;
 		onQueueEnrollmentRefresh: (delay?: number) => void;
@@ -327,6 +357,29 @@
 		) && enrollmentDraft.startTime < enrollmentDraft.endTime
 	);
 	const roomStepReady = $derived(Boolean(enrollmentDraft.classRoomId));
+	const participantStepLocked = $derived(builderMode !== 'create');
+	const termStepLocked = $derived(builderMode !== 'create');
+	const builderTitle = $derived(
+		builderMode === 'approve'
+			? 'Setujui pengajuan KRS'
+			: selectedEnrollmentId
+				? 'Edit jadwal terpilih'
+				: 'Tambah jadwal baru'
+	);
+	const builderSubmitLabel = $derived(
+		builderMode === 'approve'
+			? 'Setujui KRS'
+			: selectedEnrollmentId
+				? 'Simpan perubahan'
+				: 'Simpan jadwal'
+	);
+	const participantStepNote = $derived(
+		builderMode === 'approve'
+			? 'Mahasiswa, mata kuliah, semester, dan tahun akademik mengikuti pengajuan yang akan disetujui.'
+			: builderMode === 'edit'
+				? 'Mahasiswa, mata kuliah, semester, dan tahun akademik dikunci agar perubahan tetap fokus pada jadwal.'
+				: 'Pilih mahasiswa dan mata kuliah dulu agar cek waktu dan ruang tetap relevan.'
+	);
 
 	function createEnrollmentForm() {
 		return createEnrollment as EnrollmentFormState;
@@ -334,6 +387,10 @@
 
 	function updateEnrollmentForm() {
 		return updateEnrollment as EnrollmentFormState;
+	}
+
+	function approveEnrollmentForm() {
+		return approveEnrollment as ApprovalFormState;
 	}
 
 	function clampActiveIndex(nextIndex: number, count: number) {
@@ -356,39 +413,39 @@
 
 	function setBuilderStep(step: BuilderStep) {
 		if (!canOpenBuilderStep(step)) return;
-		builderStep = step;
+		workflowState.builderStep = step;
 	}
 
 	function advanceBuilderStep() {
-		if (builderStep === 'participant' && participantStepReady) {
-			builderStep = 'time';
+		if (workflowState.builderStep === 'participant' && participantStepReady) {
+			workflowState.builderStep = 'time';
 			return;
 		}
-		if (builderStep === 'time' && timeStepReady) {
-			builderStep = 'room';
+		if (workflowState.builderStep === 'time' && timeStepReady) {
+			workflowState.builderStep = 'room';
 			return;
 		}
-		if (builderStep === 'room' && roomStepReady) {
-			builderStep = 'review';
+		if (workflowState.builderStep === 'room' && roomStepReady) {
+			workflowState.builderStep = 'review';
 		}
 	}
 
 	function retreatBuilderStep() {
-		if (builderStep === 'review') {
-			builderStep = 'room';
+		if (workflowState.builderStep === 'review') {
+			workflowState.builderStep = 'room';
 			return;
 		}
-		if (builderStep === 'room') {
-			builderStep = 'time';
+		if (workflowState.builderStep === 'room') {
+			workflowState.builderStep = 'time';
 			return;
 		}
-		if (builderStep === 'time') {
-			builderStep = 'participant';
+		if (workflowState.builderStep === 'time') {
+			workflowState.builderStep = 'participant';
 		}
 	}
 
 	function stepState(step: BuilderStep) {
-		if (builderStep === step) return 'active';
+		if (workflowState.builderStep === step) return 'active';
 		if (
 			(step === 'participant' && participantStepReady) ||
 			(step === 'time' && timeStepReady) ||
@@ -407,55 +464,55 @@
 	}
 
 	function selectScheduleCourseFilterOption(item: SelectCoursesResult | null) {
-		scheduleCourseFilter = item?.id ?? '';
-		scheduleCourseFilterSearch = item?.name ?? '';
+		filterState.scheduleCourseFilter = item?.id ?? '';
+		filterState.scheduleCourseFilterSearch = item?.name ?? '';
 		scheduleCourseFilterActiveIndex = -1;
-		scheduleCourseFilterOpen = false;
+		filterState.scheduleCourseFilterOpen = false;
 		onQueueEnrollmentRefresh(0);
 	}
 
 	function selectScheduleRoomFilterOption(item: SelectClassRoomsResult | null) {
-		scheduleRoomFilter = item?.id ?? '';
-		scheduleRoomFilterSearch = item?.name ?? '';
+		filterState.scheduleRoomFilter = item?.id ?? '';
+		filterState.scheduleRoomFilterSearch = item?.name ?? '';
 		scheduleRoomFilterActiveIndex = -1;
-		scheduleRoomFilterOpen = false;
+		filterState.scheduleRoomFilterOpen = false;
 		onQueueEnrollmentRefresh(0);
 	}
 
 	function selectScheduleLecturerFilterOption(item: SelectLecturersResult | null) {
-		scheduleLecturerFilter = item?.id ?? '';
-		scheduleLecturerFilterSearch = item?.name ?? '';
+		filterState.scheduleLecturerFilter = item?.id ?? '';
+		filterState.scheduleLecturerFilterSearch = item?.name ?? '';
 		scheduleLecturerFilterActiveIndex = -1;
-		scheduleLecturerFilterOpen = false;
+		filterState.scheduleLecturerFilterOpen = false;
 		onQueueEnrollmentRefresh(0);
 	}
 
 	function selectStudentPickerOption(item: SelectStudentsResult) {
 		enrollmentDraft.studentId = item.id ?? '';
-		studentPickerSearch = item.name ?? '';
+		workflowState.studentPickerSearch = item.name ?? '';
 		studentPickerActiveIndex = -1;
-		studentPickerOpen = false;
+		workflowState.studentPickerOpen = false;
 	}
 
 	function selectCoursePickerOption(item: SelectCoursesResult) {
 		enrollmentDraft.courseId = item.id ?? '';
-		coursePickerSearch = item.name ?? '';
+		workflowState.coursePickerSearch = item.name ?? '';
 		coursePickerActiveIndex = -1;
-		coursePickerOpen = false;
+		workflowState.coursePickerOpen = false;
 	}
 
 	function selectRoomPickerOption(item: SelectClassRoomsResult) {
 		enrollmentDraft.classRoomId = item.id ?? '';
-		roomPickerSearch = item.name ?? '';
+		workflowState.roomPickerSearch = item.name ?? '';
 		roomPickerActiveIndex = -1;
-		roomPickerOpen = false;
+		workflowState.roomPickerOpen = false;
 	}
 
 	function handleScheduleCourseFilterKeydown(event: KeyboardEvent) {
 		const optionCount = scheduleCourseFilterOptions.length + 1;
 		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
 			event.preventDefault();
-			scheduleCourseFilterOpen = true;
+			filterState.scheduleCourseFilterOpen = true;
 			if (!scheduleCourseFilterOptions.length) onQueueScheduleCourseFilterRefresh(0);
 			const delta = event.key === 'ArrowDown' ? 1 : -1;
 			scheduleCourseFilterActiveIndex = clampActiveIndex(
@@ -464,7 +521,7 @@
 			);
 			return;
 		}
-		if (event.key === 'Enter' && scheduleCourseFilterOpen) {
+		if (event.key === 'Enter' && filterState.scheduleCourseFilterOpen) {
 			event.preventDefault();
 			if (scheduleCourseFilterActiveIndex === 0) {
 				selectScheduleCourseFilterOption(null);
@@ -475,7 +532,7 @@
 			return;
 		}
 		if (event.key === 'Escape') {
-			scheduleCourseFilterOpen = false;
+			filterState.scheduleCourseFilterOpen = false;
 			scheduleCourseFilterActiveIndex = -1;
 		}
 	}
@@ -484,7 +541,7 @@
 		const optionCount = filteredScheduleRoomFilterOptions.length + 1;
 		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
 			event.preventDefault();
-			scheduleRoomFilterOpen = true;
+			filterState.scheduleRoomFilterOpen = true;
 			if (!scheduleRoomFilterOptions.length) onQueueScheduleRoomFilterRefresh(0);
 			const delta = event.key === 'ArrowDown' ? 1 : -1;
 			scheduleRoomFilterActiveIndex = clampActiveIndex(
@@ -493,7 +550,7 @@
 			);
 			return;
 		}
-		if (event.key === 'Enter' && scheduleRoomFilterOpen) {
+		if (event.key === 'Enter' && filterState.scheduleRoomFilterOpen) {
 			event.preventDefault();
 			if (scheduleRoomFilterActiveIndex === 0) {
 				selectScheduleRoomFilterOption(null);
@@ -504,7 +561,7 @@
 			return;
 		}
 		if (event.key === 'Escape') {
-			scheduleRoomFilterOpen = false;
+			filterState.scheduleRoomFilterOpen = false;
 			scheduleRoomFilterActiveIndex = -1;
 		}
 	}
@@ -513,7 +570,7 @@
 		const optionCount = scheduleLecturerFilterOptions.length + 1;
 		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
 			event.preventDefault();
-			scheduleLecturerFilterOpen = true;
+			filterState.scheduleLecturerFilterOpen = true;
 			if (!scheduleLecturerFilterOptions.length) onQueueScheduleLecturerFilterRefresh(0);
 			const delta = event.key === 'ArrowDown' ? 1 : -1;
 			scheduleLecturerFilterActiveIndex = clampActiveIndex(
@@ -522,7 +579,7 @@
 			);
 			return;
 		}
-		if (event.key === 'Enter' && scheduleLecturerFilterOpen) {
+		if (event.key === 'Enter' && filterState.scheduleLecturerFilterOpen) {
 			event.preventDefault();
 			if (scheduleLecturerFilterActiveIndex === 0) {
 				selectScheduleLecturerFilterOption(null);
@@ -533,7 +590,7 @@
 			return;
 		}
 		if (event.key === 'Escape') {
-			scheduleLecturerFilterOpen = false;
+			filterState.scheduleLecturerFilterOpen = false;
 			scheduleLecturerFilterActiveIndex = -1;
 		}
 	}
@@ -542,7 +599,7 @@
 		const optionCount = studentPickerOptions.length;
 		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
 			event.preventDefault();
-			studentPickerOpen = true;
+			workflowState.studentPickerOpen = true;
 			if (!studentPickerOptions.length) onQueueStudentPickerRefresh(0);
 			if (optionCount > 0) {
 				const delta = event.key === 'ArrowDown' ? 1 : -1;
@@ -550,7 +607,7 @@
 			}
 			return;
 		}
-		if (event.key === 'Enter' && studentPickerOpen) {
+		if (event.key === 'Enter' && workflowState.studentPickerOpen) {
 			const item = studentPickerOptions[studentPickerActiveIndex];
 			if (item) {
 				event.preventDefault();
@@ -559,7 +616,7 @@
 			return;
 		}
 		if (event.key === 'Escape') {
-			studentPickerOpen = false;
+			workflowState.studentPickerOpen = false;
 			studentPickerActiveIndex = -1;
 		}
 	}
@@ -568,7 +625,7 @@
 		const optionCount = coursePickerOptions.length;
 		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
 			event.preventDefault();
-			coursePickerOpen = true;
+			workflowState.coursePickerOpen = true;
 			if (!coursePickerOptions.length) onQueueCoursePickerRefresh(0);
 			if (optionCount > 0) {
 				const delta = event.key === 'ArrowDown' ? 1 : -1;
@@ -576,7 +633,7 @@
 			}
 			return;
 		}
-		if (event.key === 'Enter' && coursePickerOpen) {
+		if (event.key === 'Enter' && workflowState.coursePickerOpen) {
 			const item = coursePickerOptions[coursePickerActiveIndex];
 			if (item) {
 				event.preventDefault();
@@ -585,7 +642,7 @@
 			return;
 		}
 		if (event.key === 'Escape') {
-			coursePickerOpen = false;
+			workflowState.coursePickerOpen = false;
 			coursePickerActiveIndex = -1;
 		}
 	}
@@ -594,7 +651,7 @@
 		const optionCount = filteredRoomsForPicker.length;
 		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
 			event.preventDefault();
-			roomPickerOpen = true;
+			workflowState.roomPickerOpen = true;
 			if (!filteredRoomsForPicker.length) onQueueRoomPickerRefresh(0);
 			if (optionCount > 0) {
 				const delta = event.key === 'ArrowDown' ? 1 : -1;
@@ -602,7 +659,7 @@
 			}
 			return;
 		}
-		if (event.key === 'Enter' && roomPickerOpen) {
+		if (event.key === 'Enter' && workflowState.roomPickerOpen) {
 			const item = filteredRoomsForPicker[roomPickerActiveIndex];
 			if (item) {
 				event.preventDefault();
@@ -611,9 +668,14 @@
 			return;
 		}
 		if (event.key === 'Escape') {
-			roomPickerOpen = false;
+			workflowState.roomPickerOpen = false;
 			roomPickerActiveIndex = -1;
 		}
+	}
+
+	function currentScheduleFieldAccessor() {
+		if (builderMode === 'approve') return approveEnrollmentForm().fields;
+		return selectedEnrollmentId ? updateEnrollmentForm().fields : createEnrollmentForm().fields;
 	}
 </script>
 
@@ -631,17 +693,17 @@
 		<label class="search-box">
 			<Search size={16} />
 			<input
-				bind:value={enrollmentSearch}
+				bind:value={filterState.enrollmentSearch}
 				oninput={() => onQueueEnrollmentRefresh()}
 				aria-label="Cari jadwal kuliah"
 				placeholder="Cari mahasiswa, mata kuliah, atau ruang"
 			/>
-			{#if enrollmentSearch}
+			{#if filterState.enrollmentSearch}
 				<button
 					type="button"
 					class="search-clear"
 					onclick={() => {
-						enrollmentSearch = '';
+						filterState.enrollmentSearch = '';
 						onQueueEnrollmentRefresh(0);
 					}}
 				>
@@ -653,7 +715,10 @@
 		<div class="editor-grid schedule-filter-grid list-filter-grid">
 			<label>
 				<span>Hari</span>
-				<select bind:value={scheduleDayFilter} onchange={() => onQueueEnrollmentRefresh(0)}>
+				<select
+					bind:value={filterState.scheduleDayFilter}
+					onchange={() => onQueueEnrollmentRefresh(0)}
+				>
 					<option value="">Semua hari</option>
 					{#each days as day (day)}
 						<option value={day}>{DAY_LABELS[day]}</option>
@@ -666,7 +731,7 @@
 					class="combobox-wrap"
 					onfocusout={(e) => {
 						if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-							scheduleCourseFilterOpen = false;
+							filterState.scheduleCourseFilterOpen = false;
 							scheduleCourseFilterActiveIndex = -1;
 						}
 					}}
@@ -676,51 +741,51 @@
 						role="combobox"
 						class="combobox-input"
 						placeholder="Cari mata kuliah filter..."
-						aria-expanded={scheduleCourseFilterOpen}
+						aria-expanded={filterState.scheduleCourseFilterOpen}
 						aria-controls="schedule-course-filter-listbox"
 						aria-autocomplete="list"
 						aria-activedescendant={activeDescendantId(
 							'schedule-course-filter',
 							scheduleCourseFilterActiveIndex
 						)}
-						value={scheduleCourseFilter
+						value={filterState.scheduleCourseFilter
 							? selectedScheduleCourseFilterLabel
-							: scheduleCourseFilterSearch}
+							: filterState.scheduleCourseFilterSearch}
 						oninput={(e) => {
-							scheduleCourseFilterSearch = (e.currentTarget as HTMLInputElement).value;
+							filterState.scheduleCourseFilterSearch = (e.currentTarget as HTMLInputElement).value;
 							scheduleCourseFilterActiveIndex = -1;
-							if (scheduleCourseFilter) {
-								scheduleCourseFilter = '';
+							if (filterState.scheduleCourseFilter) {
+								filterState.scheduleCourseFilter = '';
 								onQueueEnrollmentRefresh(0);
 							}
-							scheduleCourseFilterOpen = true;
+							filterState.scheduleCourseFilterOpen = true;
 							onQueueScheduleCourseFilterRefresh();
 						}}
 						onkeydown={handleScheduleCourseFilterKeydown}
 						onfocus={(e) => {
-							if (scheduleCourseFilter) {
+							if (filterState.scheduleCourseFilter) {
 								(e.currentTarget as HTMLInputElement).select();
 							}
 							scheduleCourseFilterActiveIndex = -1;
-							scheduleCourseFilterOpen = true;
+							filterState.scheduleCourseFilterOpen = true;
 							onQueueScheduleCourseFilterRefresh(0);
 						}}
 					/>
 					{#if scheduleCourseFilterIssue}
 						<p class="combobox-error">{scheduleCourseFilterIssue}</p>
-					{:else if scheduleCourseFilterOpen && scheduleCourseFilterLoading && !scheduleCourseFilterOptions.length}
+					{:else if filterState.scheduleCourseFilterOpen && scheduleCourseFilterLoading && !scheduleCourseFilterOptions.length}
 						<p class="combobox-empty">Memuat mata kuliah...</p>
-					{:else if scheduleCourseFilterOpen}
+					{:else if filterState.scheduleCourseFilterOpen}
 						<div id="schedule-course-filter-listbox" class="combobox-dropdown" role="listbox">
 							<button
 								id="schedule-course-filter-option-0"
 								type="button"
 								role="option"
-								aria-selected={!scheduleCourseFilter}
+								aria-selected={!filterState.scheduleCourseFilter}
 								class="combobox-option"
-								class:active={scheduleCourseFilterActiveIndex === 0 || !scheduleCourseFilter}
-								onmousedown={(e) => {
-									e.preventDefault();
+								class:active={scheduleCourseFilterActiveIndex === 0 ||
+									!filterState.scheduleCourseFilter}
+								onclick={() => {
 									selectScheduleCourseFilterOption(null);
 								}}
 								onfocus={() => (scheduleCourseFilterActiveIndex = 0)}
@@ -734,12 +799,11 @@
 									id={`schedule-course-filter-option-${index + 1}`}
 									type="button"
 									role="option"
-									aria-selected={scheduleCourseFilter === item.id}
+									aria-selected={filterState.scheduleCourseFilter === item.id}
 									class="combobox-option"
 									class:active={scheduleCourseFilterActiveIndex === index + 1 ||
-										scheduleCourseFilter === item.id}
-									onmousedown={(e) => {
-										e.preventDefault();
+										filterState.scheduleCourseFilter === item.id}
+									onclick={() => {
 										selectScheduleCourseFilterOption(item);
 									}}
 									onfocus={() => (scheduleCourseFilterActiveIndex = index + 1)}
@@ -760,8 +824,7 @@
 										type="button"
 										class="combobox-more"
 										disabled={!scheduleCourseFilterHasMore || scheduleCourseFilterLoading}
-										onmousedown={(e) => {
-											e.preventDefault();
+										onclick={() => {
 											onLoadMoreScheduleCourseFilterOptions();
 										}}
 									>
@@ -779,7 +842,7 @@
 					class="combobox-wrap"
 					onfocusout={(e) => {
 						if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-							scheduleRoomFilterOpen = false;
+							filterState.scheduleRoomFilterOpen = false;
 							scheduleRoomFilterActiveIndex = -1;
 						}
 					}}
@@ -789,31 +852,33 @@
 						role="combobox"
 						class="combobox-input"
 						placeholder="Cari ruang filter..."
-						aria-expanded={scheduleRoomFilterOpen}
+						aria-expanded={filterState.scheduleRoomFilterOpen}
 						aria-controls="schedule-room-filter-listbox"
 						aria-autocomplete="list"
 						aria-activedescendant={activeDescendantId(
 							'schedule-room-filter',
 							scheduleRoomFilterActiveIndex
 						)}
-						value={scheduleRoomFilter ? selectedScheduleRoomFilterLabel : scheduleRoomFilterSearch}
+						value={filterState.scheduleRoomFilter
+							? selectedScheduleRoomFilterLabel
+							: filterState.scheduleRoomFilterSearch}
 						oninput={(e) => {
-							scheduleRoomFilterSearch = (e.currentTarget as HTMLInputElement).value;
+							filterState.scheduleRoomFilterSearch = (e.currentTarget as HTMLInputElement).value;
 							scheduleRoomFilterActiveIndex = -1;
-							if (scheduleRoomFilter) {
-								scheduleRoomFilter = '';
+							if (filterState.scheduleRoomFilter) {
+								filterState.scheduleRoomFilter = '';
 								onQueueEnrollmentRefresh(0);
 							}
 							onQueueScheduleRoomFilterRefresh();
-							scheduleRoomFilterOpen = true;
+							filterState.scheduleRoomFilterOpen = true;
 						}}
 						onkeydown={handleScheduleRoomFilterKeydown}
 						onfocus={(e) => {
-							if (scheduleRoomFilter) {
+							if (filterState.scheduleRoomFilter) {
 								(e.currentTarget as HTMLInputElement).select();
 							}
 							scheduleRoomFilterActiveIndex = -1;
-							scheduleRoomFilterOpen = true;
+							filterState.scheduleRoomFilterOpen = true;
 							if (!scheduleRoomFilterOptions.length) {
 								onQueueScheduleRoomFilterRefresh(0);
 							}
@@ -821,19 +886,19 @@
 					/>
 					{#if scheduleRoomFilterIssue}
 						<p class="combobox-error">{scheduleRoomFilterIssue}</p>
-					{:else if scheduleRoomFilterOpen && scheduleRoomFilterLoading && !scheduleRoomFilterOptions.length}
+					{:else if filterState.scheduleRoomFilterOpen && scheduleRoomFilterLoading && !scheduleRoomFilterOptions.length}
 						<p class="combobox-empty">Memuat ruang kelas...</p>
-					{:else if scheduleRoomFilterOpen}
+					{:else if filterState.scheduleRoomFilterOpen}
 						<div id="schedule-room-filter-listbox" class="combobox-dropdown" role="listbox">
 							<button
 								id="schedule-room-filter-option-0"
 								type="button"
 								role="option"
-								aria-selected={!scheduleRoomFilter}
+								aria-selected={!filterState.scheduleRoomFilter}
 								class="combobox-option"
-								class:active={scheduleRoomFilterActiveIndex === 0 || !scheduleRoomFilter}
-								onmousedown={(e) => {
-									e.preventDefault();
+								class:active={scheduleRoomFilterActiveIndex === 0 ||
+									!filterState.scheduleRoomFilter}
+								onclick={() => {
 									selectScheduleRoomFilterOption(null);
 								}}
 								onfocus={() => (scheduleRoomFilterActiveIndex = 0)}
@@ -847,12 +912,11 @@
 									id={`schedule-room-filter-option-${index + 1}`}
 									type="button"
 									role="option"
-									aria-selected={scheduleRoomFilter === item.id}
+									aria-selected={filterState.scheduleRoomFilter === item.id}
 									class="combobox-option"
 									class:active={scheduleRoomFilterActiveIndex === index + 1 ||
-										scheduleRoomFilter === item.id}
-									onmousedown={(e) => {
-										e.preventDefault();
+										filterState.scheduleRoomFilter === item.id}
+									onclick={() => {
 										selectScheduleRoomFilterOption(item);
 									}}
 									onfocus={() => (scheduleRoomFilterActiveIndex = index + 1)}
@@ -872,8 +936,7 @@
 										type="button"
 										class="combobox-more"
 										disabled={!scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
-										onmousedown={(e) => {
-											e.preventDefault();
+										onclick={() => {
 											onLoadMoreScheduleRoomFilterOptions();
 										}}
 									>
@@ -891,7 +954,7 @@
 					class="combobox-wrap"
 					onfocusout={(e) => {
 						if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-							scheduleLecturerFilterOpen = false;
+							filterState.scheduleLecturerFilterOpen = false;
 							scheduleLecturerFilterActiveIndex = -1;
 						}
 					}}
@@ -901,51 +964,53 @@
 						role="combobox"
 						class="combobox-input"
 						placeholder="Cari dosen filter..."
-						aria-expanded={scheduleLecturerFilterOpen}
+						aria-expanded={filterState.scheduleLecturerFilterOpen}
 						aria-controls="schedule-lecturer-filter-listbox"
 						aria-autocomplete="list"
 						aria-activedescendant={activeDescendantId(
 							'schedule-lecturer-filter',
 							scheduleLecturerFilterActiveIndex
 						)}
-						value={scheduleLecturerFilter
+						value={filterState.scheduleLecturerFilter
 							? selectedScheduleLecturerFilterLabel
-							: scheduleLecturerFilterSearch}
+							: filterState.scheduleLecturerFilterSearch}
 						oninput={(e) => {
-							scheduleLecturerFilterSearch = (e.currentTarget as HTMLInputElement).value;
+							filterState.scheduleLecturerFilterSearch = (
+								e.currentTarget as HTMLInputElement
+							).value;
 							scheduleLecturerFilterActiveIndex = -1;
-							if (scheduleLecturerFilter) {
-								scheduleLecturerFilter = '';
+							if (filterState.scheduleLecturerFilter) {
+								filterState.scheduleLecturerFilter = '';
 								onQueueEnrollmentRefresh(0);
 							}
-							scheduleLecturerFilterOpen = true;
+							filterState.scheduleLecturerFilterOpen = true;
 							onQueueScheduleLecturerFilterRefresh();
 						}}
 						onkeydown={handleScheduleLecturerFilterKeydown}
 						onfocus={(e) => {
-							if (scheduleLecturerFilter) {
+							if (filterState.scheduleLecturerFilter) {
 								(e.currentTarget as HTMLInputElement).select();
 							}
 							scheduleLecturerFilterActiveIndex = -1;
-							scheduleLecturerFilterOpen = true;
+							filterState.scheduleLecturerFilterOpen = true;
 							onQueueScheduleLecturerFilterRefresh(0);
 						}}
 					/>
 					{#if scheduleLecturerFilterIssue}
 						<p class="combobox-error">{scheduleLecturerFilterIssue}</p>
-					{:else if scheduleLecturerFilterOpen && scheduleLecturerFilterLoading && !scheduleLecturerFilterOptions.length}
+					{:else if filterState.scheduleLecturerFilterOpen && scheduleLecturerFilterLoading && !scheduleLecturerFilterOptions.length}
 						<p class="combobox-empty">Memuat dosen...</p>
-					{:else if scheduleLecturerFilterOpen}
+					{:else if filterState.scheduleLecturerFilterOpen}
 						<div id="schedule-lecturer-filter-listbox" class="combobox-dropdown" role="listbox">
 							<button
 								id="schedule-lecturer-filter-option-0"
 								type="button"
 								role="option"
-								aria-selected={!scheduleLecturerFilter}
+								aria-selected={!filterState.scheduleLecturerFilter}
 								class="combobox-option"
-								class:active={scheduleLecturerFilterActiveIndex === 0 || !scheduleLecturerFilter}
-								onmousedown={(e) => {
-									e.preventDefault();
+								class:active={scheduleLecturerFilterActiveIndex === 0 ||
+									!filterState.scheduleLecturerFilter}
+								onclick={() => {
 									selectScheduleLecturerFilterOption(null);
 								}}
 								onfocus={() => (scheduleLecturerFilterActiveIndex = 0)}
@@ -959,12 +1024,11 @@
 									id={`schedule-lecturer-filter-option-${index + 1}`}
 									type="button"
 									role="option"
-									aria-selected={scheduleLecturerFilter === item.id}
+									aria-selected={filterState.scheduleLecturerFilter === item.id}
 									class="combobox-option"
 									class:active={scheduleLecturerFilterActiveIndex === index + 1 ||
-										scheduleLecturerFilter === item.id}
-									onmousedown={(e) => {
-										e.preventDefault();
+										filterState.scheduleLecturerFilter === item.id}
+									onclick={() => {
 										selectScheduleLecturerFilterOption(item);
 									}}
 									onfocus={() => (scheduleLecturerFilterActiveIndex = index + 1)}
@@ -986,8 +1050,7 @@
 										type="button"
 										class="combobox-more"
 										disabled={!scheduleLecturerFilterHasMore || scheduleLecturerFilterLoading}
-										onmousedown={(e) => {
-											e.preventDefault();
+										onclick={() => {
 											onLoadMoreScheduleLecturerFilterOptions();
 										}}
 									>
@@ -1001,7 +1064,10 @@
 			</label>
 			<label>
 				<span>Semester</span>
-				<select bind:value={scheduleSemesterFilter} onchange={() => onQueueEnrollmentRefresh(0)}>
+				<select
+					bind:value={filterState.scheduleSemesterFilter}
+					onchange={() => onQueueEnrollmentRefresh(0)}
+				>
 					<option value="">Semua semester</option>
 					{#each scheduleSemesterOptions as item (item)}
 						<option value={item}>{item}</option>
@@ -1011,7 +1077,7 @@
 			<label>
 				<span>Tahun akademik</span>
 				<select
-					bind:value={scheduleAcademicYearFilter}
+					bind:value={filterState.scheduleAcademicYearFilter}
 					onchange={() => onQueueEnrollmentRefresh(0)}
 				>
 					<option value="">Semua tahun</option>
@@ -1023,25 +1089,25 @@
 		</div>
 
 		<label class="filter-toggle-row">
-			<input type="checkbox" bind:checked={builderConflictOnly} />
+			<input type="checkbox" bind:checked={filterState.builderConflictOnly} />
 			<span>Hanya tampilkan jadwal bentrok</span>
 		</label>
 
 		<div class="list-summary">
 			<span>{filteredBuilderEnrollments.length} jadwal ditemukan</span>
 			<div class="schedule-filter-actions">
-				{#if builderConflictOnly}
+				{#if filterState.builderConflictOnly}
 					<Badge variant="secondary">Bentrok saja</Badge>
 				{/if}
 				<Badge variant="secondary"
-					>{scheduleActiveFilterCount + Number(builderConflictOnly)} filter aktif</Badge
+					>{scheduleActiveFilterCount + Number(filterState.builderConflictOnly)} filter aktif</Badge
 				>
 				<Button
 					class="ghost-button"
 					variant="ghost"
 					size="sm"
 					onclick={onResetScheduleFilters}
-					disabled={scheduleActiveFilterCount === 0 && !builderConflictOnly}
+					disabled={scheduleActiveFilterCount === 0 && !filterState.builderConflictOnly}
 				>
 					Hapus filter
 				</Button>
@@ -1129,7 +1195,7 @@
 	<section class="workspace-detail builder-detail">
 		<div class="pane-head compact">
 			<div>
-				<h3>{selectedEnrollmentId ? 'Edit jadwal terpilih' : 'Tambah jadwal baru'}</h3>
+				<h3>{builderTitle}</h3>
 				{#if selectedEnrollmentScheduleCard?.hasConflict && selectedEnrollmentConflictSummary}
 					<p
 						class="builder-conflict-copy"
@@ -1144,7 +1210,7 @@
 					{/if}
 				{/if}
 			</div>
-			{#if selectedEnrollmentId}
+			{#if selectedEnrollmentId && builderMode === 'edit'}
 				<Button
 					variant="destructive"
 					size="sm"
@@ -1188,20 +1254,24 @@
 
 		<form
 			class="builder-form"
-			{...selectedEnrollmentId ? updateEnrollmentEnhance : createEnrollmentEnhance}
+			{...builderMode === 'approve'
+				? approveEnrollmentEnhance
+				: selectedEnrollmentId
+					? updateEnrollmentEnhance
+					: createEnrollmentEnhance}
 		>
 			<input
 				type="hidden"
-				{...selectedEnrollmentId
-					? updateEnrollmentForm().fields.timezone.as('text')
-					: createEnrollmentForm().fields.timezone.as('text')}
+				{...currentScheduleFieldAccessor().timezone.as('text')}
 				value={enrollmentDraft.timezone}
 			/>
 
 			{#if selectedEnrollmentId}
 				<input
 					type="hidden"
-					{...updateEnrollmentForm().fields.id?.as('text')}
+					{...(builderMode === 'approve'
+						? approveEnrollmentForm().fields.id.as('text')
+						: updateEnrollmentForm().fields.id?.as('text'))}
 					value={enrollmentDraft.id}
 				/>
 			{/if}
@@ -1270,13 +1340,36 @@
 				</details>
 			{/if}
 
-			<section class:hidden-stage={builderStep !== 'participant'} class="builder-section">
+			<section
+				class:hidden-stage={workflowState.builderStep !== 'participant'}
+				class="builder-section"
+			>
 				<div class="builder-section-head">
 					<h4>Pilih peserta dan mata kuliah</h4>
-					<p class="builder-note">
-						Pilih mahasiswa dan mata kuliah dulu agar cek waktu dan ruang tetap relevan.
-					</p>
+					<p class="builder-note">{participantStepNote}</p>
 				</div>
+				{#if participantStepLocked}
+					{#if builderMode === 'edit'}
+						<input
+							type="hidden"
+							{...updateEnrollmentForm().fields.studentId.as('text')}
+							value={enrollmentDraft.studentId}
+						/>
+						<input
+							type="hidden"
+							{...updateEnrollmentForm().fields.courseId.as('text')}
+							value={enrollmentDraft.courseId}
+						/>
+					{/if}
+					<div class="detail-lines">
+						<div>
+							<span>Mahasiswa</span><strong>{selectedDraftStudent}</strong>
+						</div>
+						<div>
+							<span>Mata kuliah</span><strong>{selectedDraftCourse}</strong>
+						</div>
+					</div>
+				{:else}
 				<div class="editor-grid">
 					<label>
 						<span>Mahasiswa</span>
@@ -1291,7 +1384,7 @@
 							class="combobox-wrap"
 							onfocusout={(e) => {
 								if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-									studentPickerOpen = false;
+									workflowState.studentPickerOpen = false;
 									studentPickerActiveIndex = -1;
 								}
 							}}
@@ -1301,33 +1394,35 @@
 								role="combobox"
 								class="combobox-input"
 								placeholder="Cari mahasiswa..."
-								aria-expanded={studentPickerOpen}
+								aria-expanded={workflowState.studentPickerOpen}
 								aria-controls="student-picker-listbox"
 								aria-autocomplete="list"
 								aria-activedescendant={activeDescendantId(
 									'student-picker',
 									studentPickerActiveIndex
 								)}
-								value={enrollmentDraft.studentId ? selectedDraftStudent : studentPickerSearch}
+								value={enrollmentDraft.studentId
+									? selectedDraftStudent
+									: workflowState.studentPickerSearch}
 								oninput={(e) => {
-									studentPickerSearch = (e.currentTarget as HTMLInputElement).value;
+									workflowState.studentPickerSearch = (e.currentTarget as HTMLInputElement).value;
 									studentPickerActiveIndex = -1;
 									if (enrollmentDraft.studentId) enrollmentDraft.studentId = '';
-									studentPickerOpen = true;
+									workflowState.studentPickerOpen = true;
 									onQueueStudentPickerRefresh();
 								}}
 								onkeydown={handleStudentPickerKeydown}
 								onfocus={() => {
 									studentPickerActiveIndex = -1;
-									studentPickerOpen = true;
+									workflowState.studentPickerOpen = true;
 									onQueueStudentPickerRefresh(0);
 								}}
 							/>
 							{#if studentPickerIssue}
 								<p class="combobox-error">{studentPickerIssue}</p>
-							{:else if studentPickerOpen && studentPickerLoading && !studentPickerOptions.length}
+							{:else if workflowState.studentPickerOpen && studentPickerLoading && !studentPickerOptions.length}
 								<p class="combobox-empty">Memuat mahasiswa...</p>
-							{:else if studentPickerOpen && studentPickerOptions.length}
+							{:else if workflowState.studentPickerOpen && studentPickerOptions.length}
 								<div id="student-picker-listbox" class="combobox-dropdown" role="listbox">
 									{#each studentPickerOptions as item, index (item.id)}
 										<button
@@ -1338,8 +1433,7 @@
 											class="combobox-option"
 											class:active={studentPickerActiveIndex === index ||
 												enrollmentDraft.studentId === item.id}
-											onmousedown={(e) => {
-												e.preventDefault();
+											onclick={() => {
 												selectStudentPickerOption(item);
 											}}
 											onfocus={() => (studentPickerActiveIndex = index)}
@@ -1358,8 +1452,7 @@
 												type="button"
 												class="combobox-more"
 												disabled={!studentPickerHasMore || studentPickerLoading}
-												onmousedown={(e) => {
-													e.preventDefault();
+												onclick={() => {
 													onLoadMoreStudentPickerOptions();
 												}}
 											>
@@ -1368,7 +1461,7 @@
 										</div>
 									{/if}
 								</div>
-							{:else if studentPickerOpen}
+							{:else if workflowState.studentPickerOpen}
 								<p class="combobox-empty">Mahasiswa tidak ditemukan.</p>
 							{/if}
 						</div>
@@ -1387,7 +1480,7 @@
 							class="combobox-wrap"
 							onfocusout={(e) => {
 								if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-									coursePickerOpen = false;
+									workflowState.coursePickerOpen = false;
 									coursePickerActiveIndex = -1;
 								}
 							}}
@@ -1397,30 +1490,32 @@
 								role="combobox"
 								class="combobox-input"
 								placeholder="Cari mata kuliah..."
-								aria-expanded={coursePickerOpen}
+								aria-expanded={workflowState.coursePickerOpen}
 								aria-controls="course-picker-listbox"
 								aria-autocomplete="list"
 								aria-activedescendant={activeDescendantId('course-picker', coursePickerActiveIndex)}
-								value={enrollmentDraft.courseId ? selectedDraftCourse : coursePickerSearch}
+								value={enrollmentDraft.courseId
+									? selectedDraftCourse
+									: workflowState.coursePickerSearch}
 								oninput={(e) => {
-									coursePickerSearch = (e.currentTarget as HTMLInputElement).value;
+									workflowState.coursePickerSearch = (e.currentTarget as HTMLInputElement).value;
 									coursePickerActiveIndex = -1;
 									if (enrollmentDraft.courseId) enrollmentDraft.courseId = '';
-									coursePickerOpen = true;
+									workflowState.coursePickerOpen = true;
 									onQueueCoursePickerRefresh();
 								}}
 								onkeydown={handleCoursePickerKeydown}
 								onfocus={() => {
 									coursePickerActiveIndex = -1;
-									coursePickerOpen = true;
+									workflowState.coursePickerOpen = true;
 									onQueueCoursePickerRefresh(0);
 								}}
 							/>
 							{#if coursePickerIssue}
 								<p class="combobox-error">{coursePickerIssue}</p>
-							{:else if coursePickerOpen && coursePickerLoading && !coursePickerOptions.length}
+							{:else if workflowState.coursePickerOpen && coursePickerLoading && !coursePickerOptions.length}
 								<p class="combobox-empty">Memuat mata kuliah...</p>
-							{:else if coursePickerOpen && coursePickerOptions.length}
+							{:else if workflowState.coursePickerOpen && coursePickerOptions.length}
 								<div id="course-picker-listbox" class="combobox-dropdown" role="listbox">
 									{#each coursePickerOptions as item, index (item.id)}
 										<button
@@ -1431,8 +1526,7 @@
 											class="combobox-option"
 											class:active={coursePickerActiveIndex === index ||
 												enrollmentDraft.courseId === item.id}
-											onmousedown={(e) => {
-												e.preventDefault();
+											onclick={() => {
 												selectCoursePickerOption(item);
 											}}
 											onfocus={() => (coursePickerActiveIndex = index)}
@@ -1451,8 +1545,7 @@
 												type="button"
 												class="combobox-more"
 												disabled={!coursePickerHasMore || coursePickerLoading}
-												onmousedown={(e) => {
-													e.preventDefault();
+												onclick={() => {
 													onLoadMoreCoursePickerOptions();
 												}}
 											>
@@ -1461,12 +1554,13 @@
 										</div>
 									{/if}
 								</div>
-							{:else if coursePickerOpen}
+							{:else if workflowState.coursePickerOpen}
 								<p class="combobox-empty">Mata kuliah tidak ditemukan.</p>
 							{/if}
 						</div>
 					</label>
 				</div>
+				{/if}
 				<div class="builder-section-actions">
 					<p class="editor-note">
 						Langkah berikutnya akan menampilkan slot dan ruang yang masih bisa dipakai.
@@ -1480,7 +1574,7 @@
 				</div>
 			</section>
 
-			<section class:hidden-stage={builderStep !== 'time'} class="builder-section">
+			<section class:hidden-stage={workflowState.builderStep !== 'time'} class="builder-section">
 				<div class="builder-section-head">
 					<h4>Tentukan hari dan jam</h4>
 					<p class="builder-note">
@@ -1491,9 +1585,7 @@
 					<label>
 						<span>Hari</span>
 						<select
-							{...selectedEnrollmentId
-								? updateEnrollmentForm().fields.day.as('select')
-								: createEnrollmentForm().fields.day.as('select')}
+							{...currentScheduleFieldAccessor().day.as('select')}
 							bind:value={enrollmentDraft.day}
 						>
 							{#each days as day (day)}
@@ -1506,9 +1598,7 @@
 						<span>Mulai</span>
 						<input
 							type="datetime-local"
-							{...selectedEnrollmentId
-								? updateEnrollmentForm().fields.startTime.as('text')
-								: createEnrollmentForm().fields.startTime.as('text')}
+							{...currentScheduleFieldAccessor().startTime.as('text')}
 							bind:value={enrollmentDraft.startTime}
 						/>
 					</label>
@@ -1517,34 +1607,50 @@
 						<span>Selesai</span>
 						<input
 							type="datetime-local"
-							{...selectedEnrollmentId
-								? updateEnrollmentForm().fields.endTime.as('text')
-								: createEnrollmentForm().fields.endTime.as('text')}
+							{...currentScheduleFieldAccessor().endTime.as('text')}
 							bind:value={enrollmentDraft.endTime}
 						/>
 					</label>
 
 					<label>
 						<span>Semester</span>
-						<select
-							{...selectedEnrollmentId
-								? updateEnrollmentForm().fields.semester.as('select')
-								: createEnrollmentForm().fields.semester.as('select')}
-							bind:value={enrollmentDraft.semester}
-						>
-							<option value="GANJIL">GANJIL</option>
-							<option value="GENAP">GENAP</option>
-						</select>
+						{#if termStepLocked}
+							{#if builderMode === 'edit'}
+								<input
+									type="hidden"
+									{...updateEnrollmentForm().fields.semester.as('text')}
+									value={enrollmentDraft.semester}
+								/>
+							{/if}
+							<input value={enrollmentDraft.semester} readonly disabled />
+						{:else}
+							<select
+								{...createEnrollmentForm().fields.semester.as('select')}
+								bind:value={enrollmentDraft.semester}
+							>
+								<option value="GANJIL">GANJIL</option>
+								<option value="GENAP">GENAP</option>
+							</select>
+						{/if}
 					</label>
 
 					<label>
 						<span>Tahun akademik</span>
-						<input
-							{...selectedEnrollmentId
-								? updateEnrollmentForm().fields.academicYear.as('text')
-								: createEnrollmentForm().fields.academicYear.as('text')}
-							bind:value={enrollmentDraft.academicYear}
-						/>
+						{#if termStepLocked}
+							{#if builderMode === 'edit'}
+								<input
+									type="hidden"
+									{...updateEnrollmentForm().fields.academicYear.as('text')}
+									value={enrollmentDraft.academicYear}
+								/>
+							{/if}
+							<input value={enrollmentDraft.academicYear} readonly disabled />
+						{:else}
+							<input
+								{...createEnrollmentForm().fields.academicYear.as('text')}
+								bind:value={enrollmentDraft.academicYear}
+							/>
+						{/if}
 					</label>
 				</div>
 				<div class="builder-section-actions split">
@@ -1565,7 +1671,7 @@
 				</div>
 			</section>
 
-			<section class:hidden-stage={builderStep !== 'room'} class="builder-section">
+			<section class:hidden-stage={workflowState.builderStep !== 'room'} class="builder-section">
 				<div class="builder-section-head">
 					<h4>Pilih ruang yang tersedia</h4>
 					<p class="builder-note">
@@ -1578,16 +1684,14 @@
 							<span>Ruang</span>
 							<input
 								type="hidden"
-								{...selectedEnrollmentId
-									? updateEnrollmentForm().fields.classRoomId.as('text')
-									: createEnrollmentForm().fields.classRoomId.as('text')}
+								{...currentScheduleFieldAccessor().classRoomId.as('text')}
 								value={enrollmentDraft.classRoomId}
 							/>
 							<div
 								class="combobox-wrap"
 								onfocusout={(e) => {
 									if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-										roomPickerOpen = false;
+										workflowState.roomPickerOpen = false;
 										roomPickerActiveIndex = -1;
 									}
 								}}
@@ -1597,22 +1701,24 @@
 									role="combobox"
 									class="combobox-input"
 									placeholder="Cari ruang tersedia..."
-									aria-expanded={roomPickerOpen}
+									aria-expanded={workflowState.roomPickerOpen}
 									aria-controls="room-picker-listbox"
 									aria-autocomplete="list"
 									aria-activedescendant={activeDescendantId('room-picker', roomPickerActiveIndex)}
-									value={enrollmentDraft.classRoomId ? selectedDraftRoom : roomPickerSearch}
+									value={enrollmentDraft.classRoomId
+										? selectedDraftRoom
+										: workflowState.roomPickerSearch}
 									oninput={(e) => {
-										roomPickerSearch = (e.currentTarget as HTMLInputElement).value;
+										workflowState.roomPickerSearch = (e.currentTarget as HTMLInputElement).value;
 										roomPickerActiveIndex = -1;
 										if (enrollmentDraft.classRoomId) enrollmentDraft.classRoomId = '';
 										onQueueRoomPickerRefresh();
-										roomPickerOpen = true;
+										workflowState.roomPickerOpen = true;
 									}}
 									onkeydown={handleRoomPickerKeydown}
 									onfocus={() => {
 										roomPickerActiveIndex = -1;
-										roomPickerOpen = true;
+										workflowState.roomPickerOpen = true;
 										if (!filteredRoomsForPicker.length) {
 											onQueueRoomPickerRefresh(0);
 										}
@@ -1620,9 +1726,9 @@
 								/>
 								{#if roomPickerIssue}
 									<p class="combobox-error">{roomPickerIssue}</p>
-								{:else if roomPickerOpen && roomPickerLoading && !filteredRoomsForPicker.length}
+								{:else if workflowState.roomPickerOpen && roomPickerLoading && !filteredRoomsForPicker.length}
 									<p class="combobox-empty">Memuat ruang kelas...</p>
-								{:else if roomPickerOpen}
+								{:else if workflowState.roomPickerOpen}
 									<div id="room-picker-listbox" class="combobox-dropdown" role="listbox">
 										{#each filteredRoomsForPicker as room, index (room.id)}
 											<button
@@ -1633,8 +1739,7 @@
 												class="combobox-option"
 												class:active={roomPickerActiveIndex === index ||
 													enrollmentDraft.classRoomId === room.id}
-												onmousedown={(e) => {
-													e.preventDefault();
+												onclick={() => {
 													selectRoomPickerOption(room);
 												}}
 												onfocus={() => (roomPickerActiveIndex = index)}
@@ -1658,8 +1763,7 @@
 													type="button"
 													class="combobox-more"
 													disabled={!roomPickerHasMore || roomPickerLoading}
-													onmousedown={(e) => {
-														e.preventDefault();
+													onclick={() => {
 														onLoadMoreRoomPickerOptions();
 													}}
 												>
@@ -1734,7 +1838,10 @@
 				</div>
 			</section>
 
-			<section class:hidden-stage={builderStep !== 'review'} class="builder-section builder-review">
+			<section
+				class:hidden-stage={workflowState.builderStep !== 'review'}
+				class="builder-section builder-review"
+			>
 				<div class="builder-section-head">
 					<h4>Tinjau sebelum disimpan</h4>
 					<p class="builder-note">
@@ -1768,7 +1875,7 @@
 							>Kembali</Button
 						>
 						<Button type="submit" class="primary-button builder-submit"
-							>{selectedEnrollmentId ? 'Simpan perubahan' : 'Simpan jadwal'}</Button
+							>{builderSubmitLabel}</Button
 						>
 					</div>
 				</div>

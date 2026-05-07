@@ -7,6 +7,7 @@ INSERT INTO enrollments
     `schedule_id`,
     `semester`,
     `academic_year`,
+    `status`,
     `created_at`,
     `updated_at`
 )
@@ -19,6 +20,7 @@ VALUES
     :schedule_id,
     :semester,
     :academic_year,
+    :status,
     :created_at,
     :updated_at
 )

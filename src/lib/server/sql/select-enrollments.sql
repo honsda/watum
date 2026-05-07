@@ -17,6 +17,7 @@ SELECT
     e.schedule_day AS schedule_day,
     e.schedule_start_time AS schedule_start_time,
     e.schedule_end_time AS schedule_end_time,
+    e.status AS status,
     g.id as grade_id,
     g.letter_grade as letter_grade
 FROM enrollments e 

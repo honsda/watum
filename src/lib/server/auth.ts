@@ -29,6 +29,7 @@ interface User {
 	role: 'ADMIN' | 'STUDENT' | 'LECTURER';
 	studentId: string | null;
 	lecturerId: string | null;
+	studyProgramId: string | null;
 	student: { id: string; name: string } | null;
 	lecturer: { id: string; name: string } | null;
 }
@@ -61,6 +62,7 @@ function mapUser(user: SelectUserRow): User {
 		role: user.role!,
 		studentId: user.student_id ?? null,
 		lecturerId: user.lecturer_id ?? null,
+		studyProgramId: user.student_study_program_id ?? null,
 		student: user.student_id ? { id: user.student_id, name: user.student_name ?? '' } : null,
 		lecturer: user.lecturer_id ? { id: user.lecturer_id, name: user.lecturer_name ?? '' } : null
 	};

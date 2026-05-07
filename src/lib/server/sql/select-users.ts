@@ -19,6 +19,7 @@ export type SelectUsersResult = {
     password?: string;
     student_id?: string;
     student_name?: string;
+    student_study_program_id?: string;
     lecturer_id?: string;
     lecturer_name?: string;
 }
@@ -30,6 +31,7 @@ export type SelectUsersSelect = {
     password?: boolean;
     student_id?: boolean;
     student_name?: boolean;
+    student_study_program_id?: boolean;
     lecturer_id?: boolean;
     lecturer_name?: boolean;
 }
@@ -41,6 +43,7 @@ const selectFragments = {
     password: `u.password`,
     student_id: `u.student_id`,
     student_name: `s.name`,
+    student_study_program_id: `s.study_program_id`,
     lecturer_id: `u.lecturer_id`,
     lecturer_name: `l.name`,
 } as const;
@@ -99,6 +102,9 @@ export async function selectUsers(connection: Connection, params?: SelectUsersDy
     if (params?.select == null || params.select.student_name) {
         sql = appendSelect(sql, `s.name as student_name`);
     }
+    if (params?.select == null || params.select.student_study_program_id) {
+        sql = appendSelect(sql, `s.study_program_id as student_study_program_id`);
+    }
     if (params?.select == null || params.select.lecturer_id) {
         sql = appendSelect(sql, `u.lecturer_id`);
     }
@@ -108,6 +114,7 @@ export async function selectUsers(connection: Connection, params?: SelectUsersDy
     sql += EOL + `FROM users u`;
     if (params?.select == null
         || params.select.student_name
+        || params.select.student_study_program_id
         || where.student_name != null) {
         sql += EOL + `LEFT JOIN students s ON u.student_id = s.id`;
     }
@@ -156,6 +163,9 @@ function mapArrayToSelectUsersResult(data: any, select?: SelectUsersSelect) {
     }
     if (select == null || select.student_name) {
         result.student_name = data[rowIndex++];
+    }
+    if (select == null || select.student_study_program_id) {
+        result.student_study_program_id = data[rowIndex++];
     }
     if (select == null || select.lecturer_id) {
         result.lecturer_id = data[rowIndex++];

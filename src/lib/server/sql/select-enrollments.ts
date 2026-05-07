@@ -30,6 +30,7 @@ export type SelectEnrollmentsResult = {
     schedule_day?: 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU';
     schedule_start_time?: string;
     schedule_end_time?: string;
+    status?: string;
     grade_id?: string;
     letter_grade?: string;
 }
@@ -52,6 +53,7 @@ export type SelectEnrollmentsSelect = {
     schedule_day?: boolean;
     schedule_start_time?: boolean;
     schedule_end_time?: boolean;
+    status?: boolean;
     grade_id?: boolean;
     letter_grade?: boolean;
 }
@@ -74,6 +76,7 @@ const selectFragments = {
     schedule_day: `e.schedule_day`,
     schedule_start_time: `e.schedule_start_time`,
     schedule_end_time: `e.schedule_end_time`,
+    status: `e.status`,
     grade_id: `g.id`,
     letter_grade: `g.letter_grade`,
 } as const;
@@ -136,6 +139,9 @@ export type SelectEnrollmentsWhere =
     | ['schedule_end_time', StringOperator, string | null]
     | ['schedule_end_time', SetOperator, string[]]
     | ['schedule_end_time', BetweenOperator, string | null, string | null]
+    | ['status', StringOperator, string | null]
+    | ['status', SetOperator, string[]]
+    | ['status', BetweenOperator, string | null, string | null]
     | ['grade_id', StringOperator, string | null]
     | ['grade_id', SetOperator, string[]]
     | ['grade_id', BetweenOperator, string | null, string | null]
@@ -205,6 +211,9 @@ export async function selectEnrollments(connection: Connection, params?: SelectE
     if (params?.select == null || params.select.schedule_end_time) {
         sql = appendSelect(sql, `e.schedule_end_time AS schedule_end_time`);
     }
+    if (params?.select == null || params.select.status) {
+        sql = appendSelect(sql, `e.status AS status`);
+    }
     if (params?.select == null || params.select.grade_id) {
         sql = appendSelect(sql, `g.id as grade_id`);
     }
@@ -243,7 +252,7 @@ export async function selectEnrollments(connection: Connection, params?: SelectE
     if (params?.select == null
         || params.select.class_room_name
         || where.class_room_name != null) {
-        sql += EOL + `INNER JOIN class_rooms cr ON e.class_room_id = cr.id`;
+        sql += EOL + `LEFT JOIN class_rooms cr ON e.class_room_id = cr.id`;
     }
     if (params?.select == null
         || params.select.grade_id
@@ -325,6 +334,9 @@ function mapArrayToSelectEnrollmentsResult(data: any, select?: SelectEnrollments
     }
     if (select == null || select.schedule_end_time) {
         result.schedule_end_time = data[rowIndex++];
+    }
+    if (select == null || select.status) {
+        result.status = data[rowIndex++];
     }
     if (select == null || select.grade_id) {
         result.grade_id = data[rowIndex++];

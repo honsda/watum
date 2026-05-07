@@ -148,19 +148,25 @@ model Schedule {
   @@map("schedules")
 }
 
+enum EnrollmentStatus {
+  PENDING
+  APPROVED
+}
+
 model Enrollment {
-  id           String @id @default(cuid())
+  id           String           @id @default(cuid())
   studentId    String
   courseId     String
-  classRoomId  String
-  scheduleId   String @unique
+  classRoomId  String?
+  scheduleId   String?          @unique
   semester     String
   academicYear String
+  status       EnrollmentStatus @default(PENDING)
 
-  student   Student   @relation(fields: [studentId], references: [id])
-  course    Course    @relation(fields: [courseId], references: [id])
-  schedule  Schedule  @relation(fields: [scheduleId], references: [id])
-  classRoom ClassRoom @relation(fields: [classRoomId], references: [id])
+  student   Student    @relation(fields: [studentId], references: [id])
+  course    Course     @relation(fields: [courseId], references: [id])
+  schedule  Schedule?  @relation(fields: [scheduleId], references: [id])
+  classRoom ClassRoom? @relation(fields: [classRoomId], references: [id])
   grade     Grade?
 
   createdAt DateTime @default(now())

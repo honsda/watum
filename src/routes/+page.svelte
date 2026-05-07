@@ -5,7 +5,7 @@
 	import { onDestroy, onMount, untrack, tick } from 'svelte';
 	import type { Component } from 'svelte';
 	import { clearAccessToken, ensureAccessToken, setAccessToken } from '$lib/client/auth';
-	import { AlertCircle, Menu, MoonStar, RotateCw, Search, SunMedium, X } from '@lucide/svelte';
+	import { AlertCircle, Menu, MoonStar, RotateCw, SunMedium, X } from '@lucide/svelte';
 	import { days } from '$lib/validations/enrollment';
 	import { classRoomTypes } from '$lib/validations/classroom';
 	import { calculateGrade } from '$lib/validations/grade';
@@ -32,8 +32,56 @@
 		viewCatalog,
 		type ViewId
 	} from '$lib/app/navigation';
-	import ClassroomDashboard from '$lib/components/app/ClassroomDashboard.svelte';
-	import CollectionPagination from '$lib/components/app/CollectionPagination.svelte';
+	import { collectionFallbackMessages, viewDataPlanForRole } from '$lib/app/collection-config';
+	import { bindableLink, createBindableFacade } from '$lib/app/bindable-facade';
+	import {
+		buildBuilderViewProps,
+		buildCalendarViewProps,
+		buildBulkViewBase,
+		buildCrudEntityViewProps,
+		buildDashboardViewProps,
+		buildEnrollmentsViewProps,
+		buildPaginationActions,
+		buildSearchActions,
+		buildUsersViewProps
+	} from '$lib/app/view-prop-builders';
+	import { selectEntityRecord } from '$lib/app/entity-selection';
+	import { buildEntityDeleteIntent } from '$lib/app/delete-intents';
+	import { runDeletePlan } from '$lib/app/delete-runner';
+	import { loadCollection, loadCollectionPage } from '$lib/app/collection-page';
+	import {
+		canLoadMoreOptionList,
+		queueOptionRefresh,
+		refreshOptionList
+	} from '$lib/app/option-list-refresh';
+	import {
+		errorMessage,
+		mergeItemsById,
+		normalizedSearchValue,
+		resolveRemoteQuery
+	} from '$lib/app/remote-utils';
+	import { createSimpleSearchRequester } from '$lib/app/search-requesters';
+	import {
+		classroomScheduleRefreshPlan,
+		cloneRefreshPlan,
+		courseScheduleGradesRefreshPlan,
+		enrollmentGradesRefreshPlan,
+		facultyDeleteRefreshPlan,
+		facultyUpdateRefreshPlan,
+		gradesRefreshPlan,
+		lecturerCourseUsersRefreshPlan,
+		lecturersRefreshPlan,
+		studentAcademicUsersRefreshPlan,
+		studentsRefreshPlan,
+		studyProgramAcademicRefreshPlan,
+		studyProgramUpdateRefreshPlan,
+		usersRefreshPlan
+	} from '$lib/app/refresh-plans';
+	import {
+		buildCreateRefreshEnhancer,
+		buildOptimisticRefreshEnhancer,
+		createRefreshSuccess
+	} from '$lib/app/mutation-effects';
 	import LecturersView from '$lib/components/app/LecturersView.svelte';
 	import FacultiesView from '$lib/components/app/FacultiesView.svelte';
 	import ClassroomsView from '$lib/components/app/ClassroomsView.svelte';
@@ -133,7 +181,11 @@
 		updateEnrollment,
 		deleteEnrollment,
 		bulkDeleteEnrollments,
-		bulkUpdateEnrollments
+		bulkUpdateEnrollments,
+		requestEnrollment,
+		approveEnrollment,
+		rejectEnrollment,
+		cancelEnrollmentRequest
 	} from './enrollments/data.remote';
 	import {
 		getGrades,
@@ -204,7 +256,7 @@
 		| 'bulk-studyPrograms'
 		| 'bulk-enrollments'
 		| 'bulk-grades';
-	type DeleteIntent = {
+	type PendingDeleteIntent = {
 		kind: DeleteKind;
 		id: string;
 		label: string;
@@ -215,6 +267,7 @@
 	};
 
 	type BuilderStep = 'participant' | 'time' | 'room' | 'review';
+	type BuilderMode = 'create' | 'edit' | 'approve';
 	type DataCollectionKey =
 		| 'classrooms'
 		| 'courses'
@@ -313,17 +366,6 @@
 		return `${uniqueValues.slice(0, maxVisible).join(', ')} +${uniqueValues.length - maxVisible} lain`;
 	}
 
-	function conflictGroupMetaCopy(
-		details: {
-			count: number;
-			lecturers: string;
-			rooms: string;
-		} | null
-	) {
-		if (!details) return null;
-		return `${details.count} jadwal • Ruang: ${details.rooms} • Dosen: ${details.lecturers}`;
-	}
-
 	function schedulesOverlap(left: ScheduleCard, right: ScheduleCard) {
 		return (
 			left.id !== right.id &&
@@ -349,13 +391,14 @@
 			schedule_id: member.scheduleId,
 			semester: member.semester,
 			academic_year: member.academicYear,
-			student_name: member.studentName,
+		 student_name: member.studentName,
 			course_name: member.courseName,
 			lecturer_name: member.lecturerName,
 			class_room_name: member.classRoomName,
 			schedule_day: member.day,
 			schedule_start_time: member.startTime,
-			schedule_end_time: member.endTime
+			schedule_end_time: member.endTime,
+			status: 'APPROVED'
 		};
 	}
 
@@ -689,7 +732,7 @@
 	);
 	let builderStep = $state<BuilderStep>('participant');
 	let editorView = $state<EditableView | null>(null);
-	let pendingDelete = $state<DeleteIntent | null>(null);
+	let pendingDelete = $state<PendingDeleteIntent | null>(null);
 	let feedback = $state<Feedback>(null);
 	let appLoading = $state(false);
 	let viewRefreshLoading = $state(false);
@@ -898,15 +941,6 @@
 		return bulkSelectedIds[kind]?.size ?? 0;
 	}
 
-	const emptyRoomDashboardSummary: RoomDashboardSummary = {
-		totalRooms: 0,
-		availableNowCount: 0,
-		occupiedRoomCount: 0,
-		lowUtilizationRoomCount: 0,
-		averageUtilization: 0,
-		conflictedCount: 0
-	};
-
 	let classroomDraft = $state(emptyClassRoomDraft());
 	let courseDraft = $state(emptyCourseDraft());
 	let studentDraft = $state(emptyStudentDraft());
@@ -917,12 +951,155 @@
 	let gradeDraft = $state(emptyGradeDraft());
 	let userDraft = $state(emptyUserDraft());
 
+	let scheduleViewState = $state(
+		createBindableFacade({
+			enrollmentSearch: bindableLink(
+				() => enrollmentSearch,
+				(value) => (enrollmentSearch = value)
+			),
+			scheduleDayFilter: bindableLink(
+				() => scheduleDayFilter,
+				(value) => (scheduleDayFilter = value)
+			),
+			scheduleCourseFilter: bindableLink(
+				() => scheduleCourseFilter,
+				(value) => (scheduleCourseFilter = value)
+			),
+			scheduleRoomFilter: bindableLink(
+				() => scheduleRoomFilter,
+				(value) => (scheduleRoomFilter = value)
+			),
+			scheduleLecturerFilter: bindableLink(
+				() => scheduleLecturerFilter,
+				(value) => (scheduleLecturerFilter = value)
+			),
+			scheduleSemesterFilter: bindableLink(
+				() => scheduleSemesterFilter,
+				(value) => (scheduleSemesterFilter = value)
+			),
+			scheduleAcademicYearFilter: bindableLink(
+				() => scheduleAcademicYearFilter,
+				(value) => (scheduleAcademicYearFilter = value)
+			),
+			scheduleRoomFilterSearch: bindableLink(
+				() => scheduleRoomFilterSearch,
+				(value) => (scheduleRoomFilterSearch = value)
+			),
+			scheduleRoomFilterOpen: bindableLink(
+				() => scheduleRoomFilterOpen,
+				(value) => (scheduleRoomFilterOpen = value)
+			),
+			selectedConflictGroupId: bindableLink(
+				() => selectedConflictGroupId,
+				(value) => (selectedConflictGroupId = value)
+			)
+		})
+	);
+
+	let builderScheduleState = $state(
+		createBindableFacade({
+			enrollmentSearch: bindableLink(
+				() => enrollmentSearch,
+				(value) => (enrollmentSearch = value)
+			),
+			scheduleDayFilter: bindableLink(
+				() => scheduleDayFilter,
+				(value) => (scheduleDayFilter = value)
+			),
+			scheduleCourseFilter: bindableLink(
+				() => scheduleCourseFilter,
+				(value) => (scheduleCourseFilter = value)
+			),
+			scheduleRoomFilter: bindableLink(
+				() => scheduleRoomFilter,
+				(value) => (scheduleRoomFilter = value)
+			),
+			scheduleLecturerFilter: bindableLink(
+				() => scheduleLecturerFilter,
+				(value) => (scheduleLecturerFilter = value)
+			),
+			scheduleSemesterFilter: bindableLink(
+				() => scheduleSemesterFilter,
+				(value) => (scheduleSemesterFilter = value)
+			),
+			scheduleAcademicYearFilter: bindableLink(
+				() => scheduleAcademicYearFilter,
+				(value) => (scheduleAcademicYearFilter = value)
+			),
+			scheduleCourseFilterSearch: bindableLink(
+				() => scheduleCourseFilterSearch,
+				(value) => (scheduleCourseFilterSearch = value)
+			),
+			scheduleRoomFilterSearch: bindableLink(
+				() => scheduleRoomFilterSearch,
+				(value) => (scheduleRoomFilterSearch = value)
+			),
+			scheduleLecturerFilterSearch: bindableLink(
+				() => scheduleLecturerFilterSearch,
+				(value) => (scheduleLecturerFilterSearch = value)
+			),
+			scheduleCourseFilterOpen: bindableLink(
+				() => scheduleCourseFilterOpen,
+				(value) => (scheduleCourseFilterOpen = value)
+			),
+			scheduleRoomFilterOpen: bindableLink(
+				() => scheduleRoomFilterOpen,
+				(value) => (scheduleRoomFilterOpen = value)
+			),
+			scheduleLecturerFilterOpen: bindableLink(
+				() => scheduleLecturerFilterOpen,
+				(value) => (scheduleLecturerFilterOpen = value)
+			),
+			builderConflictOnly: bindableLink(
+				() => builderConflictOnly,
+				(value) => (builderConflictOnly = value)
+			)
+		})
+	);
+
+	let builderWorkflowState = $state(
+		createBindableFacade({
+			builderStep: bindableLink(
+				() => builderStep,
+				(value) => (builderStep = value)
+			),
+			studentPickerSearch: bindableLink(
+				() => studentPickerSearch,
+				(value) => (studentPickerSearch = value)
+			),
+			coursePickerSearch: bindableLink(
+				() => coursePickerSearch,
+				(value) => (coursePickerSearch = value)
+			),
+			roomPickerSearch: bindableLink(
+				() => roomPickerSearch,
+				(value) => (roomPickerSearch = value)
+			),
+			studentPickerOpen: bindableLink(
+				() => studentPickerOpen,
+				(value) => (studentPickerOpen = value)
+			),
+			coursePickerOpen: bindableLink(
+				() => coursePickerOpen,
+				(value) => (coursePickerOpen = value)
+			),
+			roomPickerOpen: bindableLink(
+				() => roomPickerOpen,
+				(value) => (roomPickerOpen = value)
+			)
+		})
+	);
+
 	function setFeedback(tone: Tone, text: string) {
 		feedback = { tone, text };
 	}
 
 	function reportDanger(message: string) {
 		setFeedback('danger', message);
+	}
+
+	function reportSuccess(message: string) {
+		setFeedback('success', message);
 	}
 
 	function createEnhancer(form: EnhancedForm, onSuccess: () => Promise<void> | void) {
@@ -1002,218 +1179,148 @@
 		};
 	}
 
-	function applyLimitedCollection<T>(
-		result: LimitedCollectionResponse<T>,
-		assign: (items: T[]) => void
-	) {
-		assign(result.items);
-	}
-
-	async function resolveRemoteQuery<T>(query: Promise<T> | { run: () => Promise<T> }): Promise<T> {
-		try {
-			return await (query as Promise<T>);
-		} catch (error) {
-			if (
-				typeof query === 'object' &&
-				query != null &&
-				'run' in query &&
-				typeof query.run === 'function' &&
-				(error as Error)?.message?.includes(
-					'This query was not created in a reactive context and is limited to calling `.run`, `.refresh`, and `.set`.'
-				)
-			) {
-				return await query.run();
-			}
-
-			throw error;
-		}
-	}
-
-	function errorMessage(error: unknown, fallback: string) {
-		return (
-			(error as { body?: { message?: string }; message?: string })?.body?.message ||
-			(error as Error)?.message ||
-			fallback
-		);
-	}
-
-	function normalizedSearchValue(value: string) {
-		const trimmed = value.trim();
-		return trimmed.length > 0 ? trimmed : undefined;
-	}
-
-	function mergeItemsById<T extends { id?: string }>(current: T[], next: T[]) {
-		// eslint-disable-next-line svelte/prefer-svelte-reactivity
-		const itemsById = new Map<string, T>();
-		const anonymousItems: T[] = [];
-		for (const item of [...current, ...next]) {
-			if (!item.id) {
-				anonymousItems.push(item);
-				continue;
-			}
-			itemsById.set(item.id, item);
-		}
-		return [...itemsById.values(), ...anonymousItems];
-	}
-
 	async function refreshStudentPickerOptions(cursor: string | null = null) {
-		const token = ++studentPickerRequestToken;
-		const append = cursor != null;
-		studentPickerLoading = true;
-		studentPickerIssue = null;
-		try {
-			const q = normalizedSearchValue(studentPickerSearch);
-			const result = q
-				? await resolveRemoteQuery(searchStudents({ q, cursor: cursor ?? undefined }))
-				: await resolveRemoteQuery(getStudents({ cursor: cursor ?? undefined }));
-			if (token !== studentPickerRequestToken) return;
-			studentPickerOptions = append
-				? mergeItemsById(studentPickerOptions, result.items)
-				: result.items;
-			studentPickerHasMore = result.hasMore;
-			studentPickerNextCursor = result.nextCursor;
-		} catch (error) {
-			if (token !== studentPickerRequestToken) return;
-			studentPickerIssue = errorMessage(error, 'Daftar mahasiswa gagal dimuat.');
-		} finally {
-			if (token === studentPickerRequestToken) {
-				studentPickerLoading = false;
-			}
-		}
+		await refreshOptionList({
+			cursor,
+			nextToken: () => ++studentPickerRequestToken,
+			isCurrent: (token) => token === studentPickerRequestToken,
+			setLoading: (value) => (studentPickerLoading = value),
+			setIssue: (value) => (studentPickerIssue = value),
+			fetch: async (nextCursor) => {
+				const q = normalizedSearchValue(studentPickerSearch);
+				return q
+					? await resolveRemoteQuery(searchStudents({ q, cursor: nextCursor ?? undefined }))
+					: await resolveRemoteQuery(getStudents({ cursor: nextCursor ?? undefined }));
+			},
+			assignItems: (items, append) => {
+				studentPickerOptions = append ? mergeItemsById(studentPickerOptions, items) : items;
+			},
+			setHasMore: (value) => (studentPickerHasMore = value),
+			setNextCursor: (value) => (studentPickerNextCursor = value),
+			errorMessage,
+			issueFallback: 'Daftar mahasiswa gagal dimuat.'
+		});
 	}
 
 	async function refreshCoursePickerOptions(cursor: string | null = null) {
-		const token = ++coursePickerRequestToken;
-		const append = cursor != null;
-		coursePickerLoading = true;
-		coursePickerIssue = null;
-		try {
-			const q = normalizedSearchValue(coursePickerSearch);
-			const result = q
-				? await resolveRemoteQuery(searchCourses({ q, cursor: cursor ?? undefined }))
-				: await resolveRemoteQuery(getCourses({ cursor: cursor ?? undefined }));
-			if (token !== coursePickerRequestToken) return;
-			coursePickerOptions = append
-				? mergeItemsById(coursePickerOptions, result.items)
-				: result.items;
-			coursePickerHasMore = result.hasMore;
-			coursePickerNextCursor = result.nextCursor;
-		} catch (error) {
-			if (token !== coursePickerRequestToken) return;
-			coursePickerIssue = errorMessage(error, 'Daftar mata kuliah gagal dimuat.');
-		} finally {
-			if (token === coursePickerRequestToken) {
-				coursePickerLoading = false;
-			}
-		}
+		await refreshOptionList({
+			cursor,
+			nextToken: () => ++coursePickerRequestToken,
+			isCurrent: (token) => token === coursePickerRequestToken,
+			setLoading: (value) => (coursePickerLoading = value),
+			setIssue: (value) => (coursePickerIssue = value),
+			fetch: async (nextCursor) => {
+				const q = normalizedSearchValue(coursePickerSearch);
+				return q
+					? await resolveRemoteQuery(searchCourses({ q, cursor: nextCursor ?? undefined }))
+					: await resolveRemoteQuery(getCourses({ cursor: nextCursor ?? undefined }));
+			},
+			assignItems: (items, append) => {
+				coursePickerOptions = append ? mergeItemsById(coursePickerOptions, items) : items;
+			},
+			setHasMore: (value) => (coursePickerHasMore = value),
+			setNextCursor: (value) => (coursePickerNextCursor = value),
+			errorMessage,
+			issueFallback: 'Daftar mata kuliah gagal dimuat.'
+		});
 	}
 
 	async function refreshScheduleCourseFilterOptions(cursor: string | null = null) {
-		const token = ++scheduleCourseFilterRequestToken;
-		const append = cursor != null;
-		scheduleCourseFilterLoading = true;
-		scheduleCourseFilterIssue = null;
-		try {
-			const q = normalizedSearchValue(scheduleCourseFilterSearch);
-			const result = q
-				? await resolveRemoteQuery(searchCourses({ q, cursor: cursor ?? undefined }))
-				: await resolveRemoteQuery(getCourses({ cursor: cursor ?? undefined }));
-			if (token !== scheduleCourseFilterRequestToken) return;
-			scheduleCourseFilterOptions = append
-				? mergeItemsById(scheduleCourseFilterOptions, result.items)
-				: result.items;
-			scheduleCourseFilterHasMore = result.hasMore;
-			scheduleCourseFilterNextCursor = result.nextCursor;
-		} catch (error) {
-			if (token !== scheduleCourseFilterRequestToken) return;
-			scheduleCourseFilterIssue = errorMessage(error, 'Daftar mata kuliah gagal dimuat.');
-		} finally {
-			if (token === scheduleCourseFilterRequestToken) {
-				scheduleCourseFilterLoading = false;
-			}
-		}
+		await refreshOptionList({
+			cursor,
+			nextToken: () => ++scheduleCourseFilterRequestToken,
+			isCurrent: (token) => token === scheduleCourseFilterRequestToken,
+			setLoading: (value) => (scheduleCourseFilterLoading = value),
+			setIssue: (value) => (scheduleCourseFilterIssue = value),
+			fetch: async (nextCursor) => {
+				const q = normalizedSearchValue(scheduleCourseFilterSearch);
+				return q
+					? await resolveRemoteQuery(searchCourses({ q, cursor: nextCursor ?? undefined }))
+					: await resolveRemoteQuery(getCourses({ cursor: nextCursor ?? undefined }));
+			},
+			assignItems: (items, append) => {
+				scheduleCourseFilterOptions = append
+					? mergeItemsById(scheduleCourseFilterOptions, items)
+					: items;
+			},
+			setHasMore: (value) => (scheduleCourseFilterHasMore = value),
+			setNextCursor: (value) => (scheduleCourseFilterNextCursor = value),
+			errorMessage,
+			issueFallback: 'Daftar mata kuliah gagal dimuat.'
+		});
 	}
 
 	async function refreshScheduleLecturerFilterOptions(cursor: string | null = null) {
-		const token = ++scheduleLecturerFilterRequestToken;
-		const append = cursor != null;
-		scheduleLecturerFilterLoading = true;
-		scheduleLecturerFilterIssue = null;
-		try {
-			const q = normalizedSearchValue(scheduleLecturerFilterSearch);
-			const result = q
-				? await resolveRemoteQuery(searchLecturers({ q, cursor: cursor ?? undefined }))
-				: await resolveRemoteQuery(getLecturers({ cursor: cursor ?? undefined }));
-			if (token !== scheduleLecturerFilterRequestToken) return;
-			scheduleLecturerFilterOptions = append
-				? mergeItemsById(scheduleLecturerFilterOptions, result.items)
-				: result.items;
-			scheduleLecturerFilterHasMore = result.hasMore;
-			scheduleLecturerFilterNextCursor = result.nextCursor;
-		} catch (error) {
-			if (token !== scheduleLecturerFilterRequestToken) return;
-			scheduleLecturerFilterIssue = errorMessage(error, 'Daftar dosen gagal dimuat.');
-		} finally {
-			if (token === scheduleLecturerFilterRequestToken) {
-				scheduleLecturerFilterLoading = false;
-			}
-		}
+		await refreshOptionList({
+			cursor,
+			nextToken: () => ++scheduleLecturerFilterRequestToken,
+			isCurrent: (token) => token === scheduleLecturerFilterRequestToken,
+			setLoading: (value) => (scheduleLecturerFilterLoading = value),
+			setIssue: (value) => (scheduleLecturerFilterIssue = value),
+			fetch: async (nextCursor) => {
+				const q = normalizedSearchValue(scheduleLecturerFilterSearch);
+				return q
+					? await resolveRemoteQuery(searchLecturers({ q, cursor: nextCursor ?? undefined }))
+					: await resolveRemoteQuery(getLecturers({ cursor: nextCursor ?? undefined }));
+			},
+			assignItems: (items, append) => {
+				scheduleLecturerFilterOptions = append
+					? mergeItemsById(scheduleLecturerFilterOptions, items)
+					: items;
+			},
+			setHasMore: (value) => (scheduleLecturerFilterHasMore = value),
+			setNextCursor: (value) => (scheduleLecturerFilterNextCursor = value),
+			errorMessage,
+			issueFallback: 'Daftar dosen gagal dimuat.'
+		});
 	}
 
 	function queueStudentPickerRefresh(delay = 120) {
-		if (!browser) {
-			void refreshStudentPickerOptions(null);
-			return;
-		}
-		if (studentPickerRefreshTimer != null) {
-			window.clearTimeout(studentPickerRefreshTimer);
-		}
-		studentPickerRefreshTimer = window.setTimeout(() => {
-			studentPickerRefreshTimer = null;
-			void refreshStudentPickerOptions(null);
-		}, delay);
+		queueOptionRefresh({
+			browser,
+			currentTimer: studentPickerRefreshTimer,
+			setTimer: (value) => (studentPickerRefreshTimer = value),
+			run: () => void refreshStudentPickerOptions(null),
+			delay,
+			clearTimer: (value) => window.clearTimeout(value),
+			setTimeoutFn: (callback, wait) => window.setTimeout(callback, wait)
+		});
 	}
 
 	function queueCoursePickerRefresh(delay = 120) {
-		if (!browser) {
-			void refreshCoursePickerOptions(null);
-			return;
-		}
-		if (coursePickerRefreshTimer != null) {
-			window.clearTimeout(coursePickerRefreshTimer);
-		}
-		coursePickerRefreshTimer = window.setTimeout(() => {
-			coursePickerRefreshTimer = null;
-			void refreshCoursePickerOptions(null);
-		}, delay);
+		queueOptionRefresh({
+			browser,
+			currentTimer: coursePickerRefreshTimer,
+			setTimer: (value) => (coursePickerRefreshTimer = value),
+			run: () => void refreshCoursePickerOptions(null),
+			delay,
+			clearTimer: (value) => window.clearTimeout(value),
+			setTimeoutFn: (callback, wait) => window.setTimeout(callback, wait)
+		});
 	}
 
 	function queueScheduleCourseFilterRefresh(delay = 120) {
-		if (!browser) {
-			void refreshScheduleCourseFilterOptions(null);
-			return;
-		}
-		if (scheduleCourseFilterRefreshTimer != null) {
-			window.clearTimeout(scheduleCourseFilterRefreshTimer);
-		}
-		scheduleCourseFilterRefreshTimer = window.setTimeout(() => {
-			scheduleCourseFilterRefreshTimer = null;
-			void refreshScheduleCourseFilterOptions(null);
-		}, delay);
+		queueOptionRefresh({
+			browser,
+			currentTimer: scheduleCourseFilterRefreshTimer,
+			setTimer: (value) => (scheduleCourseFilterRefreshTimer = value),
+			run: () => void refreshScheduleCourseFilterOptions(null),
+			delay,
+			clearTimer: (value) => window.clearTimeout(value),
+			setTimeoutFn: (callback, wait) => window.setTimeout(callback, wait)
+		});
 	}
 
 	function queueScheduleLecturerFilterRefresh(delay = 120) {
-		if (!browser) {
-			void refreshScheduleLecturerFilterOptions(null);
-			return;
-		}
-		if (scheduleLecturerFilterRefreshTimer != null) {
-			window.clearTimeout(scheduleLecturerFilterRefreshTimer);
-		}
-		scheduleLecturerFilterRefreshTimer = window.setTimeout(() => {
-			scheduleLecturerFilterRefreshTimer = null;
-			void refreshScheduleLecturerFilterOptions(null);
-		}, delay);
+		queueOptionRefresh({
+			browser,
+			currentTimer: scheduleLecturerFilterRefreshTimer,
+			setTimer: (value) => (scheduleLecturerFilterRefreshTimer = value),
+			run: () => void refreshScheduleLecturerFilterOptions(null),
+			delay,
+			clearTimer: (value) => window.clearTimeout(value),
+			setTimeoutFn: (callback, wait) => window.setTimeout(callback, wait)
+		});
 	}
 
 	function loadMoreStudentPickerOptions() {
@@ -1421,57 +1528,6 @@
 		scheduleLecturerFilterOpen = false;
 	}
 
-	async function loadCollection(
-		key: DataCollectionKey,
-		loader: () => Promise<void>,
-		fallback: string
-	) {
-		try {
-			await loader();
-			clearCollectionIssue(key);
-		} catch (error) {
-			setCollectionIssue(key, errorMessage(error, fallback));
-		}
-	}
-
-	async function loadCollectionPage<T>(
-		key: DataCollectionKey,
-		cursor: string | null,
-		request: (
-			cursor: string | null
-		) =>
-			| Promise<LimitedCollectionResponse<T>>
-			| { run: () => Promise<LimitedCollectionResponse<T>> },
-		assign: (items: T[]) => void,
-		meta?: { history?: Array<string | null>; pageNumber?: number }
-	) {
-		setCollectionPagination(key, { loading: true });
-		try {
-			const result = await resolveRemoteQuery(request(cursor));
-
-			await tick();
-			applyLimitedCollection(result, assign);
-			const nextHistory =
-				meta?.history ?? (cursor == null ? [] : collectionPagination[key].history);
-			const nextPageNumber =
-				meta?.pageNumber ?? (cursor == null ? 1 : collectionPagination[key].pageNumber);
-			setCollectionPagination(key, {
-				currentCursor: cursor,
-				nextCursor: result.nextCursor,
-				history: nextHistory,
-				pageNumber: nextPageNumber,
-				limit: result.limit,
-				hasMore: result.hasMore,
-				loading: false,
-				itemCount: result.items.length
-			});
-			collectionLoaded = { ...collectionLoaded, [key]: true };
-		} catch (error) {
-			setCollectionPagination(key, { loading: false });
-			throw error;
-		}
-	}
-
 	function buildEnrollmentSearchParams(cursor: string | null) {
 		return {
 			cursor: cursor ?? undefined,
@@ -1485,47 +1541,47 @@
 		};
 	}
 
-	function requestClassroomsPage(cursor: string | null) {
-		const q = normalizedSearchValue(roomSearch);
-		return q
-			? searchClassRooms({ cursor: cursor ?? undefined, q })
-			: getClassRooms({ cursor: cursor ?? undefined });
-	}
+	const requestClassroomsPage = createSimpleSearchRequester({
+		getSearchTerm: () => roomSearch,
+		normalizeSearchValue: normalizedSearchValue,
+		getAll: getClassRooms,
+		search: searchClassRooms
+	});
 
-	function requestCoursesPage(cursor: string | null) {
-		const q = normalizedSearchValue(courseSearch);
-		return q
-			? searchCourses({ cursor: cursor ?? undefined, q })
-			: getCourses({ cursor: cursor ?? undefined });
-	}
+	const requestCoursesPage = createSimpleSearchRequester({
+		getSearchTerm: () => courseSearch,
+		normalizeSearchValue: normalizedSearchValue,
+		getAll: getCourses,
+		search: searchCourses
+	});
 
-	function requestStudentsPage(cursor: string | null) {
-		const q = normalizedSearchValue(studentSearch);
-		return q
-			? searchStudents({ cursor: cursor ?? undefined, q })
-			: getStudents({ cursor: cursor ?? undefined });
-	}
+	const requestStudentsPage = createSimpleSearchRequester({
+		getSearchTerm: () => studentSearch,
+		normalizeSearchValue: normalizedSearchValue,
+		getAll: getStudents,
+		search: searchStudents
+	});
 
-	function requestLecturersPage(cursor: string | null) {
-		const q = normalizedSearchValue(lecturerSearch);
-		return q
-			? searchLecturers({ cursor: cursor ?? undefined, q })
-			: getLecturers({ cursor: cursor ?? undefined });
-	}
+	const requestLecturersPage = createSimpleSearchRequester({
+		getSearchTerm: () => lecturerSearch,
+		normalizeSearchValue: normalizedSearchValue,
+		getAll: getLecturers,
+		search: searchLecturers
+	});
 
-	function requestFacultiesPage(cursor: string | null) {
-		const q = normalizedSearchValue(facultySearch);
-		return q
-			? searchFaculties({ cursor: cursor ?? undefined, q })
-			: getFaculties({ cursor: cursor ?? undefined });
-	}
+	const requestFacultiesPage = createSimpleSearchRequester({
+		getSearchTerm: () => facultySearch,
+		normalizeSearchValue: normalizedSearchValue,
+		getAll: getFaculties,
+		search: searchFaculties
+	});
 
-	function requestStudyProgramsPage(cursor: string | null) {
-		const q = normalizedSearchValue(studyProgramSearch);
-		return q
-			? searchStudyPrograms({ cursor: cursor ?? undefined, q })
-			: getStudyPrograms({ cursor: cursor ?? undefined });
-	}
+	const requestStudyProgramsPage = createSimpleSearchRequester({
+		getSearchTerm: () => studyProgramSearch,
+		normalizeSearchValue: normalizedSearchValue,
+		getAll: getStudyPrograms,
+		search: searchStudyPrograms
+	});
 
 	function requestEnrollmentsPage(cursor: string | null) {
 		const params = buildEnrollmentSearchParams(cursor);
@@ -1545,12 +1601,12 @@
 			: getGrades({ cursor: cursor ?? undefined });
 	}
 
-	function requestUsersPage(cursor: string | null) {
-		const q = normalizedSearchValue(userSearch);
-		return q
-			? searchUsers({ cursor: cursor ?? undefined, q })
-			: getUsers({ cursor: cursor ?? undefined });
-	}
+	const requestUsersPage = createSimpleSearchRequester({
+		getSearchTerm: () => userSearch,
+		normalizeSearchValue: normalizedSearchValue,
+		getAll: getUsers,
+		search: searchUsers
+	});
 
 	async function refreshSchedulePreview() {
 		schedulePreview = { ...schedulePreview, loading: true };
@@ -1623,15 +1679,6 @@
 		}, delay);
 	}
 
-	async function refreshClassrooms(cursor = collectionPagination.classrooms.currentCursor) {
-		await loadCollectionPage(
-			'classrooms',
-			cursor,
-			requestClassroomsPage,
-			(items) => (classrooms = items)
-		);
-	}
-
 	async function refreshClassRoomDashboard(
 		cursor: string | null = classRoomDashboardPagination.currentCursor,
 		meta?: { history?: Array<string | null>; pageNumber?: number; refreshSummary?: boolean }
@@ -1689,233 +1736,111 @@
 	}
 
 	async function refreshRoomPickerOptions(cursor: string | null = null) {
-		const token = ++roomPickerRequestToken;
-		const append = cursor != null;
-		roomPickerLoading = true;
-		roomPickerIssue = null;
-		try {
-			const q = normalizedSearchValue(roomPickerSearch);
-			const result = await resolveRemoteQuery(searchClassRooms({ q, cursor: cursor ?? undefined }));
-			if (token !== roomPickerRequestToken) return;
-			roomPickerOptions = append ? mergeItemsById(roomPickerOptions, result.items) : result.items;
-			roomPickerHasMore = result.hasMore;
-			roomPickerNextCursor = result.nextCursor;
-		} catch (error) {
-			if (token !== roomPickerRequestToken) return;
-			roomPickerIssue = errorMessage(error, 'Daftar ruang kelas gagal dimuat.');
-		} finally {
-			if (token === roomPickerRequestToken) {
-				roomPickerLoading = false;
-			}
-		}
+		await refreshOptionList({
+			cursor,
+			nextToken: () => ++roomPickerRequestToken,
+			isCurrent: (token) => token === roomPickerRequestToken,
+			setLoading: (value) => (roomPickerLoading = value),
+			setIssue: (value) => (roomPickerIssue = value),
+			fetch: async (nextCursor) => {
+				const q = normalizedSearchValue(roomPickerSearch);
+				return await resolveRemoteQuery(searchClassRooms({ q, cursor: nextCursor ?? undefined }));
+			},
+			assignItems: (items, append) => {
+				roomPickerOptions = append ? mergeItemsById(roomPickerOptions, items) : items;
+			},
+			setHasMore: (value) => (roomPickerHasMore = value),
+			setNextCursor: (value) => (roomPickerNextCursor = value),
+			errorMessage,
+			issueFallback: 'Daftar ruang kelas gagal dimuat.'
+		});
 	}
 
 	async function refreshScheduleRoomFilterOptions(cursor: string | null = null) {
-		const token = ++scheduleRoomFilterRequestToken;
-		const append = cursor != null;
-		scheduleRoomFilterLoading = true;
-		scheduleRoomFilterIssue = null;
-		try {
-			const q = normalizedSearchValue(scheduleRoomFilterSearch);
-			const result = await resolveRemoteQuery(searchClassRooms({ q, cursor: cursor ?? undefined }));
-			if (token !== scheduleRoomFilterRequestToken) return;
-			scheduleRoomFilterOptions = append
-				? mergeItemsById(scheduleRoomFilterOptions, result.items)
-				: result.items;
-			scheduleRoomFilterHasMore = result.hasMore;
-			scheduleRoomFilterNextCursor = result.nextCursor;
-		} catch (error) {
-			if (token !== scheduleRoomFilterRequestToken) return;
-			scheduleRoomFilterIssue = errorMessage(error, 'Daftar ruang kelas gagal dimuat.');
-		} finally {
-			if (token === scheduleRoomFilterRequestToken) {
-				scheduleRoomFilterLoading = false;
-			}
-		}
+		await refreshOptionList({
+			cursor,
+			nextToken: () => ++scheduleRoomFilterRequestToken,
+			isCurrent: (token) => token === scheduleRoomFilterRequestToken,
+			setLoading: (value) => (scheduleRoomFilterLoading = value),
+			setIssue: (value) => (scheduleRoomFilterIssue = value),
+			fetch: async (nextCursor) => {
+				const q = normalizedSearchValue(scheduleRoomFilterSearch);
+				return await resolveRemoteQuery(searchClassRooms({ q, cursor: nextCursor ?? undefined }));
+			},
+			assignItems: (items, append) => {
+				scheduleRoomFilterOptions = append
+					? mergeItemsById(scheduleRoomFilterOptions, items)
+					: items;
+			},
+			setHasMore: (value) => (scheduleRoomFilterHasMore = value),
+			setNextCursor: (value) => (scheduleRoomFilterNextCursor = value),
+			errorMessage,
+			issueFallback: 'Daftar ruang kelas gagal dimuat.'
+		});
 	}
 
 	function loadMoreRoomPickerOptions() {
-		if (roomPickerLoading || !roomPickerHasMore || !roomPickerNextCursor) return;
+		if (
+			!canLoadMoreOptionList({
+				loading: roomPickerLoading,
+				hasMore: roomPickerHasMore,
+				nextCursor: roomPickerNextCursor
+			})
+		)
+			return;
 		void refreshRoomPickerOptions(roomPickerNextCursor);
 	}
 
 	function loadMoreScheduleRoomFilterOptions() {
-		if (scheduleRoomFilterLoading || !scheduleRoomFilterHasMore || !scheduleRoomFilterNextCursor)
+		if (
+			!canLoadMoreOptionList({
+				loading: scheduleRoomFilterLoading,
+				hasMore: scheduleRoomFilterHasMore,
+				nextCursor: scheduleRoomFilterNextCursor
+			})
+		)
 			return;
 		void refreshScheduleRoomFilterOptions(scheduleRoomFilterNextCursor);
 	}
 
 	function queueRoomPickerRefresh(delay = 120) {
-		if (!browser) {
-			void refreshRoomPickerOptions(null);
-			return;
-		}
-		if (roomPickerRefreshTimer != null) {
-			window.clearTimeout(roomPickerRefreshTimer);
-		}
-		roomPickerRefreshTimer = window.setTimeout(() => {
-			roomPickerRefreshTimer = null;
-			void refreshRoomPickerOptions(null);
-		}, delay);
+		queueOptionRefresh({
+			browser,
+			currentTimer: roomPickerRefreshTimer,
+			setTimer: (value) => (roomPickerRefreshTimer = value),
+			run: () => void refreshRoomPickerOptions(null),
+			delay,
+			clearTimer: (value) => window.clearTimeout(value),
+			setTimeoutFn: (callback, wait) => window.setTimeout(callback, wait)
+		});
 	}
 
 	function queueScheduleRoomFilterRefresh(delay = 120) {
-		if (!browser) {
-			void refreshScheduleRoomFilterOptions(null);
-			return;
-		}
-		if (scheduleRoomFilterRefreshTimer != null) {
-			window.clearTimeout(scheduleRoomFilterRefreshTimer);
-		}
-		scheduleRoomFilterRefreshTimer = window.setTimeout(() => {
-			scheduleRoomFilterRefreshTimer = null;
-			void refreshScheduleRoomFilterOptions(null);
-		}, delay);
-	}
-
-	async function refreshCourses(cursor = collectionPagination.courses.currentCursor) {
-		await loadCollectionPage('courses', cursor, requestCoursesPage, (items) => (courses = items));
-	}
-
-	async function refreshStudents(cursor = collectionPagination.students.currentCursor) {
-		await loadCollectionPage(
-			'students',
-			cursor,
-			requestStudentsPage,
-			(items) => (students = items)
-		);
-	}
-
-	async function refreshLecturers(cursor = collectionPagination.lecturers.currentCursor) {
-		await loadCollectionPage(
-			'lecturers',
-			cursor,
-			requestLecturersPage,
-			(items) => (lecturers = items)
-		);
-	}
-
-	async function refreshFaculties(cursor = collectionPagination.faculties.currentCursor) {
-		await loadCollectionPage(
-			'faculties',
-			cursor,
-			requestFacultiesPage,
-			(items) => (faculties = items)
-		);
-	}
-
-	async function refreshStudyPrograms(cursor = collectionPagination.studyPrograms.currentCursor) {
-		await loadCollectionPage(
-			'studyPrograms',
-			cursor,
-			requestStudyProgramsPage,
-			(items) => (studyPrograms = items)
-		);
-	}
-
-	async function refreshEnrollments(cursor = collectionPagination.enrollments.currentCursor) {
-		await loadCollectionPage(
-			'enrollments',
-			cursor,
-			requestEnrollmentsPage,
-			(items) => (enrollments = items)
-		);
-	}
-
-	async function refreshGrades(cursor = collectionPagination.grades.currentCursor) {
-		await loadCollectionPage('grades', cursor, requestGradesPage, (items) => (grades = items));
-	}
-
-	async function refreshUsers(cursor = collectionPagination.users.currentCursor) {
-		await loadCollectionPage('users', cursor, requestUsersPage, (items) => (users = items));
-	}
-
-	function collectionFallbackMessage(key: DataCollectionKey) {
-		if (key === 'classrooms') return 'Ruang kelas gagal dimuat.';
-		if (key === 'courses') return 'Mata kuliah gagal dimuat.';
-		if (key === 'students') return 'Data mahasiswa gagal dimuat.';
-		if (key === 'lecturers') return 'Data dosen gagal dimuat.';
-		if (key === 'faculties') return 'Data fakultas gagal dimuat.';
-		if (key === 'studyPrograms') return 'Program studi gagal dimuat.';
-		if (key === 'enrollments') return 'Data KRS gagal dimuat.';
-		if (key === 'grades') return 'Data nilai gagal dimuat.';
-		return 'Data akun gagal dimuat.';
+		queueOptionRefresh({
+			browser,
+			currentTimer: scheduleRoomFilterRefreshTimer,
+			setTimer: (value) => (scheduleRoomFilterRefreshTimer = value),
+			run: () => void refreshScheduleRoomFilterOptions(null),
+			delay,
+			clearTimer: (value) => window.clearTimeout(value),
+			setTimeoutFn: (callback, wait) => window.setTimeout(callback, wait)
+		});
 	}
 
 	function viewDataPlan(view: ViewId, role: AppRole | undefined): ViewDataPlan {
-		if (view === 'dashboard') {
-			return {
-				collections:
-					role === 'STUDENT'
-						? (['enrollments', 'grades'] as DataCollectionKey[])
-						: (['classrooms'] as DataCollectionKey[]),
-				requiresSchedulePreview: true
-			};
+		return viewDataPlanForRole(view, role) as ViewDataPlan;
+	}
+
+	function getViewIssues(view: ViewId, role: AppRole | undefined): string[] {
+		const plan = viewDataPlan(view, role);
+		const keys = new Set<DataCollectionKey>(plan.collections);
+		if (plan.requiresSchedulePreview) {
+			keys.add('enrollments');
 		}
-		if (view === 'calendar') {
-			return {
-				collections: ['courses', 'classrooms', 'lecturers'] as DataCollectionKey[],
-				requiresSchedulePreview: true
-			};
-		}
-		if (view === 'builder') {
-			return {
-				collections: ['courses', 'classrooms', 'lecturers', 'enrollments'] as DataCollectionKey[],
-				requiresSchedulePreview: true
-			};
-		}
-		if (view === 'classrooms') {
-			return {
-				collections: ['classrooms'] as DataCollectionKey[],
-				requiresSchedulePreview: false
-			};
-		}
-		if (view === 'courses') {
-			return {
-				collections: ['courses', 'studyPrograms', 'lecturers'] as DataCollectionKey[],
-				requiresSchedulePreview: false
-			};
-		}
-		if (view === 'students') {
-			return {
-				collections: ['students', 'studyPrograms'] as DataCollectionKey[],
-				requiresSchedulePreview: false
-			};
-		}
-		if (view === 'lecturers') {
-			return {
-				collections: ['lecturers'] as DataCollectionKey[],
-				requiresSchedulePreview: false
-			};
-		}
-		if (view === 'faculties') {
-			return {
-				collections: ['faculties'] as DataCollectionKey[],
-				requiresSchedulePreview: false
-			};
-		}
-		if (view === 'studyPrograms') {
-			return {
-				collections: ['studyPrograms', 'faculties'] as DataCollectionKey[],
-				requiresSchedulePreview: false
-			};
-		}
-		if (view === 'enrollments') {
-			return {
-				collections: ['enrollments', 'courses', 'classrooms', 'lecturers'] as DataCollectionKey[],
-				requiresSchedulePreview: false
-			};
-		}
-		if (view === 'grades') {
-			return {
-				collections: ['grades', 'enrollments', 'courses'] as DataCollectionKey[],
-				requiresSchedulePreview: false
-			};
-		}
-		return {
-			collections: ['users'] as DataCollectionKey[],
-			requiresSchedulePreview: false
-		};
+
+		return Array.from(keys)
+			.map((key) => collectionIssues[key])
+			.filter((message): message is string => Boolean(message));
 	}
 
 	async function ensureViewData(view: ViewId, force = false) {
@@ -1943,7 +1868,14 @@
 		for (const key of plan.collections) {
 			if (!force && collectionLoaded[key]) continue;
 			tasks.push(
-				loadCollection(key, () => collectionRefresher(key)(null), collectionFallbackMessage(key))
+				loadCollection({
+					key,
+					loader: () => collectionRefreshers[key](null),
+					fallback: collectionFallbackMessages[key],
+					clearIssue: clearCollectionIssue,
+					setIssue: setCollectionIssue,
+					errorMessage
+				})
 			);
 		}
 
@@ -1960,7 +1892,14 @@
 
 	async function refreshCollectionData(key: DataCollectionKey, force = false) {
 		if (!force && !collectionLoaded[key]) return;
-		await loadCollection(key, () => collectionRefresher(key)(), collectionFallbackMessage(key));
+		await loadCollection({
+			key,
+			loader: () => collectionRefreshers[key](),
+			fallback: collectionFallbackMessages[key],
+			clearIssue: clearCollectionIssue,
+			setIssue: setCollectionIssue,
+			errorMessage
+		});
 	}
 
 	async function refreshSchedulePreviewData(force = false) {
@@ -2011,45 +1950,130 @@
 		}
 	}
 
-	function collectionRefresher(key: DataCollectionKey) {
-		const refreshers: Record<DataCollectionKey, (cursor?: string | null) => Promise<void>> = {
-			classrooms: refreshClassrooms,
-			courses: refreshCourses,
-			students: refreshStudents,
-			lecturers: refreshLecturers,
-			faculties: refreshFaculties,
-			studyPrograms: refreshStudyPrograms,
-			enrollments: refreshEnrollments,
-			grades: refreshGrades,
-			users: refreshUsers
+	const collectionRequesters: Record<
+		DataCollectionKey,
+		(
+			cursor: string | null
+		) =>
+			| Promise<LimitedCollectionResponse<unknown>>
+			| { run: () => Promise<LimitedCollectionResponse<unknown>> }
+	> = {
+		classrooms: requestClassroomsPage,
+		courses: requestCoursesPage,
+		students: requestStudentsPage,
+		lecturers: requestLecturersPage,
+		faculties: requestFacultiesPage,
+		studyPrograms: requestStudyProgramsPage,
+		enrollments: requestEnrollmentsPage,
+		grades: requestGradesPage,
+		users: requestUsersPage
+	};
+
+	const collectionAssigners: Record<DataCollectionKey, (items: unknown[]) => void> = {
+		classrooms: (items) => (classrooms = items as SelectClassRoomsResult[]),
+		courses: (items) => (courses = items as SelectCoursesResult[]),
+		students: (items) => (students = items as SelectStudentsResult[]),
+		lecturers: (items) => (lecturers = items as SelectLecturersResult[]),
+		faculties: (items) => (faculties = items as SelectFacultiesResult[]),
+		studyPrograms: (items) => (studyPrograms = items as SelectStudyProgramsResult[]),
+		enrollments: (items) => (enrollments = items as SelectEnrollmentsResult[]),
+		grades: (items) => (grades = items as SelectGradesResult[]),
+		users: (items) => (users = items as SelectUsersResult[])
+	};
+
+	const collectionRefreshers: Record<DataCollectionKey, (cursor?: string | null) => Promise<void>> =
+		{
+			classrooms: (cursor = collectionPagination.classrooms.currentCursor) =>
+				loadCollectionPage({
+					key: 'classrooms',
+					cursor,
+					request: requestClassroomsPage,
+					assign: (items) => (classrooms = items),
+					setPagination: setCollectionPagination,
+					getPagination: (key) => collectionPagination[key],
+					markLoaded: (key) => (collectionLoaded = { ...collectionLoaded, [key]: true })
+				}),
+			courses: (cursor = collectionPagination.courses.currentCursor) =>
+				loadCollectionPage({
+					key: 'courses',
+					cursor,
+					request: requestCoursesPage,
+					assign: (items) => (courses = items),
+					setPagination: setCollectionPagination,
+					getPagination: (key) => collectionPagination[key],
+					markLoaded: (key) => (collectionLoaded = { ...collectionLoaded, [key]: true })
+				}),
+			students: (cursor = collectionPagination.students.currentCursor) =>
+				loadCollectionPage({
+					key: 'students',
+					cursor,
+					request: requestStudentsPage,
+					assign: (items) => (students = items),
+					setPagination: setCollectionPagination,
+					getPagination: (key) => collectionPagination[key],
+					markLoaded: (key) => (collectionLoaded = { ...collectionLoaded, [key]: true })
+				}),
+			lecturers: (cursor = collectionPagination.lecturers.currentCursor) =>
+				loadCollectionPage({
+					key: 'lecturers',
+					cursor,
+					request: requestLecturersPage,
+					assign: (items) => (lecturers = items),
+					setPagination: setCollectionPagination,
+					getPagination: (key) => collectionPagination[key],
+					markLoaded: (key) => (collectionLoaded = { ...collectionLoaded, [key]: true })
+				}),
+			faculties: (cursor = collectionPagination.faculties.currentCursor) =>
+				loadCollectionPage({
+					key: 'faculties',
+					cursor,
+					request: requestFacultiesPage,
+					assign: (items) => (faculties = items),
+					setPagination: setCollectionPagination,
+					getPagination: (key) => collectionPagination[key],
+					markLoaded: (key) => (collectionLoaded = { ...collectionLoaded, [key]: true })
+				}),
+			studyPrograms: (cursor = collectionPagination.studyPrograms.currentCursor) =>
+				loadCollectionPage({
+					key: 'studyPrograms',
+					cursor,
+					request: requestStudyProgramsPage,
+					assign: (items) => (studyPrograms = items),
+					setPagination: setCollectionPagination,
+					getPagination: (key) => collectionPagination[key],
+					markLoaded: (key) => (collectionLoaded = { ...collectionLoaded, [key]: true })
+				}),
+			enrollments: (cursor = collectionPagination.enrollments.currentCursor) =>
+				loadCollectionPage({
+					key: 'enrollments',
+					cursor,
+					request: requestEnrollmentsPage,
+					assign: (items) => (enrollments = items),
+					setPagination: setCollectionPagination,
+					getPagination: (key) => collectionPagination[key],
+					markLoaded: (key) => (collectionLoaded = { ...collectionLoaded, [key]: true })
+				}),
+			grades: (cursor = collectionPagination.grades.currentCursor) =>
+				loadCollectionPage({
+					key: 'grades',
+					cursor,
+					request: requestGradesPage,
+					assign: (items) => (grades = items),
+					setPagination: setCollectionPagination,
+					getPagination: (key) => collectionPagination[key],
+					markLoaded: (key) => (collectionLoaded = { ...collectionLoaded, [key]: true })
+				}),
+			users: (cursor = collectionPagination.users.currentCursor) =>
+				loadCollectionPage({
+					key: 'users',
+					cursor,
+					request: requestUsersPage,
+					assign: (items) => (users = items),
+					setPagination: setCollectionPagination,
+					getPagination: (key) => collectionPagination[key],
+					markLoaded: (key) => (collectionLoaded = { ...collectionLoaded, [key]: true })
+				})
 		};
-
-		return refreshers[key];
-	}
-
-	function requestCollectionPage(key: DataCollectionKey, cursor: string | null) {
-		if (key === 'classrooms') return requestClassroomsPage(cursor);
-		if (key === 'courses') return requestCoursesPage(cursor);
-		if (key === 'students') return requestStudentsPage(cursor);
-		if (key === 'lecturers') return requestLecturersPage(cursor);
-		if (key === 'faculties') return requestFacultiesPage(cursor);
-		if (key === 'studyPrograms') return requestStudyProgramsPage(cursor);
-		if (key === 'enrollments') return requestEnrollmentsPage(cursor);
-		if (key === 'grades') return requestGradesPage(cursor);
-		return requestUsersPage(cursor);
-	}
-
-	function assignCollectionItems(key: DataCollectionKey, items: unknown[]) {
-		if (key === 'classrooms') classrooms = items as SelectClassRoomsResult[];
-		if (key === 'courses') courses = items as SelectCoursesResult[];
-		if (key === 'students') students = items as SelectStudentsResult[];
-		if (key === 'lecturers') lecturers = items as SelectLecturersResult[];
-		if (key === 'faculties') faculties = items as SelectFacultiesResult[];
-		if (key === 'studyPrograms') studyPrograms = items as SelectStudyProgramsResult[];
-		if (key === 'enrollments') enrollments = items as SelectEnrollmentsResult[];
-		if (key === 'grades') grades = items as SelectGradesResult[];
-		if (key === 'users') users = items as SelectUsersResult[];
-	}
 
 	function queueCollectionRefresh(key: DataCollectionKey, delay = 220) {
 		if (!browser || !loadedForUserId) return;
@@ -2064,11 +2088,14 @@
 					setCollectionIssue('enrollments', errorMessage(error, 'Pratinjau jadwal gagal dimuat.'));
 				});
 			}
-			void loadCollection(
+			void loadCollection({
 				key,
-				() => collectionRefresher(key)(null),
-				collectionFallbackMessage(key)
-			);
+				loader: () => collectionRefreshers[key](null),
+				fallback: collectionFallbackMessages[key],
+				clearIssue: clearCollectionIssue,
+				setIssue: setCollectionIssue,
+				errorMessage
+			});
 		}, delay);
 	}
 
@@ -2077,18 +2104,25 @@
 		if (direction === 'next') {
 			if (!pageState.nextCursor) return;
 			const nextHistory = [...pageState.history, pageState.currentCursor];
-			await loadCollection(
+			await loadCollection({
 				key,
-				() =>
-					loadCollectionPage(
+				loader: () =>
+					loadCollectionPage({
 						key,
-						pageState.nextCursor,
-						(cursor) => requestCollectionPage(key, cursor),
-						(items) => assignCollectionItems(key, items as unknown[]),
-						{ history: nextHistory, pageNumber: pageState.pageNumber + 1 }
-					),
-				collectionFallbackMessage(key)
-			);
+						cursor: pageState.nextCursor,
+						request: (cursor) => collectionRequesters[key](cursor),
+						assign: (items) => collectionAssigners[key](items as unknown[]),
+						meta: { history: nextHistory, pageNumber: pageState.pageNumber + 1 },
+						setPagination: setCollectionPagination,
+						getPagination: (paginationKey) => collectionPagination[paginationKey],
+						markLoaded: (loadedKey) =>
+							(collectionLoaded = { ...collectionLoaded, [loadedKey]: true })
+					}),
+				fallback: collectionFallbackMessages[key],
+				clearIssue: clearCollectionIssue,
+				setIssue: setCollectionIssue,
+				errorMessage
+			});
 			return;
 		}
 
@@ -2096,18 +2130,27 @@
 		const nextHistory = [...pageState.history];
 		const previousCursor = nextHistory.pop() ?? null;
 
-		await loadCollection(
+		await loadCollection({
 			key,
-			() =>
-				loadCollectionPage(
+			loader: () =>
+				loadCollectionPage({
 					key,
-					previousCursor,
-					(cursor) => requestCollectionPage(key, cursor),
-					(items) => assignCollectionItems(key, items as unknown[]),
-					{ history: nextHistory, pageNumber: Math.max(1, pageState.pageNumber - 1) }
-				),
-			collectionFallbackMessage(key)
-		);
+					cursor: previousCursor,
+					request: (cursor) => collectionRequesters[key](cursor),
+					assign: (items) => collectionAssigners[key](items as unknown[]),
+					meta: {
+						history: nextHistory,
+						pageNumber: Math.max(1, pageState.pageNumber - 1)
+					},
+					setPagination: setCollectionPagination,
+					getPagination: (paginationKey) => collectionPagination[paginationKey],
+					markLoaded: (loadedKey) => (collectionLoaded = { ...collectionLoaded, [loadedKey]: true })
+				}),
+			fallback: collectionFallbackMessages[key],
+			clearIssue: clearCollectionIssue,
+			setIssue: setCollectionIssue,
+			errorMessage
+		});
 	}
 
 	$effect(() => {
@@ -2488,8 +2531,15 @@
 			selectedEnrollmentRecord ??
 			null
 	);
+	const builderMode = $derived.by<BuilderMode>(() => {
+		if (!selectedEnrollmentId) return 'create';
+		return selectedEnrollment?.status === 'PENDING' ? 'approve' : 'edit';
+	});
 	const selectedGrade = $derived(
 		grades.find((item) => item.id === selectedGradeId) ?? selectedGradeRecord ?? null
+	);
+	const approvedEnrollmentOptions = $derived(
+		enrollments.filter((item) => item.status === 'APPROVED')
 	);
 	const selectedGradeEnrollment = $derived(
 		enrollments.find((item) => item.id === gradeDraft.enrollmentId) ?? null
@@ -2750,10 +2800,10 @@
 	const timeStepReady = $derived(
 		Boolean(
 			enrollmentDraft.day &&
-				enrollmentDraft.startTime &&
-				enrollmentDraft.endTime &&
-				enrollmentDraft.semester &&
-				enrollmentDraft.academicYear
+			enrollmentDraft.startTime &&
+			enrollmentDraft.endTime &&
+			enrollmentDraft.semester &&
+			enrollmentDraft.academicYear
 		) && enrollmentDraft.startTime < enrollmentDraft.endTime
 	);
 	const builderTaskMode = $derived(Boolean(selectedEnrollmentId || builderStep !== 'participant'));
@@ -2790,163 +2840,160 @@
 		return `${dayLabel} • ${formatTimeRange(parseISO(enrollmentDraft.startTime, timezone), parseISO(enrollmentDraft.endTime, timezone), timezone)}`;
 	});
 
-	function pickClassroom(item: SelectClassRoomsResult) {
+	function beginRecordSelection() {
 		pendingDelete = null;
 		stopEditing();
-		selectedRoomId = item.id ?? null;
-		selectedRoomRecord = item;
-		classroomDraft = {
-			name: item.name ?? '',
-			classRoomType: item.class_room_type ?? 'REGULER',
-			capacity: item.capacity ?? 30,
-			hasProjector: Boolean(item.has_projector),
-			hasAC: Boolean(item.has_ac)
-		};
-		if (item.id) {
-			void getClassRoom(item.id)
-				.run()
-				.then((full) => {
-					if (selectedRoomId !== item.id) return;
-					selectedRoomRecord = full;
-					classroomDraft = {
-						name: full.name ?? '',
-						classRoomType: full.class_room_type ?? 'REGULER',
-						capacity: full.capacity ?? 30,
-						hasProjector: Boolean(full.has_projector),
-						hasAC: Boolean(full.has_ac)
-					};
-				});
-		}
+	}
+
+	function pickClassroom(item: SelectClassRoomsResult) {
+		selectEntityRecord({
+			item,
+			beforeSelect: beginRecordSelection,
+			setSelectedId: (id) => (selectedRoomId = id),
+			setSelectedRecord: (value) => (selectedRoomRecord = value as SelectClassRoomsResult),
+			applyInitial: (value) => {
+				classroomDraft = {
+					name: value.name ?? '',
+					classRoomType: value.class_room_type ?? 'REGULER',
+					capacity: value.capacity ?? 30,
+					hasProjector: Boolean(value.has_projector),
+					hasAC: Boolean(value.has_ac)
+				};
+			},
+			loadFull: (id) => getClassRoom(id).run(),
+			isCurrent: () => selectedRoomId === item.id,
+			applyLoaded: (full) => {
+				classroomDraft = {
+					name: full.name ?? '',
+					classRoomType: full.class_room_type ?? 'REGULER',
+					capacity: full.capacity ?? 30,
+					hasProjector: Boolean(full.has_projector),
+					hasAC: Boolean(full.has_ac)
+				};
+			}
+		});
 	}
 
 	function pickCourse(item: SelectCoursesResult) {
-		pendingDelete = null;
-		stopEditing();
-		selectedCourseId = item.id ?? null;
-		selectedCourseRecord = item;
-		courseDraft = {
-			id: item.id ?? '',
-			name: item.name ?? '',
-			credits: item.credits ?? 3,
-			studyProgramId: item.study_program_id ?? '',
-			lecturerId: item.lecturer_id ?? ''
-		};
-		if (item.id) {
-			void getCourse(item.id)
-				.run()
-				.then((full) => {
-					if (selectedCourseId !== item.id) return;
-					// Only update the detail record — never touch courseDraft here.
-					// The list item already contains every field the editor needs
-					// (id, name, credits, study_program_id, lecturer_id). Overwriting
-					// courseDraft from this async result races with any edits the user
-					// may have already started in the form.
-					selectedCourseRecord = full;
-				});
-		}
+		selectEntityRecord({
+			item,
+			beforeSelect: beginRecordSelection,
+			setSelectedId: (id) => (selectedCourseId = id),
+			setSelectedRecord: (value) => (selectedCourseRecord = value as SelectCoursesResult),
+			applyInitial: (value) => {
+				courseDraft = {
+					id: value.id ?? '',
+					name: value.name ?? '',
+					credits: value.credits ?? 3,
+					studyProgramId: value.study_program_id ?? '',
+					lecturerId: value.lecturer_id ?? ''
+				};
+			},
+			loadFull: (id) => getCourse(id).run(),
+			isCurrent: () => selectedCourseId === item.id
+		});
 	}
 
 	function pickStudent(item: SelectStudentsResult) {
-		pendingDelete = null;
-		stopEditing();
-		selectedStudentId = item.id ?? null;
-		selectedStudentRecord = item;
-		studentDraft = {
-			name: item.name ?? '',
-			email: item.email ?? '',
-			phone: item.phone ?? '',
-			address: item.address ?? '',
-			yearAdmitted: item.year_admitted ?? 2024,
-			studyProgramId: item.study_program_id ?? ''
-		};
-		if (item.id) {
-			void getStudent(item.id)
-				.run()
-				.then((full) => {
-					if (selectedStudentId !== item.id) return;
-					selectedStudentRecord = full;
-					studentDraft = {
-						name: full.name ?? '',
-						email: full.email ?? '',
-						phone: full.phone ?? '',
-						address: full.address ?? '',
-						yearAdmitted: full.year_admitted ?? 2024,
-						studyProgramId: full.study_program_id ?? ''
-					};
-				});
-		}
+		selectEntityRecord({
+			item,
+			beforeSelect: beginRecordSelection,
+			setSelectedId: (id) => (selectedStudentId = id),
+			setSelectedRecord: (value) => (selectedStudentRecord = value as SelectStudentsResult),
+			applyInitial: (value) => {
+				studentDraft = {
+					name: value.name ?? '',
+					email: value.email ?? '',
+					phone: value.phone ?? '',
+					address: value.address ?? '',
+					yearAdmitted: value.year_admitted ?? 2024,
+					studyProgramId: value.study_program_id ?? ''
+				};
+			},
+			loadFull: (id) => getStudent(id).run(),
+			isCurrent: () => selectedStudentId === item.id,
+			applyLoaded: (full) => {
+				studentDraft = {
+					name: full.name ?? '',
+					email: full.email ?? '',
+					phone: full.phone ?? '',
+					address: full.address ?? '',
+					yearAdmitted: full.year_admitted ?? 2024,
+					studyProgramId: full.study_program_id ?? ''
+				};
+			}
+		});
 	}
 
 	function pickLecturer(item: SelectLecturersResult) {
-		pendingDelete = null;
-		stopEditing();
-		selectedLecturerId = item.id ?? null;
-		selectedLecturerRecord = item;
-		lecturerDraft = {
-			id: item.id ?? '',
-			name: item.name ?? '',
-			email: item.email ?? '',
-			phone: item.phone ?? '',
-			address: item.address ?? ''
-		};
-		if (item.id) {
-			void getLecturer(item.id)
-				.run()
-				.then((full) => {
-					if (selectedLecturerId !== item.id) return;
-					selectedLecturerRecord = full;
-					lecturerDraft = {
-						id: full.id ?? '',
-						name: full.name ?? '',
-						email: full.email ?? '',
-						phone: full.phone ?? '',
-						address: full.address ?? ''
-					};
-				});
-		}
+		selectEntityRecord({
+			item,
+			beforeSelect: beginRecordSelection,
+			setSelectedId: (id) => (selectedLecturerId = id),
+			setSelectedRecord: (value) => (selectedLecturerRecord = value as SelectLecturersResult),
+			applyInitial: (value) => {
+				lecturerDraft = {
+					id: value.id ?? '',
+					name: value.name ?? '',
+					email: value.email ?? '',
+					phone: value.phone ?? '',
+					address: value.address ?? ''
+				};
+			},
+			loadFull: (id) => getLecturer(id).run(),
+			isCurrent: () => selectedLecturerId === item.id,
+			applyLoaded: (full) => {
+				lecturerDraft = {
+					id: full.id ?? '',
+					name: full.name ?? '',
+					email: full.email ?? '',
+					phone: full.phone ?? '',
+					address: full.address ?? ''
+				};
+			}
+		});
 	}
 
 	function pickFaculty(item: SelectFacultiesResult) {
-		pendingDelete = null;
-		stopEditing();
-		selectedFacultyId = item.id ?? null;
-		selectedFacultyRecord = item;
-		facultyDraft = { id: item.id ?? '', name: item.name ?? '' };
-		if (item.id) {
-			void getFaculty(item.id)
-				.run()
-				.then((full) => {
-					if (selectedFacultyId !== item.id) return;
-					selectedFacultyRecord = full;
-				});
-		}
+		selectEntityRecord({
+			item,
+			beforeSelect: beginRecordSelection,
+			setSelectedId: (id) => (selectedFacultyId = id),
+			setSelectedRecord: (value) => (selectedFacultyRecord = value as SelectFacultiesResult),
+			applyInitial: (value) => {
+				facultyDraft = { id: value.id ?? '', name: value.name ?? '' };
+			},
+			loadFull: (id) => getFaculty(id).run(),
+			isCurrent: () => selectedFacultyId === item.id
+		});
 	}
 
 	function pickStudyProgram(item: SelectStudyProgramsResult) {
-		pendingDelete = null;
-		stopEditing();
-		selectedStudyProgramId = item.id ?? null;
-		selectedStudyProgramRecord = item;
-		studyProgramDraft = {
-			id: item.id ?? '',
-			name: item.name ?? '',
-			head: item.head ?? '',
-			facultyId: item.faculty_id ?? ''
-		};
-		if (item.id) {
-			void getStudyProgram(item.id)
-				.run()
-				.then((full) => {
-					if (selectedStudyProgramId !== item.id) return;
-					selectedStudyProgramRecord = full;
-					studyProgramDraft = {
-						id: full.id ?? '',
-						name: full.name ?? '',
-						head: full.head ?? '',
-						facultyId: full.faculty_id ?? ''
-					};
-				});
-		}
+		selectEntityRecord({
+			item,
+			beforeSelect: beginRecordSelection,
+			setSelectedId: (id) => (selectedStudyProgramId = id),
+			setSelectedRecord: (value) =>
+				(selectedStudyProgramRecord = value as SelectStudyProgramsResult),
+			applyInitial: (value) => {
+				studyProgramDraft = {
+					id: value.id ?? '',
+					name: value.name ?? '',
+					head: value.head ?? '',
+					facultyId: value.faculty_id ?? ''
+				};
+			},
+			loadFull: (id) => getStudyProgram(id).run(),
+			isCurrent: () => selectedStudyProgramId === item.id,
+			applyLoaded: (full) => {
+				studyProgramDraft = {
+					id: full.id ?? '',
+					name: full.name ?? '',
+					head: full.head ?? '',
+					facultyId: full.faculty_id ?? ''
+				};
+			}
+		});
 	}
 
 	function pickEnrollment(item: SelectEnrollmentsResult) {
@@ -3017,32 +3064,40 @@
 	}
 
 	function pickGrade(item: SelectGradesResult) {
-		pendingDelete = null;
-		stopEditing();
-		selectedGradeId = item.id ?? null;
-		selectedGradeRecord = item;
-		gradeDraft = {
-			id: item.id ?? '',
-			enrollmentId: item.enrollment_id ?? '',
-			assignmentScore: item.assignment_score ?? 80,
-			midtermScore: item.midterm_score ?? 80,
-			finalScore: item.final_score ?? 80
-		};
+		selectEntityRecord({
+			item,
+			beforeSelect: beginRecordSelection,
+			setSelectedId: (id) => (selectedGradeId = id),
+			setSelectedRecord: (value) => (selectedGradeRecord = value as SelectGradesResult),
+			applyInitial: (value) => {
+				gradeDraft = {
+					id: value.id ?? '',
+					enrollmentId: value.enrollment_id ?? '',
+					assignmentScore: value.assignment_score ?? 80,
+					midtermScore: value.midterm_score ?? 80,
+					finalScore: value.final_score ?? 80
+				};
+			}
+		});
 	}
 
 	function pickUser(item: SelectUsersResult) {
-		pendingDelete = null;
-		stopEditing();
-		selectedUserId = item.id ?? null;
-		selectedUserRecord = item;
-		userDraft = {
-			id: item.id ?? '',
-			email: item.email ?? '',
-			password: '',
-			role: item.role ?? 'ADMIN',
-			studentId: item.student_id ?? '',
-			lecturerId: item.lecturer_id ?? ''
-		};
+		selectEntityRecord({
+			item,
+			beforeSelect: beginRecordSelection,
+			setSelectedId: (id) => (selectedUserId = id),
+			setSelectedRecord: (value) => (selectedUserRecord = value as SelectUsersResult),
+			applyInitial: (value) => {
+				userDraft = {
+					id: value.id ?? '',
+					email: value.email ?? '',
+					password: '',
+					role: value.role ?? 'ADMIN',
+					studentId: value.student_id ?? '',
+					lecturerId: value.lecturer_id ?? ''
+				};
+			}
+		});
 	}
 
 	function toggleUserSelection(id: string) {
@@ -3070,39 +3125,92 @@
 		bulkUserPassword = '';
 	}
 
-	function clearSelection(view: ViewId) {
+	function requireCurrentRole() {
+		return currentUser.current!.role as AppRole;
+	}
+
+	function openBulkEditor(activeView: EditableView, bulkView: EditableView) {
+		stopEditing(activeView);
+		editorView = bulkView;
+	}
+
+	function openBulkDelete(options: {
+		kind: DeleteKind;
+		ids: string[];
+		label: string;
+		successMessage: string;
+		failureMessage: string;
+	}) {
+		pendingDelete = {
+			kind: options.kind,
+			id: options.ids.join(','),
+			label: options.label,
+			message: `Anda akan menghapus ${options.label}. Tindakan ini tidak dapat dibatalkan.`,
+			confirmLabel: 'Ya, hapus semua',
+			successMessage: options.successMessage,
+			failureMessage: options.failureMessage
+		};
+	}
+
+	function confirmPendingDelete() {
+		return removeEntity(pendingDelete!.kind, pendingDelete!.id);
+	}
+
+	function cancelPendingDelete() {
 		pendingDelete = null;
-		if (view === 'classrooms') {
+	}
+
+	function createBulkDeleteAction(options: {
+		kind: DeleteKind;
+		bulkKey: keyof typeof bulkSelectedIds;
+		noun: string;
+		successMessage: string;
+		failureMessage: string;
+	}) {
+		return () => {
+			const count = bulkCount(options.bulkKey);
+			openBulkDelete({
+				kind: options.kind,
+				ids: bulkGetIds(options.bulkKey),
+				label: `${count} ${options.noun}`,
+				successMessage: options.successMessage,
+				failureMessage: options.failureMessage
+			});
+		};
+	}
+
+	const clearSelectionHandlers: Partial<Record<ViewId, () => void>> = {
+		classrooms: () => {
 			selectedRoomId = null;
 			selectedRoomRecord = null;
 			classroomDraft = emptyClassRoomDraft();
-		}
-		if (view === 'courses') {
+		},
+		courses: () => {
 			selectedCourseId = null;
 			selectedCourseRecord = null;
 			courseDraft = emptyCourseDraft();
-		}
-		if (view === 'students') {
+		},
+		students: () => {
 			selectedStudentId = null;
 			selectedStudentRecord = null;
 			studentDraft = emptyStudentDraft();
-		}
-		if (view === 'lecturers') {
+		},
+		lecturers: () => {
 			selectedLecturerId = null;
 			selectedLecturerRecord = null;
 			lecturerDraft = emptyLecturerDraft();
-		}
-		if (view === 'faculties') {
+		},
+		faculties: () => {
 			selectedFacultyId = null;
 			selectedFacultyRecord = null;
 			facultyDraft = emptyFacultyDraft();
-		}
-		if (view === 'studyPrograms') {
+		},
+		studyPrograms: () => {
 			selectedStudyProgramId = null;
 			selectedStudyProgramRecord = null;
 			studyProgramDraft = emptyStudyProgramDraft();
-		}
-		if (view === 'enrollments' || view === 'builder') {
+		},
+		enrollments: () => {
 			selectedEnrollmentId = null;
 			selectedEnrollmentRecord = null;
 			enrollmentDraft = emptyEnrollmentDraft();
@@ -3121,29 +3229,40 @@
 			coursePickerNextCursor = null;
 			studentPickerIssue = null;
 			coursePickerIssue = null;
-		}
-		if (view === 'grades') {
+		},
+		builder: () => {
+			clearSelectionHandlers.enrollments?.();
+		},
+		grades: () => {
 			selectedGradeId = null;
 			selectedGradeRecord = null;
 			gradeDraft = emptyGradeDraft();
 			gradeLetterFilter = '';
 			gradeCourseFilter = '';
-		}
-		if (view === 'users') {
+		},
+		users: () => {
 			selectedUserId = null;
 			selectedUserRecord = null;
 			userDraft = emptyUserDraft();
 		}
+	};
+
+	function clearSelection(view: ViewId) {
+		pendingDelete = null;
+		clearSelectionHandlers[view]?.();
 	}
 
 	async function ensureGradeEditorData() {
 		if (currentUser.current?.role === 'STUDENT') return;
 		if (collectionLoaded.enrollments || collectionPagination.enrollments.loading) return;
-		await loadCollection(
-			'enrollments',
-			() => refreshEnrollments(null),
-			collectionFallbackMessage('enrollments')
-		);
+		await loadCollection({
+			key: 'enrollments',
+			loader: () => collectionRefreshers.enrollments(null),
+			fallback: collectionFallbackMessages.enrollments,
+			clearIssue: clearCollectionIssue,
+			setIssue: setCollectionIssue,
+			errorMessage
+		});
 	}
 
 	function beginCreate(view: EditableView) {
@@ -3168,109 +3287,38 @@
 		if (!view || editorView === view) editorView = null;
 	}
 
+	type EntityDeleteKind = Exclude<DeleteKind, `bulk-${string}` | 'bulk-user'>;
+
 	function requestDelete(kind: DeleteKind, id: string) {
 		if (!id) return;
-		if (kind === 'classroom') {
-			pendingDelete = {
-				kind,
-				id,
-				label: selectedRoom?.name ?? 'ruang ini',
-				message:
-					'Ruang ini akan dihapus dari inventaris. Pastikan tidak ada jadwal aktif yang masih bergantung pada ruang ini.',
-				confirmLabel: 'Ya, hapus ruang',
-				successMessage: 'Ruang dihapus dari inventaris.',
-				failureMessage: 'Ruang belum bisa dihapus. Periksa apakah ruang masih dipakai.'
-			};
+		if (
+			![
+				'classroom',
+				'course',
+				'student',
+				'lecturer',
+				'faculty',
+				'studyProgram',
+				'enrollment',
+				'grade'
+			].includes(kind)
+		)
 			return;
-		}
-		if (kind === 'course') {
-			pendingDelete = {
-				kind,
-				id,
-				label: selectedCourse?.name ?? 'mata kuliah ini',
-				message:
-					'Mata kuliah ini akan dihapus dari katalog. Pastikan perubahan ini tidak mengganggu jadwal atau KRS yang masih aktif.',
-				confirmLabel: 'Ya, hapus mata kuliah',
-				successMessage: 'Mata kuliah dihapus dari katalog.',
-				failureMessage: 'Mata kuliah belum bisa dihapus. Periksa jadwal dan KRS yang masih terkait.'
-			};
-			return;
-		}
-		if (kind === 'student') {
-			pendingDelete = {
-				kind,
-				id,
-				label: selectedStudent?.name ?? 'mahasiswa ini',
-				message:
-					'Data mahasiswa ini akan dihapus dari data aktif. Pastikan identitas ini tidak lagi dipakai dalam proses akademik berjalan.',
-				confirmLabel: 'Ya, hapus mahasiswa',
-				successMessage: 'Mahasiswa dihapus dari data aktif.',
-				failureMessage: 'Mahasiswa belum bisa dihapus. Periksa data yang masih terkait.'
-			};
-			return;
-		}
-		if (kind === 'lecturer') {
-			pendingDelete = {
-				kind,
-				id,
-				label: selectedLecturer?.name ?? 'dosen ini',
-				message:
-					'Dosen ini akan dihapus dari daftar pengampu. Pastikan jadwal, mata kuliah, dan akun terkait sudah diperiksa.',
-				confirmLabel: 'Ya, hapus dosen',
-				successMessage: 'Dosen dihapus dari daftar pengampu.',
-				failureMessage: 'Dosen belum bisa dihapus. Periksa jadwal atau akun yang masih terhubung.'
-			};
-			return;
-		}
-		if (kind === 'faculty') {
-			pendingDelete = {
-				kind,
-				id,
-				label: selectedFaculty?.name ?? 'fakultas ini',
-				message:
-					'Fakultas ini akan dihapus dari struktur akademik. Pastikan tidak ada program studi aktif yang masih bergantung padanya.',
-				confirmLabel: 'Ya, hapus fakultas',
-				successMessage: 'Fakultas dihapus dari struktur akademik.',
-				failureMessage: 'Fakultas belum bisa dihapus. Periksa program studi yang masih terkait.'
-			};
-			return;
-		}
-		if (kind === 'studyProgram') {
-			pendingDelete = {
-				kind,
-				id,
-				label: selectedStudyProgram?.name ?? 'program studi ini',
-				message:
-					'Program studi ini akan dihapus dari struktur akademik. Pastikan mahasiswa dan mata kuliah terkait sudah ditinjau.',
-				confirmLabel: 'Ya, hapus program studi',
-				successMessage: 'Program studi dihapus dari struktur akademik.',
-				failureMessage: 'Program studi belum bisa dihapus. Periksa data yang masih terhubung.'
-			};
-			return;
-		}
-		if (kind === 'enrollment') {
-			pendingDelete = {
-				kind,
-				id,
-				label: selectedEnrollment?.course_name ?? 'jadwal ini',
-				message:
-					'KRS dan jadwal ini akan dihapus dari periode aktif. Lanjutkan hanya jika perubahan ini sudah final.',
-				confirmLabel: 'Ya, hapus jadwal',
-				successMessage: 'Jadwal dihapus dari periode aktif.',
-				failureMessage: 'Jadwal belum bisa dihapus. Periksa data KRS yang masih dipakai.'
-			};
-			return;
-		}
-		pendingDelete = {
-			kind,
-			id,
-			label: selectedGrade?.course_name ?? 'nilai ini',
-			message:
-				'Nilai ini akan dihapus dari rekap hasil. Jika masih diperlukan, Anda perlu memasukkannya lagi setelah penghapusan.',
-			confirmLabel: 'Ya, hapus nilai',
-			successMessage: 'Nilai dihapus dari rekap hasil.',
-			failureMessage: 'Nilai belum bisa dihapus. Periksa apakah data masih dipakai di rekap.'
+		const labels: Record<EntityDeleteKind, string | null | undefined> = {
+			classroom: selectedRoom?.name,
+			course: selectedCourse?.name,
+			student: selectedStudent?.name,
+			lecturer: selectedLecturer?.name,
+			faculty: selectedFaculty?.name,
+			studyProgram: selectedStudyProgram?.name,
+			enrollment: selectedEnrollment?.course_name,
+			grade: selectedGrade?.course_name
 		};
+		pendingDelete = buildEntityDeleteIntent({
+			kind: kind as EntityDeleteKind,
+			id,
+			label: labels[kind as EntityDeleteKind]
+		});
 	}
 
 	const loginEnhance = loginUser.enhance(async ({ submit }: { submit: () => Promise<boolean> }) => {
@@ -3305,19 +3353,22 @@
 		}
 	);
 
-	const createClassRoomEnhance = createEnhancer(createClassRoom, async () => {
-		await refreshDependencies({
-			collections: ['classrooms', 'enrollments'],
-			includeSchedulePreview: true,
-			includeConflictAudit: true
-		});
-		clearSelection('classrooms');
-		stopEditing('classrooms');
-		setFeedback('success', 'Ruang kelas baru berhasil ditambahkan.');
+	const createClassRoomEnhance = buildCreateRefreshEnhancer({
+		createEnhancer,
+		form: createClassRoom,
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(classroomScheduleRefreshPlan),
+		after: () => {
+			clearSelection('classrooms');
+			stopEditing('classrooms');
+		},
+		notify: reportSuccess,
+		message: 'Ruang kelas baru berhasil ditambahkan.'
 	});
-	const updateClassRoomEnhance = createOptimisticEnhancer(
-		updateClassRoom,
-		() => {
+	const updateClassRoomEnhance = buildOptimisticRefreshEnhancer({
+		createOptimisticEnhancer,
+		form: updateClassRoom,
+		optimistic: () => {
 			const id = selectedRoomId;
 			if (!id) return;
 			classrooms = classrooms.map((room) =>
@@ -3335,32 +3386,23 @@
 					: room
 			);
 		},
-		async () => {
-			await refreshDependencies({
-				collections: ['classrooms', 'enrollments'],
-				includeSchedulePreview: true,
-				includeConflictAudit: true
-			});
-			stopEditing('classrooms');
-			setFeedback('success', 'Data ruang kelas berhasil diperbarui.');
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(classroomScheduleRefreshPlan),
+		after: () => stopEditing('classrooms'),
+		notify: reportSuccess,
+		message: 'Data ruang kelas berhasil diperbarui.'
+	});
+	const createCourseEnhance = buildCreateRefreshEnhancer({
+		createEnhancer,
+		form: createCourse,
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(courseScheduleGradesRefreshPlan),
+		after: () => {
+			clearSelection('courses');
+			stopEditing('courses');
 		},
-		async () => {
-			await refreshDependencies({
-				collections: ['classrooms', 'enrollments'],
-				includeSchedulePreview: true,
-				includeConflictAudit: true
-			});
-		}
-	);
-	const createCourseEnhance = createEnhancer(createCourse, async () => {
-		await refreshDependencies({
-			collections: ['courses', 'enrollments', 'grades'],
-			includeSchedulePreview: true,
-			includeConflictAudit: true
-		});
-		clearSelection('courses');
-		stopEditing('courses');
-		setFeedback('success', 'Mata kuliah baru berhasil ditambahkan.');
+		notify: reportSuccess,
+		message: 'Mata kuliah baru berhasil ditambahkan.'
 	});
 	const updateCourseEnhance = updateCourse.enhance(
 		async ({ submit }: { submit: () => Promise<boolean> }) => {
@@ -3435,19 +3477,22 @@
 			}
 		}
 	);
-	const createStudentEnhance = createEnhancer(createStudent, async () => {
-		await refreshDependencies({
-			collections: ['students', 'enrollments', 'grades', 'users'],
-			includeSchedulePreview: true,
-			includeConflictAudit: true
-		});
-		clearSelection('students');
-		stopEditing('students');
-		setFeedback('success', 'Mahasiswa baru berhasil ditambahkan.');
+	const createStudentEnhance = buildCreateRefreshEnhancer({
+		createEnhancer,
+		form: createStudent,
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(studentAcademicUsersRefreshPlan),
+		after: () => {
+			clearSelection('students');
+			stopEditing('students');
+		},
+		notify: reportSuccess,
+		message: 'Mahasiswa baru berhasil ditambahkan.'
 	});
-	const updateStudentEnhance = createOptimisticEnhancer(
-		updateStudent,
-		() => {
+	const updateStudentEnhance = buildOptimisticRefreshEnhancer({
+		createOptimisticEnhancer,
+		form: updateStudent,
+		optimistic: () => {
 			const id = selectedStudentId;
 			if (!id) return;
 			students = students.map((student) =>
@@ -3464,36 +3509,28 @@
 					: student
 			);
 		},
-		async () => {
-			await refreshDependencies({
-				collections: ['students', 'enrollments', 'grades', 'users'],
-				includeSchedulePreview: true,
-				includeConflictAudit: true
-			});
-			stopEditing('students');
-			setFeedback('success', 'Profil mahasiswa berhasil diperbarui.');
-		},
-		async () => {
-			await refreshDependencies({
-				collections: ['students', 'enrollments', 'grades', 'users'],
-				includeSchedulePreview: true,
-				includeConflictAudit: true
-			});
-		}
-	);
-	const createLecturerEnhance = createEnhancer(createLecturer, async () => {
-		await refreshDependencies({
-			collections: ['lecturers', 'courses', 'enrollments', 'users'],
-			includeSchedulePreview: true,
-			includeConflictAudit: true
-		});
-		clearSelection('lecturers');
-		stopEditing('lecturers');
-		setFeedback('success', 'Dosen baru berhasil ditambahkan.');
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(studentAcademicUsersRefreshPlan),
+		after: () => stopEditing('students'),
+		notify: reportSuccess,
+		message: 'Profil mahasiswa berhasil diperbarui.'
 	});
-	const updateLecturerEnhance = createOptimisticEnhancer(
-		updateLecturer,
-		() => {
+	const createLecturerEnhance = buildCreateRefreshEnhancer({
+		createEnhancer,
+		form: createLecturer,
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(lecturerCourseUsersRefreshPlan),
+		after: () => {
+			clearSelection('lecturers');
+			stopEditing('lecturers');
+		},
+		notify: reportSuccess,
+		message: 'Dosen baru berhasil ditambahkan.'
+	});
+	const updateLecturerEnhance = buildOptimisticRefreshEnhancer({
+		createOptimisticEnhancer,
+		form: updateLecturer,
+		optimistic: () => {
 			const id = selectedLecturerId;
 			if (!id) return;
 			lecturers = lecturers.map((lecturer) =>
@@ -3508,66 +3545,56 @@
 					: lecturer
 			);
 		},
-		async () => {
-			await refreshDependencies({
-				collections: ['lecturers', 'courses', 'enrollments', 'users'],
-				includeSchedulePreview: true,
-				includeConflictAudit: true
-			});
-			stopEditing('lecturers');
-			setFeedback('success', 'Profil dosen berhasil diperbarui.');
-		},
-		async () => {
-			await refreshDependencies({
-				collections: ['lecturers', 'courses', 'enrollments', 'users'],
-				includeSchedulePreview: true,
-				includeConflictAudit: true
-			});
-		}
-	);
-	const createFacultyEnhance = createEnhancer(createFaculty, async () => {
-		await refreshDependencies({
-			collections: ['faculties', 'studyPrograms', 'students']
-		});
-		clearSelection('faculties');
-		stopEditing('faculties');
-		setFeedback('success', 'Fakultas baru berhasil ditambahkan.');
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(lecturerCourseUsersRefreshPlan),
+		after: () => stopEditing('lecturers'),
+		notify: reportSuccess,
+		message: 'Profil dosen berhasil diperbarui.'
 	});
-	const updateFacultyEnhance = createOptimisticEnhancer(
-		updateFaculty,
-		() => {
+	const createFacultyEnhance = buildCreateRefreshEnhancer({
+		createEnhancer,
+		form: createFaculty,
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(facultyDeleteRefreshPlan),
+		after: () => {
+			clearSelection('faculties');
+			stopEditing('faculties');
+		},
+		notify: reportSuccess,
+		message: 'Fakultas baru berhasil ditambahkan.'
+	});
+	const updateFacultyEnhance = buildOptimisticRefreshEnhancer({
+		createOptimisticEnhancer,
+		form: updateFaculty,
+		optimistic: () => {
 			const id = selectedFacultyId;
 			if (!id) return;
 			faculties = faculties.map((faculty) =>
 				faculty.id === id ? { ...faculty, name: facultyDraft.name } : faculty
 			);
 		},
-		async () => {
-			await refreshDependencies({
-				collections: ['faculties', 'studyPrograms', 'students']
-			});
-			stopEditing('faculties');
-			setFeedback('success', 'Data fakultas berhasil diperbarui.');
-		},
-		async () => {
-			await refreshDependencies({
-				collections: ['faculties', 'studyPrograms', 'students']
-			});
-		}
-	);
-	const createStudyProgramEnhance = createEnhancer(createStudyProgram, async () => {
-		await refreshDependencies({
-			collections: ['studyPrograms', 'students', 'courses', 'enrollments', 'grades'],
-			includeSchedulePreview: true,
-			includeConflictAudit: true
-		});
-		clearSelection('studyPrograms');
-		stopEditing('studyPrograms');
-		setFeedback('success', 'Program studi baru berhasil ditambahkan.');
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(facultyDeleteRefreshPlan),
+		after: () => stopEditing('faculties'),
+		notify: reportSuccess,
+		message: 'Data fakultas berhasil diperbarui.'
 	});
-	const updateStudyProgramEnhance = createOptimisticEnhancer(
-		updateStudyProgram,
-		() => {
+	const createStudyProgramEnhance = buildCreateRefreshEnhancer({
+		createEnhancer,
+		form: createStudyProgram,
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(studyProgramAcademicRefreshPlan),
+		after: () => {
+			clearSelection('studyPrograms');
+			stopEditing('studyPrograms');
+		},
+		notify: reportSuccess,
+		message: 'Program studi baru berhasil ditambahkan.'
+	});
+	const updateStudyProgramEnhance = buildOptimisticRefreshEnhancer({
+		createOptimisticEnhancer,
+		form: updateStudyProgram,
+		optimistic: () => {
 			const id = selectedStudyProgramId;
 			if (!id) return;
 			studyPrograms = studyPrograms.map((sp) =>
@@ -3581,57 +3608,94 @@
 					: sp
 			);
 		},
-		async () => {
-			await refreshDependencies({
-				collections: ['studyPrograms', 'students', 'courses', 'enrollments', 'grades'],
-				includeSchedulePreview: true,
-				includeConflictAudit: true
-			});
-			stopEditing('studyPrograms');
-			setFeedback('success', 'Program studi berhasil diperbarui.');
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(studyProgramAcademicRefreshPlan),
+		after: () => stopEditing('studyPrograms'),
+		notify: reportSuccess,
+		message: 'Program studi berhasil diperbarui.'
+	});
+	const createEnrollmentEnhance = buildCreateRefreshEnhancer({
+		createEnhancer,
+		form: createEnrollment,
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(enrollmentGradesRefreshPlan),
+		after: async () => {
+			const createdId = (createEnrollment.result as { id?: string } | undefined)?.id ?? null;
+			await syncBuilderSelection(createdId, true);
 		},
-		async () => {
-			await refreshDependencies({
-				collections: ['studyPrograms', 'students', 'courses', 'enrollments', 'grades'],
-				includeSchedulePreview: true,
-				includeConflictAudit: true
-			});
-		}
-	);
-	const createEnrollmentEnhance = createEnhancer(createEnrollment, async () => {
-		const createdId = (createEnrollment.result as { id?: string } | undefined)?.id ?? null;
-		await refreshDependencies({
-			collections: ['enrollments', 'grades'],
-			includeSchedulePreview: true,
-			includeConflictAudit: true
-		});
-		await syncBuilderSelection(createdId, true);
-		setFeedback(
-			'success',
-			'Jadwal dan KRS tersimpan. Lanjutkan hanya bila ruang dan jam sudah sesuai.'
-		);
+		notify: reportSuccess,
+		message: 'Jadwal dan KRS tersimpan. Lanjutkan hanya bila ruang dan jam sudah sesuai.'
 	});
-	const updateEnrollmentEnhance = createEnhancer(updateEnrollment, async () => {
-		await refreshDependencies({
-			collections: ['enrollments', 'grades'],
-			includeSchedulePreview: true,
-			includeConflictAudit: true
-		});
-		await syncBuilderSelection();
-		setFeedback(
-			'success',
+	const updateEnrollmentEnhance = buildCreateRefreshEnhancer({
+		createEnhancer,
+		form: updateEnrollment,
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(enrollmentGradesRefreshPlan),
+		after: () => syncBuilderSelection(),
+		notify: reportSuccess,
+		message:
 			'Jadwal diperbarui. Periksa kembali konflik dan kecocokan ruang sebelum menutup halaman.'
-		);
 	});
-	const createGradeEnhance = createEnhancer(createGrade, async () => {
-		await refreshDependencies({ collections: ['grades'] });
-		clearSelection('grades');
-		stopEditing('grades');
-		setFeedback('success', 'Nilai baru berhasil disimpan.');
+	const requestEnrollmentEnhance = buildCreateRefreshEnhancer({
+		createEnhancer,
+		form: requestEnrollment,
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(enrollmentGradesRefreshPlan),
+		after: () => clearSelection('builder'),
+		notify: reportSuccess,
+		message: 'Pengajuan mata kuliah berhasil dikirim. Menunggu persetujuan dosen/admin.'
 	});
-	const updateGradeEnhance = createOptimisticEnhancer(
-		updateGrade,
-		() => {
+	const approveEnrollmentEnhance = buildCreateRefreshEnhancer({
+		createEnhancer,
+		form: approveEnrollment,
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(enrollmentGradesRefreshPlan),
+		after: () => syncBuilderSelection(),
+		notify: reportSuccess,
+		message: 'KRS berhasil disetujui dan jadwal ditetapkan.'
+	});
+	async function handleCancelEnrollmentRequest(id: string) {
+		try {
+			await cancelEnrollmentRequest(id);
+			if (selectedEnrollmentId === id) {
+				clearSelection('enrollments');
+			}
+			await refreshDependencies({ collections: ['enrollments'], includeSchedulePreview: true });
+			setFeedback('success', 'Pengajuan berhasil dibatalkan.');
+		} catch (err) {
+			const message = (err as { body?: { message?: string }; message?: string })?.body?.message;
+			setFeedback('danger', message || 'Gagal membatalkan pengajuan.');
+		}
+	}
+	async function handleRejectEnrollment(id: string) {
+		try {
+			await rejectEnrollment(id);
+			if (selectedEnrollmentId === id) {
+				clearSelection('enrollments');
+			}
+			await refreshDependencies({ collections: ['enrollments'], includeSchedulePreview: true });
+			setFeedback('success', 'Pengajuan berhasil ditolak.');
+		} catch (err) {
+			const message = (err as { body?: { message?: string }; message?: string })?.body?.message;
+			setFeedback('danger', message || 'Gagal menolak pengajuan.');
+		}
+	}
+	const createGradeEnhance = buildCreateRefreshEnhancer({
+		createEnhancer,
+		form: createGrade,
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(gradesRefreshPlan),
+		after: () => {
+			clearSelection('grades');
+			stopEditing('grades');
+		},
+		notify: reportSuccess,
+		message: 'Nilai baru berhasil disimpan.'
+	});
+	const updateGradeEnhance = buildOptimisticRefreshEnhancer({
+		createOptimisticEnhancer,
+		form: updateGrade,
+		optimistic: () => {
 			const id = selectedGradeId;
 			if (!id) return;
 			grades = grades.map((grade) => {
@@ -3651,18 +3715,16 @@
 				};
 			});
 		},
-		async () => {
-			await refreshDependencies({ collections: ['grades'] });
-			stopEditing('grades');
-			setFeedback('success', 'Nilai berhasil diperbarui.');
-		},
-		async () => {
-			await refreshDependencies({ collections: ['grades'] });
-		}
-	);
-	const updateUserEnhance = createOptimisticEnhancer(
-		updateUser,
-		() => {
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(gradesRefreshPlan),
+		after: () => stopEditing('grades'),
+		notify: reportSuccess,
+		message: 'Nilai berhasil diperbarui.'
+	});
+	const updateUserEnhance = buildOptimisticRefreshEnhancer({
+		createOptimisticEnhancer,
+		form: updateUser,
+		optimistic: () => {
 			const id = selectedUserId;
 			if (!id) return;
 			users = users.map((user) =>
@@ -3677,29 +3739,37 @@
 					: user
 			);
 		},
-		async () => {
-			await refreshDependencies({ collections: ['users'] });
-			stopEditing('users');
-			setFeedback('success', 'Akun diperbarui. Perubahan akses akan dipakai pada sesi berikutnya.');
-		},
-		async () => {
-			await refreshDependencies({ collections: ['users'] });
-		}
-	);
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(usersRefreshPlan),
+		after: () => stopEditing('users'),
+		notify: reportSuccess,
+		message: 'Akun diperbarui. Perubahan akses akan dipakai pada sesi berikutnya.'
+	});
 
-	const bulkUpdateUserRoleEnhance = createEnhancer(bulkUpdateUserRoles, async () => {
-		await refreshDependencies({ collections: ['users'] });
-		clearUserSelection();
-		setFeedback('success', 'Peran akun berhasil diperbarui.');
-	});
-	const bulkResetPasswordEnhance = createEnhancer(bulkResetPasswords, async () => {
-		await refreshDependencies({ collections: ['users'] });
-		clearUserSelection();
-		setFeedback('success', 'Password akun terpilih berhasil direset.');
-	});
-	const bulkUpdateClassRoomsEnhance = createOptimisticEnhancer(
-		bulkUpdateClassRooms,
-		() => {
+	const bulkUpdateUserRoleEnhance = createEnhancer(
+		bulkUpdateUserRoles,
+		createRefreshSuccess({
+			refresh: refreshDependencies,
+			plan: () => cloneRefreshPlan(usersRefreshPlan),
+			after: clearUserSelection,
+			notify: reportSuccess,
+			message: 'Peran akun berhasil diperbarui.'
+		})
+	);
+	const bulkResetPasswordEnhance = createEnhancer(
+		bulkResetPasswords,
+		createRefreshSuccess({
+			refresh: refreshDependencies,
+			plan: () => cloneRefreshPlan(usersRefreshPlan),
+			after: clearUserSelection,
+			notify: reportSuccess,
+			message: 'Password akun terpilih berhasil direset.'
+		})
+	);
+	const bulkUpdateClassRoomsEnhance = buildOptimisticRefreshEnhancer({
+		createOptimisticEnhancer,
+		form: bulkUpdateClassRooms,
+		optimistic: () => {
 			const ids = new Set(bulkGetIds('classrooms'));
 			classrooms = classrooms.map((room) =>
 				ids.has(room.id ?? '')
@@ -3713,27 +3783,19 @@
 					: room
 			);
 		},
-		async () => {
-			await refreshDependencies({
-				collections: ['classrooms', 'enrollments'],
-				includeSchedulePreview: true,
-				includeConflictAudit: true
-			});
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(classroomScheduleRefreshPlan),
+		after: () => {
 			bulkClear('classrooms');
 			stopEditing('classrooms');
-			setFeedback('success', 'Ruang terpilih berhasil diperbarui.');
 		},
-		async () => {
-			await refreshDependencies({
-				collections: ['classrooms', 'enrollments'],
-				includeSchedulePreview: true,
-				includeConflictAudit: true
-			});
-		}
-	);
-	const bulkUpdateCoursesEnhance = createOptimisticEnhancer(
-		bulkUpdateCourses,
-		() => {
+		notify: reportSuccess,
+		message: 'Ruang terpilih berhasil diperbarui.'
+	});
+	const bulkUpdateCoursesEnhance = buildOptimisticRefreshEnhancer({
+		createOptimisticEnhancer,
+		form: bulkUpdateCourses,
+		optimistic: () => {
 			const ids = new Set(bulkGetIds('courses'));
 			courses = courses.map((course) =>
 				ids.has(course.id ?? '')
@@ -3746,27 +3808,19 @@
 					: course
 			);
 		},
-		async () => {
-			await refreshDependencies({
-				collections: ['courses', 'enrollments', 'grades'],
-				includeSchedulePreview: true,
-				includeConflictAudit: true
-			});
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(courseScheduleGradesRefreshPlan),
+		after: () => {
 			bulkClear('courses');
 			stopEditing('courses');
-			setFeedback('success', 'Mata kuliah terpilih berhasil diperbarui.');
 		},
-		async () => {
-			await refreshDependencies({
-				collections: ['courses', 'enrollments', 'grades'],
-				includeSchedulePreview: true,
-				includeConflictAudit: true
-			});
-		}
-	);
-	const bulkUpdateStudentsEnhance = createOptimisticEnhancer(
-		bulkUpdateStudents,
-		() => {
+		notify: reportSuccess,
+		message: 'Mata kuliah terpilih berhasil diperbarui.'
+	});
+	const bulkUpdateStudentsEnhance = buildOptimisticRefreshEnhancer({
+		createOptimisticEnhancer,
+		form: bulkUpdateStudents,
+		optimistic: () => {
 			const ids = new Set(bulkGetIds('students'));
 			students = students.map((student) =>
 				ids.has(student.id ?? '')
@@ -3778,19 +3832,19 @@
 					: student
 			);
 		},
-		async () => {
-			await refreshDependencies({ collections: ['students'] });
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(studentsRefreshPlan),
+		after: () => {
 			bulkClear('students');
 			stopEditing('students');
-			setFeedback('success', 'Mahasiswa terpilih berhasil diperbarui.');
 		},
-		async () => {
-			await refreshDependencies({ collections: ['students'] });
-		}
-	);
-	const bulkUpdateLecturersEnhance = createOptimisticEnhancer(
-		bulkUpdateLecturers,
-		() => {
+		notify: reportSuccess,
+		message: 'Mahasiswa terpilih berhasil diperbarui.'
+	});
+	const bulkUpdateLecturersEnhance = buildOptimisticRefreshEnhancer({
+		createOptimisticEnhancer,
+		form: bulkUpdateLecturers,
+		optimistic: () => {
 			const ids = new Set(bulkGetIds('lecturers'));
 			lecturers = lecturers.map((lecturer) =>
 				ids.has(lecturer.id ?? '')
@@ -3804,37 +3858,37 @@
 					: lecturer
 			);
 		},
-		async () => {
-			await refreshDependencies({ collections: ['lecturers'] });
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(lecturersRefreshPlan),
+		after: () => {
 			bulkClear('lecturers');
 			stopEditing('lecturers');
-			setFeedback('success', 'Dosen terpilih berhasil diperbarui.');
 		},
-		async () => {
-			await refreshDependencies({ collections: ['lecturers'] });
-		}
-	);
-	const bulkUpdateFacultiesEnhance = createOptimisticEnhancer(
-		bulkUpdateFaculties,
-		() => {
+		notify: reportSuccess,
+		message: 'Dosen terpilih berhasil diperbarui.'
+	});
+	const bulkUpdateFacultiesEnhance = buildOptimisticRefreshEnhancer({
+		createOptimisticEnhancer,
+		form: bulkUpdateFaculties,
+		optimistic: () => {
 			const ids = new Set(bulkGetIds('faculties'));
 			faculties = faculties.map((faculty) =>
 				ids.has(faculty.id ?? '') ? { ...faculty, name: bulkEditFacultyName } : faculty
 			);
 		},
-		async () => {
-			await refreshDependencies({ collections: ['faculties', 'studyPrograms'] });
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(facultyUpdateRefreshPlan),
+		after: () => {
 			bulkClear('faculties');
 			stopEditing('faculties');
-			setFeedback('success', 'Fakultas terpilih berhasil diperbarui.');
 		},
-		async () => {
-			await refreshDependencies({ collections: ['faculties', 'studyPrograms'] });
-		}
-	);
-	const bulkUpdateStudyProgramsEnhance = createOptimisticEnhancer(
-		bulkUpdateStudyPrograms,
-		() => {
+		notify: reportSuccess,
+		message: 'Fakultas terpilih berhasil diperbarui.'
+	});
+	const bulkUpdateStudyProgramsEnhance = buildOptimisticRefreshEnhancer({
+		createOptimisticEnhancer,
+		form: bulkUpdateStudyPrograms,
+		optimistic: () => {
 			const ids = new Set(bulkGetIds('studyPrograms'));
 			studyPrograms = studyPrograms.map((sp) =>
 				ids.has(sp.id ?? '')
@@ -3846,51 +3900,45 @@
 					: sp
 			);
 		},
-		async () => {
-			await refreshDependencies({ collections: ['studyPrograms', 'students', 'courses'] });
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(studyProgramUpdateRefreshPlan),
+		after: () => {
 			bulkClear('studyPrograms');
 			stopEditing('studyPrograms');
-			setFeedback('success', 'Prodi terpilih berhasil diperbarui.');
 		},
-		async () => {
-			await refreshDependencies({ collections: ['studyPrograms', 'students', 'courses'] });
-		}
-	);
-	const bulkUpdateEnrollmentsEnhance = createOptimisticEnhancer(
-		bulkUpdateEnrollments,
-		() => {
+		notify: reportSuccess,
+		message: 'Prodi terpilih berhasil diperbarui.'
+	});
+	const bulkUpdateEnrollmentsEnhance = buildOptimisticRefreshEnhancer({
+		createOptimisticEnhancer,
+		form: bulkUpdateEnrollments,
+		optimistic: () => {
 			const ids = new Set(bulkGetIds('enrollments'));
 			enrollments = enrollments.map((enrollment) =>
 				ids.has(enrollment.id ?? '')
 					? {
 							...enrollment,
-							semester: bulkEditEnrollmentSemester,
-							academic_year: bulkEditEnrollmentAcademicYear
+							semester: bulkEditEnrollmentSemester || enrollment.semester,
+							academic_year: bulkEditEnrollmentAcademicYear || enrollment.academic_year
 						}
 					: enrollment
 			);
 		},
-		async () => {
-			await refreshDependencies({
-				collections: ['enrollments'],
-				includeSchedulePreview: true,
-				includeConflictAudit: true
-			});
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(enrollmentGradesRefreshPlan),
+		after: () => {
 			bulkClear('enrollments');
+			bulkEditEnrollmentSemester = '';
+			bulkEditEnrollmentAcademicYear = '';
 			editorView = null;
-			setFeedback('success', 'KRS terpilih berhasil diperbarui.');
 		},
-		async () => {
-			await refreshDependencies({
-				collections: ['enrollments'],
-				includeSchedulePreview: true,
-				includeConflictAudit: true
-			});
-		}
-	);
-	const bulkUpdateGradesEnhance = createOptimisticEnhancer(
-		bulkUpdateGrades,
-		() => {
+		notify: reportSuccess,
+		message: 'KRS terpilih berhasil diperbarui.'
+	});
+	const bulkUpdateGradesEnhance = buildOptimisticRefreshEnhancer({
+		createOptimisticEnhancer,
+		form: bulkUpdateGrades,
+		optimistic: () => {
 			const ids = new Set(bulkGetIds('grades'));
 			grades = grades.map((grade) => {
 				if (!ids.has(grade.id ?? '')) return grade;
@@ -3917,200 +3965,184 @@
 				};
 			});
 		},
-		async () => {
-			await refreshDependencies({ collections: ['grades'] });
+		refresh: refreshDependencies,
+		plan: () => cloneRefreshPlan(gradesRefreshPlan),
+		after: () => {
 			bulkClear('grades');
 			stopEditing('grades');
-			setFeedback('success', 'Nilai terpilih berhasil diperbarui.');
 		},
-		async () => {
-			await refreshDependencies({ collections: ['grades'] });
+		notify: reportSuccess,
+		message: 'Nilai terpilih berhasil diperbarui.'
+	});
+
+	const singleDeletePlans = {
+		classroom: {
+			execute: deleteClassRoom,
+			refresh: classroomScheduleRefreshPlan,
+			afterDelete: async () => {
+				clearSelection('classrooms');
+				stopEditing('classrooms');
+			}
+		},
+		course: {
+			execute: deleteCourse,
+			refresh: courseScheduleGradesRefreshPlan,
+			afterDelete: async () => {
+				clearSelection('courses');
+				stopEditing('courses');
+			}
+		},
+		student: {
+			execute: deleteStudent,
+			refresh: studentAcademicUsersRefreshPlan,
+			afterDelete: async () => {
+				clearSelection('students');
+				stopEditing('students');
+			}
+		},
+		lecturer: {
+			execute: deleteLecturer,
+			refresh: lecturerCourseUsersRefreshPlan,
+			afterDelete: async () => {
+				clearSelection('lecturers');
+				stopEditing('lecturers');
+			}
+		},
+		faculty: {
+			execute: deleteFaculty,
+			refresh: facultyDeleteRefreshPlan,
+			afterDelete: async () => {
+				clearSelection('faculties');
+				stopEditing('faculties');
+			}
+		},
+		studyProgram: {
+			execute: deleteStudyProgram,
+			refresh: studyProgramAcademicRefreshPlan,
+			afterDelete: async () => {
+				clearSelection('studyPrograms');
+				stopEditing('studyPrograms');
+			}
+		},
+		enrollment: {
+			execute: deleteEnrollment,
+			refresh: enrollmentGradesRefreshPlan,
+			afterDelete: async (id: string) => {
+				await syncBuilderSelection(id, true);
+			}
+		},
+		grade: {
+			execute: deleteGrade,
+			refresh: gradesRefreshPlan,
+			afterDelete: async () => {
+				clearSelection('grades');
+				stopEditing('grades');
+			}
 		}
-	);
+	} as const;
+
+	const bulkDeletePlans = {
+		'bulk-user': {
+			execute: bulkDeleteUsers,
+			refresh: usersRefreshPlan,
+			afterDelete: async () => {
+				clearUserSelection();
+				clearSelection('users');
+				stopEditing('users');
+			}
+		},
+		'bulk-classrooms': {
+			execute: bulkDeleteClassRooms,
+			refresh: classroomScheduleRefreshPlan,
+			afterDelete: async () => {
+				bulkClear('classrooms');
+				clearSelection('classrooms');
+				stopEditing('classrooms');
+			}
+		},
+		'bulk-courses': {
+			execute: bulkDeleteCourses,
+			refresh: courseScheduleGradesRefreshPlan,
+			afterDelete: async () => {
+				bulkClear('courses');
+				clearSelection('courses');
+				stopEditing('courses');
+			}
+		},
+		'bulk-students': {
+			execute: bulkDeleteStudents,
+			refresh: studentAcademicUsersRefreshPlan,
+			afterDelete: async () => {
+				bulkClear('students');
+				clearSelection('students');
+				stopEditing('students');
+			}
+		},
+		'bulk-lecturers': {
+			execute: bulkDeleteLecturers,
+			refresh: lecturerCourseUsersRefreshPlan,
+			afterDelete: async () => {
+				bulkClear('lecturers');
+				clearSelection('lecturers');
+				stopEditing('lecturers');
+			}
+		},
+		'bulk-faculties': {
+			execute: bulkDeleteFaculties,
+			refresh: facultyDeleteRefreshPlan,
+			afterDelete: async () => {
+				bulkClear('faculties');
+				clearSelection('faculties');
+				stopEditing('faculties');
+			}
+		},
+		'bulk-studyPrograms': {
+			execute: bulkDeleteStudyPrograms,
+			refresh: studyProgramAcademicRefreshPlan,
+			afterDelete: async () => {
+				bulkClear('studyPrograms');
+				clearSelection('studyPrograms');
+				stopEditing('studyPrograms');
+			}
+		},
+		'bulk-enrollments': {
+			execute: bulkDeleteEnrollments,
+			refresh: enrollmentGradesRefreshPlan,
+			afterDelete: async () => {
+				bulkClear('enrollments');
+				clearSelection('enrollments');
+				stopEditing();
+			}
+		},
+		'bulk-grades': {
+			execute: bulkDeleteGrades,
+			refresh: gradesRefreshPlan,
+			afterDelete: async () => {
+				bulkClear('grades');
+				clearSelection('grades');
+				stopEditing('grades');
+			}
+		}
+	} as const;
 
 	async function removeEntity(kind: DeleteKind, id: string) {
 		if (!pendingDelete) return; // guard against double-click / concurrent delete
 		const intent = pendingDelete;
 		pendingDelete = null; // prevent re-entry before async completes
-		try {
-			if (kind === 'classroom') {
-				await deleteClassRoom(id);
-				await refreshDependencies({
-					collections: ['classrooms', 'enrollments'],
-					includeSchedulePreview: true,
-					includeConflictAudit: true
-				});
-				clearSelection('classrooms');
-				stopEditing('classrooms');
-			}
-			if (kind === 'course') {
-				await deleteCourse(id);
-				await refreshDependencies({
-					collections: ['courses', 'enrollments', 'grades'],
-					includeSchedulePreview: true,
-					includeConflictAudit: true
-				});
-				clearSelection('courses');
-				stopEditing('courses');
-			}
-			if (kind === 'student') {
-				await deleteStudent(id);
-				await refreshDependencies({
-					collections: ['students', 'enrollments', 'grades', 'users'],
-					includeSchedulePreview: true,
-					includeConflictAudit: true
-				});
-				clearSelection('students');
-				stopEditing('students');
-			}
-			if (kind === 'lecturer') {
-				await deleteLecturer(id);
-				await refreshDependencies({
-					collections: ['lecturers', 'courses', 'enrollments', 'users'],
-					includeSchedulePreview: true,
-					includeConflictAudit: true
-				});
-				clearSelection('lecturers');
-				stopEditing('lecturers');
-			}
-			if (kind === 'faculty') {
-				await deleteFaculty(id);
-				await refreshDependencies({
-					collections: ['faculties', 'studyPrograms', 'students']
-				});
-				clearSelection('faculties');
-				stopEditing('faculties');
-			}
-			if (kind === 'studyProgram') {
-				await deleteStudyProgram(id);
-				await refreshDependencies({
-					collections: ['studyPrograms', 'students', 'courses', 'enrollments', 'grades'],
-					includeSchedulePreview: true,
-					includeConflictAudit: true
-				});
-				clearSelection('studyPrograms');
-				stopEditing('studyPrograms');
-			}
-			if (kind === 'enrollment') {
-				await deleteEnrollment(id);
-				await refreshDependencies({
-					collections: ['enrollments', 'grades'],
-					includeSchedulePreview: true,
-					includeConflictAudit: true
-				});
-				await syncBuilderSelection(id, true);
-			}
-			if (kind === 'grade') {
-				await deleteGrade(id);
-				await refreshDependencies({ collections: ['grades'] });
-				clearSelection('grades');
-				stopEditing('grades');
-			}
-			if (kind === 'bulk-user') {
-				await bulkDeleteUsers(id);
-				await refreshDependencies({ collections: ['users'] });
-				clearUserSelection();
-				selectedUserId = null;
-				selectedUserRecord = null;
-				userDraft = emptyUserDraft();
-				stopEditing('users');
-			}
-			if (kind === 'bulk-classrooms') {
-				await bulkDeleteClassRooms(id);
-				await refreshDependencies({
-					collections: ['classrooms', 'enrollments'],
-					includeSchedulePreview: true,
-					includeConflictAudit: true
-				});
-				bulkClear('classrooms');
-				selectedRoomId = null;
-				selectedRoomRecord = null;
-				stopEditing('classrooms');
-			}
-			if (kind === 'bulk-courses') {
-				await bulkDeleteCourses(id);
-				await refreshDependencies({
-					collections: ['courses', 'enrollments', 'grades'],
-					includeSchedulePreview: true,
-					includeConflictAudit: true
-				});
-				bulkClear('courses');
-				selectedCourseId = null;
-				selectedCourseRecord = null;
-				stopEditing('courses');
-			}
-			if (kind === 'bulk-students') {
-				await bulkDeleteStudents(id);
-				await refreshDependencies({
-					collections: ['students', 'enrollments', 'grades', 'users'],
-					includeSchedulePreview: true,
-					includeConflictAudit: true
-				});
-				bulkClear('students');
-				selectedStudentId = null;
-				selectedStudentRecord = null;
-				stopEditing('students');
-			}
-			if (kind === 'bulk-lecturers') {
-				await bulkDeleteLecturers(id);
-				await refreshDependencies({
-					collections: ['lecturers', 'courses', 'enrollments', 'users'],
-					includeSchedulePreview: true,
-					includeConflictAudit: true
-				});
-				bulkClear('lecturers');
-				selectedLecturerId = null;
-				selectedLecturerRecord = null;
-				stopEditing('lecturers');
-			}
-			if (kind === 'bulk-faculties') {
-				await bulkDeleteFaculties(id);
-				await refreshDependencies({
-					collections: ['faculties', 'studyPrograms', 'students']
-				});
-				bulkClear('faculties');
-				selectedFacultyId = null;
-				selectedFacultyRecord = null;
-				stopEditing('faculties');
-			}
-			if (kind === 'bulk-studyPrograms') {
-				await bulkDeleteStudyPrograms(id);
-				await refreshDependencies({
-					collections: ['studyPrograms', 'students', 'courses', 'enrollments', 'grades'],
-					includeSchedulePreview: true,
-					includeConflictAudit: true
-				});
-				bulkClear('studyPrograms');
-				selectedStudyProgramId = null;
-				selectedStudyProgramRecord = null;
-				stopEditing('studyPrograms');
-			}
-			if (kind === 'bulk-enrollments') {
-				await bulkDeleteEnrollments(id);
-				await refreshDependencies({
-					collections: ['enrollments', 'grades'],
-					includeSchedulePreview: true,
-					includeConflictAudit: true
-				});
-				bulkClear('enrollments');
-				selectedEnrollmentId = null;
-				selectedEnrollmentRecord = null;
-				stopEditing();
-			}
-			if (kind === 'bulk-grades') {
-				await bulkDeleteGrades(id);
-				await refreshDependencies({ collections: ['grades'] });
-				bulkClear('grades');
-				selectedGradeId = null;
-				selectedGradeRecord = null;
-				stopEditing('grades');
-			}
-			pendingDelete = null;
-			setFeedback('success', intent?.successMessage ?? 'Data berhasil dihapus.');
-		} catch (error) {
-			const message = (error as { body?: { message?: string }; message?: string })?.body?.message;
-			setFeedback('danger', message || intent?.failureMessage || 'Penghapusan gagal.');
-		}
+		await runDeletePlan({
+			kind,
+			id,
+			singlePlans: singleDeletePlans,
+			bulkPlans: bulkDeletePlans,
+			refresh: (plan) =>
+				refreshDependencies({
+					...plan,
+					collections: [...plan.collections] as DataCollectionKey[]
+				}),
+			onSuccess: reportSuccess,
+			onFailure: reportDanger,
+			intent
+		});
 	}
 
 	async function handleRefreshCurrentView() {
@@ -4118,6 +4150,17 @@
 		viewRefreshLoading = true;
 		try {
 			await refreshViewData(activeView);
+			const issues = getViewIssues(
+				activeView,
+				currentUser.current?.role as AppRole | undefined
+			);
+			if (issues.length) {
+				setFeedback(
+					'danger',
+					`${pageHeading(activeView, currentUser.current?.role as AppRole | undefined)} belum bisa dimuat sepenuhnya. Coba lagi atau refresh halaman.`
+				);
+				return;
+			}
 			setFeedback(
 				'success',
 				`${pageHeading(activeView, currentUser.current?.role as AppRole | undefined)} berhasil dimuat ulang.`
@@ -4135,6 +4178,11 @@
 		}
 	}
 
+	function refreshPage() {
+		if (!browser) return;
+		window.location.reload();
+	}
+
 	const navigationGroups = $derived(
 		navigationGroupsForRole(currentUser.current?.role as AppRole | undefined)
 	);
@@ -4144,17 +4192,9 @@
 	const currentViewPlan = $derived(
 		viewDataPlan(activeView, currentUser.current?.role as AppRole | undefined)
 	);
-	const activeViewIssues = $derived.by(() => {
-		// eslint-disable-next-line svelte/prefer-svelte-reactivity
-		const keys = new Set<DataCollectionKey>(currentViewPlan.collections);
-		if (currentViewPlan.requiresSchedulePreview) {
-			keys.add('enrollments');
-		}
-
-		return Array.from(keys)
-			.map((key) => collectionIssues[key])
-			.filter((message): message is string => Boolean(message));
-	});
+	const activeViewIssues = $derived(
+		getViewIssues(activeView, currentUser.current?.role as AppRole | undefined)
+	);
 	const courseEditorBlocked = $derived(
 		Boolean(collectionIssues.studyPrograms || collectionIssues.lecturers) &&
 			(!studyPrograms.length || !lecturers.length)
@@ -4204,6 +4244,663 @@
 		selectedEnrollmentScheduleCard?.conflictGroupId
 			? (conflictGroupDetailsById[selectedEnrollmentScheduleCard.conflictGroupId] ?? null)
 			: null
+	);
+
+	const dashboardViewProps = $derived.by(() =>
+		buildDashboardViewProps({
+			role: requireCurrentRole(),
+			nextSchedule,
+			enrollments,
+			grades,
+			studentGradeHighlights,
+			conflictCount,
+			primaryConflict,
+			additionalConflictCount,
+			conflictGroupDetailsById,
+			underusedRooms,
+			classRoomDashboardSummary,
+			classRoomDashboardMetrics: classRoomDashboardMetrics?.items ?? [],
+			classRoomDashboardPagination,
+			selectedRoomId,
+			conflictedCount: conflictAudit?.summary?.conflictedRooms ?? 0,
+			onActivateView: activateView,
+			onNavigateToEntity: navigateToEntity,
+			onOpenBuilderForSchedule: openBuilderForSchedule,
+			onOpenCalendarForSchedule: openCalendarForSchedule,
+			onPickRoom: (id: string) => (selectedRoomId = id),
+			onPreviousPage: () => changeClassRoomDashboardPage('previous'),
+			onNextPage: () => changeClassRoomDashboardPage('next'),
+			handleKeyboardClick
+		})
+	);
+
+	const calendarViewProps = $derived.by(() =>
+		buildCalendarViewProps({
+			currentRole: requireCurrentRole(),
+			calendarWeekLabel,
+			courses,
+			lecturers,
+			scheduleSemesterOptions,
+			scheduleAcademicYearOptions,
+			filteredScheduleCards,
+			scheduleActiveFilterCount,
+			calendarConflictLegend,
+			calendarNeedsFilters,
+			calendarExceedsVisibleLimit,
+			calendarMaxVisibleSchedules: CALENDAR_MAX_VISIBLE_SCHEDULES,
+			EventCalendarComponent,
+			calendarPlugins,
+			calendarOptions,
+			calendarDetailSchedule,
+			selectedScheduleConflictSummary,
+			selectedScheduleConflictGroup,
+			selectedScheduleConflictPeers,
+			selectedScheduleOverlapPeers,
+			selectedScheduleId,
+			scheduleRoomFilterOptions,
+			filteredScheduleRoomFilterOptions,
+			scheduleRoomFilterIssue,
+			scheduleRoomFilterLoading,
+			scheduleRoomFilterHasMore,
+			selectedScheduleRoomFilterLabel: scheduleRoomFilter
+				? (classrooms.find((r) => r.id === scheduleRoomFilter)?.name ?? '')
+				: '',
+			queueCollectionRefresh,
+			queueScheduleRoomFilterRefresh,
+			loadMoreScheduleRoomFilterOptions,
+			resetScheduleFilters,
+			toggleConflictGroup,
+			navigateToEntity,
+			openBuilderForSchedule,
+			focusSchedule,
+			handleKeyboardClick,
+			studentStudyProgramId: currentUser.current?.studyProgramId ?? null
+		})
+	);
+
+	const builderViewProps = $derived.by(() =>
+		buildBuilderViewProps({
+			...buildPaginationActions({
+				key: 'enrollments',
+				changeCollectionPage
+			}),
+			builderTaskMode,
+			selectedEnrollmentId,
+			pendingDelete,
+			filteredBuilderEnrollments,
+			scheduleCardMap,
+			auditConflictCardMap,
+			conflictSummaryByCardId,
+			collectionPagination: collectionPagination.enrollments,
+			scheduleSemesterOptions,
+			scheduleAcademicYearOptions,
+			scheduleActiveFilterCount,
+			scheduleCourseFilterOptions,
+			scheduleRoomFilterOptions,
+			filteredScheduleRoomFilterOptions,
+			scheduleLecturerFilterOptions,
+			scheduleCourseFilterIssue,
+			scheduleRoomFilterIssue,
+			scheduleLecturerFilterIssue,
+			scheduleCourseFilterLoading,
+			scheduleRoomFilterLoading,
+			scheduleLecturerFilterLoading,
+			scheduleCourseFilterHasMore,
+			scheduleRoomFilterHasMore,
+			scheduleLecturerFilterHasMore,
+			selectedScheduleCourseFilterLabel,
+			selectedScheduleRoomFilterLabel,
+			selectedScheduleLecturerFilterLabel,
+			selectedEnrollmentScheduleCard,
+			selectedEnrollmentConflictSummary,
+			selectedEnrollmentConflictGroup,
+			selectedDraftStudent,
+			selectedDraftCourse,
+			selectedDraftRoom,
+			draftTimeSummary,
+			filteredRoomsForPicker,
+			builderConflictCards,
+			conflictCount,
+			studentPickerOptions: filteredStudentsForPicker,
+			coursePickerOptions: filteredCoursesForPicker,
+			studentPickerIssue,
+			coursePickerIssue,
+			roomPickerIssue,
+			studentPickerLoading,
+			coursePickerLoading,
+			roomPickerLoading,
+			studentPickerHasMore,
+			coursePickerHasMore,
+			roomPickerHasMore,
+			createEnrollment,
+			updateEnrollment,
+			approveEnrollment,
+			builderMode,
+			createEnrollmentEnhance,
+			updateEnrollmentEnhance,
+			approveEnrollmentEnhance,
+			handleKeyboardClick,
+			onClearSelection: () => clearSelection('builder'),
+			onQueueEnrollmentRefresh: (delay?: number) => queueCollectionRefresh('enrollments', delay),
+			onQueueScheduleCourseFilterRefresh: queueScheduleCourseFilterRefresh,
+			onQueueScheduleRoomFilterRefresh: queueScheduleRoomFilterRefresh,
+			onQueueScheduleLecturerFilterRefresh: queueScheduleLecturerFilterRefresh,
+			onLoadMoreScheduleCourseFilterOptions: loadMoreScheduleCourseFilterOptions,
+			onLoadMoreScheduleRoomFilterOptions: loadMoreScheduleRoomFilterOptions,
+			onLoadMoreScheduleLecturerFilterOptions: loadMoreScheduleLecturerFilterOptions,
+			onPickEnrollment: pickEnrollment,
+			onNavigateToEntity: navigateToEntity,
+			onResetScheduleFilters: resetScheduleFilters,
+			onOpenBuilderForSchedule: openBuilderForSchedule,
+			onOpenCalendarForSchedule: openCalendarForSchedule,
+			onRequestDeleteEnrollment: () => requestDelete('enrollment', selectedEnrollmentId!),
+			onConfirmDelete: confirmPendingDelete,
+			onCancelDelete: cancelPendingDelete,
+			onQueueStudentPickerRefresh: queueStudentPickerRefresh,
+			onQueueCoursePickerRefresh: queueCoursePickerRefresh,
+			onQueueRoomPickerRefresh: queueRoomPickerRefresh,
+			onLoadMoreStudentPickerOptions: loadMoreStudentPickerOptions,
+			onLoadMoreCoursePickerOptions: loadMoreCoursePickerOptions,
+			onLoadMoreRoomPickerOptions: loadMoreRoomPickerOptions
+		})
+	);
+
+	const classroomsViewProps = $derived.by(() => ({
+		...buildCrudEntityViewProps({
+			key: 'classrooms',
+			reset: () => {
+				roomSearch = '';
+			},
+			queueCollectionRefresh,
+			changeCollectionPage,
+			currentRole: requireCurrentRole(),
+			editorView,
+			pendingDelete,
+			handleKeyboardClick,
+			onNavigateToEntity: navigateToEntity,
+			bulkSelectedIds: bulkSelectedIds.classrooms ?? new Set(),
+			bulkCount: bulkCount('classrooms'),
+			bulkClear,
+			bulkToggleAll,
+			bulkToggleId,
+			selectedId: selectedRoomId,
+			editView: 'classrooms',
+			bulkView: 'classrooms-bulk',
+			deleteKind: 'classroom',
+			beginCreate,
+			beginEdit,
+			stopEditing,
+			requestDelete,
+			confirmPendingDelete,
+			cancelPendingDelete,
+			openBulkEditor,
+			openBulkDelete: createBulkDeleteAction({
+				kind: 'bulk-classrooms',
+				bulkKey: 'classrooms',
+				noun: 'ruang',
+				successMessage: 'Ruang terpilih berhasil dihapus.',
+				failureMessage: 'Gagal menghapus ruang terpilih.'
+			}),
+			extras: {
+				filteredClassrooms,
+				selectedRoomId,
+				selectedRoom,
+				collectionPagination: collectionPagination.classrooms,
+				createClassRoom,
+				updateClassRoom,
+				bulkUpdateClassRooms,
+				createClassRoomEnhance,
+				updateClassRoomEnhance,
+				bulkUpdateClassRoomsEnhance,
+				classRoomTypes,
+				beautifyRoomType,
+				onPickClassroom: pickClassroom
+			}
+		})
+	}));
+
+	const coursesViewProps = $derived.by(() => ({
+		...buildCrudEntityViewProps({
+			key: 'courses',
+			reset: () => {
+				courseSearch = '';
+			},
+			queueCollectionRefresh,
+			changeCollectionPage,
+			currentRole: requireCurrentRole(),
+			editorView,
+			pendingDelete,
+			handleKeyboardClick,
+			onNavigateToEntity: navigateToEntity,
+			bulkSelectedIds: bulkSelectedIds.courses ?? new Set(),
+			bulkCount: bulkCount('courses'),
+			bulkClear,
+			bulkToggleAll,
+			bulkToggleId,
+			selectedId: selectedCourseId,
+			editView: 'courses',
+			bulkView: 'courses-bulk',
+			deleteKind: 'course',
+			beginCreate,
+			beginEdit,
+			stopEditing,
+			requestDelete,
+			confirmPendingDelete,
+			cancelPendingDelete,
+			openBulkEditor,
+			openBulkDelete: createBulkDeleteAction({
+				kind: 'bulk-courses',
+				bulkKey: 'courses',
+				noun: 'mata kuliah',
+				successMessage: 'Mata kuliah terpilih berhasil dihapus.',
+				failureMessage: 'Gagal menghapus mata kuliah terpilih.'
+			}),
+			extras: {
+				filteredCourses,
+				selectedCourseId,
+				selectedCourse,
+				collectionPagination: collectionPagination.courses,
+				updateCourseEnhance,
+				createCourseEnhance,
+				bulkUpdateCoursesEnhance,
+				studyPrograms,
+				lecturers,
+				studyProgramsIssue: collectionIssues.studyPrograms,
+				lecturersIssue: collectionIssues.lecturers,
+				courseEditorBlocked,
+				onPickCourse: pickCourse
+			}
+		})
+	}));
+
+	const studentsViewProps = $derived.by(() => ({
+		...buildCrudEntityViewProps({
+			key: 'students',
+			reset: () => {
+				studentSearch = '';
+			},
+			queueCollectionRefresh,
+			changeCollectionPage,
+			currentRole: requireCurrentRole(),
+			editorView,
+			pendingDelete,
+			handleKeyboardClick,
+			onNavigateToEntity: navigateToEntity,
+			bulkSelectedIds: bulkSelectedIds.students ?? new Set(),
+			bulkCount: bulkCount('students'),
+			bulkClear,
+			bulkToggleAll,
+			bulkToggleId,
+			selectedId: selectedStudentId,
+			editView: 'students',
+			bulkView: 'students-bulk',
+			deleteKind: 'student',
+			beginCreate,
+			beginEdit,
+			stopEditing,
+			requestDelete,
+			confirmPendingDelete,
+			cancelPendingDelete,
+			openBulkEditor,
+			openBulkDelete: createBulkDeleteAction({
+				kind: 'bulk-students',
+				bulkKey: 'students',
+				noun: 'mahasiswa',
+				successMessage: 'Mahasiswa terpilih berhasil dihapus.',
+				failureMessage: 'Gagal menghapus mahasiswa terpilih.'
+			}),
+			extras: {
+				filteredStudents,
+				selectedStudentId,
+				selectedStudent,
+				collectionPagination: collectionPagination.students,
+				createStudent,
+				updateStudent,
+				bulkUpdateStudents,
+				createStudentEnhance,
+				updateStudentEnhance,
+				bulkUpdateStudentsEnhance,
+				studyPrograms,
+				studyProgramsIssue: collectionIssues.studyPrograms,
+				studentEditorBlocked,
+				onPickStudent: pickStudent
+			}
+		})
+	}));
+
+	const lecturersViewProps = $derived.by(() => ({
+		...buildCrudEntityViewProps({
+			key: 'lecturers',
+			reset: () => {
+				lecturerSearch = '';
+			},
+			queueCollectionRefresh,
+			changeCollectionPage,
+			currentRole: requireCurrentRole(),
+			editorView,
+			pendingDelete,
+			handleKeyboardClick,
+			onNavigateToEntity: navigateToEntity,
+			bulkSelectedIds: bulkSelectedIds.lecturers ?? new Set(),
+			bulkCount: bulkCount('lecturers'),
+			bulkClear,
+			bulkToggleAll,
+			bulkToggleId,
+			selectedId: selectedLecturerId,
+			editView: 'lecturers',
+			bulkView: 'lecturers-bulk',
+			deleteKind: 'lecturer',
+			beginCreate,
+			beginEdit,
+			stopEditing,
+			requestDelete,
+			confirmPendingDelete,
+			cancelPendingDelete,
+			openBulkEditor,
+			openBulkDelete: createBulkDeleteAction({
+				kind: 'bulk-lecturers',
+				bulkKey: 'lecturers',
+				noun: 'dosen',
+				successMessage: 'Dosen terpilih berhasil dihapus.',
+				failureMessage: 'Gagal menghapus dosen terpilih.'
+			}),
+			extras: {
+				filteredLecturers,
+				selectedLecturerId,
+				selectedLecturer,
+				collectionPagination: collectionPagination.lecturers,
+				createLecturer,
+				updateLecturer,
+				bulkUpdateLecturers,
+				createLecturerEnhance,
+				updateLecturerEnhance,
+				bulkUpdateLecturersEnhance,
+				onPickLecturer: pickLecturer
+			}
+		})
+	}));
+
+	const facultiesViewProps = $derived.by(() => ({
+		...buildCrudEntityViewProps({
+			key: 'faculties',
+			reset: () => {
+				facultySearch = '';
+			},
+			queueCollectionRefresh,
+			changeCollectionPage,
+			currentRole: requireCurrentRole(),
+			editorView,
+			pendingDelete,
+			handleKeyboardClick,
+			onNavigateToEntity: navigateToEntity,
+			bulkSelectedIds: bulkSelectedIds.faculties ?? new Set(),
+			bulkCount: bulkCount('faculties'),
+			bulkClear,
+			bulkToggleAll,
+			bulkToggleId,
+			selectedId: selectedFacultyId,
+			editView: 'faculties',
+			bulkView: 'faculties-bulk',
+			deleteKind: 'faculty',
+			beginCreate,
+			beginEdit,
+			stopEditing,
+			requestDelete,
+			confirmPendingDelete,
+			cancelPendingDelete,
+			openBulkEditor,
+			openBulkDelete: createBulkDeleteAction({
+				kind: 'bulk-faculties',
+				bulkKey: 'faculties',
+				noun: 'fakultas',
+				successMessage: 'Fakultas terpilih berhasil dihapus.',
+				failureMessage: 'Gagal menghapus fakultas terpilih.'
+			}),
+			extras: {
+				filteredFaculties,
+				selectedFacultyId,
+				selectedFaculty,
+				collectionPagination: collectionPagination.faculties,
+				createFaculty,
+				updateFaculty,
+				bulkUpdateFaculties,
+				createFacultyEnhance,
+				updateFacultyEnhance,
+				bulkUpdateFacultiesEnhance,
+				onPickFaculty: pickFaculty
+			}
+		})
+	}));
+
+	const studyProgramsViewProps = $derived.by(() => ({
+		...buildCrudEntityViewProps({
+			key: 'studyPrograms',
+			reset: () => {
+				studyProgramSearch = '';
+			},
+			queueCollectionRefresh,
+			changeCollectionPage,
+			currentRole: requireCurrentRole(),
+			editorView,
+			pendingDelete,
+			handleKeyboardClick,
+			onNavigateToEntity: navigateToEntity,
+			bulkSelectedIds: bulkSelectedIds.studyPrograms ?? new Set(),
+			bulkCount: bulkCount('studyPrograms'),
+			bulkClear,
+			bulkToggleAll,
+			bulkToggleId,
+			selectedId: selectedStudyProgramId,
+			editView: 'studyPrograms',
+			bulkView: 'studyPrograms-bulk',
+			deleteKind: 'studyProgram',
+			beginCreate,
+			beginEdit,
+			stopEditing,
+			requestDelete,
+			confirmPendingDelete,
+			cancelPendingDelete,
+			openBulkEditor,
+			openBulkDelete: createBulkDeleteAction({
+				kind: 'bulk-studyPrograms',
+				bulkKey: 'studyPrograms',
+				noun: 'prodi',
+				successMessage: 'Prodi terpilih berhasil dihapus.',
+				failureMessage: 'Gagal menghapus prodi terpilih.'
+			}),
+			extras: {
+				filteredStudyPrograms,
+				selectedStudyProgramId,
+				selectedStudyProgram,
+				collectionPagination: collectionPagination.studyPrograms,
+				createStudyProgram,
+				updateStudyProgram,
+				bulkUpdateStudyPrograms,
+				createStudyProgramEnhance,
+				updateStudyProgramEnhance,
+				bulkUpdateStudyProgramsEnhance,
+				faculties,
+				facultiesIssue: collectionIssues.faculties,
+				studyProgramEditorBlocked,
+				onPickStudyProgram: pickStudyProgram
+			}
+		})
+	}));
+
+	const enrollmentsViewProps = $derived.by(() =>
+		buildEnrollmentsViewProps({
+			...buildBulkViewBase({
+				key: 'enrollments',
+				reset: () => {
+					enrollmentSearch = '';
+				},
+				queueCollectionRefresh,
+				changeCollectionPage,
+				currentRole: requireCurrentRole(),
+				editorView,
+				pendingDelete,
+				handleKeyboardClick,
+				onNavigateToEntity: navigateToEntity,
+				bulkSelectedIds: bulkSelectedIds.enrollments ?? new Set(),
+				bulkCount: bulkCount('enrollments'),
+				bulkClear,
+				bulkToggleAll,
+				bulkToggleId
+			}),
+			filteredEnrollments,
+			selectedEnrollmentId,
+			selectedEnrollment,
+			selectedEnrollmentConflictSummary,
+			selectedEnrollmentConflictGroup,
+			scheduleCardMap,
+			conflictSummaryByCardId,
+			courses,
+			lecturers,
+			scheduleSemesterOptions,
+			scheduleAcademicYearOptions,
+			scheduleActiveFilterCount,
+			collectionPagination: collectionPagination.enrollments,
+			bulkUpdateEnrollmentsEnhance,
+			bulkEditEnrollmentSemester,
+			bulkEditEnrollmentAcademicYear,
+			requestEnrollmentEnhance,
+			studentStudyProgramId: currentUser.current?.studyProgramId ?? null,
+			days,
+			timezone,
+			onBulkEditEnrollmentSemesterInput: (value: string) =>
+				(bulkEditEnrollmentSemester = value),
+			onBulkEditEnrollmentAcademicYearInput: (value: string) =>
+				(bulkEditEnrollmentAcademicYear = value),
+			onOpenBulkEdit: () => {
+				bulkEditEnrollmentSemester = '';
+				bulkEditEnrollmentAcademicYear = '';
+				editorView = 'enrollments-bulk';
+			},
+			onOpenBulkDelete: createBulkDeleteAction({
+				kind: 'bulk-enrollments',
+				bulkKey: 'enrollments',
+				noun: 'KRS',
+				successMessage: 'KRS terpilih berhasil dihapus.',
+				failureMessage: 'Gagal menghapus KRS terpilih.'
+			}),
+			onOpenBuilderForEnrollment: openBuilderForEnrollment,
+			onOpenBuilderForApproval: (item: SelectEnrollmentsResult) => {
+				pickEnrollment(item);
+				builderStep = 'time';
+				activeView = 'builder';
+			},
+			onCancelRequest: handleCancelEnrollmentRequest,
+			onRejectRequest: handleRejectEnrollment,
+			onStartRequest: () => clearSelection('enrollments'),
+			onResetScheduleFilters: resetScheduleFilters,
+			onPickEnrollment: pickEnrollment,
+			onDayChange: () => queueCollectionRefresh('enrollments', 0),
+			onCourseFilterChange: () => queueCollectionRefresh('enrollments', 0),
+			onSemesterFilterChange: () => queueCollectionRefresh('enrollments', 0),
+			onAcademicYearFilterChange: () => queueCollectionRefresh('enrollments', 0)
+		})
+	);
+
+	const gradesViewProps = $derived.by(() => ({
+		...buildCrudEntityViewProps({
+			key: 'grades',
+			reset: () => {
+				gradeSearch = '';
+			},
+			queueCollectionRefresh,
+			changeCollectionPage,
+			currentRole: requireCurrentRole(),
+			editorView,
+			pendingDelete,
+			handleKeyboardClick,
+			onNavigateToEntity: navigateToEntity,
+			bulkSelectedIds: bulkSelectedIds.grades ?? new Set(),
+			bulkCount: bulkCount('grades'),
+			bulkClear,
+			bulkToggleAll,
+			bulkToggleId,
+			selectedId: selectedGradeId,
+			editView: 'grades',
+			bulkView: 'grades-bulk',
+			deleteKind: 'grade',
+			beginCreate,
+			beginEdit,
+			stopEditing,
+			requestDelete,
+			confirmPendingDelete,
+			cancelPendingDelete,
+			openBulkEditor,
+			openBulkDelete: createBulkDeleteAction({
+				kind: 'bulk-grades',
+				bulkKey: 'grades',
+				noun: 'nilai',
+				successMessage: 'Nilai terpilih berhasil dihapus.',
+				failureMessage: 'Gagal menghapus nilai terpilih.'
+			}),
+			extras: {
+				filteredGrades,
+				selectedGradeId,
+				selectedGrade,
+				selectedGradeEnrollment,
+				collectionPagination: collectionPagination.grades,
+				bulkUpdateGrades,
+				createGradeEnhance,
+				updateGradeEnhance,
+				bulkUpdateGradesEnhance,
+				enrollments: approvedEnrollmentOptions,
+				courses,
+				studentStudyProgramId: currentUser.current?.studyProgramId ?? null,
+				enrollmentsIssue: collectionIssues.enrollments,
+				gradeEditorBlocked,
+				onPickGrade: pickGrade,
+				onGradeLetterFilterChange: () => queueCollectionRefresh('grades', 0),
+				onGradeCourseFilterChange: () => queueCollectionRefresh('grades', 0)
+			}
+		})
+	}));
+
+	const usersViewProps = $derived.by(() =>
+		buildUsersViewProps({
+			...buildSearchActions({
+				key: 'users',
+				reset: () => {
+					userSearch = '';
+				},
+				queueCollectionRefresh
+			}),
+			...buildPaginationActions({
+				key: 'users',
+				changeCollectionPage
+			}),
+			filteredUsers,
+			selectedUserId,
+			selectedUser,
+			selectedUserIds,
+			editorView,
+			collectionPagination: collectionPagination.users,
+			updateUserEnhance,
+			bulkUpdateUserRoleEnhance,
+			bulkResetPasswordEnhance,
+			bulkResetPasswordsPending: bulkResetPasswords.pending > 0,
+			onClearSelection: clearUserSelection,
+			onOpenBulkRole: () => openBulkEditor('users', 'users-bulk-role'),
+			onOpenBulkPassword: () => openBulkEditor('users', 'users-bulk-password'),
+			onOpenBulkDelete: () =>
+				openBulkDelete({
+					kind: 'bulk-user',
+					ids: [...selectedUserIds],
+					label: `${selectedUserIds.size} akun`,
+					successMessage: 'Akun terpilih berhasil dihapus.',
+					failureMessage: 'Gagal menghapus akun terpilih.'
+				}),
+			onToggleAllUsers: toggleAllUsers,
+			onToggleUser: (id: string) => toggleUserSelection(id),
+			onPickUser: pickUser,
+			handleKeyboardClick,
+			onNavigateToEntity: navigateToEntity,
+			onBeginEdit: () => beginEdit('users'),
+			onStopEditing: () => stopEditing('users')
+		})
 	);
 </script>
 
@@ -4363,12 +5060,18 @@
 				<section class="support-warning">
 					<div class="support-warning-head">
 						<p class="warning-title">Sebagian data pendukung belum tersedia</p>
-						<Button
-							variant="ghost"
-							size="sm"
-							class="ghost-button"
-							onclick={() => void ensureViewData(activeView, true)}>Coba lagi</Button
-						>
+						<div class="warning-actions">
+							<Button
+								variant="ghost"
+								size="sm"
+								class="ghost-button"
+								onclick={handleRefreshCurrentView}
+								disabled={viewRefreshLoading}
+							>
+								{viewRefreshLoading ? 'Memuat...' : 'Coba lagi'}
+							</Button>
+							<Button variant="outline" size="sm" onclick={refreshPage}>Refresh halaman</Button>
+						</div>
 					</div>
 					<ul class="support-warning-list">
 						{#each activeViewIssues as issue, index (`${activeView}-${index}`)}
@@ -4389,735 +5092,111 @@
 
 			{#if !blocksViewRendering}
 				{#if activeView === 'dashboard'}
-					<DashboardView
-						role={currentUser.current.role as AppRole}
-						{nextSchedule}
-						{enrollments}
-						{grades}
-						{studentGradeHighlights}
-						{conflictCount}
-						{primaryConflict}
-						{additionalConflictCount}
-						{conflictGroupDetailsById}
-						{underusedRooms}
-						{classRoomDashboardSummary}
-						classRoomDashboardMetrics={classRoomDashboardMetrics?.items ?? []}
-						{classRoomDashboardPagination}
-						{selectedRoomId}
-						conflictedCount={conflictAudit?.summary?.conflictedRooms ?? 0}
-						onActivateView={activateView}
-						onNavigateToEntity={navigateToEntity}
-						onOpenBuilderForSchedule={openBuilderForSchedule}
-						onOpenCalendarForSchedule={openCalendarForSchedule}
-						onPickRoom={(id) => (selectedRoomId = id)}
-						onPreviousPage={() => changeClassRoomDashboardPage('previous')}
-						onNextPage={() => changeClassRoomDashboardPage('next')}
-						{handleKeyboardClick}
-					/>
+					<DashboardView {...dashboardViewProps} />
 				{/if}
 
 				{#if activeView === 'calendar'}
-					<CalendarView
-						bind:enrollmentSearch
-						bind:scheduleDayFilter
-						bind:scheduleCourseFilter
-						bind:scheduleRoomFilter
-						bind:scheduleLecturerFilter
-						bind:scheduleSemesterFilter
-						bind:scheduleAcademicYearFilter
-						bind:scheduleRoomFilterSearch
-						bind:scheduleRoomFilterOpen
-						bind:selectedConflictGroupId
-						{calendarWeekLabel}
-						{courses}
-						{lecturers}
-						{scheduleSemesterOptions}
-						{scheduleAcademicYearOptions}
-						{filteredScheduleCards}
-						{scheduleActiveFilterCount}
-						{calendarConflictLegend}
-						{calendarNeedsFilters}
-						{calendarExceedsVisibleLimit}
-						calendarMaxVisibleSchedules={CALENDAR_MAX_VISIBLE_SCHEDULES}
-						{EventCalendarComponent}
-						{calendarPlugins}
-						{calendarOptions}
-						{calendarDetailSchedule}
-						{selectedScheduleConflictSummary}
-						{selectedScheduleConflictGroup}
-						{selectedScheduleConflictPeers}
-						{selectedScheduleOverlapPeers}
-						{selectedScheduleId}
-						{scheduleRoomFilterOptions}
-						{filteredScheduleRoomFilterOptions}
-						{scheduleRoomFilterIssue}
-						{scheduleRoomFilterLoading}
-						{scheduleRoomFilterHasMore}
-						selectedScheduleRoomFilterLabel={scheduleRoomFilter
-							? (classrooms.find((r) => r.id === scheduleRoomFilter)?.name ?? '')
-							: ''}
-						{queueCollectionRefresh}
-						{queueScheduleRoomFilterRefresh}
-						{loadMoreScheduleRoomFilterOptions}
-						{resetScheduleFilters}
-						{toggleConflictGroup}
-						{navigateToEntity}
-						{openBuilderForSchedule}
-						{focusSchedule}
-						{handleKeyboardClick}
-					/>
+					<CalendarView bind:state={scheduleViewState} {...calendarViewProps} />
 				{/if}
 
 				{#if activeView === 'builder' && currentUser.current.role !== 'STUDENT'}
 					<BuilderView
 						class="workspace-shell builder-shell"
-						bind:enrollmentSearch
-						bind:scheduleDayFilter
-						bind:scheduleCourseFilter
-						bind:scheduleRoomFilter
-						bind:scheduleLecturerFilter
-						bind:scheduleSemesterFilter
-						bind:scheduleAcademicYearFilter
-						bind:scheduleCourseFilterSearch
-						bind:scheduleRoomFilterSearch
-						bind:scheduleLecturerFilterSearch
-						bind:scheduleCourseFilterOpen
-						bind:scheduleRoomFilterOpen
-						bind:scheduleLecturerFilterOpen
-						bind:builderConflictOnly
-						bind:builderStep
-						bind:studentPickerSearch
-						bind:coursePickerSearch
-						bind:roomPickerSearch
-						bind:studentPickerOpen
-						bind:coursePickerOpen
-						bind:roomPickerOpen
+						bind:filterState={builderScheduleState}
+						bind:workflowState={builderWorkflowState}
 						bind:enrollmentDraft
-						{builderTaskMode}
-						{selectedEnrollmentId}
-						{pendingDelete}
-						{filteredBuilderEnrollments}
-						{scheduleCardMap}
-						auditConflictCardMap={auditConflictCardMap}
-						{conflictSummaryByCardId}
-						collectionPagination={collectionPagination.enrollments}
-						{scheduleSemesterOptions}
-						{scheduleAcademicYearOptions}
-						{scheduleActiveFilterCount}
-						{scheduleCourseFilterOptions}
-						{scheduleRoomFilterOptions}
-						{filteredScheduleRoomFilterOptions}
-						{scheduleLecturerFilterOptions}
-						{scheduleCourseFilterIssue}
-						{scheduleRoomFilterIssue}
-						{scheduleLecturerFilterIssue}
-						{scheduleCourseFilterLoading}
-						{scheduleRoomFilterLoading}
-						{scheduleLecturerFilterLoading}
-						{scheduleCourseFilterHasMore}
-						{scheduleRoomFilterHasMore}
-						{scheduleLecturerFilterHasMore}
-						{selectedScheduleCourseFilterLabel}
-						{selectedScheduleRoomFilterLabel}
-						{selectedScheduleLecturerFilterLabel}
-						{selectedEnrollmentScheduleCard}
-						{selectedEnrollmentConflictSummary}
-						{selectedEnrollmentConflictGroup}
-						{selectedDraftStudent}
-						{selectedDraftCourse}
-						{selectedDraftRoom}
-						{draftTimeSummary}
-						{filteredRoomsForPicker}
-						{builderConflictCards}
-						{conflictCount}
-						studentPickerOptions={filteredStudentsForPicker}
-						coursePickerOptions={filteredCoursesForPicker}
-						{studentPickerIssue}
-						{coursePickerIssue}
-						{roomPickerIssue}
-						{studentPickerLoading}
-						{coursePickerLoading}
-						{roomPickerLoading}
-						{studentPickerHasMore}
-						{coursePickerHasMore}
-						{roomPickerHasMore}
-						{createEnrollment}
-						{updateEnrollment}
-						{createEnrollmentEnhance}
-						{updateEnrollmentEnhance}
-						{handleKeyboardClick}
-						onClearSelection={() => clearSelection('builder')}
-						onQueueEnrollmentRefresh={(delay) => queueCollectionRefresh('enrollments', delay)}
-						onQueueScheduleCourseFilterRefresh={queueScheduleCourseFilterRefresh}
-						onQueueScheduleRoomFilterRefresh={queueScheduleRoomFilterRefresh}
-						onQueueScheduleLecturerFilterRefresh={queueScheduleLecturerFilterRefresh}
-						onLoadMoreScheduleCourseFilterOptions={loadMoreScheduleCourseFilterOptions}
-						onLoadMoreScheduleRoomFilterOptions={loadMoreScheduleRoomFilterOptions}
-						onLoadMoreScheduleLecturerFilterOptions={loadMoreScheduleLecturerFilterOptions}
-						onPickEnrollment={pickEnrollment}
-						onNavigateToEntity={navigateToEntity}
-						onResetScheduleFilters={resetScheduleFilters}
-						onOpenBuilderForSchedule={openBuilderForSchedule}
-						onOpenCalendarForSchedule={openCalendarForSchedule}
-						onRequestDeleteEnrollment={() => requestDelete('enrollment', selectedEnrollmentId!)}
-						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-						onCancelDelete={() => (pendingDelete = null)}
-						onQueueStudentPickerRefresh={queueStudentPickerRefresh}
-						onQueueCoursePickerRefresh={queueCoursePickerRefresh}
-						onQueueRoomPickerRefresh={queueRoomPickerRefresh}
-						onLoadMoreStudentPickerOptions={loadMoreStudentPickerOptions}
-						onLoadMoreCoursePickerOptions={loadMoreCoursePickerOptions}
-						onLoadMoreRoomPickerOptions={loadMoreRoomPickerOptions}
-						onPagePrevious={() => void changeCollectionPage('enrollments', 'previous')}
-						onPageNext={() => void changeCollectionPage('enrollments', 'next')}
+						{...builderViewProps}
 					/>
 				{/if}
 
 				{#if activeView === 'classrooms'}
 					<ClassroomsView
-						currentRole={currentUser.current.role as AppRole}
 						bind:roomSearch
-						{filteredClassrooms}
-						{selectedRoomId}
-						{selectedRoom}
-						bulkSelectedIds={bulkSelectedIds['classrooms'] ?? new Set()}
-						bulkCount={bulkCount('classrooms')}
 						bind:classroomDraft
 						bind:bulkEditClassRoomType
 						bind:bulkEditClassRoomCapacity
 						bind:bulkEditClassRoomHasProjector
 						bind:bulkEditClassRoomHasAC
-						{editorView}
-						{pendingDelete}
-						collectionPagination={collectionPagination.classrooms}
-						{createClassRoom}
-						{updateClassRoom}
-						{bulkUpdateClassRooms}
-						{createClassRoomEnhance}
-						{updateClassRoomEnhance}
-						{bulkUpdateClassRoomsEnhance}
-						{classRoomTypes}
-						{beautifyRoomType}
-						onSearchInput={() => queueCollectionRefresh('classrooms')}
-						onClearSearch={() => {
-							roomSearch = '';
-							queueCollectionRefresh('classrooms', 0);
-						}}
-						onBeginCreate={() => beginCreate('classrooms')}
-						onBulkClear={() => bulkClear('classrooms')}
-						onOpenBulkEdit={() => {
-							stopEditing('classrooms');
-							editorView = 'classrooms-bulk';
-						}}
-						onOpenBulkDelete={() => {
-							pendingDelete = {
-								kind: 'bulk-classrooms',
-								id: bulkGetIds('classrooms').join(','),
-								label: `${bulkCount('classrooms')} ruang`,
-								message: `Anda akan menghapus ${bulkCount('classrooms')} ruang. Tindakan ini tidak dapat dibatalkan.`,
-								confirmLabel: 'Ya, hapus semua',
-								successMessage: 'Ruang terpilih berhasil dihapus.',
-								failureMessage: 'Gagal menghapus ruang terpilih.'
-							};
-						}}
-						onBulkToggleAll={(ids) => bulkToggleAll('classrooms', ids)}
-						onBulkToggleId={(id) => bulkToggleId('classrooms', id)}
-						onPickClassroom={pickClassroom}
-						{handleKeyboardClick}
-						onNavigateToEntity={navigateToEntity}
-						onBeginEdit={() => beginEdit('classrooms')}
-						onStopEditing={() => stopEditing('classrooms')}
-						onRequestDelete={() => requestDelete('classroom', selectedRoomId!)}
-						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-						onCancelDelete={() => (pendingDelete = null)}
-						onPagePrevious={() => void changeCollectionPage('classrooms', 'previous')}
-						onPageNext={() => void changeCollectionPage('classrooms', 'next')}
+						{...classroomsViewProps}
 					/>
 				{/if}
 
 				{#if activeView === 'courses'}
 					<CoursesView
-						currentRole={currentUser.current.role as AppRole}
 						bind:courseSearch
-						{filteredCourses}
-						{selectedCourseId}
-						{selectedCourse}
-						bulkSelectedIds={bulkSelectedIds['courses'] ?? new Set()}
-						bulkCount={bulkCount('courses')}
 						bind:courseDraft
 						bind:bulkEditCourseCredits
 						bind:bulkEditCourseStudyProgramId
 						bind:bulkEditCourseLecturerId
-						{editorView}
-						{pendingDelete}
-						collectionPagination={collectionPagination.courses}
-						{updateCourseEnhance}
-						{createCourseEnhance}
-						{bulkUpdateCoursesEnhance}
-						{studyPrograms}
-						{lecturers}
-						studyProgramsIssue={collectionIssues.studyPrograms}
-						lecturersIssue={collectionIssues.lecturers}
-						{courseEditorBlocked}
-						onSearchInput={() => queueCollectionRefresh('courses')}
-						onClearSearch={() => {
-							courseSearch = '';
-							queueCollectionRefresh('courses', 0);
-						}}
-						onBeginCreate={() => beginCreate('courses')}
-						onBulkClear={() => bulkClear('courses')}
-						onOpenBulkEdit={() => {
-							stopEditing('courses');
-							editorView = 'courses-bulk';
-						}}
-						onOpenBulkDelete={() => {
-							pendingDelete = {
-								kind: 'bulk-courses',
-								id: bulkGetIds('courses').join(','),
-								label: `${bulkCount('courses')} mata kuliah`,
-								message: `Anda akan menghapus ${bulkCount('courses')} mata kuliah. Tindakan ini tidak dapat dibatalkan.`,
-								confirmLabel: 'Ya, hapus semua',
-								successMessage: 'Mata kuliah terpilih berhasil dihapus.',
-								failureMessage: 'Gagal menghapus mata kuliah terpilih.'
-							};
-						}}
-						onBulkToggleAll={(ids) => bulkToggleAll('courses', ids)}
-						onBulkToggleId={(id) => bulkToggleId('courses', id)}
-						onPickCourse={pickCourse}
-						{handleKeyboardClick}
-						onNavigateToEntity={navigateToEntity}
-						onBeginEdit={() => beginEdit('courses')}
-						onStopEditing={() => stopEditing('courses')}
-						onRequestDelete={() => requestDelete('course', selectedCourseId!)}
-						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-						onCancelDelete={() => (pendingDelete = null)}
-						onPagePrevious={() => void changeCollectionPage('courses', 'previous')}
-						onPageNext={() => void changeCollectionPage('courses', 'next')}
+						{...coursesViewProps}
 					/>
 				{/if}
 
 				{#if activeView === 'students' && currentUser.current.role !== 'STUDENT'}
 					<StudentsView
-						currentRole={currentUser.current.role as AppRole}
 						bind:studentSearch
-						{filteredStudents}
-						{selectedStudentId}
-						{selectedStudent}
-						bulkSelectedIds={bulkSelectedIds['students'] ?? new Set()}
-						bulkCount={bulkCount('students')}
 						bind:studentDraft
 						bind:bulkEditStudentStudyProgramId
 						bind:bulkEditStudentYearAdmitted
-						{editorView}
-						{pendingDelete}
-						collectionPagination={collectionPagination.students}
-						{createStudent}
-						{updateStudent}
-						{bulkUpdateStudents}
-						{createStudentEnhance}
-						{updateStudentEnhance}
-						{bulkUpdateStudentsEnhance}
-						{studyPrograms}
-						studyProgramsIssue={collectionIssues.studyPrograms}
-						{studentEditorBlocked}
-						onSearchInput={() => queueCollectionRefresh('students')}
-						onClearSearch={() => {
-							studentSearch = '';
-							queueCollectionRefresh('students', 0);
-						}}
-						onBeginCreate={() => beginCreate('students')}
-						onBulkClear={() => bulkClear('students')}
-						onOpenBulkEdit={() => {
-							stopEditing('students');
-							editorView = 'students-bulk';
-						}}
-						onOpenBulkDelete={() => {
-							pendingDelete = {
-								kind: 'bulk-students',
-								id: bulkGetIds('students').join(','),
-								label: `${bulkCount('students')} mahasiswa`,
-								message: `Anda akan menghapus ${bulkCount('students')} mahasiswa. Tindakan ini tidak dapat dibatalkan.`,
-								confirmLabel: 'Ya, hapus semua',
-								successMessage: 'Mahasiswa terpilih berhasil dihapus.',
-								failureMessage: 'Gagal menghapus mahasiswa terpilih.'
-							};
-						}}
-						onBulkToggleAll={(ids) => bulkToggleAll('students', ids)}
-						onBulkToggleId={(id) => bulkToggleId('students', id)}
-						onPickStudent={pickStudent}
-						{handleKeyboardClick}
-						onNavigateToEntity={navigateToEntity}
-						onBeginEdit={() => beginEdit('students')}
-						onStopEditing={() => stopEditing('students')}
-						onRequestDelete={() => requestDelete('student', selectedStudentId!)}
-						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-						onCancelDelete={() => (pendingDelete = null)}
-						onPagePrevious={() => void changeCollectionPage('students', 'previous')}
-						onPageNext={() => void changeCollectionPage('students', 'next')}
+						{...studentsViewProps}
 					/>
 				{/if}
 
 				{#if activeView === 'lecturers'}
 					<LecturersView
-						currentRole={currentUser.current.role as AppRole}
 						bind:lecturerSearch
-						{filteredLecturers}
-						{selectedLecturerId}
-						{selectedLecturer}
-						bulkSelectedIds={bulkSelectedIds['lecturers'] ?? new Set()}
-						bulkCount={bulkCount('lecturers')}
 						bind:lecturerDraft
 						bind:bulkEditLecturerName
 						bind:bulkEditLecturerEmail
 						bind:bulkEditLecturerPhone
 						bind:bulkEditLecturerAddress
-						{editorView}
-						{pendingDelete}
-						collectionPagination={collectionPagination.lecturers}
-						{createLecturer}
-						{updateLecturer}
-						{bulkUpdateLecturers}
-						{createLecturerEnhance}
-						{updateLecturerEnhance}
-						{bulkUpdateLecturersEnhance}
-						onSearchInput={() => queueCollectionRefresh('lecturers')}
-						onClearSearch={() => {
-							lecturerSearch = '';
-							queueCollectionRefresh('lecturers', 0);
-						}}
-						onBeginCreate={() => beginCreate('lecturers')}
-						onBulkClear={() => bulkClear('lecturers')}
-						onOpenBulkEdit={() => {
-							stopEditing('lecturers');
-							editorView = 'lecturers-bulk';
-						}}
-						onOpenBulkDelete={() => {
-							pendingDelete = {
-								kind: 'bulk-lecturers',
-								id: bulkGetIds('lecturers').join(','),
-								label: `${bulkCount('lecturers')} dosen`,
-								message: `Anda akan menghapus ${bulkCount('lecturers')} dosen. Tindakan ini tidak dapat dibatalkan.`,
-								confirmLabel: 'Ya, hapus semua',
-								successMessage: 'Dosen terpilih berhasil dihapus.',
-								failureMessage: 'Gagal menghapus dosen terpilih.'
-							};
-						}}
-						onBulkToggleAll={(ids) => bulkToggleAll('lecturers', ids)}
-						onBulkToggleId={(id) => bulkToggleId('lecturers', id)}
-						onPickLecturer={pickLecturer}
-						{handleKeyboardClick}
-						onNavigateToEntity={navigateToEntity}
-						onBeginEdit={() => beginEdit('lecturers')}
-						onStopEditing={() => stopEditing('lecturers')}
-						onRequestDelete={() => requestDelete('lecturer', selectedLecturerId!)}
-						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-						onCancelDelete={() => (pendingDelete = null)}
-						onPagePrevious={() => void changeCollectionPage('lecturers', 'previous')}
-						onPageNext={() => void changeCollectionPage('lecturers', 'next')}
+						{...lecturersViewProps}
 					/>
 				{/if}
 
 				{#if activeView === 'faculties' && currentUser.current.role !== 'STUDENT'}
 					<FacultiesView
-						currentRole={currentUser.current.role as AppRole}
 						bind:facultySearch
-						{filteredFaculties}
-						{selectedFacultyId}
-						{selectedFaculty}
-						bulkSelectedIds={bulkSelectedIds['faculties'] ?? new Set()}
-						bulkCount={bulkCount('faculties')}
 						bind:facultyDraft
 						bind:bulkEditFacultyName
-						{editorView}
-						{pendingDelete}
-						collectionPagination={collectionPagination.faculties}
-						{createFaculty}
-						{updateFaculty}
-						{bulkUpdateFaculties}
-						{createFacultyEnhance}
-						{updateFacultyEnhance}
-						{bulkUpdateFacultiesEnhance}
-						onSearchInput={() => queueCollectionRefresh('faculties')}
-						onClearSearch={() => {
-							facultySearch = '';
-							queueCollectionRefresh('faculties', 0);
-						}}
-						onBeginCreate={() => beginCreate('faculties')}
-						onBulkClear={() => bulkClear('faculties')}
-						onOpenBulkEdit={() => {
-							stopEditing('faculties');
-							editorView = 'faculties-bulk';
-						}}
-						onOpenBulkDelete={() => {
-							pendingDelete = {
-								kind: 'bulk-faculties',
-								id: bulkGetIds('faculties').join(','),
-								label: `${bulkCount('faculties')} fakultas`,
-								message: `Anda akan menghapus ${bulkCount('faculties')} fakultas. Tindakan ini tidak dapat dibatalkan.`,
-								confirmLabel: 'Ya, hapus semua',
-								successMessage: 'Fakultas terpilih berhasil dihapus.',
-								failureMessage: 'Gagal menghapus fakultas terpilih.'
-							};
-						}}
-						onBulkToggleAll={(ids) => bulkToggleAll('faculties', ids)}
-						onBulkToggleId={(id) => bulkToggleId('faculties', id)}
-						onPickFaculty={pickFaculty}
-						{handleKeyboardClick}
-						onNavigateToEntity={navigateToEntity}
-						onBeginEdit={() => beginEdit('faculties')}
-						onStopEditing={() => stopEditing('faculties')}
-						onRequestDelete={() => requestDelete('faculty', selectedFacultyId!)}
-						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-						onCancelDelete={() => (pendingDelete = null)}
-						onPagePrevious={() => void changeCollectionPage('faculties', 'previous')}
-						onPageNext={() => void changeCollectionPage('faculties', 'next')}
+						{...facultiesViewProps}
 					/>
 				{/if}
 
 				{#if activeView === 'studyPrograms' && currentUser.current.role !== 'STUDENT'}
 					<StudyProgramsView
-						currentRole={currentUser.current.role as AppRole}
 						bind:studyProgramSearch
-						{filteredStudyPrograms}
-						{selectedStudyProgramId}
-						{selectedStudyProgram}
-						bulkSelectedIds={bulkSelectedIds['studyPrograms'] ?? new Set()}
-						bulkCount={bulkCount('studyPrograms')}
 						bind:studyProgramDraft
 						bind:bulkEditStudyProgramFacultyId
 						bind:bulkEditStudyProgramHead
-						{editorView}
-						{pendingDelete}
-						collectionPagination={collectionPagination.studyPrograms}
-						{createStudyProgram}
-						{updateStudyProgram}
-						{bulkUpdateStudyPrograms}
-						{createStudyProgramEnhance}
-						{updateStudyProgramEnhance}
-						{bulkUpdateStudyProgramsEnhance}
-						{faculties}
-						facultiesIssue={collectionIssues.faculties}
-						{studyProgramEditorBlocked}
-						onSearchInput={() => queueCollectionRefresh('studyPrograms')}
-						onClearSearch={() => {
-							studyProgramSearch = '';
-							queueCollectionRefresh('studyPrograms', 0);
-						}}
-						onBeginCreate={() => beginCreate('studyPrograms')}
-						onBulkClear={() => bulkClear('studyPrograms')}
-						onOpenBulkEdit={() => {
-							stopEditing('studyPrograms');
-							editorView = 'studyPrograms-bulk';
-						}}
-						onOpenBulkDelete={() => {
-							pendingDelete = {
-								kind: 'bulk-studyPrograms',
-								id: bulkGetIds('studyPrograms').join(','),
-								label: `${bulkCount('studyPrograms')} prodi`,
-								message: `Anda akan menghapus ${bulkCount('studyPrograms')} prodi. Tindakan ini tidak dapat dibatalkan.`,
-								confirmLabel: 'Ya, hapus semua',
-								successMessage: 'Prodi terpilih berhasil dihapus.',
-								failureMessage: 'Gagal menghapus prodi terpilih.'
-							};
-						}}
-						onBulkToggleAll={(ids) => bulkToggleAll('studyPrograms', ids)}
-						onBulkToggleId={(id) => bulkToggleId('studyPrograms', id)}
-						onPickStudyProgram={pickStudyProgram}
-						{handleKeyboardClick}
-						onNavigateToEntity={navigateToEntity}
-						onBeginEdit={() => beginEdit('studyPrograms')}
-						onStopEditing={() => stopEditing('studyPrograms')}
-						onRequestDelete={() => requestDelete('studyProgram', selectedStudyProgramId!)}
-						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-						onCancelDelete={() => (pendingDelete = null)}
-						onPagePrevious={() => void changeCollectionPage('studyPrograms', 'previous')}
-						onPageNext={() => void changeCollectionPage('studyPrograms', 'next')}
+						{...studyProgramsViewProps}
 					/>
 				{/if}
 
 				{#if activeView === 'enrollments'}
-					<EnrollmentsView
-						currentRole={currentUser.current.role as AppRole}
-						bind:enrollmentSearch
-						{filteredEnrollments}
-						{selectedEnrollmentId}
-						{selectedEnrollment}
-						{selectedEnrollmentConflictSummary}
-						{selectedEnrollmentConflictGroup}
-						scheduleCardMap={scheduleCardMap}
-						conflictSummaryByCardId={conflictSummaryByCardId}
-						bind:scheduleDayFilter
-						bind:scheduleCourseFilter
-						bind:scheduleRoomFilter
-						bind:scheduleLecturerFilter
-						bind:scheduleSemesterFilter
-						bind:scheduleAcademicYearFilter
-						{courses}
-						{lecturers}
-						{scheduleSemesterOptions}
-						{scheduleAcademicYearOptions}
-						{scheduleActiveFilterCount}
-						bulkSelectedIds={bulkSelectedIds['enrollments'] ?? new Set()}
-						bulkCount={bulkCount('enrollments')}
-						{editorView}
-						{pendingDelete}
-						collectionPagination={collectionPagination.enrollments}
-						{bulkUpdateEnrollmentsEnhance}
-						{days}
-						{timezone}
-						{handleKeyboardClick}
-						onNavigateToEntity={navigateToEntity}
-						onOpenBuilderForEnrollment={openBuilderForEnrollment}
-						onSearchInput={() => queueCollectionRefresh('enrollments')}
-						onClearSearch={() => {
-							enrollmentSearch = '';
-							queueCollectionRefresh('enrollments', 0);
-						}}
-						onResetScheduleFilters={resetScheduleFilters}
-						onBulkClear={() => bulkClear('enrollments')}
-						onOpenBulkEdit={() => {
-							editorView = 'enrollments-bulk';
-						}}
-						onOpenBulkDelete={() => {
-							pendingDelete = {
-								kind: 'bulk-enrollments',
-								id: bulkGetIds('enrollments').join(','),
-								label: `${bulkCount('enrollments')} KRS`,
-								message: `Anda akan menghapus ${bulkCount('enrollments')} KRS. Tindakan ini tidak dapat dibatalkan.`,
-								confirmLabel: 'Ya, hapus semua',
-								successMessage: 'KRS terpilih berhasil dihapus.',
-								failureMessage: 'Gagal menghapus KRS terpilih.'
-							};
-						}}
-						onBulkToggleAll={(ids) => bulkToggleAll('enrollments', ids)}
-						onBulkToggleId={(id) => bulkToggleId('enrollments', id)}
-						onPickEnrollment={pickEnrollment}
-						onPagePrevious={() => void changeCollectionPage('enrollments', 'previous')}
-						onPageNext={() => void changeCollectionPage('enrollments', 'next')}
-						onDayChange={() => queueCollectionRefresh('enrollments', 0)}
-						onCourseFilterChange={() => queueCollectionRefresh('enrollments', 0)}
-						onSemesterFilterChange={() => queueCollectionRefresh('enrollments', 0)}
-						onAcademicYearFilterChange={() => queueCollectionRefresh('enrollments', 0)}
-					/>
+					<EnrollmentsView bind:state={scheduleViewState} {...enrollmentsViewProps} />
 				{/if}
-
 
 				{#if activeView === 'grades'}
 					<GradesView
-						currentRole={currentUser.current.role as AppRole}
 						bind:gradeSearch
-						{filteredGrades}
-						{selectedGradeId}
-						{selectedGrade}
-						{selectedGradeEnrollment}
-						bulkSelectedIds={bulkSelectedIds['grades'] ?? new Set()}
-						bulkCount={bulkCount('grades')}
 						bind:gradeDraft
 						bind:bulkEditGradeAssignmentScore
 						bind:bulkEditGradeMidtermScore
 						bind:bulkEditGradeFinalScore
 						bind:gradeLetterFilter
 						bind:gradeCourseFilter
-						{editorView}
-						{pendingDelete}
-						collectionPagination={collectionPagination.grades}
-						{bulkUpdateGrades}
-						{createGradeEnhance}
-						{updateGradeEnhance}
-						{bulkUpdateGradesEnhance}
-						{enrollments}
-						{courses}
-						enrollmentsIssue={collectionIssues.enrollments}
-						{gradeEditorBlocked}
-						onSearchInput={() => queueCollectionRefresh('grades')}
-						onClearSearch={() => {
-							gradeSearch = '';
-							queueCollectionRefresh('grades', 0);
-						}}
-						onBulkClear={() => bulkClear('grades')}
-						onOpenBulkEdit={() => {
-							stopEditing('grades');
-							editorView = 'grades-bulk';
-						}}
-						onOpenBulkDelete={() => {
-							pendingDelete = {
-								kind: 'bulk-grades',
-								id: bulkGetIds('grades').join(','),
-								label: `${bulkCount('grades')} nilai`,
-								message: `Anda akan menghapus ${bulkCount('grades')} nilai. Tindakan ini tidak dapat dibatalkan.`,
-								confirmLabel: 'Ya, hapus semua',
-								successMessage: 'Nilai terpilih berhasil dihapus.',
-								failureMessage: 'Gagal menghapus nilai terpilih.'
-							};
-						}}
-						onBulkToggleAll={(ids) => bulkToggleAll('grades', ids)}
-						onBulkToggleId={(id) => bulkToggleId('grades', id)}
-						onPickGrade={pickGrade}
-						{handleKeyboardClick}
-						onNavigateToEntity={navigateToEntity}
-						onBeginCreate={() => beginCreate('grades')}
-						onBeginEdit={() => beginEdit('grades')}
-						onStopEditing={() => stopEditing('grades')}
-						onRequestDelete={() => requestDelete('grade', selectedGradeId!)}
-						onConfirmDelete={() => removeEntity(pendingDelete!.kind, pendingDelete!.id)}
-						onCancelDelete={() => (pendingDelete = null)}
-						onPagePrevious={() => void changeCollectionPage('grades', 'previous')}
-						onPageNext={() => void changeCollectionPage('grades', 'next')}
-						onGradeLetterFilterChange={() => queueCollectionRefresh('grades', 0)}
-						onGradeCourseFilterChange={() => queueCollectionRefresh('grades', 0)}
+						{...gradesViewProps}
 					/>
 				{/if}
 
 				{#if activeView === 'users' && currentUser.current.role === 'ADMIN'}
 					<UsersView
 						bind:userSearch
-						{filteredUsers}
-						{selectedUserId}
-						{selectedUser}
-						{selectedUserIds}
 						bind:bulkUserRole
 						bind:bulkUserPassword
 						bind:userDraft
-						{editorView}
-						collectionPagination={collectionPagination.users}
-						{updateUserEnhance}
-						{bulkUpdateUserRoleEnhance}
-						{bulkResetPasswordEnhance}
-						bulkResetPasswordsPending={bulkResetPasswords.pending > 0}
-						onSearchInput={() => queueCollectionRefresh('users')}
-						onClearSearch={() => {
-							userSearch = '';
-							queueCollectionRefresh('users', 0);
-						}}
-						onClearSelection={clearUserSelection}
-						onOpenBulkRole={() => {
-							stopEditing('users');
-							editorView = 'users-bulk-role';
-						}}
-						onOpenBulkPassword={() => {
-							stopEditing('users');
-							editorView = 'users-bulk-password';
-						}}
-						onOpenBulkDelete={() => {
-							pendingDelete = {
-								kind: 'bulk-user',
-								id: [...selectedUserIds].join(','),
-								label: `${selectedUserIds.size} akun`,
-								message: `Anda akan menghapus ${selectedUserIds.size} akun. Tindakan ini tidak dapat dibatalkan.`,
-								confirmLabel: 'Ya, hapus semua',
-								successMessage: 'Akun terpilih berhasil dihapus.',
-								failureMessage: 'Gagal menghapus akun terpilih.'
-							};
-						}}
-						onToggleAllUsers={toggleAllUsers}
-						onToggleUser={(id) => toggleUserSelection(id)}
-						onPickUser={pickUser}
-						{handleKeyboardClick}
-						onNavigateToEntity={navigateToEntity}
-						onBeginEdit={() => beginEdit('users')}
-						onStopEditing={() => stopEditing('users')}
-						onPagePrevious={() => void changeCollectionPage('users', 'previous')}
-						onPageNext={() => void changeCollectionPage('users', 'next')}
+						{...usersViewProps}
 					/>
 				{/if}
 			{/if}

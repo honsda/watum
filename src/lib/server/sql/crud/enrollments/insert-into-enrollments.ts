@@ -4,10 +4,11 @@ export type InsertIntoEnrollmentsParams = {
     id: string;
     student_id: string;
     course_id: string;
-    class_room_id: string;
-    schedule_id: string;
+    class_room_id?: string | null;
+    schedule_id?: string | null;
     semester: string;
     academic_year: string;
+    status?: string;
     created_at?: Date;
     updated_at?: Date;
 }
@@ -28,6 +29,7 @@ export async function insertIntoEnrollments(connection: Connection, params: Inse
         \`schedule_id\`,
         \`semester\`,
         \`academic_year\`,
+        \`status\`,
         \`created_at\`,
         \`updated_at\`
     )
@@ -41,10 +43,11 @@ export async function insertIntoEnrollments(connection: Connection, params: Inse
         ?,
         ?,
         ?,
+        ?,
         ?
     )
     `
 
-    return connection.query(sql, [params.id, params.student_id, params.course_id, params.class_room_id, params.schedule_id, params.semester, params.academic_year, params.created_at, params.updated_at])
+    return connection.query(sql, [params.id, params.student_id, params.course_id, params.class_room_id ?? null, params.schedule_id ?? null, params.semester, params.academic_year, params.status ?? 'PENDING', params.created_at, params.updated_at])
         .then(res => res[0] as InsertIntoEnrollmentsResult);
 }

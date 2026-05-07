@@ -121,10 +121,8 @@
 					<Button class="primary-button" onclick={() => onActivateView('calendar')}
 						>Lihat kalender</Button
 					>
-					<Button
-						class="ghost-button"
-						variant="ghost"
-						onclick={() => onActivateView('grades')}>Lihat nilai</Button
+					<Button class="ghost-button" variant="ghost" onclick={() => onActivateView('grades')}
+						>Lihat nilai</Button
 					>
 				</div>
 			</article>
@@ -197,9 +195,7 @@
 							</p>
 							{#if primaryConflict.conflictGroupId && conflictGroupDetailsById[primaryConflict.conflictGroupId]}
 								<p>
-									{conflictGroupMetaCopy(
-										conflictGroupDetailsById[primaryConflict.conflictGroupId]
-									)}
+									{conflictGroupMetaCopy(conflictGroupDetailsById[primaryConflict.conflictGroupId])}
 								</p>
 							{/if}
 						</div>
@@ -267,10 +263,8 @@
 					<Button class="primary-button" onclick={() => onActivateView('builder')}
 						>Buka penjadwalan</Button
 					>
-					<Button
-						class="ghost-button"
-						variant="ghost"
-						onclick={() => onActivateView('calendar')}>Lihat kalender</Button
+					<Button class="ghost-button" variant="ghost" onclick={() => onActivateView('calendar')}
+						>Lihat kalender</Button
 					>
 				</div>
 			</article>
@@ -309,9 +303,9 @@
 			loading={classRoomDashboardPagination.loading}
 			canPrevious={classRoomDashboardPagination.history.length > 0}
 			{selectedRoomId}
-			onPickRoom={onPickRoom}
-			onPreviousPage={onPreviousPage}
-			onNextPage={onNextPage}
+			{onPickRoom}
+			{onPreviousPage}
+			{onNextPage}
 		/>
 	{/if}
 </div>

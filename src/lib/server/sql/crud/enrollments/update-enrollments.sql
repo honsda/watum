@@ -7,6 +7,7 @@ SET
     `schedule_id` = CASE WHEN :schedule_idSet THEN :schedule_id ELSE `schedule_id` END,
     `semester` = CASE WHEN :semesterSet THEN :semester ELSE `semester` END,
     `academic_year` = CASE WHEN :academic_yearSet THEN :academic_year ELSE `academic_year` END,
+    `status` = CASE WHEN :statusSet THEN :status ELSE `status` END,
     `created_at` = CASE WHEN :created_atSet THEN :created_at ELSE `created_at` END,
     `updated_at` = CASE WHEN :updated_atSet THEN :updated_at ELSE `updated_at` END
 WHERE

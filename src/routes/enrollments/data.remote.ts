@@ -39,7 +39,12 @@ import { type SelectEnrollmentsResult, type SelectEnrollmentsWhere } from '$lib/
 import type { SelectSchedulesConflictResult } from '$lib/server/sql/select-schedules-conflict';
 import type { SelectStudentScheduleConflictResult } from '$lib/server/sql/select-student-schedule-conflict';
 import type { SelectLecturerScheduleConflictResult } from '$lib/server/sql/select-lecturer-schedule-conflict';
-import { days, enrollmentSchema } from '$lib/validations/enrollment';
+import {
+	days,
+	enrollmentSchema,
+	studentEnrollmentRequestSchema,
+	approveEnrollmentSchema
+} from '$lib/validations/enrollment';
 import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 
 type ConflictNamedResult =
@@ -60,7 +65,8 @@ const enrollmentListSelect = {
 	class_room_name: true,
 	schedule_day: true,
 	schedule_start_time: true,
-	schedule_end_time: true
+	schedule_end_time: true,
+	status: true
 } as const;
 
 const weekdayFromIndex = ['MINGGU', ...days] as const;
@@ -147,7 +153,7 @@ async function selectSchedulePreviewRows(
 		'SELECT e.id, e.student_id, e.course_id, c.lecturer_id, e.class_room_id, e.schedule_id,',
 		'e.semester, e.academic_year, s.name AS student_name, c.name AS course_name,',
 		'l.name AS lecturer_name, cr.name AS class_room_name,',
-		'e.schedule_day, e.schedule_start_time, e.schedule_end_time'
+		'e.schedule_day, e.schedule_start_time, e.schedule_end_time, e.status'
 	].join(' ');
 
 	if (user.role === 'STUDENT') {
@@ -157,7 +163,7 @@ async function selectSchedulePreviewRows(
 			'INNER JOIN students s ON e.student_id = s.id',
 			'INNER JOIN courses c ON e.course_id = c.id',
 			'INNER JOIN lecturers l ON c.lecturer_id = l.id',
-			'INNER JOIN class_rooms cr ON e.class_room_id = cr.id',
+			'LEFT JOIN class_rooms cr ON e.class_room_id = cr.id',
 			`WHERE e.student_id = ?${afterId ? ' AND e.id > ?' : ''}`,
 			'ORDER BY e.id ASC',
 			'LIMIT ?'
@@ -179,7 +185,7 @@ async function selectSchedulePreviewRows(
 			'INNER JOIN enrollments e FORCE INDEX (PRIMARY) ON e.course_id = c.id',
 			'INNER JOIN students s ON e.student_id = s.id',
 			'INNER JOIN lecturers l ON c.lecturer_id = l.id',
-			'INNER JOIN class_rooms cr ON e.class_room_id = cr.id',
+			'LEFT JOIN class_rooms cr ON e.class_room_id = cr.id',
 			`WHERE e.course_id IN (?)${afterId ? ' AND e.id > ?' : ''}`,
 			'ORDER BY e.id ASC',
 			'LIMIT ?'
@@ -195,7 +201,7 @@ async function selectSchedulePreviewRows(
 		'INNER JOIN students s ON e.student_id = s.id',
 		'INNER JOIN courses c ON e.course_id = c.id',
 		'INNER JOIN lecturers l ON c.lecturer_id = l.id',
-		'INNER JOIN class_rooms cr ON e.class_room_id = cr.id',
+		'LEFT JOIN class_rooms cr ON e.class_room_id = cr.id',
 		afterId ? 'WHERE e.id > ?' : '',
 		'ORDER BY e.id ASC',
 		'LIMIT ?'
@@ -874,7 +880,8 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 			class_room_id: data.classRoomId,
 			schedule_id: scheduleId,
 			semester: data.semester,
-			academic_year: data.academicYear
+			academic_year: data.academicYear,
+			status: 'APPROVED'
 		});
 	});
 	invalidateConflictAuditCache();
@@ -894,16 +901,25 @@ export const updateEnrollment = form(
 		if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
 			throw error(403, 'Anda hanya dapat mengubah jadwal untuk mata kuliah yang Anda ampu');
 		}
-		if (enrollment.grade_id) {
+		const isPending = enrollment.status === 'PENDING';
+		if (!isPending && enrollment.grade_id) {
 			throw error(400, 'Data KRS sudah memiliki nilai, tidak dapat diubah');
 		}
+		if (!isPending && !enrollment.schedule_id) {
+			throw error(400, 'Data jadwal KRS tidak lengkap');
+		}
 
-		const [student] = await selectStudents(getPool(), { where: [['id', '=', data.studentId]] });
+		const studentId = enrollment.student_id ?? data.studentId;
+		const courseId = enrollment.course_id ?? data.courseId;
+		const semester = enrollment.semester ?? data.semester;
+		const academicYear = enrollment.academic_year ?? data.academicYear;
+
+		const [student] = await selectStudents(getPool(), { where: [['id', '=', studentId]] });
 		if (!student) {
 			invalid(issue.studentId('Mahasiswa tidak ditemukan'));
 		}
 
-		const [course] = await selectCourses(getPool(), { where: [['id', '=', data.courseId]] });
+		const [course] = await selectCourses(getPool(), { where: [['id', '=', courseId]] });
 		if (!course) {
 			invalid(issue.courseId('Mata kuliah tidak ditemukan'));
 		}
@@ -937,17 +953,17 @@ export const updateEnrollment = form(
 				day: data.day,
 				startTime: startDate,
 				endTime: endDate,
-				semester: data.semester,
-				academicYear: data.academicYear,
+				semester,
+				academicYear,
 				excludeScheduleId: enrollment.schedule_id ?? undefined
 			}),
 			selectStudentScheduleConflict(getPool(), {
-				studentId: data.studentId,
+				studentId,
 				day: data.day,
 				startTime: startDate,
 				endTime: endDate,
-				semester: data.semester,
-				academicYear: data.academicYear,
+				semester,
+				academicYear,
 				excludeEnrollmentId: data.id
 			}),
 			selectLecturerScheduleConflict(getPool(), {
@@ -955,17 +971,17 @@ export const updateEnrollment = form(
 				day: data.day,
 				startTime: startDate,
 				endTime: endDate,
-				semester: data.semester,
-				academicYear: data.academicYear,
+				semester,
+				academicYear,
 				excludeScheduleId: enrollment.schedule_id ?? undefined
 			}),
 			selectEnrollments(getPool(), {
 				select: { id: true },
 				where: [
-					['student_id', '=', data.studentId],
-					['course_id', '=', data.courseId],
-					['semester', '=', data.semester],
-					['academic_year', '=', data.academicYear]
+					['student_id', '=', studentId],
+					['course_id', '=', courseId],
+					['semester', '=', semester],
+					['academic_year', '=', academicYear]
 				]
 			})
 		]);
@@ -1002,31 +1018,55 @@ export const updateEnrollment = form(
 			);
 		}
 		await withTransaction(async (conn) => {
-			await updateSchedule(
-				conn,
-				{
+			if (isPending) {
+				const scheduleId = randomUUID();
+				await insertSchedule(conn, {
+					id: scheduleId,
 					class_room_id: data.classRoomId,
 					day: data.day,
 					start_time: startDate,
 					end_time: endDate,
 					lecturer_id: course.lecturer_id
-				},
-				{ id: enrollment.schedule_id! }
-			);
-			await updateEnrollmentDb(
-				conn,
-				{
-					student_id: data.studentId,
-					course_id: data.courseId,
-					class_room_id: data.classRoomId,
-					schedule_day: data.day,
-					schedule_start_time: startDate,
-					schedule_end_time: endDate,
-					semester: data.semester,
-					academic_year: data.academicYear
-				},
-				{ id: data.id }
-			);
+				});
+				await updateEnrollmentDb(
+					conn,
+					{
+						student_id: studentId,
+						course_id: courseId,
+						class_room_id: data.classRoomId,
+						schedule_id: scheduleId,
+						schedule_day: data.day,
+						schedule_start_time: startDate,
+						schedule_end_time: endDate,
+						semester,
+						academic_year: academicYear,
+						status: 'APPROVED'
+					},
+					{ id: data.id }
+				);
+			} else {
+				await updateSchedule(
+					conn,
+					{
+						class_room_id: data.classRoomId,
+						day: data.day,
+						start_time: startDate,
+						end_time: endDate,
+						lecturer_id: course.lecturer_id
+					},
+					{ id: enrollment.schedule_id! }
+				);
+				await updateEnrollmentDb(
+					conn,
+					{
+						class_room_id: data.classRoomId,
+						schedule_day: data.day,
+						schedule_start_time: startDate,
+						schedule_end_time: endDate
+					},
+					{ id: data.id }
+				);
+			}
 		});
 		invalidateConflictAuditCache();
 		await getEnrollments().refresh();
@@ -1045,7 +1085,9 @@ export const deleteEnrollment = command(v.string(), async (id) => {
 	}
 	await withTransaction(async (conn) => {
 		await deleteEnrollmentDb(conn, { id });
-		await deleteSchedule(conn, { id: enrollment.schedule_id! });
+		if (enrollment.schedule_id) {
+			await deleteSchedule(conn, { id: enrollment.schedule_id });
+	}
 	});
 	invalidateConflictAuditCache();
 	await getEnrollments().refresh();
@@ -1129,3 +1171,221 @@ export const bulkUpdateEnrollments = form(
 		return { success: true, results };
 	}
 );
+
+export const requestEnrollment = form(studentEnrollmentRequestSchema, async (data, issue) => {
+	const user = await requireRole(['STUDENT']);
+	if (!user.studentId) {
+		throw error(400, 'Profil mahasiswa tidak ditemukan');
+	}
+
+	const [[student], [course]] = await Promise.all([
+		selectStudents(getPool(), {
+			select: { study_program_id: true },
+			where: [['id', '=', user.studentId]]
+		}),
+		selectCourses(getPool(), {
+			select: { id: true, study_program_id: true, lecturer_id: true },
+			where: [['id', '=', data.courseId]]
+		})
+	]);
+
+	if (!student) {
+		throw error(404, 'Profil mahasiswa tidak ditemukan');
+	}
+	if (!course) {
+		invalid(issue.courseId('Mata kuliah tidak ditemukan'));
+	}
+	if (course.study_program_id !== student.study_program_id) {
+		invalid(issue.courseId('Mata kuliah tidak tersedia untuk program studi Anda'));
+	}
+
+	const existingRows = await selectEnrollments(getPool(), {
+		select: { id: true, status: true },
+		where: [
+			['student_id', '=', user.studentId],
+			['course_id', '=', data.courseId],
+			['semester', '=', data.semester],
+			['academic_year', '=', data.academicYear]
+		]
+	});
+	const [existing] = existingRows;
+	if (existing) {
+		invalid(
+			issue.courseId(
+				existing.status === 'PENDING'
+					? 'Anda sudah mengajukan mata kuliah ini, menunggu persetujuan'
+					: 'Anda sudah terdaftar di mata kuliah ini pada semester dan tahun akademik yang sama'
+			)
+		);
+	}
+
+	const enrollmentId = randomUUID();
+	await insertEnrollment(getPool(), {
+		id: enrollmentId,
+		student_id: user.studentId,
+		course_id: data.courseId,
+		semester: data.semester,
+		academic_year: data.academicYear,
+		status: 'PENDING'
+	});
+	await getEnrollments().refresh();
+	return { success: true, id: enrollmentId };
+});
+
+export const cancelEnrollmentRequest = command(v.string(), async (id) => {
+	const user = await requireRole(['STUDENT']);
+	if (!user.studentId) {
+		throw error(400, 'Profil mahasiswa tidak ditemukan');
+	}
+
+	const [enrollment] = await selectEnrollments(getPool(), {
+		where: [['id', '=', id]]
+	});
+	if (!enrollment) {
+		throw error(404, 'Data KRS tidak ditemukan');
+	}
+	if (enrollment.student_id !== user.studentId) {
+		throw error(403, 'Anda tidak berhak membatalkan pengajuan ini');
+	}
+	if (enrollment.status !== 'PENDING') {
+		throw error(400, 'Hanya pengajuan yang belum disetujui yang dapat dibatalkan');
+	}
+
+	await deleteEnrollmentDb(getPool(), { id });
+	await getEnrollments().refresh();
+	return { success: true };
+});
+
+export const approveEnrollment = form(approveEnrollmentSchema, async (data, issue) => {
+	const user = await requireRole(['ADMIN', 'LECTURER']);
+
+	const [enrollment] = await selectEnrollments(getPool(), {
+		where: [['id', '=', data.id]]
+	});
+	if (!enrollment) {
+		throw error(404, 'Data KRS tidak ditemukan');
+	}
+	if (enrollment.status !== 'PENDING') {
+		throw error(400, 'KRS sudah disetujui atau ditolak sebelumnya');
+	}
+
+	const [course] = await selectCourses(getPool(), {
+		select: { lecturer_id: true },
+		where: [['id', '=', enrollment.course_id!]]
+	});
+	if (user.role === 'LECTURER' && course?.lecturer_id !== user.lecturerId) {
+		throw error(403, 'Anda hanya dapat menyetujui mata kuliah yang Anda ampu');
+	}
+
+	const [classRoom] = await selectClassRooms(getPool(), {
+		where: [['id', '=', data.classRoomId]]
+	});
+	if (!classRoom) {
+		invalid(issue.classRoomId('Ruang kelas tidak ditemukan'));
+	}
+
+	const { clientTimezone, startDate, endDate } = validateScheduleWindow(data, issue);
+	if (endDate <= startDate) {
+		invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
+	}
+
+	const [roomConflicts, studentConflicts, lecturerConflicts] = await Promise.all([
+		selectSchedulesConflict(getPool(), {
+			classRoomId: data.classRoomId,
+			day: data.day,
+			startTime: startDate,
+			endTime: endDate,
+			semester: enrollment.semester ?? undefined,
+			academicYear: enrollment.academic_year ?? undefined
+		}),
+		selectStudentScheduleConflict(getPool(), {
+			studentId: enrollment.student_id!,
+			day: data.day,
+			startTime: startDate,
+			endTime: endDate,
+			semester: enrollment.semester ?? undefined,
+			academicYear: enrollment.academic_year ?? undefined
+		}),
+		selectLecturerScheduleConflict(getPool(), {
+			lecturerId: course?.lecturer_id ?? '',
+			day: data.day,
+			startTime: startDate,
+			endTime: endDate,
+			semester: enrollment.semester ?? undefined,
+			academicYear: enrollment.academic_year ?? undefined
+		})
+	]);
+
+	if (roomConflicts.length) {
+		invalid(
+			issue.classRoomId(
+				`Ruang kelas bentrok dengan ${roomConflicts.length} jadwal lain: ${summarizeConflictWindows(roomConflicts, clientTimezone)}`
+			)
+		);
+	}
+	if (studentConflicts.length) {
+		invalid(
+			issue.classRoomId(
+				`Mahasiswa memiliki ${studentConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(studentConflicts, clientTimezone)}`
+			)
+		);
+	}
+	if (lecturerConflicts.length) {
+		invalid(
+			issue.classRoomId(
+				`Dosen memiliki ${lecturerConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(lecturerConflicts, clientTimezone)}`
+			)
+		);
+	}
+
+	const scheduleId = randomUUID();
+	await withTransaction(async (conn) => {
+		await insertSchedule(conn, {
+			id: scheduleId,
+			class_room_id: data.classRoomId,
+			day: data.day,
+			start_time: startDate,
+			end_time: endDate,
+			lecturer_id: course?.lecturer_id ?? undefined
+		});
+		await updateEnrollmentDb(
+			conn,
+			{
+				class_room_id: data.classRoomId,
+				schedule_id: scheduleId,
+				schedule_day: data.day,
+				schedule_start_time: startDate,
+				schedule_end_time: endDate,
+				status: 'APPROVED'
+			},
+			{ id: data.id }
+		);
+	});
+	invalidateConflictAuditCache();
+	await getEnrollments().refresh();
+	return { success: true, scheduleId };
+});
+
+export const rejectEnrollment = command(v.string(), async (id) => {
+	const user = await requireRole(['ADMIN', 'LECTURER']);
+
+	const [enrollment] = await selectEnrollments(getPool(), { where: [['id', '=', id]] });
+	if (!enrollment) {
+		throw error(404, 'Data KRS tidak ditemukan');
+	}
+	if (enrollment.status !== 'PENDING') {
+		throw error(400, 'Hanya pengajuan yang menunggu persetujuan yang dapat ditolak');
+	}
+
+	const [course] = await selectCourses(getPool(), {
+		select: { lecturer_id: true },
+		where: [['id', '=', enrollment.course_id!]]
+	});
+	if (user.role === 'LECTURER' && course?.lecturer_id !== user.lecturerId) {
+		throw error(403, 'Anda hanya dapat menolak mata kuliah yang Anda ampu');
+	}
+
+	await deleteEnrollmentDb(getPool(), { id });
+	await getEnrollments().refresh();
+	return { success: true };
+});

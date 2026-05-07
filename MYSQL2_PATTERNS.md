@@ -5,7 +5,7 @@
 ### Grade Management (Complete)
 
 ```ts
-// src/routes/(app)/grades/data.remote.ts
+// src/routes/grades/data.remote.ts
 import * as v from 'valibot';
 import { query, form, invalid } from '$app/server';
 import { query as dbQuery, queryOne, insert, update } from '$lib/server/db';
@@ -94,7 +94,7 @@ export const updateGrade = form(
 ### Enrollment Management (Complete)
 
 ```ts
-// src/routes/(app)/enrollments/data.remote.ts
+// src/routes/enrollments/data.remote.ts
 import * as v from 'valibot';
 import { query, form, invalid } from '$app/server';
 import { query as dbQuery, queryOne, insert, update, deleteRow, transaction } from '$lib/server/db';

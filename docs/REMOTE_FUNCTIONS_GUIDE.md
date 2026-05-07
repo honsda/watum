@@ -8,24 +8,29 @@ The project currently has:
 
 - Root layout: `src/routes/+layout.svelte`
 - Global styling: `src/routes/layout.css` (Tailwind CSS v4 + shadcn-svelte tokens)
-- Default SvelteKit placeholder landing: `src/routes/+page.svelte`
+- Main authenticated route controller: `src/routes/+page.svelte`
+- In-app mdsvex docs routes:
+  - `src/routes/docs/+page.md`
+  - `src/routes/docs/frontend/+page.md`
+  - `src/routes/docs/backend/+page.md`
 - Demo routes:
   - `src/routes/demo/+page.svelte`
   - `src/routes/demo/playwright/+page.svelte`
 - Comprehensive test harness: `src/routes/test/+page.svelte` — tab-based UI that exercises every remote function (queries, search, forms, commands, auth)
 
-For business modules (classrooms, courses, students, etc.), each route folder contains only `data.remote.ts`. Full CRUD UI pages (`+page.svelte`) have **not** been implemented yet.
+For business modules, the app now renders extracted CRUD and scheduling views from `src/lib/components/app/` while keeping shared orchestration and remote-function ownership in the root `+page.svelte` controller.
 
 ## 2. Stack & UI Foundation
 
 - Framework: SvelteKit (`@sveltejs/kit ^2.50`)
 - Runtime syntax: Svelte 5 (runes mode, enforced via `compilerOptions.runes`)
 - Styling: Tailwind CSS v4 (`tailwindcss ^4.1`)
-- Component baseline: shadcn-svelte (`shadcn-svelte ^1.2`) — not yet populated (`src/lib/components/ui/` is empty)
+- Component baseline: shadcn-svelte (`shadcn-svelte ^1.2`) plus extracted app views under `src/lib/components/app/`
 - Icons: `@lucide/svelte`
 - Utility helper: `cn()` in `src/lib/utils.ts` (uses `clsx` + `tailwind-merge`)
 - Validation: Valibot (`valibot ^1.3`)
 - Auth: `argon2` for password hashing, cookie-based sessions
+- Documentation rendering: `mdsvex` + `remark-gfm`
 
 ### Svelte Config
 
@@ -37,7 +42,7 @@ For business modules (classrooms, courses, students, etc.), each route folder co
     experimental: { async: true }
   },
   kit: {
-    adapter: adapter-node,
+    adapter: adapter-bun,
     experimental: { remoteFunctions: true }
   }
 }
@@ -327,14 +332,14 @@ Queries auto-handle loading states. Access data reactively. For imperative calls
 
 When adding a new module page:
 
-1. Create `+page.svelte` in the module route folder (e.g., `src/routes/courses/+page.svelte`).
-2. Import functions from `./data.remote` (co-located).
-3. Use `getCurrentUser` from `../auth/data.remote` to check role and conditionally render controls.
-4. Render query data with loading/empty/error states.
-5. Connect forms using the `.enhance()` pattern with `.fields.*.as()` for input bindings.
+1. Keep reads and mutations in route-local `data.remote.ts` files.
+2. Keep shared orchestration in `src/routes/+page.svelte` when state spans multiple views.
+3. Render feature markup in extracted view components under `src/lib/components/app/`.
+4. Use `getCurrentUser` and role guards to conditionally expose controls.
+5. Connect forms using `.enhance()` and shared helpers from `src/lib/client/form-enhancers.ts`.
 6. For search/filter, use the `search*` query functions.
 7. Confirm destructive actions (`command`) before execution.
-8. After form/command calls succeed, the related query stores auto-refresh via `.refresh()` calls in the backend.
+8. Re-run `bun run check` and `bun run build` after structural changes because mdsvex docs pages now compile as part of the app.
 
 ## 10. Project Directory Structure
 
@@ -343,56 +348,54 @@ src/
 ├── lib/
 │   ├── assets/
 │   │   └── favicon.svg
+│   ├── app/
+│   │   └── navigation.ts        # role-based view catalog and shell metadata
+│   ├── client/
+│   │   ├── auth.ts              # access token management and refresh flow
+│   │   └── form-enhancers.ts    # shared remote-form helpers
 │   ├── components/
-│   │   └── ui/                  # shadcn-svelte components (empty — not yet populated)
-│   ├── hooks/
+│   │   ├── app/                 # extracted dashboard/calendar/builder/CRUD views
+│   │   └── ui/                  # shadcn-svelte components and wrappers
 │   ├── server/
-│   │   ├── db.ts                # Pool, getConnection, withTransaction, closePool
-│   │   ├── index.ts             # Re-exports from db.ts
-│   │   ├── auth.ts              # login, getUser, setSession, clearSession
-│   │   ├── NRP-generator.ts     # NRP generation for students
+│   │   ├── db.ts                # Pool, transaction, closePool
+│   │   ├── auth.ts              # auth and token helpers
+│   │   ├── conflict-audit.ts    # conflict detection engine
 │   │   ├── sql/                 # TypeSQL SQL + generated .ts files
 │   │   └── migrations/
-│   ├── validations/             # Valibot schemas (classroom, student, grade, enrollment, etc.)
-│   ├── time-helpers.ts          # parseISO, formatDateTime, getDuration
-│   ├── utils.ts                 # cn() helper
-│   └── index.ts
+│   ├── validations/             # Valibot schemas
+│   ├── time-helpers.ts          # parseISO, formatDateTime, duration helpers
+│   └── utils.ts                 # cn() helper
 ├── routes/
 │   ├── +layout.svelte           # Root layout (imports layout.css)
-│   ├── +page.svelte             # Default SvelteKit placeholder
-│   ├── layout.css               # Tailwind v4 + shadcn-svelte CSS tokens
+│   ├── +page.svelte             # Main authenticated route controller
+│   ├── layout.css               # Tailwind v4 + token layer
+│   ├── docs/
+│   │   ├── +layout.svelte       # mdsvex docs shell
+│   │   ├── +page.md             # docs overview
+│   │   ├── frontend/+page.md
+│   │   └── backend/+page.md
 │   ├── auth/
 │   │   └── data.remote.ts       # getCurrentUser, loginUser, logoutUser
-│   ├── classrooms/
-│   │   └── data.remote.ts
+│   ├── classrooms/              # data.remote.ts per business module
 │   ├── courses/
-│   │   └── data.remote.ts
 │   ├── enrollments/
-│   │   └── data.remote.ts
 │   ├── faculties/
-│   │   └── data.remote.ts
 │   ├── grades/
-│   │   └── data.remote.ts
 │   ├── lecturers/
-│   │   └── data.remote.ts
 │   ├── students/
-│   │   └── data.remote.ts
 │   ├── study-programs/
-│   │   └── data.remote.ts
 │   ├── users/
-│   │   └── data.remote.ts
 │   ├── test/
-│   │   └── +page.svelte         # Comprehensive test harness for all remote functions
+│   │   └── +page.svelte         # remote-function playground / regression harness
 │   └── demo/
 │       ├── +page.svelte
 │       └── playwright/
 │           └── +page.svelte
 ```
 
-## 11. Notes for Next Iteration
+## 11. Current Notes
 
-- Root page (`src/routes/+page.svelte`) is still the default SvelteKit placeholder.
-- `src/lib/components/ui/` is empty — shadcn-svelte components need to be initialized via `npx shadcn-svelte@latest init` and individual component installs.
-- CRUD module pages are not implemented yet (data layer is fully available).
-- The test page at `src/routes/test/+page.svelte` serves as both a development tool and a reference for how to consume remote functions from the client.
-- Recommended next step: implement module UIs incrementally, starting with `auth` (login page), `students`, `courses`, and `enrollments`.
+- `src/routes/+page.svelte` is still the main controller, but the large app views have been extracted to `src/lib/components/app/`.
+- The test page at `src/routes/test/+page.svelte` still serves as a remote-function playground and regression harness.
+- The app now ships with mdsvex-powered documentation routes under `/docs`.
+- Shared app styling is split across `crud-view.css` and `page-shell.css` so extracted child views keep consistent presentation without route-scoped style warnings.

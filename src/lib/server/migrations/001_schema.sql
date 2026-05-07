@@ -110,17 +110,18 @@ CREATE TABLE IF NOT EXISTS enrollments (
   id VARCHAR(64) PRIMARY KEY DEFAULT (UUID()),
   student_id VARCHAR(64) NOT NULL,
   course_id VARCHAR(64) NOT NULL,
-  class_room_id VARCHAR(64) NOT NULL,
-  schedule_id VARCHAR(64) UNIQUE NOT NULL,
+  class_room_id VARCHAR(64) NULL,
+  schedule_id VARCHAR(64) UNIQUE NULL,
   semester VARCHAR(32) NOT NULL,
   academic_year VARCHAR(32) NOT NULL,
+  status ENUM('PENDING', 'APPROVED') NOT NULL DEFAULT 'APPROVED',
   created_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
   updated_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE RESTRICT ON UPDATE CASCADE,
   FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE RESTRICT ON UPDATE CASCADE,
   FOREIGN KEY (class_room_id) REFERENCES class_rooms(id) ON DELETE RESTRICT ON UPDATE CASCADE,
   FOREIGN KEY (schedule_id) REFERENCES schedules(id) ON DELETE RESTRICT ON UPDATE CASCADE,
-  UNIQUE KEY enrollments_student_id_course_id_semester_key (student_id, course_id, semester)
+  UNIQUE KEY enrollments_student_course_term_key (student_id, course_id, semester, academic_year)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================

@@ -22,8 +22,8 @@ Panduan lengkap untuk membuat backend menggunakan SvelteKit Remote Functions den
 ## 1. Setup
 
 ```bash
-npm install mysql2 valibot argon2 dayjs
-npm install -g typesql-cli   # or: npm install -D typesql-cli
+bun add mysql2 valibot @node-rs/argon2 dayjs
+bun add -d typesql-cli
 ```
 
 ```env
@@ -35,6 +35,8 @@ DB_HOST=localhost  DB_USER=root  DB_PASSWORD=password  DB_NAME=akademik_db  DB_P
 ```js
 // svelte.config.js — enable remote functions + async components
 const config = {
+	preprocess: [vitePreprocess(), mdsvex(mdsvexConfig)],
+	extensions: ['.svelte', '.md', '.svx'],
 	kit: { experimental: { remoteFunctions: true } },
 	compilerOptions: { experimental: { async: true } }
 };
@@ -63,7 +65,7 @@ const config = {
 
 ```json
 // package.json scripts
-{ "typesql": "typesql compile", "typesql:watch": "typesql compile --watch" }
+{ "typesql": "typesql compile", "typesql:watch": "typesql compile --watch", "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json" }
 ```
 
 ---
@@ -172,7 +174,7 @@ export async function closePool(): Promise<void> {
 
 ### 3.2 TypeSQL Generated Files
 
-Each `.sql` file in `src/lib/server/sql/` generates a `.ts` file. Run `npm run typesql:watch` during development. Example output for `select-users.sql`:
+Each `.sql` file in `src/lib/server/sql/` generates a `.ts` file. Run `bun run typesql:watch` during development. Example output for `select-users.sql`:
 
 ```ts
 // src/lib/server/sql/select-users.ts  (auto-generated)
@@ -236,19 +238,19 @@ src/
 │       ├── grade.ts
 │       └── enrollment.ts
 ├── routes/
-│   ├── (app)/
-│   │   ├── classrooms/
-│   │   │   ├── data.remote.ts
-│   │   │   └── +page.svelte
-│   │   ├── students/
-│   │   │   ├── data.remote.ts
-│   │   │   └── +page.svelte
-│   │   ├── grades/
-│   │   │   ├── data.remote.ts
-│   │   │   └── +page.svelte
-│   │   └── enrollments/
-│   │       ├── data.remote.ts
-│   │       └── +page.svelte
+│   ├── +page.svelte               # Main authenticated route controller
+│   ├── classrooms/
+│   │   ├── data.remote.ts
+│   │   └── ...
+│   ├── students/
+│   │   ├── data.remote.ts
+│   │   └── ...
+│   ├── grades/
+│   │   ├── data.remote.ts
+│   │   └── ...
+│   └── enrollments/
+│       ├── data.remote.ts
+│       └── ...
 ```
 
 ---
@@ -304,7 +306,7 @@ DELETE FROM class_rooms WHERE id = :id
 **Remote Functions:**
 
 ```ts
-// src/routes/(app)/classrooms/data.remote.ts
+// src/routes/classrooms/data.remote.ts
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
@@ -455,7 +457,7 @@ DELETE FROM students WHERE id = :id
 **Remote Functions:**
 
 ```ts
-// src/routes/(app)/students/data.remote.ts
+// src/routes/students/data.remote.ts
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
@@ -647,7 +649,7 @@ DELETE FROM grades WHERE id = :id
 **Remote Functions:**
 
 ```ts
-// src/routes/(app)/grades/data.remote.ts
+// src/routes/grades/data.remote.ts
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error, invalid } from '@sveltejs/kit';
@@ -939,7 +941,7 @@ DELETE FROM schedules WHERE id = :id
 **Remote Functions:**
 
 ```ts
-// src/routes/(app)/enrollments/data.remote.ts
+// src/routes/enrollments/data.remote.ts
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error, invalid } from '@sveltejs/kit';
@@ -1193,7 +1195,7 @@ DELETE FROM faculties WHERE id = :id
 **Remote Functions:**
 
 ```ts
-// src/routes/(app)/faculties/data.remote.ts
+// src/routes/faculties/data.remote.ts
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
@@ -1284,7 +1286,7 @@ DELETE FROM study_programs WHERE id = :id
 **Remote Functions:**
 
 ```ts
-// src/routes/(app)/study-programs/data.remote.ts
+// src/routes/study-programs/data.remote.ts
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
@@ -1387,7 +1389,7 @@ DELETE FROM lecturers WHERE id = :id
 **Remote Functions:**
 
 ```ts
-// src/routes/(app)/lecturers/data.remote.ts
+// src/routes/lecturers/data.remote.ts
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
@@ -1526,7 +1528,7 @@ DELETE FROM courses WHERE id = :id
 **Remote Functions:**
 
 ```ts
-// src/routes/(app)/courses/data.remote.ts
+// src/routes/courses/data.remote.ts
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
@@ -1648,7 +1650,7 @@ export const userSchema = v.object({
 **Remote Functions:**
 
 ```ts
-// src/routes/(app)/users/data.remote.ts
+// src/routes/users/data.remote.ts
 import * as v from 'valibot';
 import { query, form, command } from '$app/server';
 import { error } from '@sveltejs/kit';
@@ -1911,7 +1913,7 @@ LEFT JOIN students s ON u.student_id = s.id
 LEFT JOIN lecturers l ON u.lecturer_id = l.id
 ```
 
-> **Note:** This SQL file must be created manually. It is not auto-generated by the CRUD `includeCrudTables` config (which only produces basic per-table CRUD). After creating the file, run `npm run typesql` to generate the TypeScript function.
+> **Note:** This SQL file must be created manually. It is not auto-generated by the CRUD `includeCrudTables` config (which only produces basic per-table CRUD). After creating the file, run `bun run typesql` to generate the TypeScript function.
 
 ```ts
 // src/lib/server/auth.ts
@@ -2210,7 +2212,7 @@ export async function generateNRP(studyProgramId: string, yearAdmitted: number):
 
 ### 9.2 Usage Example
 
-> `generateNRP` is called inside `createStudent` in `src/routes/(app)/students/data.remote.ts`. See §5.2 for the full remote function — the NRP replaces `data.id` as the student's primary key, so `studentSchema` does not include an `id` field.
+> `generateNRP` is called inside `createStudent` in `src/routes/students/data.remote.ts`. See §5.2 for the full remote function — the NRP replaces `data.id` as the student's primary key, so `studentSchema` does not include an `id` field.
 
 ---
 
