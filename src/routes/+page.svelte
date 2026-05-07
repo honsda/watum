@@ -182,6 +182,8 @@
 		deleteEnrollment,
 		bulkDeleteEnrollments,
 		bulkUpdateEnrollments,
+		getEnrollmentPolicy,
+		updateEnrollmentPolicy,
 		requestEnrollment,
 		approveEnrollment,
 		rejectEnrollment,
@@ -268,6 +270,10 @@
 
 	type BuilderStep = 'participant' | 'time' | 'room' | 'review';
 	type BuilderMode = 'create' | 'edit' | 'approve';
+	type EnrollmentPolicy = {
+		academicYear: string;
+		requestsOpen: boolean;
+	};
 	type DataCollectionKey =
 		| 'classrooms'
 		| 'courses'
@@ -311,7 +317,7 @@
 	};
 	type CollectionLoadedState = Record<DataCollectionKey, boolean>;
 	const currentUser = getCurrentUser();
-	const timezone = 'Asia/Jakarta';
+	let timezone = $state('Asia/Jakarta');
 	const DEFAULT_DAY_START = 7 * 60;
 	const DEFAULT_DAY_END = 20 * 60;
 	const RANGE_PADDING_MINUTES = 60;
@@ -758,6 +764,12 @@
 	);
 	let classRoomDashboardLoaded = $state(false);
 	let classRoomDashboardRequestToken = 0;
+	let enrollmentPolicy = $state<EnrollmentPolicy>({
+		academicYear: '2025/2026',
+		requestsOpen: false
+	});
+	let enrollmentPolicyLoaded = $state(false);
+	let enrollmentPolicyIssue = $state<string | null>(null);
 	let pendingRefreshTimer: number | null = null;
 	let collectionRefreshTimers: Partial<Record<DataCollectionKey, number>> = {};
 	let conflictAuditRefreshTimer: number | null = null;
@@ -1412,6 +1424,10 @@
 		if (!browser) return;
 		const storedTheme = localStorage.getItem('watum-theme');
 		applyTheme(storedTheme === 'dark' ? 'dark' : 'light');
+		const resolvedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+		if (resolvedTimezone) {
+			timezone = resolvedTimezone;
+		}
 		const requestedView = readViewFromUrl();
 		if (requestedView) {
 			activeView = requestedView;
@@ -1607,6 +1623,24 @@
 		getAll: getUsers,
 		search: searchUsers
 	});
+
+	async function refreshEnrollmentPolicyData() {
+		if (!currentUser.current) {
+			enrollmentPolicy = { academicYear: '2025/2026', requestsOpen: false };
+			enrollmentPolicyLoaded = false;
+			enrollmentPolicyIssue = null;
+			return;
+		}
+
+		try {
+			enrollmentPolicy = await resolveRemoteQuery(getEnrollmentPolicy());
+			enrollmentPolicyLoaded = true;
+			enrollmentPolicyIssue = null;
+		} catch (error) {
+			enrollmentPolicyLoaded = false;
+			enrollmentPolicyIssue = errorMessage(error, 'Pengaturan pengajuan KRS gagal dimuat.');
+		}
+	}
 
 	async function refreshSchedulePreview() {
 		schedulePreview = { ...schedulePreview, loading: true };
@@ -1948,6 +1982,9 @@
 				refreshSummary: true
 			});
 		}
+		if (view === 'enrollments') {
+			await refreshEnrollmentPolicyData();
+		}
 	}
 
 	const collectionRequesters: Record<
@@ -2255,6 +2292,9 @@
 				pendingRefreshTimer = null;
 			}
 			loadedForUserId = null;
+			enrollmentPolicy = { academicYear: '2025/2026', requestsOpen: false };
+			enrollmentPolicyLoaded = false;
+			enrollmentPolicyIssue = null;
 			resetCollections();
 			return;
 		}
@@ -2263,6 +2303,7 @@
 			resetCollections();
 		}
 		loadedForUserId = userId;
+		void refreshEnrollmentPolicyData();
 	});
 
 	const blocksViewRendering = $derived(appLoading && !initialViewHydrated);
@@ -3654,6 +3695,10 @@
 		notify: reportSuccess,
 		message: 'KRS berhasil disetujui dan jadwal ditetapkan.'
 	});
+	const updateEnrollmentPolicyEnhance = createEnhancer(updateEnrollmentPolicy, async () => {
+		await refreshEnrollmentPolicyData();
+		reportSuccess('Pengaturan pengajuan KRS berhasil diperbarui.');
+	});
 	async function handleCancelEnrollmentRequest(id: string) {
 		try {
 			await cancelEnrollmentRequest(id);
@@ -4764,6 +4809,10 @@
 			bulkEditEnrollmentSemester,
 			bulkEditEnrollmentAcademicYear,
 			requestEnrollmentEnhance,
+			updateEnrollmentPolicyEnhance,
+			enrollmentPolicy,
+			enrollmentPolicyLoaded,
+			enrollmentPolicyIssue,
 			studentStudyProgramId: currentUser.current?.studyProgramId ?? null,
 			days,
 			timezone,

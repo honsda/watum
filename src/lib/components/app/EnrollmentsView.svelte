@@ -41,6 +41,10 @@
 
 	type ScheduleCardMap = Record<string, ScheduleCard>;
 	type ConflictSummaryMap = Record<string, string>;
+	type EnrollmentPolicy = {
+		academicYear: string;
+		requestsOpen: boolean;
+	};
 
 	let {
 		currentRole,
@@ -73,6 +77,10 @@
 		bulkEditEnrollmentSemester,
 		bulkEditEnrollmentAcademicYear,
 		requestEnrollmentEnhance,
+		updateEnrollmentPolicyEnhance,
+		enrollmentPolicy,
+		enrollmentPolicyLoaded,
+		enrollmentPolicyIssue,
 		studentStudyProgramId = null,
 		days,
 		timezone,
@@ -123,6 +131,10 @@
 		bulkEditEnrollmentSemester: string;
 		bulkEditEnrollmentAcademicYear: string;
 		requestEnrollmentEnhance?: EnhancedAction;
+		updateEnrollmentPolicyEnhance?: EnhancedAction;
+		enrollmentPolicy?: EnrollmentPolicy | null;
+		enrollmentPolicyLoaded?: boolean;
+		enrollmentPolicyIssue?: string | null;
 		studentStudyProgramId?: string | null;
 		days: typeof dayOptions;
 		timezone: string;
@@ -161,6 +173,14 @@
 			? courses.filter((c) => c.study_program_id === studentStudyProgramId)
 			: courses
 	);
+	const studentCanRequestEnrollment = $derived(
+		Boolean(
+			enrollmentPolicyLoaded &&
+				enrollmentPolicy?.requestsOpen &&
+				requestCourses.length &&
+				requestEnrollmentEnhance
+		)
+	);
 </script>
 
 <div class="workspace-shell">
@@ -173,6 +193,7 @@
 				<Button
 					size="sm"
 					class="primary-button"
+					disabled={!studentCanRequestEnrollment}
 					onclick={() => onStartRequest?.()}
 					>Ajukan mata kuliah</Button
 				>
@@ -536,12 +557,41 @@
 					<Button type="submit" class="primary-button">Simpan perubahan {bulkCount} KRS</Button>
 				</div>
 			</form>
+		{:else if currentRole === 'ADMIN' && updateEnrollmentPolicyEnhance}
+			<form class="editor-grid" {...updateEnrollmentPolicyEnhance}>
+				<p class="editor-note">Atur tahun akademik aktif dan buka/tutup pengajuan KRS mahasiswa.</p>
+				<label>
+					<span>Tahun akademik aktif</span>
+					<input
+						name="academicYear"
+						value={enrollmentPolicy?.academicYear ?? ''}
+						placeholder="Contoh: 2025/2026"
+						required
+					/>
+				</label>
+				<label class="filter-toggle-row">
+					<input
+						type="checkbox"
+						name="requestsOpen"
+						checked={enrollmentPolicy?.requestsOpen ?? false}
+					/>
+					<span>Buka pengajuan KRS mahasiswa secara global</span>
+				</label>
+				{#if enrollmentPolicyIssue}
+					<p class="editor-note">{enrollmentPolicyIssue}</p>
+				{/if}
+				<div class="builder-inline-actions">
+					<Button type="submit" class="primary-button" disabled={!enrollmentPolicyLoaded}
+						>Simpan pengaturan</Button
+					>
+				</div>
+			</form>
 		{:else if currentRole === 'STUDENT' && requestEnrollmentEnhance}
 			<form class="editor-grid" {...requestEnrollmentEnhance}>
 				<p class="editor-note">Ajukan mata kuliah baru untuk semester ini.</p>
 				<label>
 					<span>Mata kuliah</span>
-				<select name="courseId" required>
+				<select name="courseId" required disabled={!studentCanRequestEnrollment}>
 					<option value="" disabled selected>Pilih mata kuliah</option>
 					{#each requestCourses as course (course.id)}
 						<option value={course.id}>{course.name}</option>
@@ -550,17 +600,28 @@
 				</label>
 				<label>
 					<span>Semester</span>
-					<select name="semester" required>
+					<select name="semester" required disabled={!studentCanRequestEnrollment}>
 						<option value="GANJIL">Ganjil</option>
 						<option value="GENAP">Genap</option>
 					</select>
 				</label>
 				<label>
 					<span>Tahun akademik</span>
-					<input type="text" name="academicYear" value="2025/2026" required />
+					<input value={enrollmentPolicy?.academicYear ?? '-'} readonly disabled />
 				</label>
+				{#if enrollmentPolicyIssue}
+					<p class="editor-note">{enrollmentPolicyIssue}</p>
+				{:else if !enrollmentPolicyLoaded}
+					<p class="editor-note">Memuat pengaturan pengajuan KRS...</p>
+				{:else if !(enrollmentPolicy?.requestsOpen ?? false)}
+					<p class="editor-note">Pengajuan KRS sedang ditutup oleh admin.</p>
+				{:else if !requestCourses.length}
+					<p class="editor-note">Belum ada mata kuliah yang tersedia untuk program studi Anda.</p>
+				{/if}
 				<div class="builder-inline-actions">
-					<Button type="submit" class="primary-button">Ajukan mata kuliah</Button>
+					<Button type="submit" class="primary-button" disabled={!studentCanRequestEnrollment}
+						>Ajukan mata kuliah</Button
+					>
 				</div>
 			</form>
 		{:else}

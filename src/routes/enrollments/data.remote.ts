@@ -51,6 +51,21 @@ type ConflictNamedResult =
 	| SelectStudentScheduleConflictResult
 	| SelectLecturerScheduleConflictResult;
 
+type EnrollmentPolicyRow = {
+	academic_year: string;
+	student_enrollment_requests_open: number | boolean;
+};
+
+const DEFAULT_ENROLLMENT_POLICY = {
+	academicYear: '2025/2026',
+	requestsOpen: false
+} as const;
+
+const enrollmentPolicySchema = v.object({
+	academicYear: v.pipe(v.string(), v.trim(), v.minLength(1, 'Tahun akademik wajib diisi')),
+	requestsOpen: v.optional(v.string())
+});
+
 const enrollmentListSelect = {
 	id: true,
 	student_id: true,
@@ -132,6 +147,44 @@ function validateScheduleWindow(
 
 	return { clientTimezone, startDate, endDate };
 }
+
+async function ensureEnrollmentPolicyRow() {
+	await getPool().query(
+		`INSERT IGNORE INTO enrollment_policy (id, academic_year, student_enrollment_requests_open)
+		 VALUES (1, ?, ?)`,
+		[DEFAULT_ENROLLMENT_POLICY.academicYear, DEFAULT_ENROLLMENT_POLICY.requestsOpen]
+	);
+}
+
+async function readEnrollmentPolicy() {
+	await ensureEnrollmentPolicyRow();
+	const [rows] = await getPool().query(
+		'SELECT academic_year, student_enrollment_requests_open FROM enrollment_policy WHERE id = 1 LIMIT 1'
+	);
+	const [row] = rows as EnrollmentPolicyRow[];
+	return {
+		academicYear: row?.academic_year ?? DEFAULT_ENROLLMENT_POLICY.academicYear,
+		requestsOpen:
+			row?.student_enrollment_requests_open === true || row?.student_enrollment_requests_open === 1
+	};
+}
+
+export const getEnrollmentPolicy = query(async () => {
+	await requireUser();
+	return readEnrollmentPolicy();
+});
+
+export const updateEnrollmentPolicy = form(enrollmentPolicySchema, async (data) => {
+	await requireRole(['ADMIN']);
+	await ensureEnrollmentPolicyRow();
+	await getPool().query(
+		`UPDATE enrollment_policy
+		 SET academic_year = ?, student_enrollment_requests_open = ?
+		 WHERE id = 1`,
+		[data.academicYear.trim(), data.requestsOpen === 'on' || data.requestsOpen === 'true']
+	);
+	return { success: true };
+});
 
 export const getEnrollments = query(listPageSchema, async (page) => {
 	const user = await requireUser();
@@ -1177,6 +1230,10 @@ export const requestEnrollment = form(studentEnrollmentRequestSchema, async (dat
 	if (!user.studentId) {
 		throw error(400, 'Profil mahasiswa tidak ditemukan');
 	}
+	const policy = await readEnrollmentPolicy();
+	if (!policy.requestsOpen) {
+		throw error(400, 'Pengajuan KRS sedang ditutup oleh admin');
+	}
 
 	const [[student], [course]] = await Promise.all([
 		selectStudents(getPool(), {
@@ -1205,7 +1262,7 @@ export const requestEnrollment = form(studentEnrollmentRequestSchema, async (dat
 			['student_id', '=', user.studentId],
 			['course_id', '=', data.courseId],
 			['semester', '=', data.semester],
-			['academic_year', '=', data.academicYear]
+			['academic_year', '=', policy.academicYear]
 		]
 	});
 	const [existing] = existingRows;
@@ -1225,7 +1282,7 @@ export const requestEnrollment = form(studentEnrollmentRequestSchema, async (dat
 		student_id: user.studentId,
 		course_id: data.courseId,
 		semester: data.semester,
-		academic_year: data.academicYear,
+		academic_year: policy.academicYear,
 		status: 'PENDING'
 	});
 	await getEnrollments().refresh();

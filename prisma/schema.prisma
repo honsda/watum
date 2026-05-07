@@ -175,6 +175,16 @@ model Enrollment {
   @@map("enrollments")
 }
 
+model EnrollmentPolicy {
+  id                            Int      @id
+  academicYear                  String
+  studentEnrollmentRequestsOpen Boolean  @default(false)
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
+
+  @@map("enrollment_policy")
+}
+
 // Nilai
 
 model Grade {
