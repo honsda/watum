@@ -271,9 +271,22 @@
 	type BuilderStep = 'participant' | 'time' | 'room' | 'review';
 	type BuilderMode = 'create' | 'edit' | 'approve';
 	type EnrollmentPolicy = {
+		semester: 'GANJIL' | 'GENAP';
 		academicYear: string;
 		requestsOpen: boolean;
 	};
+
+	function normalizeEnrollmentPolicy(input: {
+		semester?: string;
+		academicYear?: string;
+		requestsOpen?: boolean;
+	}): EnrollmentPolicy {
+		return {
+			semester: input.semester === 'GENAP' ? 'GENAP' : 'GANJIL',
+			academicYear: input.academicYear?.trim() || '2025/2026',
+			requestsOpen: Boolean(input.requestsOpen)
+		};
+	}
 	type DataCollectionKey =
 		| 'classrooms'
 		| 'courses'
@@ -764,10 +777,9 @@
 	);
 	let classRoomDashboardLoaded = $state(false);
 	let classRoomDashboardRequestToken = 0;
-	let enrollmentPolicy = $state<EnrollmentPolicy>({
-		academicYear: '2025/2026',
-		requestsOpen: false
-	});
+	let enrollmentPolicy = $state<EnrollmentPolicy>(
+		normalizeEnrollmentPolicy({ semester: 'GANJIL', academicYear: '2025/2026', requestsOpen: false })
+	);
 	let enrollmentPolicyLoaded = $state(false);
 	let enrollmentPolicyIssue = $state<string | null>(null);
 	let pendingRefreshTimer: number | null = null;
@@ -1626,14 +1638,18 @@
 
 	async function refreshEnrollmentPolicyData() {
 		if (!currentUser.current) {
-			enrollmentPolicy = { academicYear: '2025/2026', requestsOpen: false };
+			enrollmentPolicy = normalizeEnrollmentPolicy({
+				semester: 'GANJIL',
+				academicYear: '2025/2026',
+				requestsOpen: false
+			});
 			enrollmentPolicyLoaded = false;
 			enrollmentPolicyIssue = null;
 			return;
 		}
 
 		try {
-			enrollmentPolicy = await resolveRemoteQuery(getEnrollmentPolicy());
+			enrollmentPolicy = normalizeEnrollmentPolicy(await resolveRemoteQuery(getEnrollmentPolicy()));
 			enrollmentPolicyLoaded = true;
 			enrollmentPolicyIssue = null;
 		} catch (error) {
@@ -2292,7 +2308,11 @@
 				pendingRefreshTimer = null;
 			}
 			loadedForUserId = null;
-			enrollmentPolicy = { academicYear: '2025/2026', requestsOpen: false };
+			enrollmentPolicy = normalizeEnrollmentPolicy({
+				semester: 'GANJIL',
+				academicYear: '2025/2026',
+				requestsOpen: false
+			});
 			enrollmentPolicyLoaded = false;
 			enrollmentPolicyIssue = null;
 			resetCollections();
@@ -4840,6 +4860,7 @@
 			},
 			onCancelRequest: handleCancelEnrollmentRequest,
 			onRejectRequest: handleRejectEnrollment,
+			onShowPolicySettings: () => clearSelection('enrollments'),
 			onStartRequest: () => clearSelection('enrollments'),
 			onResetScheduleFilters: resetScheduleFilters,
 			onPickEnrollment: pickEnrollment,

@@ -42,6 +42,7 @@
 	type ScheduleCardMap = Record<string, ScheduleCard>;
 	type ConflictSummaryMap = Record<string, string>;
 	type EnrollmentPolicy = {
+		semester: 'GANJIL' | 'GENAP';
 		academicYear: string;
 		requestsOpen: boolean;
 	};
@@ -78,7 +79,7 @@
 		bulkEditEnrollmentAcademicYear,
 		requestEnrollmentEnhance,
 		updateEnrollmentPolicyEnhance,
-		enrollmentPolicy,
+		enrollmentPolicy = { semester: 'GANJIL', academicYear: '2025/2026', requestsOpen: false },
 		enrollmentPolicyLoaded,
 		enrollmentPolicyIssue,
 		studentStudyProgramId = null,
@@ -92,6 +93,7 @@
 		onOpenBuilderForApproval,
 		onCancelRequest,
 		onRejectRequest,
+		onShowPolicySettings,
 		onStartRequest,
 		onSearchInput,
 		onClearSearch,
@@ -132,7 +134,7 @@
 		bulkEditEnrollmentAcademicYear: string;
 		requestEnrollmentEnhance?: EnhancedAction;
 		updateEnrollmentPolicyEnhance?: EnhancedAction;
-		enrollmentPolicy?: EnrollmentPolicy | null;
+		enrollmentPolicy?: EnrollmentPolicy;
 		enrollmentPolicyLoaded?: boolean;
 		enrollmentPolicyIssue?: string | null;
 		studentStudyProgramId?: string | null;
@@ -146,6 +148,7 @@
 		onOpenBuilderForApproval?: (item: SelectEnrollmentsResult) => void;
 		onCancelRequest?: (id: string) => void;
 		onRejectRequest?: (id: string) => void;
+		onShowPolicySettings?: () => void;
 		onStartRequest?: () => void;
 		onSearchInput: () => void;
 		onClearSearch: () => void;
@@ -394,6 +397,8 @@
 				<h3>
 					{editorView === 'enrollments-bulk'
 						? 'Ubah massal KRS'
+						: currentRole === 'ADMIN' && !selectedEnrollment
+							? 'Pengaturan pengajuan KRS'
 						: selectedEnrollment
 							? selectedEnrollment.course_name
 							: 'Pilih satu KRS'}
@@ -401,6 +406,15 @@
 			</div>
 			{#if selectedEnrollment && editorView !== 'enrollments-bulk'}
 				<div class="detail-actions">
+					{#if currentRole === 'ADMIN'}
+						<Button
+							variant="outline"
+							size="sm"
+							onclick={() => onShowPolicySettings?.()}
+						>
+							Pengaturan
+						</Button>
+					{/if}
 					{#if currentRole === 'STUDENT' && selectedEnrollment.status === 'PENDING'}
 						<Button
 							variant="ghost"
@@ -558,34 +572,67 @@
 				</div>
 			</form>
 		{:else if currentRole === 'ADMIN' && updateEnrollmentPolicyEnhance}
-			<form class="editor-grid" {...updateEnrollmentPolicyEnhance}>
-				<p class="editor-note">Atur tahun akademik aktif dan buka/tutup pengajuan KRS mahasiswa.</p>
-				<label>
-					<span>Tahun akademik aktif</span>
-					<input
-						name="academicYear"
-						value={enrollmentPolicy?.academicYear ?? ''}
-						placeholder="Contoh: 2025/2026"
-						required
-					/>
-				</label>
-				<label class="filter-toggle-row">
-					<input
-						type="checkbox"
-						name="requestsOpen"
-						checked={enrollmentPolicy?.requestsOpen ?? false}
-					/>
-					<span>Buka pengajuan KRS mahasiswa secara global</span>
-				</label>
-				{#if enrollmentPolicyIssue}
-					<p class="editor-note">{enrollmentPolicyIssue}</p>
-				{/if}
-				<div class="builder-inline-actions">
-					<Button type="submit" class="primary-button" disabled={!enrollmentPolicyLoaded}
-						>Simpan pengaturan</Button
-					>
+			<div class="policy-settings-shell">
+				<div class="policy-settings-summary">
+					<div>
+						<p class="policy-settings-kicker">Kontrol global</p>
+						<h4>Pengajuan KRS mahasiswa</h4>
+						<p class="editor-note">
+							Tentukan semester dan tahun akademik aktif, lalu buka atau tutup pengajuan secara
+							global dari satu panel.
+						</p>
+					</div>
+					<div class="policy-settings-badges">
+						<Badge variant="outline">{enrollmentPolicy.semester}</Badge>
+						<Badge variant="secondary">{enrollmentPolicy.academicYear}</Badge>
+						<Badge variant={enrollmentPolicy.requestsOpen ? 'default' : 'secondary'}>
+							{enrollmentPolicy.requestsOpen ? 'Terbuka' : 'Tertutup'}
+						</Badge>
+					</div>
 				</div>
-			</form>
+				<form class="editor-grid policy-settings-form" {...updateEnrollmentPolicyEnhance}>
+					<div class="policy-settings-grid">
+						<label>
+							<span>Semester aktif</span>
+							<select name="semester" bind:value={enrollmentPolicy.semester} required>
+								<option value="GANJIL">GANJIL</option>
+								<option value="GENAP">GENAP</option>
+							</select>
+						</label>
+						<label>
+							<span>Tahun akademik aktif</span>
+							<input
+								name="academicYear"
+								bind:value={enrollmentPolicy.academicYear}
+								placeholder="Contoh: 2025/2026"
+								required
+							/>
+						</label>
+					</div>
+					<label class="policy-toggle-card">
+						<div>
+							<strong>Buka pengajuan mahasiswa</strong>
+							<p>
+								Saat aktif, mahasiswa dapat mengirim usulan KRS sesuai prodi, semester, dan tahun
+								akademik yang ditetapkan admin.
+							</p>
+						</div>
+						<input
+							type="checkbox"
+							name="requestsOpen"
+							bind:checked={enrollmentPolicy.requestsOpen}
+						/>
+					</label>
+					{#if enrollmentPolicyIssue}
+						<p class="editor-note">{enrollmentPolicyIssue}</p>
+					{/if}
+					<div class="builder-inline-actions">
+						<Button type="submit" class="primary-button" disabled={!enrollmentPolicyLoaded}
+							>Simpan pengaturan</Button
+						>
+					</div>
+				</form>
+			</div>
 		{:else if currentRole === 'STUDENT' && requestEnrollmentEnhance}
 			<form class="editor-grid" {...requestEnrollmentEnhance}>
 				<p class="editor-note">Ajukan mata kuliah baru untuk semester ini.</p>
@@ -600,10 +647,7 @@
 				</label>
 				<label>
 					<span>Semester</span>
-					<select name="semester" required disabled={!studentCanRequestEnrollment}>
-						<option value="GANJIL">Ganjil</option>
-						<option value="GENAP">Genap</option>
-					</select>
+					<input value={enrollmentPolicy?.semester ?? '-'} readonly disabled />
 				</label>
 				<label>
 					<span>Tahun akademik</span>
@@ -629,3 +673,96 @@
 		{/if}
 	</section>
 </div>
+
+<style>
+	.policy-settings-shell {
+		display: grid;
+		gap: 1rem;
+	}
+
+	.policy-settings-summary {
+		display: grid;
+		gap: 0.9rem;
+		padding: 1rem;
+		border: 1px solid color-mix(in oklch, var(--color-accent-strong) 18%, var(--color-border) 82%);
+		border-radius: 1rem;
+		background:
+			linear-gradient(
+				180deg,
+				color-mix(in oklch, var(--color-accent-soft) 22%, var(--color-surface) 78%),
+				var(--color-panel)
+			);
+	}
+
+	.policy-settings-kicker {
+		margin: 0;
+		font-size: 0.74rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--color-accent-strong);
+	}
+
+	.policy-settings-summary h4 {
+		margin: 0;
+		font: 600 1.05rem/1.2 var(--font-display);
+		letter-spacing: -0.02em;
+	}
+
+	.policy-settings-badges {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.45rem;
+	}
+
+	.policy-settings-form,
+	.policy-settings-grid {
+		display: grid;
+		gap: 0.9rem;
+	}
+
+	.policy-settings-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.policy-toggle-card {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 1rem;
+		padding: 0.95rem 1rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.95rem;
+		background: var(--color-surface);
+	}
+
+	.policy-toggle-card strong {
+		display: block;
+		margin-bottom: 0.25rem;
+		font-size: 0.96rem;
+	}
+
+	.policy-toggle-card p {
+		margin: 0;
+		font-size: 0.88rem;
+		line-height: 1.45;
+		color: var(--color-muted-foreground);
+	}
+
+	.policy-toggle-card input {
+		width: 1.05rem;
+		height: 1.05rem;
+		margin-top: 0.15rem;
+		flex: 0 0 auto;
+	}
+
+	@media (max-width: 720px) {
+		.policy-settings-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.policy-toggle-card {
+			flex-direction: column;
+		}
+	}
+</style>

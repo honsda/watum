@@ -177,6 +177,7 @@ model Enrollment {
 
 model EnrollmentPolicy {
   id                            Int      @id
+  semester                      String
   academicYear                  String
   studentEnrollmentRequestsOpen Boolean  @default(false)
   createdAt                     DateTime @default(now())

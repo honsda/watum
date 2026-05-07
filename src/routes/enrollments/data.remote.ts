@@ -52,16 +52,19 @@ type ConflictNamedResult =
 	| SelectLecturerScheduleConflictResult;
 
 type EnrollmentPolicyRow = {
+	semester: string;
 	academic_year: string;
 	student_enrollment_requests_open: number | boolean;
 };
 
 const DEFAULT_ENROLLMENT_POLICY = {
+	semester: 'GANJIL',
 	academicYear: '2025/2026',
 	requestsOpen: false
 } as const;
 
 const enrollmentPolicySchema = v.object({
+	semester: v.picklist(['GANJIL', 'GENAP']),
 	academicYear: v.pipe(v.string(), v.trim(), v.minLength(1, 'Tahun akademik wajib diisi')),
 	requestsOpen: v.optional(v.string())
 });
@@ -150,19 +153,24 @@ function validateScheduleWindow(
 
 async function ensureEnrollmentPolicyRow() {
 	await getPool().query(
-		`INSERT IGNORE INTO enrollment_policy (id, academic_year, student_enrollment_requests_open)
-		 VALUES (1, ?, ?)`,
-		[DEFAULT_ENROLLMENT_POLICY.academicYear, DEFAULT_ENROLLMENT_POLICY.requestsOpen]
+		`INSERT IGNORE INTO enrollment_policy (id, semester, academic_year, student_enrollment_requests_open)
+		 VALUES (1, ?, ?, ?)`,
+		[
+			DEFAULT_ENROLLMENT_POLICY.semester,
+			DEFAULT_ENROLLMENT_POLICY.academicYear,
+			DEFAULT_ENROLLMENT_POLICY.requestsOpen
+		]
 	);
 }
 
 async function readEnrollmentPolicy() {
 	await ensureEnrollmentPolicyRow();
 	const [rows] = await getPool().query(
-		'SELECT academic_year, student_enrollment_requests_open FROM enrollment_policy WHERE id = 1 LIMIT 1'
+		'SELECT semester, academic_year, student_enrollment_requests_open FROM enrollment_policy WHERE id = 1 LIMIT 1'
 	);
 	const [row] = rows as EnrollmentPolicyRow[];
 	return {
+		semester: row?.semester === 'GENAP' ? 'GENAP' : DEFAULT_ENROLLMENT_POLICY.semester,
 		academicYear: row?.academic_year ?? DEFAULT_ENROLLMENT_POLICY.academicYear,
 		requestsOpen:
 			row?.student_enrollment_requests_open === true || row?.student_enrollment_requests_open === 1
@@ -179,9 +187,13 @@ export const updateEnrollmentPolicy = form(enrollmentPolicySchema, async (data) 
 	await ensureEnrollmentPolicyRow();
 	await getPool().query(
 		`UPDATE enrollment_policy
-		 SET academic_year = ?, student_enrollment_requests_open = ?
+		 SET semester = ?, academic_year = ?, student_enrollment_requests_open = ?
 		 WHERE id = 1`,
-		[data.academicYear.trim(), data.requestsOpen === 'on' || data.requestsOpen === 'true']
+		[
+			data.semester,
+			data.academicYear.trim(),
+			data.requestsOpen === 'on' || data.requestsOpen === 'true'
+		]
 	);
 	return { success: true };
 });
@@ -1261,7 +1273,7 @@ export const requestEnrollment = form(studentEnrollmentRequestSchema, async (dat
 		where: [
 			['student_id', '=', user.studentId],
 			['course_id', '=', data.courseId],
-			['semester', '=', data.semester],
+			['semester', '=', policy.semester],
 			['academic_year', '=', policy.academicYear]
 		]
 	});
@@ -1281,7 +1293,7 @@ export const requestEnrollment = form(studentEnrollmentRequestSchema, async (dat
 		id: enrollmentId,
 		student_id: user.studentId,
 		course_id: data.courseId,
-		semester: data.semester,
+		semester: policy.semester,
 		academic_year: policy.academicYear,
 		status: 'PENDING'
 	});
