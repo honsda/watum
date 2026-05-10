@@ -780,6 +780,9 @@
 	let enrollmentPolicy = $state<EnrollmentPolicy>(
 		normalizeEnrollmentPolicy({ semester: 'GANJIL', academicYear: '2025/2026', requestsOpen: false })
 	);
+	let enrollmentPolicyDraft = $state<EnrollmentPolicy>(
+		normalizeEnrollmentPolicy({ semester: 'GANJIL', academicYear: '2025/2026', requestsOpen: false })
+	);
 	let enrollmentPolicyLoaded = $state(false);
 	let enrollmentPolicyIssue = $state<string | null>(null);
 	let pendingRefreshTimer: number | null = null;
@@ -1643,6 +1646,7 @@
 				academicYear: '2025/2026',
 				requestsOpen: false
 			});
+			enrollmentPolicyDraft = normalizeEnrollmentPolicy(enrollmentPolicy);
 			enrollmentPolicyLoaded = false;
 			enrollmentPolicyIssue = null;
 			return;
@@ -1650,12 +1654,17 @@
 
 		try {
 			enrollmentPolicy = normalizeEnrollmentPolicy(await resolveRemoteQuery(getEnrollmentPolicy()));
+			enrollmentPolicyDraft = normalizeEnrollmentPolicy(enrollmentPolicy);
 			enrollmentPolicyLoaded = true;
 			enrollmentPolicyIssue = null;
 		} catch (error) {
 			enrollmentPolicyLoaded = false;
 			enrollmentPolicyIssue = errorMessage(error, 'Pengaturan pengajuan KRS gagal dimuat.');
 		}
+	}
+
+	function resetEnrollmentPolicyDraft() {
+		enrollmentPolicyDraft = normalizeEnrollmentPolicy(enrollmentPolicy);
 	}
 
 	async function refreshSchedulePreview() {
@@ -2313,6 +2322,7 @@
 				academicYear: '2025/2026',
 				requestsOpen: false
 			});
+			enrollmentPolicyDraft = normalizeEnrollmentPolicy(enrollmentPolicy);
 			enrollmentPolicyLoaded = false;
 			enrollmentPolicyIssue = null;
 			resetCollections();
@@ -4831,6 +4841,7 @@
 			requestEnrollmentEnhance,
 			updateEnrollmentPolicyEnhance,
 			enrollmentPolicy,
+			enrollmentPolicyDraft,
 			enrollmentPolicyLoaded,
 			enrollmentPolicyIssue,
 			studentStudyProgramId: currentUser.current?.studyProgramId ?? null,
@@ -4860,7 +4871,10 @@
 			},
 			onCancelRequest: handleCancelEnrollmentRequest,
 			onRejectRequest: handleRejectEnrollment,
-			onShowPolicySettings: () => clearSelection('enrollments'),
+			onShowPolicySettings: () => {
+				resetEnrollmentPolicyDraft();
+				clearSelection('enrollments');
+			},
 			onStartRequest: () => clearSelection('enrollments'),
 			onResetScheduleFilters: resetScheduleFilters,
 			onPickEnrollment: pickEnrollment,

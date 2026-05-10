@@ -80,6 +80,7 @@
 		requestEnrollmentEnhance,
 		updateEnrollmentPolicyEnhance,
 		enrollmentPolicy = { semester: 'GANJIL', academicYear: '2025/2026', requestsOpen: false },
+		enrollmentPolicyDraft = { semester: 'GANJIL', academicYear: '2025/2026', requestsOpen: false },
 		enrollmentPolicyLoaded,
 		enrollmentPolicyIssue,
 		studentStudyProgramId = null,
@@ -135,6 +136,7 @@
 		requestEnrollmentEnhance?: EnhancedAction;
 		updateEnrollmentPolicyEnhance?: EnhancedAction;
 		enrollmentPolicy?: EnrollmentPolicy;
+		enrollmentPolicyDraft?: EnrollmentPolicy;
 		enrollmentPolicyLoaded?: boolean;
 		enrollmentPolicyIssue?: string | null;
 		studentStudyProgramId?: string | null;
@@ -594,7 +596,7 @@
 					<div class="policy-settings-grid">
 						<label>
 							<span>Semester aktif</span>
-							<select name="semester" bind:value={enrollmentPolicy.semester} required>
+							<select name="semester" bind:value={enrollmentPolicyDraft.semester} required>
 								<option value="GANJIL">GANJIL</option>
 								<option value="GENAP">GENAP</option>
 							</select>
@@ -603,7 +605,7 @@
 							<span>Tahun akademik aktif</span>
 							<input
 								name="academicYear"
-								bind:value={enrollmentPolicy.academicYear}
+								bind:value={enrollmentPolicyDraft.academicYear}
 								placeholder="Contoh: 2025/2026"
 								required
 							/>
@@ -620,7 +622,7 @@
 						<input
 							type="checkbox"
 							name="requestsOpen"
-							bind:checked={enrollmentPolicy.requestsOpen}
+							bind:checked={enrollmentPolicyDraft.requestsOpen}
 						/>
 					</label>
 					{#if enrollmentPolicyIssue}
