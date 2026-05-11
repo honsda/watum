@@ -287,6 +287,14 @@
 			requestsOpen: Boolean(input.requestsOpen)
 		};
 	}
+
+	function createDefaultEnrollmentPolicy(): EnrollmentPolicy {
+		return normalizeEnrollmentPolicy({
+			semester: 'GANJIL',
+			academicYear: '2025/2026',
+			requestsOpen: false
+		});
+	}
 	type DataCollectionKey =
 		| 'classrooms'
 		| 'courses'
@@ -777,12 +785,8 @@
 	);
 	let classRoomDashboardLoaded = $state(false);
 	let classRoomDashboardRequestToken = 0;
-	let enrollmentPolicy = $state<EnrollmentPolicy>(
-		normalizeEnrollmentPolicy({ semester: 'GANJIL', academicYear: '2025/2026', requestsOpen: false })
-	);
-	let enrollmentPolicyDraft = $state<EnrollmentPolicy>(
-		normalizeEnrollmentPolicy({ semester: 'GANJIL', academicYear: '2025/2026', requestsOpen: false })
-	);
+	let enrollmentPolicy = $state<EnrollmentPolicy>(createDefaultEnrollmentPolicy());
+	let enrollmentPolicyDraft = $state<EnrollmentPolicy>(createDefaultEnrollmentPolicy());
 	let enrollmentPolicyLoaded = $state(false);
 	let enrollmentPolicyIssue = $state<string | null>(null);
 	let pendingRefreshTimer: number | null = null;
@@ -1641,20 +1645,17 @@
 
 	async function refreshEnrollmentPolicyData() {
 		if (!currentUser.current) {
-			enrollmentPolicy = normalizeEnrollmentPolicy({
-				semester: 'GANJIL',
-				academicYear: '2025/2026',
-				requestsOpen: false
-			});
-			enrollmentPolicyDraft = normalizeEnrollmentPolicy(enrollmentPolicy);
+			enrollmentPolicy = createDefaultEnrollmentPolicy();
+			enrollmentPolicyDraft = createDefaultEnrollmentPolicy();
 			enrollmentPolicyLoaded = false;
 			enrollmentPolicyIssue = null;
 			return;
 		}
 
 		try {
-			enrollmentPolicy = normalizeEnrollmentPolicy(await resolveRemoteQuery(getEnrollmentPolicy()));
-			enrollmentPolicyDraft = normalizeEnrollmentPolicy(enrollmentPolicy);
+			const policy = normalizeEnrollmentPolicy(await resolveRemoteQuery(getEnrollmentPolicy()));
+			enrollmentPolicy = policy;
+			enrollmentPolicyDraft = { ...policy };
 			enrollmentPolicyLoaded = true;
 			enrollmentPolicyIssue = null;
 		} catch (error) {
@@ -2317,12 +2318,8 @@
 				pendingRefreshTimer = null;
 			}
 			loadedForUserId = null;
-			enrollmentPolicy = normalizeEnrollmentPolicy({
-				semester: 'GANJIL',
-				academicYear: '2025/2026',
-				requestsOpen: false
-			});
-			enrollmentPolicyDraft = normalizeEnrollmentPolicy(enrollmentPolicy);
+			enrollmentPolicy = createDefaultEnrollmentPolicy();
+			enrollmentPolicyDraft = createDefaultEnrollmentPolicy();
 			enrollmentPolicyLoaded = false;
 			enrollmentPolicyIssue = null;
 			resetCollections();
