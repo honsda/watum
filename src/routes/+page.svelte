@@ -4851,6 +4851,12 @@
 				(bulkEditEnrollmentSemester = value),
 			onBulkEditEnrollmentAcademicYearInput: (value: string) =>
 				(bulkEditEnrollmentAcademicYear = value),
+			onEnrollmentPolicyDraftSemesterInput: (value: 'GANJIL' | 'GENAP') =>
+				(enrollmentPolicyDraft = { ...enrollmentPolicyDraft, semester: value }),
+			onEnrollmentPolicyDraftAcademicYearInput: (value: string) =>
+				(enrollmentPolicyDraft = { ...enrollmentPolicyDraft, academicYear: value }),
+			onEnrollmentPolicyDraftRequestsOpenChange: (value: boolean) =>
+				(enrollmentPolicyDraft = { ...enrollmentPolicyDraft, requestsOpen: value }),
 			onOpenBulkEdit: () => {
 				bulkEditEnrollmentSemester = '';
 				bulkEditEnrollmentAcademicYear = '';

@@ -88,6 +88,9 @@
 		timezone,
 		onBulkEditEnrollmentSemesterInput,
 		onBulkEditEnrollmentAcademicYearInput,
+		onEnrollmentPolicyDraftSemesterInput,
+		onEnrollmentPolicyDraftAcademicYearInput,
+		onEnrollmentPolicyDraftRequestsOpenChange,
 		handleKeyboardClick,
 		onNavigateToEntity,
 		onOpenBuilderForEnrollment,
@@ -144,6 +147,9 @@
 		timezone: string;
 		onBulkEditEnrollmentSemesterInput: (value: string) => void;
 		onBulkEditEnrollmentAcademicYearInput: (value: string) => void;
+		onEnrollmentPolicyDraftSemesterInput: (value: 'GANJIL' | 'GENAP') => void;
+		onEnrollmentPolicyDraftAcademicYearInput: (value: string) => void;
+		onEnrollmentPolicyDraftRequestsOpenChange: (value: boolean) => void;
 		handleKeyboardClick: (event: KeyboardEvent) => void;
 		onNavigateToEntity: (view: ViewId, id: string | null | undefined, name?: string) => void;
 		onOpenBuilderForEnrollment: (item: SelectEnrollmentsResult) => void;
@@ -596,7 +602,15 @@
 					<div class="policy-settings-grid">
 						<label>
 							<span>Semester aktif</span>
-							<select name="semester" bind:value={enrollmentPolicyDraft.semester} required>
+							<select
+								name="semester"
+								value={enrollmentPolicyDraft.semester}
+								onchange={(event) =>
+									onEnrollmentPolicyDraftSemesterInput(
+										(event.currentTarget as HTMLSelectElement).value as 'GANJIL' | 'GENAP'
+									)}
+								required
+							>
 								<option value="GANJIL">GANJIL</option>
 								<option value="GENAP">GENAP</option>
 							</select>
@@ -605,7 +619,11 @@
 							<span>Tahun akademik aktif</span>
 							<input
 								name="academicYear"
-								bind:value={enrollmentPolicyDraft.academicYear}
+								value={enrollmentPolicyDraft.academicYear}
+								oninput={(event) =>
+									onEnrollmentPolicyDraftAcademicYearInput(
+										(event.currentTarget as HTMLInputElement).value
+									)}
 								placeholder="Contoh: 2025/2026"
 								required
 							/>
@@ -622,7 +640,11 @@
 						<input
 							type="checkbox"
 							name="requestsOpen"
-							bind:checked={enrollmentPolicyDraft.requestsOpen}
+							checked={enrollmentPolicyDraft.requestsOpen}
+							onchange={(event) =>
+								onEnrollmentPolicyDraftRequestsOpenChange(
+									(event.currentTarget as HTMLInputElement).checked
+								)}
 						/>
 					</label>
 					{#if enrollmentPolicyIssue}
