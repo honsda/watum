@@ -69,6 +69,7 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.75rem;
+		min-height: 3.35rem;
 		padding-top: 0.75rem;
 		border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 	}

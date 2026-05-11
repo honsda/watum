@@ -7,6 +7,11 @@
 		SelectLecturersResult
 	} from '$lib/server/sql';
 	import { DAY_LABELS, formatTimeRange, type ScheduleCard } from '$lib/app/academic';
+	import {
+		createDefaultEnrollmentPolicy,
+		isEnrollmentRequestsOpen,
+		type EnrollmentPolicy
+	} from '$lib/app/enrollment-policy';
 	import { days as dayOptions } from '$lib/validations/enrollment';
 	import CollectionPagination from '$lib/components/app/CollectionPagination.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -41,12 +46,6 @@
 
 	type ScheduleCardMap = Record<string, ScheduleCard>;
 	type ConflictSummaryMap = Record<string, string>;
-	type EnrollmentPolicy = {
-		semester: 'GANJIL' | 'GENAP';
-		academicYear: string;
-		requestsOpen: boolean;
-	};
-
 	let {
 		currentRole,
 		state = $bindable<EnrollmentsViewState>({
@@ -79,8 +78,8 @@
 		bulkEditEnrollmentAcademicYear,
 		requestEnrollmentEnhance,
 		updateEnrollmentPolicyEnhance,
-		enrollmentPolicy = { semester: 'GANJIL', academicYear: '2025/2026', requestsOpen: false },
-		enrollmentPolicyDraft = { semester: 'GANJIL', academicYear: '2025/2026', requestsOpen: false },
+		enrollmentPolicy = createDefaultEnrollmentPolicy(),
+		enrollmentPolicyDraft = createDefaultEnrollmentPolicy(),
 		enrollmentPolicyLoaded,
 		enrollmentPolicyIssue,
 		studentStudyProgramId = null,
@@ -180,7 +179,7 @@
 	}
 
 	function scheduleCopy(item: SelectEnrollmentsResult) {
-		if (item.status === 'PENDING') return 'Menunggu persetujuan';
+		if (item.status === 'PENDING') return 'Belum disetujui';
 		if (!item.schedule_day) return 'Jadwal belum ditentukan';
 		return `${DAY_LABELS[item.schedule_day as keyof typeof DAY_LABELS]} • ${formatTimeRange(
 			item.schedule_start_time,
@@ -194,12 +193,12 @@
 			? courses.filter((c) => c.study_program_id === studentStudyProgramId)
 			: courses
 	);
+	const policyRequestsOpen = $derived(
+		Boolean(enrollmentPolicyLoaded && isEnrollmentRequestsOpen(enrollmentPolicy?.requestsOpen))
+	);
 	const studentCanRequestEnrollment = $derived(
 		Boolean(
-			enrollmentPolicyLoaded &&
-			enrollmentPolicy?.requestsOpen &&
-			requestCourses.length &&
-			requestEnrollmentEnhance
+			policyRequestsOpen && requestCourses.length && requestEnrollmentEnhance
 		)
 	);
 </script>
@@ -324,6 +323,7 @@
 					class="list-row user-row"
 					class:selected={selectedEnrollmentId === item.id}
 					class:checked={item.id != null && bulkSelectedIds.has(item.id)}
+					class:conflict={Boolean(scheduleCard?.hasConflict)}
 				>
 					{#if currentRole !== 'STUDENT'}
 						<label class="row-checkbox"
@@ -385,13 +385,18 @@
 									>Bentrok dengan {conflictSummaryByCardId[item.id]}</small
 								>
 							{/if}
-						</div>
-						<small>
-							{scheduleCopy(item)} • {item.semester} • {item.academic_year}
 							{#if item.status === 'PENDING'}
-								<Badge variant="secondary">Menunggu</Badge>
+								<small class="enrollment-row-meta pending">
+									<Badge variant="secondary" class="enrollment-status-badge">Menunggu</Badge>
+									<span>{scheduleCopy(item)} • {item.semester} • {item.academic_year}</span>
+								</small>
 							{/if}
-						</small>
+						</div>
+						{#if item.status !== 'PENDING'}
+							<small class="enrollment-row-meta">
+								<span>{scheduleCopy(item)} • {item.semester} • {item.academic_year}</span>
+							</small>
+						{/if}
 					</div>
 				</div>
 			{/each}
@@ -593,14 +598,21 @@
 						</p>
 					</div>
 					<div class="policy-settings-badges">
-						<Badge variant="outline">{enrollmentPolicy.semester}</Badge>
-						<Badge variant="secondary">{enrollmentPolicy.academicYear}</Badge>
-						<Badge variant={enrollmentPolicy.requestsOpen ? 'default' : 'secondary'}>
-							{enrollmentPolicy.requestsOpen ? 'Terbuka' : 'Tertutup'}
+						<Badge variant="outline">{enrollmentPolicyLoaded ? enrollmentPolicy.semester : 'Memuat'}</Badge>
+						<Badge variant="secondary">
+							{enrollmentPolicyLoaded ? enrollmentPolicy.academicYear : 'Memuat'}
+						</Badge>
+						<Badge variant={policyRequestsOpen ? 'default' : 'secondary'}>
+							{enrollmentPolicyLoaded ? (policyRequestsOpen ? 'Terbuka' : 'Tertutup') : 'Memuat'}
 						</Badge>
 					</div>
 				</div>
 				<form class="editor-grid policy-settings-form" {...updateEnrollmentPolicyEnhance}>
+					<input
+						type="hidden"
+						name="requestsOpen"
+						value={isEnrollmentRequestsOpen(enrollmentPolicyDraft.requestsOpen) ? 'true' : 'false'}
+					/>
 					<div class="policy-settings-grid">
 						<label>
 							<span>Semester aktif</span>
@@ -641,8 +653,7 @@
 						</div>
 						<input
 							type="checkbox"
-							name="requestsOpen"
-							checked={enrollmentPolicyDraft.requestsOpen}
+							checked={isEnrollmentRequestsOpen(enrollmentPolicyDraft.requestsOpen)}
 							onchange={(event) =>
 								onEnrollmentPolicyDraftRequestsOpenChange(
 									(event.currentTarget as HTMLInputElement).checked
@@ -673,17 +684,17 @@
 				</label>
 				<label>
 					<span>Semester</span>
-					<input value={enrollmentPolicy?.semester ?? '-'} readonly disabled />
+					<input value={enrollmentPolicyLoaded ? enrollmentPolicy.semester : '-'} readonly disabled />
 				</label>
 				<label>
 					<span>Tahun akademik</span>
-					<input value={enrollmentPolicy?.academicYear ?? '-'} readonly disabled />
+					<input value={enrollmentPolicyLoaded ? enrollmentPolicy.academicYear : '-'} readonly disabled />
 				</label>
 				{#if enrollmentPolicyIssue}
 					<p class="editor-note">{enrollmentPolicyIssue}</p>
 				{:else if !enrollmentPolicyLoaded}
 					<p class="editor-note">Memuat pengaturan pengajuan KRS...</p>
-				{:else if !(enrollmentPolicy?.requestsOpen ?? false)}
+				{:else if !policyRequestsOpen}
 					<p class="editor-note">Pengajuan KRS sedang ditutup oleh admin.</p>
 				{:else if !requestCourses.length}
 					<p class="editor-note">Belum ada mata kuliah yang tersedia untuk program studi Anda.</p>
@@ -701,6 +712,28 @@
 </div>
 
 <style>
+	.enrollment-row-meta {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 0.4rem;
+		min-width: 0;
+	}
+
+	.enrollment-row-meta.pending {
+		justify-content: flex-start;
+		flex-wrap: wrap;
+		text-align: left;
+	}
+
+	.enrollment-row-meta span {
+		min-width: 0;
+	}
+
+	:global(.enrollment-status-badge) {
+		flex: 0 0 auto;
+	}
+
 	.policy-settings-shell {
 		display: grid;
 		gap: 1rem;

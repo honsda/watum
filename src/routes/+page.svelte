@@ -23,7 +23,7 @@
 		type RoomMetric,
 		type ScheduleCard
 	} from '$lib/app/academic';
-	import { formatDateTime } from '$lib/time-helpers';
+	import { formatDateTime, getTimeComponents } from '$lib/time-helpers';
 	import {
 		headerAction,
 		navigationForRole,
@@ -33,6 +33,11 @@
 		type ViewId
 	} from '$lib/app/navigation';
 	import { collectionFallbackMessages, viewDataPlanForRole } from '$lib/app/collection-config';
+	import {
+		createDefaultEnrollmentPolicy,
+		normalizeEnrollmentPolicy,
+		type EnrollmentPolicy
+	} from '$lib/app/enrollment-policy';
 	import { bindableLink, createBindableFacade } from '$lib/app/bindable-facade';
 	import {
 		buildBuilderViewProps,
@@ -270,31 +275,6 @@
 
 	type BuilderStep = 'participant' | 'time' | 'room' | 'review';
 	type BuilderMode = 'create' | 'edit' | 'approve';
-	type EnrollmentPolicy = {
-		semester: 'GANJIL' | 'GENAP';
-		academicYear: string;
-		requestsOpen: boolean;
-	};
-
-	function normalizeEnrollmentPolicy(input: {
-		semester?: string;
-		academicYear?: string;
-		requestsOpen?: boolean;
-	}): EnrollmentPolicy {
-		return {
-			semester: input.semester === 'GENAP' ? 'GENAP' : 'GANJIL',
-			academicYear: input.academicYear?.trim() || '2025/2026',
-			requestsOpen: Boolean(input.requestsOpen)
-		};
-	}
-
-	function createDefaultEnrollmentPolicy(): EnrollmentPolicy {
-		return normalizeEnrollmentPolicy({
-			semester: 'GANJIL',
-			academicYear: '2025/2026',
-			requestsOpen: false
-		});
-	}
 	type DataCollectionKey =
 		| 'classrooms'
 		| 'courses'
@@ -831,6 +811,24 @@
 		date.setDate(date.getDate() + DAY_ORDER.indexOf(card.day));
 		date.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
 		return date;
+	}
+
+	function upcomingScheduleRank(card: ScheduleCard, now = new Date()) {
+		if (card.original.status && card.original.status !== 'APPROVED') return Number.POSITIVE_INFINITY;
+		const { dayOfWeek } = getTimeComponents(now, timezone);
+		const currentDayIndex = dayOfWeek >= 1 && dayOfWeek <= DAY_ORDER.length ? dayOfWeek - 1 : 0;
+		const currentMinutes = dayOfWeek >= 1 && dayOfWeek <= DAY_ORDER.length ? toMinutes(now, timezone) : 0;
+		let dayDelta = DAY_ORDER.indexOf(card.day) - currentDayIndex;
+		if (dayDelta < 0 || (dayDelta === 0 && card.startMinutes < currentMinutes)) {
+			dayDelta += DAY_ORDER.length;
+		}
+		return dayDelta * 24 * 60 + card.startMinutes;
+	}
+
+	function sortUpcomingSchedules(cards: ScheduleCard[]) {
+		return [...cards]
+			.filter((card) => Number.isFinite(upcomingScheduleRank(card)))
+			.sort((left, right) => upcomingScheduleRank(left) - upcomingScheduleRank(right));
 	}
 
 	function escapeHtml(value: string) {
@@ -1550,6 +1548,9 @@
 		void (async () => {
 			await ensureAccessToken();
 			await currentUser.refresh();
+			if (currentUser.current) {
+				await refreshEnrollmentPolicyData();
+			}
 		})();
 	});
 
@@ -1748,7 +1749,7 @@
 		}
 
 		try {
-			const policy = normalizeEnrollmentPolicy(await resolveRemoteQuery(getEnrollmentPolicy()));
+			const policy = normalizeEnrollmentPolicy(await getEnrollmentPolicy().run());
 			enrollmentPolicy = policy;
 			enrollmentPolicyDraft = { ...policy };
 			enrollmentPolicyLoaded = true;
@@ -1786,6 +1787,14 @@
 	function buildConflictAuditFilters() {
 		const academicYear = scheduleAcademicYearFilter || scheduleAcademicYearOptions[0] || undefined;
 		const semester = scheduleSemesterFilter || scheduleSemesterOptions[0] || undefined;
+		const role = currentUser.current?.role as AppRole | undefined;
+		const scopedEnrollmentIds =
+			role === 'LECTURER'
+				? (activeView === 'builder' ? filteredBuilderEnrollments : filteredEnrollments)
+						.map((item) => item.id)
+						.filter((id): id is string => Boolean(id))
+						.slice(0, 500)
+				: [];
 		return {
 			academicYear,
 			semester,
@@ -1800,6 +1809,7 @@
 			courseId: scheduleCourseFilter || undefined,
 			classRoomId: scheduleRoomFilter || undefined,
 			lecturerId: scheduleLecturerFilter || undefined,
+			enrollmentIds: scopedEnrollmentIds.length ? scopedEnrollmentIds : undefined,
 			limitGroups: 1000,
 			memberSampleSize: 10
 		};
@@ -1986,6 +1996,16 @@
 		return viewDataPlanForRole(view, role) as ViewDataPlan;
 	}
 
+	function shouldLoadClassRoomDashboard(view: ViewId, role: AppRole | undefined) {
+		return view === 'dashboard' && role === 'ADMIN';
+	}
+
+	function shouldLoadConflictAudit(view: ViewId, role: AppRole | undefined) {
+		if (role === 'STUDENT') return false;
+		if (view === 'dashboard') return role === 'ADMIN';
+		return view === 'calendar' || view === 'builder' || view === 'enrollments';
+	}
+
 	function getViewIssues(view: ViewId, role: AppRole | undefined): string[] {
 		const plan = viewDataPlan(view, role);
 		const keys = new Set<DataCollectionKey>(plan.collections);
@@ -2012,7 +2032,7 @@
 			);
 		}
 
-		if (view === 'dashboard' && role !== 'STUDENT' && (force || !classRoomDashboardLoaded)) {
+		if (shouldLoadClassRoomDashboard(view, role) && (force || !classRoomDashboardLoaded)) {
 			tasks.push(
 				refreshClassRoomDashboard().catch((error) => {
 					setCollectionIssue('classrooms', errorMessage(error, 'Dashboard ruang gagal dimuat.'));
@@ -2093,10 +2113,10 @@
 		await refreshDependencies({
 			collections: plan.collections,
 			includeSchedulePreview: plan.requiresSchedulePreview,
-			includeConflictAudit: true,
+			includeConflictAudit: shouldLoadConflictAudit(view, role),
 			forceCollections: true
 		});
-		if (view === 'dashboard' && role !== 'STUDENT') {
+		if (shouldLoadClassRoomDashboard(view, role)) {
 			await refreshClassRoomDashboard(null, {
 				history: [],
 				pageNumber: 1,
@@ -2333,8 +2353,13 @@
 	$effect(() => {
 		const userId = currentUser.current?.id ?? null;
 		const view = activeView;
-		if (!userId || !['dashboard', 'calendar', 'builder'].includes(view)) return;
-		if (!schedulePreviewLoaded || schedulePreview.loading) return;
+		const role = currentUser.current?.role as AppRole | undefined;
+		if (!userId || !['dashboard', 'calendar', 'builder', 'enrollments'].includes(view)) return;
+		if (!shouldLoadConflictAudit(view, role)) return;
+		if (view === 'enrollments' && !collectionLoaded.enrollments) return;
+		if (!['builder', 'enrollments'].includes(view) && (!schedulePreviewLoaded || schedulePreview.loading)) {
+			return;
+		}
 		const _deps = [
 			scheduleAcademicYearFilter,
 			scheduleSemesterFilter,
@@ -2342,9 +2367,14 @@
 			scheduleCourseFilter,
 			scheduleRoomFilter,
 			scheduleLecturerFilter,
-			schedulePreview.items.length
+			schedulePreview.items.length,
+			enrollments.length
 		];
 		void _deps;
+		if (view === 'builder' && role === 'LECTURER') {
+			void refreshConflictAudit();
+			return;
+		}
 		queueConflictAuditRefresh();
 	});
 
@@ -2361,16 +2391,7 @@
 
 	$effect(() => {
 		const userId = currentUser.current?.id ?? null;
-		if (!userId || activeView !== 'builder' || builderStep !== 'participant') return;
-		const _deps = [selectedEnrollmentId, builderStep, activeView];
-		void _deps;
-		if (!studentPickerOptions.length) queueStudentPickerRefresh(0);
-		if (!coursePickerOptions.length) queueCoursePickerRefresh(0);
-	});
-
-	$effect(() => {
-		const userId = currentUser.current?.id ?? null;
-		if (!userId || !['calendar', 'builder', 'enrollments'].includes(activeView)) return;
+		if (!userId || !['calendar', 'enrollments'].includes(activeView)) return;
 		const _deps = [activeView];
 		void _deps;
 		if (!scheduleCourseFilterOptions.length) queueScheduleCourseFilterRefresh(0);
@@ -2389,6 +2410,11 @@
 			selectedEnrollmentId
 		];
 		void _deps;
+		if (!schedulePreviewLoaded && !schedulePreview.loading) {
+			void refreshSchedulePreview().catch((error) => {
+				setCollectionIssue('enrollments', errorMessage(error, 'Pratinjau jadwal gagal dimuat.'));
+			});
+		}
 		queueRoomPickerRefresh(0);
 	});
 
@@ -2811,7 +2837,8 @@
 		}
 		return peers;
 	});
-	const nextSchedule = $derived(scheduleAnalyticsCards[0] ?? null);
+	const upcomingScheduleCards = $derived.by(() => sortUpcomingSchedules(scheduleCards));
+	const nextSchedule = $derived(upcomingScheduleCards[0] ?? null);
 	const underusedRooms = $derived.by(() => {
 		const occupiedRoomIds = new Set(
 			scheduleAnalyticsCards.map((card) => card.original.class_room_id).filter(Boolean)
@@ -3494,6 +3521,7 @@
 			const accessToken = (loginUser.result as { accessToken?: string } | undefined)?.accessToken;
 			setAccessToken(accessToken ?? null);
 			await currentUser.refresh();
+			await refreshEnrollmentPolicyData();
 			setFeedback('success', 'Sesi berhasil dibuka.');
 		} catch (error) {
 			const message = (error as { body?: { message?: string }; message?: string })?.body?.message;
@@ -4379,6 +4407,7 @@
 				ScheduleCard
 			>
 	);
+	const enrollmentScheduleCardMap = $derived({ ...scheduleCardMap, ...auditConflictCardMap });
 	const selectedScheduleConflictSummary = $derived(
 		selectedSchedule ? (conflictSummaryByCardId[selectedSchedule.id] ?? null) : null
 	);
@@ -4413,7 +4442,7 @@
 		buildDashboardViewProps({
 			role: requireCurrentRole(),
 			nextSchedule,
-			scheduleCards,
+			scheduleCards: upcomingScheduleCards,
 			enrollments,
 			grades,
 			studentGradeHighlights,
@@ -4492,7 +4521,7 @@
 			selectedEnrollmentId,
 			pendingDelete,
 			filteredBuilderEnrollments,
-			scheduleCardMap,
+			scheduleCardMap: enrollmentScheduleCardMap,
 			auditConflictCardMap,
 			conflictSummaryByCardId,
 			collectionPagination: collectionPagination.enrollments,
@@ -4916,7 +4945,7 @@
 			selectedEnrollment,
 			selectedEnrollmentConflictSummary,
 			selectedEnrollmentConflictGroup,
-			scheduleCardMap,
+			scheduleCardMap: enrollmentScheduleCardMap,
 			conflictSummaryByCardId,
 			courses,
 			lecturers,

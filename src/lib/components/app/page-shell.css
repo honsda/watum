@@ -1210,6 +1210,19 @@ select {
 	align-items: stretch;
 }
 
+.lecturer-upcoming-list {
+	display: grid;
+	gap: 0.55rem;
+}
+
+.lecturer-upcoming-card {
+	padding: 0.75rem 0.85rem;
+}
+
+.lecturer-class-list .schedule-row-card {
+	grid-template-columns: minmax(0, 1.3fr) minmax(8rem, 0.7fr) minmax(8rem, 0.7fr);
+}
+
 .student-actions {
 	grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
 }
@@ -1756,10 +1769,11 @@ select {
 }
 
 .builder-list .list-stack {
-	flex: 1 1 auto;
-	height: 100%;
+	flex: 1 1 clamp(18rem, calc(100dvh - 25rem), 34rem);
+	height: clamp(18rem, calc(100dvh - 25rem), 34rem);
 	min-width: 0;
-	min-height: 0;
+	min-height: clamp(18rem, calc(100dvh - 25rem), 34rem);
+	max-height: clamp(18rem, calc(100dvh - 25rem), 34rem);
 	overflow: auto;
 	padding-right: 0.1rem;
 	scrollbar-gutter: stable;

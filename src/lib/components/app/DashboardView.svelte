@@ -5,7 +5,15 @@
 	import type { RoomDashboardSummary } from '../../../routes/classrooms/data.remote';
 	import { DAY_LABELS } from '$lib/app/academic';
 	import { Button } from '$lib/components/ui/button';
+	import CollectionPagination from '$lib/components/app/CollectionPagination.svelte';
 	import ClassroomDashboard from './ClassroomDashboard.svelte';
+
+	const LECTURER_CLASS_PAGE_SIZE = 6;
+	const LECTURER_UPCOMING_COUNT = 3;
+
+	type LecturerClassCard = ScheduleCard & {
+		studentCount: number;
+	};
 
 	let {
 		role,
@@ -85,6 +93,65 @@
 	}
 
 	const visibleScheduleCards = $derived(scheduleCards.slice(0, 6));
+	let lecturerClassPage = $state(1);
+	const lecturerClassCards = $derived.by(() => {
+		const classes = new Map<string, LecturerClassCard>();
+		for (const card of scheduleCards) {
+			const key =
+				card.original.schedule_id ??
+				[
+					card.original.course_id,
+					card.original.class_room_id,
+					card.day,
+					card.startLabel,
+					card.endLabel,
+					card.semester,
+					card.academicYear
+				].join('|');
+			const existing = classes.get(key);
+			if (existing) {
+				existing.studentCount += 1;
+				existing.hasConflict = existing.hasConflict || card.hasConflict;
+				continue;
+			}
+			classes.set(key, { ...card, studentCount: 1 });
+		}
+		return [...classes.values()];
+	});
+	const lecturerUpcomingClasses = $derived(
+		lecturerClassCards.slice(0, LECTURER_UPCOMING_COUNT)
+	);
+	const lecturerClassPageCount = $derived(
+		Math.max(1, Math.ceil(lecturerClassCards.length / LECTURER_CLASS_PAGE_SIZE))
+	);
+	const lecturerVisibleClasses = $derived(
+		lecturerClassCards.slice(
+			(lecturerClassPage - 1) * LECTURER_CLASS_PAGE_SIZE,
+			lecturerClassPage * LECTURER_CLASS_PAGE_SIZE
+		)
+	);
+	const lecturerClassPagination = $derived({
+		pageNumber: lecturerClassPage,
+		itemCount: lecturerVisibleClasses.length,
+		limit: LECTURER_CLASS_PAGE_SIZE,
+		hasMore: lecturerClassPage < lecturerClassPageCount,
+		canPrevious: lecturerClassPage > 1
+	});
+
+	$effect(() => {
+		if (lecturerClassPage > lecturerClassPageCount) {
+			lecturerClassPage = lecturerClassPageCount;
+		}
+	});
+
+	function previousLecturerClassPage() {
+		lecturerClassPage = Math.max(1, lecturerClassPage - 1);
+	}
+
+	function nextLecturerClassPage() {
+		lecturerClassPage = Math.min(lecturerClassPageCount, lecturerClassPage + 1);
+	}
+
 	const pendingEnrollments = $derived(
 		Array.isArray(enrollments)
 			? enrollments.filter((item: { status?: string | null }) => item.status === 'PENDING').length
@@ -234,33 +301,34 @@
 			<section class="decision-board lecturer-board">
 				<article class="decision-lead decision-steady">
 					<h3 class="decision-title">
-						{#if nextSchedule}
+						{#if lecturerUpcomingClasses.length}
 							Kelas mengajar berikutnya
 						{:else}
 							Belum ada kelas mengajar aktif
 						{/if}
 					</h3>
-					{#if nextSchedule}
-						<section class="decision-primary decision-primary-steady">
-							<div class="decision-primary-copy">
-								<span
-									role="button"
-									tabindex="0"
-									class="entity-link"
-									onkeydown={handleKeyboardClick}
-									onclick={() =>
-										onNavigateToEntity(
-											'courses',
-											nextSchedule.original.course_id,
-											nextSchedule.course
-										)}><strong>{nextSchedule.course}</strong></span
-								>
-								<p>
-									{DAY_LABELS[nextSchedule.day]} • {nextSchedule.startLabel} - {nextSchedule.endLabel}
-									• {nextSchedule.room}
-								</p>
-							</div>
-						</section>
+					{#if lecturerUpcomingClasses.length}
+						<div class="lecturer-upcoming-list">
+							{#each lecturerUpcomingClasses as card (card.id)}
+								<section class="decision-primary decision-primary-steady lecturer-upcoming-card">
+									<div class="decision-primary-copy">
+										<span
+											role="button"
+											tabindex="0"
+											class="entity-link"
+											onkeydown={handleKeyboardClick}
+											onclick={() =>
+												onNavigateToEntity('courses', card.original.course_id, card.course)}
+											><strong>{card.course}</strong></span
+										>
+										<p>
+											{DAY_LABELS[card.day]} • {card.startLabel} - {card.endLabel} • {card.room}
+										</p>
+										<p>{card.studentCount} mahasiswa • {card.semester} • {card.academicYear}</p>
+									</div>
+								</section>
+							{/each}
+						</div>
 					{/if}
 					<div class="decision-actions">
 						<Button class="primary-button" onclick={() => onActivateView('calendar')}
@@ -274,8 +342,8 @@
 
 				<aside class="decision-notes">
 					<div class="decision-note-row">
-						<span>Kelas aktif</span>
-						<strong>{enrollments.length} KRS pada kelas Anda</strong>
+						<span>Kelas mengajar</span>
+						<strong>{lecturerClassCards.length} kelas terjadwal</strong>
 					</div>
 					<div class="decision-note-row">
 						<span>Pengajuan menunggu</span>
@@ -290,7 +358,7 @@
 
 			<section class="student-weekly-list lecturer-weekly-list">
 				<div class="student-section-head">
-					<h3>Jadwal mengajar</h3>
+					<h3>Daftar kelas mengajar</h3>
 					<Button
 						class="ghost-button"
 						variant="ghost"
@@ -298,22 +366,53 @@
 						onclick={() => onActivateView('enrollments')}>Buka KRS</Button
 					>
 				</div>
-				{#if visibleScheduleCards.length}
-					<div class="schedule-row-list">
-						{#each visibleScheduleCards as card (card.id)}
+				{#if lecturerVisibleClasses.length}
+					<div class="schedule-row-list lecturer-class-list">
+						{#each lecturerVisibleClasses as card (card.id)}
 							<div class="schedule-row-card">
 								<div>
-									<strong>{card.course}</strong>
-									<span>{card.student}</span>
+									<strong
+										><span
+											role="button"
+											tabindex="0"
+											class="entity-link"
+											onkeydown={handleKeyboardClick}
+											onclick={() =>
+												onNavigateToEntity('courses', card.original.course_id, card.course)}
+											>{card.course}</span
+										></strong
+									>
+									<span>{card.studentCount} mahasiswa</span>
 								</div>
 								<div>
 									<strong>{DAY_LABELS[card.day]}</strong>
 									<span>{card.startLabel} - {card.endLabel}</span>
 								</div>
-								<div><strong>{card.room}</strong></div>
+								<div>
+									<span
+										role="button"
+										tabindex="0"
+										class="entity-link"
+										onkeydown={handleKeyboardClick}
+										onclick={() =>
+											onNavigateToEntity('classrooms', card.original.class_room_id, card.room)}
+										><strong>{card.room}</strong></span
+									>
+									<span>{card.semester} • {card.academicYear}</span>
+								</div>
 							</div>
 						{/each}
 					</div>
+					<CollectionPagination
+						label="kelas"
+						pageNumber={lecturerClassPagination.pageNumber}
+						canPrevious={lecturerClassPagination.canPrevious}
+						limit={lecturerClassPagination.limit}
+						itemCount={lecturerClassPagination.itemCount}
+						hasMore={lecturerClassPagination.hasMore}
+						onPrevious={previousLecturerClassPage}
+						onNext={nextLecturerClassPage}
+					/>
 				{:else}
 					<p class="empty-copy">Belum ada jadwal mengajar pada data yang dimuat.</p>
 				{/if}
