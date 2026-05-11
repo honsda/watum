@@ -155,6 +155,8 @@
 	function bulkUpdateClassRoomsForm() {
 		return bulkUpdateClassRooms as FormState;
 	}
+
+	const canManage = $derived(currentRole === 'ADMIN');
 </script>
 
 <div class="workspace-shell">
@@ -163,7 +165,11 @@
 			<div>
 				<h3>Daftar ruang</h3>
 			</div>
-			<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginCreate}>Tambah</Button>
+			{#if canManage}
+				<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginCreate}
+					>Tambah</Button
+				>
+			{/if}
 		</div>
 		<label class="search-box"
 			><Search size={16} /><input
@@ -175,7 +181,7 @@
 					><X size={14} /></button
 				>{/if}</label
 		>
-		{#if bulkCount > 0}
+		{#if canManage && bulkCount > 0}
 			<div class="bulk-bar">
 				<span class="bulk-count">{bulkCount} ruang dipilih</span>
 				<div class="bulk-actions">
@@ -191,7 +197,7 @@
 			</div>
 		{/if}
 		<div class="list-stack">
-			{#if filteredClassrooms.length > 1}
+			{#if canManage && filteredClassrooms.length > 1}
 				<label class="list-row select-all-row">
 					<input
 						type="checkbox"
@@ -208,14 +214,16 @@
 					class:selected={selectedRoomId === item.id}
 					class:checked={item.id != null && bulkSelectedIds.has(item.id)}
 				>
-					<label class="row-checkbox"
-						><input
-							type="checkbox"
-							checked={item.id != null && bulkSelectedIds.has(item.id)}
-							onchange={() => item.id && onBulkToggleId(item.id)}
-							onclick={(e) => e.stopPropagation()}
-						/></label
-					>
+					{#if canManage}
+						<label class="row-checkbox"
+							><input
+								type="checkbox"
+								checked={item.id != null && bulkSelectedIds.has(item.id)}
+								onchange={() => item.id && onBulkToggleId(item.id)}
+								onclick={(e) => e.stopPropagation()}
+							/></label
+						>
+					{/if}
 					<div
 						role="button"
 						tabindex="0"
@@ -260,10 +268,12 @@
 						? 'Ubah massal ruang'
 						: selectedRoom
 							? selectedRoom.name
-							: 'Tambah ruang'}
+							: canManage
+								? 'Tambah ruang'
+								: 'Pilih satu ruang'}
 				</h3>
 			</div>
-			{#if currentRole === 'ADMIN'}
+			{#if canManage}
 				<div class="detail-actions">
 					{#if editorView === 'classrooms'}
 						<Button variant="ghost" size="sm" class="ghost-button" onclick={onStopEditing}
@@ -312,7 +322,7 @@
 					Tinjau ringkasan ruang lebih dulu. Buka form edit hanya saat data perlu diubah.
 				</p>
 			</div>
-		{:else if currentRole === 'ADMIN' && editorView === 'classrooms'}
+		{:else if canManage && editorView === 'classrooms'}
 			<form
 				class="editor-grid"
 				{...selectedRoomId ? updateClassRoomEnhance : createClassRoomEnhance}
@@ -378,7 +388,7 @@
 					>
 				</div>
 			</form>
-		{:else if editorView === 'classrooms-bulk'}
+		{:else if canManage && editorView === 'classrooms-bulk'}
 			<form class="editor-grid" {...bulkUpdateClassRoomsEnhance}>
 				<p class="editor-note">
 					Ubah tipe, kapasitas, dan fasilitas {bulkCount} ruang terpilih sekaligus. Kosongkan field yang

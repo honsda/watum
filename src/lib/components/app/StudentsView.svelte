@@ -156,6 +156,8 @@
 	function bulkUpdateStudentsForm() {
 		return bulkUpdateStudents as FormState;
 	}
+
+	const canManage = $derived(currentRole === 'ADMIN');
 </script>
 
 <div class="workspace-shell">
@@ -164,7 +166,11 @@
 			<div>
 				<h3>Daftar mahasiswa aktif</h3>
 			</div>
-			<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginCreate}>Tambah</Button>
+			{#if canManage}
+				<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginCreate}
+					>Tambah</Button
+				>
+			{/if}
 		</div>
 		<label class="search-box"
 			><Search size={16} /><input
@@ -176,7 +182,7 @@
 					><X size={14} /></button
 				>{/if}</label
 		>
-		{#if bulkCount > 0}
+		{#if canManage && bulkCount > 0}
 			<div class="bulk-bar">
 				<span class="bulk-count">{bulkCount} mahasiswa dipilih</span>
 				<div class="bulk-actions">
@@ -192,7 +198,7 @@
 			</div>
 		{/if}
 		<div class="list-stack">
-			{#if filteredStudents.length > 1}
+			{#if canManage && filteredStudents.length > 1}
 				<label class="list-row select-all-row">
 					<input
 						type="checkbox"
@@ -209,14 +215,16 @@
 					class:selected={selectedStudentId === item.id}
 					class:checked={item.id != null && bulkSelectedIds.has(item.id)}
 				>
-					<label class="row-checkbox"
-						><input
-							type="checkbox"
-							checked={item.id != null && bulkSelectedIds.has(item.id)}
-							onchange={() => item.id && onBulkToggleId(item.id)}
-							onclick={(e) => e.stopPropagation()}
-						/></label
-					>
+					{#if canManage}
+						<label class="row-checkbox"
+							><input
+								type="checkbox"
+								checked={item.id != null && bulkSelectedIds.has(item.id)}
+								onchange={() => item.id && onBulkToggleId(item.id)}
+								onclick={(e) => e.stopPropagation()}
+							/></label
+						>
+					{/if}
 					<div
 						role="button"
 						tabindex="0"
@@ -277,10 +285,12 @@
 						? 'Ubah massal mahasiswa'
 						: selectedStudent
 							? selectedStudent.name
-							: 'Tambah mahasiswa'}
+							: canManage
+								? 'Tambah mahasiswa'
+								: 'Pilih satu mahasiswa'}
 				</h3>
 			</div>
-			{#if currentRole === 'ADMIN'}
+			{#if canManage}
 				<div class="detail-actions">
 					{#if editorView === 'students'}
 						<Button variant="ghost" size="sm" class="ghost-button" onclick={onStopEditing}
@@ -356,7 +366,7 @@
 					baca cepat.
 				</p>
 			</div>
-		{:else if currentRole === 'ADMIN' && editorView === 'students'}
+		{:else if canManage && editorView === 'students'}
 			<form
 				class="editor-grid"
 				{...selectedStudentId ? updateStudentEnhance : createStudentEnhance}
@@ -440,7 +450,7 @@
 					>
 				</div>
 			</form>
-		{:else if editorView === 'students-bulk'}
+		{:else if canManage && editorView === 'students-bulk'}
 			<form class="editor-grid" {...bulkUpdateStudentsEnhance}>
 				<p class="editor-note">
 					Ubah prodi dan angkatan {bulkCount} mahasiswa terpilih sekaligus. Kosongkan field yang tidak

@@ -129,6 +129,8 @@
 	function bulkUpdateFacultiesForm() {
 		return bulkUpdateFaculties as FormState;
 	}
+
+	const canManage = $derived(currentRole === 'ADMIN');
 </script>
 
 <div class="workspace-shell">
@@ -137,7 +139,11 @@
 			<div>
 				<h3>Daftar fakultas</h3>
 			</div>
-			<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginCreate}>Tambah</Button>
+			{#if canManage}
+				<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginCreate}
+					>Tambah</Button
+				>
+			{/if}
 		</div>
 		<label class="search-box"
 			><Search size={16} /><input
@@ -149,7 +155,7 @@
 					><X size={14} /></button
 				>{/if}</label
 		>
-		{#if bulkCount > 0}
+		{#if canManage && bulkCount > 0}
 			<div class="bulk-bar">
 				<span class="bulk-count">{bulkCount} fakultas dipilih</span>
 				<div class="bulk-actions">
@@ -165,7 +171,7 @@
 			</div>
 		{/if}
 		<div class="list-stack">
-			{#if filteredFaculties.length > 1}
+			{#if canManage && filteredFaculties.length > 1}
 				<label class="list-row select-all-row">
 					<input
 						type="checkbox"
@@ -182,14 +188,16 @@
 					class:selected={selectedFacultyId === item.id}
 					class:checked={item.id != null && bulkSelectedIds.has(item.id)}
 				>
-					<label class="row-checkbox"
-						><input
-							type="checkbox"
-							checked={item.id != null && bulkSelectedIds.has(item.id)}
-							onchange={() => item.id && onBulkToggleId(item.id)}
-							onclick={(e) => e.stopPropagation()}
-						/></label
-					>
+					{#if canManage}
+						<label class="row-checkbox"
+							><input
+								type="checkbox"
+								checked={item.id != null && bulkSelectedIds.has(item.id)}
+								onchange={() => item.id && onBulkToggleId(item.id)}
+								onclick={(e) => e.stopPropagation()}
+							/></label
+						>
+					{/if}
 					<div
 						role="button"
 						tabindex="0"
@@ -234,10 +242,12 @@
 						? 'Ubah massal fakultas'
 						: selectedFaculty
 							? selectedFaculty.name
-							: 'Tambah fakultas'}
+							: canManage
+								? 'Tambah fakultas'
+								: 'Pilih satu fakultas'}
 				</h3>
 			</div>
-			{#if currentRole === 'ADMIN'}
+			{#if canManage}
 				<div class="detail-actions">
 					{#if editorView === 'faculties'}
 						<Button variant="ghost" size="sm" class="ghost-button" onclick={onStopEditing}
@@ -283,7 +293,7 @@
 					diperlukan.
 				</p>
 			</div>
-		{:else if currentRole === 'ADMIN' && editorView === 'faculties'}
+		{:else if canManage && editorView === 'faculties'}
 			<form
 				class="editor-grid"
 				{...selectedFacultyId ? updateFacultyEnhance : createFacultyEnhance}
@@ -311,7 +321,7 @@
 					>
 				</div>
 			</form>
-		{:else if editorView === 'faculties-bulk'}
+		{:else if canManage && editorView === 'faculties-bulk'}
 			<form class="editor-grid" {...bulkUpdateFacultiesEnhance}>
 				<p class="editor-note">
 					Ubah nama {bulkCount} fakultas terpilih sekaligus. Kosongkan field yang tidak ingin diubah.

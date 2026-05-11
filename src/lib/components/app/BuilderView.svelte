@@ -1268,13 +1268,33 @@
 
 			{#if selectedEnrollmentId}
 				<input
-					type="hidden"
-					{...(builderMode === 'approve'
+					{...builderMode === 'approve'
 						? approveEnrollmentForm().fields.id.as('text')
-						: updateEnrollmentForm().fields.id?.as('text'))}
+						: updateEnrollmentForm().fields.id?.as('text')}
+					type="hidden"
 					value={enrollmentDraft.id}
 				/>
 			{/if}
+			<input
+				{...currentScheduleFieldAccessor().day.as('text')}
+				type="hidden"
+				value={enrollmentDraft.day}
+			/>
+			<input
+				{...currentScheduleFieldAccessor().startTime.as('text')}
+				type="hidden"
+				value={enrollmentDraft.startTime}
+			/>
+			<input
+				{...currentScheduleFieldAccessor().endTime.as('text')}
+				type="hidden"
+				value={enrollmentDraft.endTime}
+			/>
+			<input
+				{...currentScheduleFieldAccessor().classRoomId.as('text')}
+				type="hidden"
+				value={enrollmentDraft.classRoomId}
+			/>
 
 			<section class="builder-snapshot">
 				<div>
@@ -1370,196 +1390,199 @@
 						</div>
 					</div>
 				{:else}
-				<div class="editor-grid">
-					<label>
-						<span>Mahasiswa</span>
-						<input
-							type="hidden"
-							{...selectedEnrollmentId
-								? updateEnrollmentForm().fields.studentId.as('text')
-								: createEnrollmentForm().fields.studentId.as('text')}
-							value={enrollmentDraft.studentId}
-						/>
-						<div
-							class="combobox-wrap"
-							onfocusout={(e) => {
-								if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-									workflowState.studentPickerOpen = false;
-									studentPickerActiveIndex = -1;
-								}
-							}}
-						>
+					<div class="editor-grid">
+						<label>
+							<span>Mahasiswa</span>
 							<input
-								type="text"
-								role="combobox"
-								class="combobox-input"
-								placeholder="Cari mahasiswa..."
-								aria-expanded={workflowState.studentPickerOpen}
-								aria-controls="student-picker-listbox"
-								aria-autocomplete="list"
-								aria-activedescendant={activeDescendantId(
-									'student-picker',
-									studentPickerActiveIndex
-								)}
-								value={enrollmentDraft.studentId
-									? selectedDraftStudent
-									: workflowState.studentPickerSearch}
-								oninput={(e) => {
-									workflowState.studentPickerSearch = (e.currentTarget as HTMLInputElement).value;
-									studentPickerActiveIndex = -1;
-									if (enrollmentDraft.studentId) enrollmentDraft.studentId = '';
-									workflowState.studentPickerOpen = true;
-									onQueueStudentPickerRefresh();
-								}}
-								onkeydown={handleStudentPickerKeydown}
-								onfocus={() => {
-									studentPickerActiveIndex = -1;
-									workflowState.studentPickerOpen = true;
-									onQueueStudentPickerRefresh(0);
-								}}
+								type="hidden"
+								{...selectedEnrollmentId
+									? updateEnrollmentForm().fields.studentId.as('text')
+									: createEnrollmentForm().fields.studentId.as('text')}
+								value={enrollmentDraft.studentId}
 							/>
-							{#if studentPickerIssue}
-								<p class="combobox-error">{studentPickerIssue}</p>
-							{:else if workflowState.studentPickerOpen && studentPickerLoading && !studentPickerOptions.length}
-								<p class="combobox-empty">Memuat mahasiswa...</p>
-							{:else if workflowState.studentPickerOpen && studentPickerOptions.length}
-								<div id="student-picker-listbox" class="combobox-dropdown" role="listbox">
-									{#each studentPickerOptions as item, index (item.id)}
-										<button
-											id={`student-picker-option-${index}`}
-											type="button"
-											role="option"
-											aria-selected={enrollmentDraft.studentId === item.id}
-											class="combobox-option"
-											class:active={studentPickerActiveIndex === index ||
-												enrollmentDraft.studentId === item.id}
-											onclick={() => {
-												selectStudentPickerOption(item);
-											}}
-											onfocus={() => (studentPickerActiveIndex = index)}
-											onmouseover={() => (studentPickerActiveIndex = index)}
-										>
-											<strong>{item.name}</strong>
-											<span>{item.id}</span>
-										</button>
-									{/each}
-									{#if studentPickerHasMore || studentPickerLoading}
-										<div class="combobox-footer">
-											<span class="combobox-meta"
-												>{studentPickerOptions.length} mahasiswa dimuat</span
-											>
+							<div
+								class="combobox-wrap"
+								onfocusout={(e) => {
+									if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+										workflowState.studentPickerOpen = false;
+										studentPickerActiveIndex = -1;
+									}
+								}}
+							>
+								<input
+									type="text"
+									role="combobox"
+									class="combobox-input"
+									placeholder="Cari mahasiswa..."
+									aria-expanded={workflowState.studentPickerOpen}
+									aria-controls="student-picker-listbox"
+									aria-autocomplete="list"
+									aria-activedescendant={activeDescendantId(
+										'student-picker',
+										studentPickerActiveIndex
+									)}
+									value={enrollmentDraft.studentId
+										? selectedDraftStudent
+										: workflowState.studentPickerSearch}
+									oninput={(e) => {
+										workflowState.studentPickerSearch = (e.currentTarget as HTMLInputElement).value;
+										studentPickerActiveIndex = -1;
+										if (enrollmentDraft.studentId) enrollmentDraft.studentId = '';
+										workflowState.studentPickerOpen = true;
+										onQueueStudentPickerRefresh();
+									}}
+									onkeydown={handleStudentPickerKeydown}
+									onfocus={() => {
+										studentPickerActiveIndex = -1;
+										workflowState.studentPickerOpen = true;
+										onQueueStudentPickerRefresh(0);
+									}}
+								/>
+								{#if studentPickerIssue}
+									<p class="combobox-error">{studentPickerIssue}</p>
+								{:else if workflowState.studentPickerOpen && studentPickerLoading && !studentPickerOptions.length}
+									<p class="combobox-empty">Memuat mahasiswa...</p>
+								{:else if workflowState.studentPickerOpen && studentPickerOptions.length}
+									<div id="student-picker-listbox" class="combobox-dropdown" role="listbox">
+										{#each studentPickerOptions as item, index (item.id)}
 											<button
+												id={`student-picker-option-${index}`}
 												type="button"
-												class="combobox-more"
-												disabled={!studentPickerHasMore || studentPickerLoading}
+												role="option"
+												aria-selected={enrollmentDraft.studentId === item.id}
+												class="combobox-option"
+												class:active={studentPickerActiveIndex === index ||
+													enrollmentDraft.studentId === item.id}
 												onclick={() => {
-													onLoadMoreStudentPickerOptions();
+													selectStudentPickerOption(item);
 												}}
+												onfocus={() => (studentPickerActiveIndex = index)}
+												onmouseover={() => (studentPickerActiveIndex = index)}
 											>
-												{studentPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
+												<strong>{item.name}</strong>
+												<span>{item.id}</span>
 											</button>
-										</div>
-									{/if}
-								</div>
-							{:else if workflowState.studentPickerOpen}
-								<p class="combobox-empty">Mahasiswa tidak ditemukan.</p>
-							{/if}
-						</div>
-					</label>
+										{/each}
+										{#if studentPickerHasMore || studentPickerLoading}
+											<div class="combobox-footer">
+												<span class="combobox-meta"
+													>{studentPickerOptions.length} mahasiswa dimuat</span
+												>
+												<button
+													type="button"
+													class="combobox-more"
+													disabled={!studentPickerHasMore || studentPickerLoading}
+													onclick={() => {
+														onLoadMoreStudentPickerOptions();
+													}}
+												>
+													{studentPickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
+												</button>
+											</div>
+										{/if}
+									</div>
+								{:else if workflowState.studentPickerOpen}
+									<p class="combobox-empty">Mahasiswa tidak ditemukan.</p>
+								{/if}
+							</div>
+						</label>
 
-					<label>
-						<span>Mata kuliah</span>
-						<input
-							type="hidden"
-							{...selectedEnrollmentId
-								? updateEnrollmentForm().fields.courseId.as('text')
-								: createEnrollmentForm().fields.courseId.as('text')}
-							value={enrollmentDraft.courseId}
-						/>
-						<div
-							class="combobox-wrap"
-							onfocusout={(e) => {
-								if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-									workflowState.coursePickerOpen = false;
-									coursePickerActiveIndex = -1;
-								}
-							}}
-						>
+						<label>
+							<span>Mata kuliah</span>
 							<input
-								type="text"
-								role="combobox"
-								class="combobox-input"
-								placeholder="Cari mata kuliah..."
-								aria-expanded={workflowState.coursePickerOpen}
-								aria-controls="course-picker-listbox"
-								aria-autocomplete="list"
-								aria-activedescendant={activeDescendantId('course-picker', coursePickerActiveIndex)}
-								value={enrollmentDraft.courseId
-									? selectedDraftCourse
-									: workflowState.coursePickerSearch}
-								oninput={(e) => {
-									workflowState.coursePickerSearch = (e.currentTarget as HTMLInputElement).value;
-									coursePickerActiveIndex = -1;
-									if (enrollmentDraft.courseId) enrollmentDraft.courseId = '';
-									workflowState.coursePickerOpen = true;
-									onQueueCoursePickerRefresh();
-								}}
-								onkeydown={handleCoursePickerKeydown}
-								onfocus={() => {
-									coursePickerActiveIndex = -1;
-									workflowState.coursePickerOpen = true;
-									onQueueCoursePickerRefresh(0);
-								}}
+								type="hidden"
+								{...selectedEnrollmentId
+									? updateEnrollmentForm().fields.courseId.as('text')
+									: createEnrollmentForm().fields.courseId.as('text')}
+								value={enrollmentDraft.courseId}
 							/>
-							{#if coursePickerIssue}
-								<p class="combobox-error">{coursePickerIssue}</p>
-							{:else if workflowState.coursePickerOpen && coursePickerLoading && !coursePickerOptions.length}
-								<p class="combobox-empty">Memuat mata kuliah...</p>
-							{:else if workflowState.coursePickerOpen && coursePickerOptions.length}
-								<div id="course-picker-listbox" class="combobox-dropdown" role="listbox">
-									{#each coursePickerOptions as item, index (item.id)}
-										<button
-											id={`course-picker-option-${index}`}
-											type="button"
-											role="option"
-											aria-selected={enrollmentDraft.courseId === item.id}
-											class="combobox-option"
-											class:active={coursePickerActiveIndex === index ||
-												enrollmentDraft.courseId === item.id}
-											onclick={() => {
-												selectCoursePickerOption(item);
-											}}
-											onfocus={() => (coursePickerActiveIndex = index)}
-											onmouseover={() => (coursePickerActiveIndex = index)}
-										>
-											<strong>{item.name}</strong>
-											<span>{item.id} • {item.lecturer_name}</span>
-										</button>
-									{/each}
-									{#if coursePickerHasMore || coursePickerLoading}
-										<div class="combobox-footer">
-											<span class="combobox-meta"
-												>{coursePickerOptions.length} mata kuliah dimuat</span
-											>
+							<div
+								class="combobox-wrap"
+								onfocusout={(e) => {
+									if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+										workflowState.coursePickerOpen = false;
+										coursePickerActiveIndex = -1;
+									}
+								}}
+							>
+								<input
+									type="text"
+									role="combobox"
+									class="combobox-input"
+									placeholder="Cari mata kuliah..."
+									aria-expanded={workflowState.coursePickerOpen}
+									aria-controls="course-picker-listbox"
+									aria-autocomplete="list"
+									aria-activedescendant={activeDescendantId(
+										'course-picker',
+										coursePickerActiveIndex
+									)}
+									value={enrollmentDraft.courseId
+										? selectedDraftCourse
+										: workflowState.coursePickerSearch}
+									oninput={(e) => {
+										workflowState.coursePickerSearch = (e.currentTarget as HTMLInputElement).value;
+										coursePickerActiveIndex = -1;
+										if (enrollmentDraft.courseId) enrollmentDraft.courseId = '';
+										workflowState.coursePickerOpen = true;
+										onQueueCoursePickerRefresh();
+									}}
+									onkeydown={handleCoursePickerKeydown}
+									onfocus={() => {
+										coursePickerActiveIndex = -1;
+										workflowState.coursePickerOpen = true;
+										onQueueCoursePickerRefresh(0);
+									}}
+								/>
+								{#if coursePickerIssue}
+									<p class="combobox-error">{coursePickerIssue}</p>
+								{:else if workflowState.coursePickerOpen && coursePickerLoading && !coursePickerOptions.length}
+									<p class="combobox-empty">Memuat mata kuliah...</p>
+								{:else if workflowState.coursePickerOpen && coursePickerOptions.length}
+									<div id="course-picker-listbox" class="combobox-dropdown" role="listbox">
+										{#each coursePickerOptions as item, index (item.id)}
 											<button
+												id={`course-picker-option-${index}`}
 												type="button"
-												class="combobox-more"
-												disabled={!coursePickerHasMore || coursePickerLoading}
+												role="option"
+												aria-selected={enrollmentDraft.courseId === item.id}
+												class="combobox-option"
+												class:active={coursePickerActiveIndex === index ||
+													enrollmentDraft.courseId === item.id}
 												onclick={() => {
-													onLoadMoreCoursePickerOptions();
+													selectCoursePickerOption(item);
 												}}
+												onfocus={() => (coursePickerActiveIndex = index)}
+												onmouseover={() => (coursePickerActiveIndex = index)}
 											>
-												{coursePickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
+												<strong>{item.name}</strong>
+												<span>{item.id} • {item.lecturer_name}</span>
 											</button>
-										</div>
-									{/if}
-								</div>
-							{:else if workflowState.coursePickerOpen}
-								<p class="combobox-empty">Mata kuliah tidak ditemukan.</p>
-							{/if}
-						</div>
-					</label>
-				</div>
+										{/each}
+										{#if coursePickerHasMore || coursePickerLoading}
+											<div class="combobox-footer">
+												<span class="combobox-meta"
+													>{coursePickerOptions.length} mata kuliah dimuat</span
+												>
+												<button
+													type="button"
+													class="combobox-more"
+													disabled={!coursePickerHasMore || coursePickerLoading}
+													onclick={() => {
+														onLoadMoreCoursePickerOptions();
+													}}
+												>
+													{coursePickerLoading ? 'Memuat...' : 'Muat lebih banyak'}
+												</button>
+											</div>
+										{/if}
+									</div>
+								{:else if workflowState.coursePickerOpen}
+									<p class="combobox-empty">Mata kuliah tidak ditemukan.</p>
+								{/if}
+							</div>
+						</label>
+					</div>
 				{/if}
 				<div class="builder-section-actions">
 					<p class="editor-note">
@@ -1584,10 +1607,7 @@
 				<div class="editor-grid">
 					<label>
 						<span>Hari</span>
-						<select
-							{...currentScheduleFieldAccessor().day.as('select')}
-							bind:value={enrollmentDraft.day}
-						>
+						<select bind:value={enrollmentDraft.day}>
 							{#each days as day (day)}
 								<option value={day}>{DAY_LABELS[day]}</option>
 							{/each}
@@ -1596,20 +1616,12 @@
 
 					<label>
 						<span>Mulai</span>
-						<input
-							type="datetime-local"
-							{...currentScheduleFieldAccessor().startTime.as('text')}
-							bind:value={enrollmentDraft.startTime}
-						/>
+						<input type="time" bind:value={enrollmentDraft.startTime} />
 					</label>
 
 					<label>
 						<span>Selesai</span>
-						<input
-							type="datetime-local"
-							{...currentScheduleFieldAccessor().endTime.as('text')}
-							bind:value={enrollmentDraft.endTime}
-						/>
+						<input type="time" bind:value={enrollmentDraft.endTime} />
 					</label>
 
 					<label>
@@ -1682,11 +1694,6 @@
 					<div class="editor-grid builder-room-grid">
 						<label>
 							<span>Ruang</span>
-							<input
-								type="hidden"
-								{...currentScheduleFieldAccessor().classRoomId.as('text')}
-								value={enrollmentDraft.classRoomId}
-							/>
 							<div
 								class="combobox-wrap"
 								onfocusout={(e) => {
@@ -1874,8 +1881,7 @@
 						<Button type="button" variant="ghost" class="ghost-button" onclick={retreatBuilderStep}
 							>Kembali</Button
 						>
-						<Button type="submit" class="primary-button builder-submit"
-							>{builderSubmitLabel}</Button
+						<Button type="submit" class="primary-button builder-submit">{builderSubmitLabel}</Button
 						>
 					</div>
 				</div>
@@ -1895,10 +1901,8 @@
 
 	.builder-shell {
 		grid-template-columns: minmax(18rem, 0.72fr) minmax(0, 1.28fr);
-		height: clamp(32rem, calc(100dvh - 9.5rem), 56rem);
-		min-height: 0;
-		align-items: stretch;
-		overflow: hidden;
+		align-items: start;
+		overflow: visible;
 	}
 
 	.workspace-list,
@@ -1938,16 +1942,16 @@
 	}
 
 	.builder-list {
-		flex: 1 1 auto;
-		height: 100%;
+		height: auto;
 		min-height: 0;
 	}
 
 	.builder-list .list-stack {
-		flex: 1 1 auto;
-		height: 100%;
+		flex: 0 0 auto;
+		height: auto;
 		min-width: 0;
-		min-height: 0;
+		min-height: min(20rem, 38dvh);
+		max-height: clamp(20rem, calc(100dvh - 20rem), 38rem);
 		overflow: auto;
 		padding-right: 0.1rem;
 		scrollbar-gutter: stable;
@@ -1955,9 +1959,9 @@
 	}
 
 	.builder-detail {
-		height: 100%;
+		height: auto;
 		min-height: 0;
-		overflow: auto;
+		overflow: visible;
 		border-color: color-mix(in oklch, var(--color-accent-strong) 18%, var(--color-border) 82%);
 	}
 
@@ -2151,8 +2155,8 @@
 	}
 
 	.list-row.conflict {
-		background: var(--conflict-surface);
-		border-color: var(--conflict-border);
+		background: color-mix(in oklch, var(--conflict-bg) 86%, var(--color-panel) 14%);
+		border-color: var(--conflict-line);
 	}
 
 	.list-row.conflict.selected {
@@ -2189,7 +2193,7 @@
 	.list-row.conflict strong,
 	.list-row.conflict .list-conflict-copy,
 	.builder-conflict-copy {
-		color: var(--conflict-ink, var(--color-danger));
+		color: var(--conflict-text, var(--color-danger));
 	}
 
 	.list-conflict-copy,
@@ -2448,19 +2452,21 @@
 		gap: 0.75rem;
 		align-items: start;
 		padding: 0.9rem;
-		border: 1px solid var(--conflict-border, var(--color-border));
+		border: 1px solid var(--conflict-line, var(--color-border));
 		border-radius: 0.9rem;
 		background: color-mix(
 			in oklch,
-			var(--conflict-surface, var(--color-surface)) 86%,
+			var(--conflict-bg, var(--color-surface)) 86%,
 			var(--color-panel) 14%
 		);
 	}
 
 	.builder-conflict-card.selected {
 		box-shadow:
-			0 12px 24px color-mix(in oklch, var(--conflict-ink, var(--color-danger)) 10%, transparent 90%),
-			inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 38%, transparent 62%);
+			0 12px 24px
+				color-mix(in oklch, var(--conflict-text, var(--color-danger)) 12%, transparent 88%),
+			inset 0 0 0 1px
+				color-mix(in oklch, var(--conflict-line, var(--color-accent-strong)) 38%, transparent 62%);
 	}
 
 	.builder-conflict-card-copy {
@@ -2469,11 +2475,15 @@
 		min-width: 0;
 	}
 
+	.builder-conflict-card-copy strong {
+		color: var(--conflict-text, var(--color-foreground));
+	}
+
 	.builder-conflict-card-copy span,
 	.builder-conflict-card-copy small {
 		color: color-mix(
 			in oklch,
-			var(--conflict-ink, var(--color-muted-foreground)) 72%,
+			var(--conflict-text, var(--color-muted-foreground)) 72%,
 			var(--color-foreground) 28%
 		);
 		overflow-wrap: anywhere;

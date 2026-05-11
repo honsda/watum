@@ -1,25 +1,30 @@
-import * as v from 'valibot';
-import { query, form, command } from '$app/server';
 import { error, invalid } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
+import * as v from 'valibot';
+import { command, form, query } from '$app/server';
 import {
-	getListQueryLimit,
 	getListQueryCursor,
-	mergeLimitedListResult,
+	getListQueryLimit,
 	getPool,
+	mergeLimitedListResult,
 	toLimitedListResult,
 	withTransaction
 } from '$lib/server';
-import { auditEnrollmentConflicts, invalidateConflictAuditCache } from '$lib/server/conflict-audit';
 import { requireRole, requireUser } from '$lib/server/auth';
+import { auditEnrollmentConflicts, invalidateConflictAuditCache } from '$lib/server/conflict-audit';
 import {
 	containsSearchPattern,
 	fulltextSearchPattern,
 	prefixSearchPattern,
 	wordPrefixSearchPattern
 } from '$lib/server/search';
-import { getTimeComponents, parseISO, formatDateTime } from '$lib/time-helpers';
 import {
+	deleteEnrollment as deleteEnrollmentDb,
+	deleteSchedule,
+	insertEnrollment,
+	insertSchedule,
+	type SelectEnrollmentsResult,
+	type SelectEnrollmentsWhere,
 	selectClassRooms,
 	selectCourses,
 	selectEnrollments,
@@ -27,23 +32,19 @@ import {
 	selectSchedulesConflict,
 	selectStudentScheduleConflict,
 	selectStudents,
-	insertSchedule,
-	insertEnrollment,
-	deleteSchedule,
-	updateSchedule,
 	updateEnrollment as updateEnrollmentDb,
-	deleteEnrollment as deleteEnrollmentDb
+	updateSchedule
 } from '$lib/server/sql';
 import { updateEnrollments as updateEnrollmentsDb } from '$lib/server/sql/crud/enrollments/update-enrollments';
-import { type SelectEnrollmentsResult, type SelectEnrollmentsWhere } from '$lib/server/sql';
+import type { SelectLecturerScheduleConflictResult } from '$lib/server/sql/select-lecturer-schedule-conflict';
 import type { SelectSchedulesConflictResult } from '$lib/server/sql/select-schedules-conflict';
 import type { SelectStudentScheduleConflictResult } from '$lib/server/sql/select-student-schedule-conflict';
-import type { SelectLecturerScheduleConflictResult } from '$lib/server/sql/select-lecturer-schedule-conflict';
+import { formatDateTime, getTimeComponents, parseISO } from '$lib/time-helpers';
 import {
+	approveEnrollmentSchema,
 	days,
 	enrollmentSchema,
-	studentEnrollmentRequestSchema,
-	approveEnrollmentSchema
+	studentEnrollmentRequestSchema
 } from '$lib/validations/enrollment';
 import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 
@@ -126,29 +127,80 @@ function summarizeNamedConflicts(items: ConflictNamedResult[], timezone: string,
 	return `${labels.join(', ')}, dan ${items.length - limit} jadwal lain`;
 }
 
+function isTimeOnlyInput(value: string) {
+	return /^\d{1,2}:\d{2}(?::\d{2})?$/.test(value.trim());
+}
+
+function normalizeTimeParts(value: string) {
+	const [hours = '0', minutes = '0', seconds = '0'] = value.split(':');
+	const hourNumber = Number(hours);
+	const minuteNumber = Number(minutes);
+	const secondNumber = Number(seconds);
+
+	if (
+		!Number.isInteger(hourNumber) ||
+		!Number.isInteger(minuteNumber) ||
+		!Number.isInteger(secondNumber) ||
+		hourNumber < 0 ||
+		hourNumber > 23 ||
+		minuteNumber < 0 ||
+		minuteNumber > 59 ||
+		secondNumber < 0 ||
+		secondNumber > 59
+	) {
+		return null;
+	}
+
+	return `${String(hourNumber).padStart(2, '0')}:${String(minuteNumber).padStart(2, '0')}:${String(secondNumber).padStart(2, '0')}`;
+}
+
+function normalizeScheduleTime(value: string, timezone: string) {
+	const trimmed = value.trim();
+	if (isTimeOnlyInput(trimmed)) {
+		return normalizeTimeParts(trimmed);
+	}
+
+	const parsed = parseISO(trimmed, timezone);
+	if (Number.isNaN(parsed.getTime())) return null;
+	return normalizeTimeParts(formatDateTime(parsed, 'time', timezone));
+}
+
 function validateScheduleWindow(
 	data: { day: string; startTime: string; endTime: string; timezone?: string },
 	issue: {
 		day: (message: string) => Parameters<typeof invalid>[0];
+		startTime: (message: string) => Parameters<typeof invalid>[0];
 		endTime: (message: string) => Parameters<typeof invalid>[0];
 	}
 ) {
 	const clientTimezone = data.timezone ?? 'UTC';
-	const startDate = parseISO(data.startTime, clientTimezone);
-	const endDate = parseISO(data.endTime, clientTimezone);
-	const startDay =
-		weekdayFromIndex[getTimeComponents(startDate, clientTimezone).dayOfWeek] ?? 'MINGGU';
-	const endDay = weekdayFromIndex[getTimeComponents(endDate, clientTimezone).dayOfWeek] ?? 'MINGGU';
-
-	if (startDay !== endDay) {
-		invalid(issue.endTime('Waktu mulai dan selesai harus berada pada hari yang sama'));
+	const startTime = normalizeScheduleTime(data.startTime, clientTimezone);
+	const endTime = normalizeScheduleTime(data.endTime, clientTimezone);
+	if (!startTime) {
+		invalid(issue.startTime('Waktu mulai tidak valid'));
+	}
+	if (!endTime) {
+		invalid(issue.endTime('Waktu selesai tidak valid'));
 	}
 
-	if (data.day !== startDay) {
-		invalid(issue.day(`Hari jadwal harus sesuai dengan tanggal yang dipilih (${startDay})`));
+	if (!isTimeOnlyInput(data.startTime) || !isTimeOnlyInput(data.endTime)) {
+		const startDate = parseISO(data.startTime, clientTimezone);
+		const endDate = parseISO(data.endTime, clientTimezone);
+		const startDay =
+			weekdayFromIndex[getTimeComponents(startDate, clientTimezone).dayOfWeek] ?? 'MINGGU';
+		const endDay =
+			weekdayFromIndex[getTimeComponents(endDate, clientTimezone).dayOfWeek] ?? 'MINGGU';
+
+		if (startDay !== endDay) {
+			invalid(issue.endTime('Waktu mulai dan selesai harus berada pada hari yang sama'));
+		}
+
+		if (data.day !== startDay) {
+			invalid(issue.day(`Hari jadwal harus sesuai dengan tanggal yang dipilih (${startDay})`));
+		}
 	}
 
-	return { clientTimezone, startDate, endDate };
+	return { clientTimezone, startDate: startTime, endDate: endTime };
 }
 
 async function ensureEnrollmentPolicyRow() {
@@ -378,7 +430,10 @@ async function prefetchEnrollmentSearchResults(
 	user: Awaited<ReturnType<typeof requireUser>>,
 	limit: number,
 	afterId?: string,
-	options?: { forcePrimary?: boolean; requiredJoins?: EnrollmentPrefetchJoin[] }
+	options?: {
+		forcePrimary?: boolean;
+		requiredJoins?: EnrollmentPrefetchJoin[];
+	}
 ) {
 	const joinParts: string[] = [];
 	const joined = {
@@ -778,7 +833,9 @@ export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) 
 
 export const getEnrollment = query(v.string(), async (id) => {
 	const user = await requireUser();
-	const [enrollment] = await selectEnrollments(getPool(), { where: [['id', '=', id]] });
+	const [enrollment] = await selectEnrollments(getPool(), {
+		where: [['id', '=', id]]
+	});
 	if (!enrollment) {
 		throw error(404, 'Data KRS tidak ditemukan');
 	}
@@ -952,14 +1009,21 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 	invalidateConflictAuditCache();
 
 	await getEnrollments().refresh();
-	return { success: true, id: enrollmentId, enrollmentId: enrollmentId, scheduleId: scheduleId };
+	return {
+		success: true,
+		id: enrollmentId,
+		enrollmentId: enrollmentId,
+		scheduleId: scheduleId
+	};
 });
 
 export const updateEnrollment = form(
 	v.object({ id: v.string(), ...enrollmentSchema.entries }),
 	async (data, issue) => {
 		const user = await requireRole(['ADMIN', 'LECTURER']);
-		const [enrollment] = await selectEnrollments(getPool(), { where: [['id', '=', data.id]] });
+		const [enrollment] = await selectEnrollments(getPool(), {
+			where: [['id', '=', data.id]]
+		});
 		if (!enrollment) {
 			throw error(404, 'Data KRS tidak ditemukan');
 		}
@@ -979,12 +1043,16 @@ export const updateEnrollment = form(
 		const semester = enrollment.semester ?? data.semester;
 		const academicYear = enrollment.academic_year ?? data.academicYear;
 
-		const [student] = await selectStudents(getPool(), { where: [['id', '=', studentId]] });
+		const [student] = await selectStudents(getPool(), {
+			where: [['id', '=', studentId]]
+		});
 		if (!student) {
 			invalid(issue.studentId('Mahasiswa tidak ditemukan'));
 		}
 
-		const [course] = await selectCourses(getPool(), { where: [['id', '=', courseId]] });
+		const [course] = await selectCourses(getPool(), {
+			where: [['id', '=', courseId]]
+		});
 		if (!course) {
 			invalid(issue.courseId('Mata kuliah tidak ditemukan'));
 		}
@@ -1141,7 +1209,9 @@ export const updateEnrollment = form(
 
 export const deleteEnrollment = command(v.string(), async (id) => {
 	const user = await requireRole(['ADMIN', 'LECTURER']);
-	const [enrollment] = await selectEnrollments(getPool(), { where: [['id', '=', id]] });
+	const [enrollment] = await selectEnrollments(getPool(), {
+		where: [['id', '=', id]]
+	});
 	if (!enrollment) {
 		throw error(404, 'Data KRS tidak ditemukan');
 	}
@@ -1152,7 +1222,7 @@ export const deleteEnrollment = command(v.string(), async (id) => {
 		await deleteEnrollmentDb(conn, { id });
 		if (enrollment.schedule_id) {
 			await deleteSchedule(conn, { id: enrollment.schedule_id });
-	}
+		}
 	});
 	invalidateConflictAuditCache();
 	await getEnrollments().refresh();
@@ -1209,7 +1279,9 @@ export const bulkUpdateEnrollments = form(
 		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
 		await withTransaction(async (conn) => {
 			for (const id of ids) {
-				const [enrollment] = await selectEnrollments(conn, { where: [['id', '=', id]] });
+				const [enrollment] = await selectEnrollments(conn, {
+					where: [['id', '=', id]]
+				});
 				if (!enrollment) {
 					results.push({ id, ok: false, message: 'KRS tidak ditemukan' });
 					continue;
@@ -1438,7 +1510,9 @@ export const approveEnrollment = form(approveEnrollmentSchema, async (data, issu
 export const rejectEnrollment = command(v.string(), async (id) => {
 	const user = await requireRole(['ADMIN', 'LECTURER']);
 
-	const [enrollment] = await selectEnrollments(getPool(), { where: [['id', '=', id]] });
+	const [enrollment] = await selectEnrollments(getPool(), {
+		where: [['id', '=', id]]
+	});
 	if (!enrollment) {
 		throw error(404, 'Data KRS tidak ditemukan');
 	}

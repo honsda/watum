@@ -5,12 +5,17 @@ export const days = ['SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU'] as co
 const requiredField = (message: string) =>
 	v.pipe(v.fallback(v.string(), ''), v.minLength(1, message));
 
+const requiredDay = v.pipe(
+	requiredField('Hari jadwal wajib dipilih'),
+	v.picklist(days, 'Hari jadwal tidak valid')
+);
+
 export const enrollmentSchema = v.object({
 	studentId: requiredField('Mahasiswa wajib dipilih'),
 	courseId: requiredField('Mata kuliah wajib dipilih'),
 	classRoomId: requiredField('Ruang kelas wajib dipilih'),
 	timezone: v.optional(v.string()),
-	day: v.picklist(days),
+	day: requiredDay,
 	startTime: requiredField('Waktu mulai wajib diisi'),
 	endTime: requiredField('Waktu selesai wajib diisi'),
 	semester: requiredField('Semester wajib diisi'),
@@ -25,7 +30,7 @@ export const approveEnrollmentSchema = v.object({
 	id: v.string(),
 	classRoomId: requiredField('Ruang kelas wajib dipilih'),
 	timezone: v.optional(v.string()),
-	day: v.picklist(days),
+	day: requiredDay,
 	startTime: requiredField('Waktu mulai wajib diisi'),
 	endTime: requiredField('Waktu selesai wajib diisi')
 });

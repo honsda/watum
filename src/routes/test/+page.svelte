@@ -1656,13 +1656,13 @@
 					</select>
 					<input
 						class="rounded border px-2 py-1 text-sm"
-						type="datetime-local"
+						type="time"
 						{...createEnrollment.fields.startTime.as('text')}
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
-						type="datetime-local"
+						type="time"
 						{...createEnrollment.fields.endTime.as('text')}
 						required
 					/>
@@ -1725,13 +1725,13 @@
 					</select>
 					<input
 						class="rounded border px-2 py-1 text-sm"
-						type="datetime-local"
+						type="time"
 						{...updateEnrollment.fields.startTime.as('text')}
 						required
 					/>
 					<input
 						class="rounded border px-2 py-1 text-sm"
-						type="datetime-local"
+						type="time"
 						{...updateEnrollment.fields.endTime.as('text')}
 						required
 					/>

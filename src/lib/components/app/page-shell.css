@@ -375,6 +375,41 @@ select {
 	align-items: end;
 }
 
+.primary-schedule-filter-grid {
+	grid-template-columns: minmax(16rem, 1fr) minmax(10rem, 0.35fr);
+}
+
+.advanced-filter-panel {
+	display: grid;
+	gap: 0.75rem;
+	min-width: 0;
+}
+
+.advanced-filter-panel summary {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	cursor: pointer;
+	color: var(--color-muted-foreground);
+	font-size: 0.9rem;
+	list-style: none;
+}
+
+.advanced-filter-panel summary::-webkit-details-marker {
+	display: none;
+}
+
+.advanced-filter-panel summary strong {
+	font-size: 0.82rem;
+	font-weight: 600;
+	color: var(--color-foreground-soft);
+}
+
+.advanced-schedule-filter-grid {
+	margin-top: 0.75rem;
+}
+
 .list-filter-grid {
 	grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -600,11 +635,11 @@ select {
 	align-items: center;
 	gap: 0.6rem;
 	padding: 0.6rem 0.72rem;
-	border: 1px solid var(--conflict-border, var(--color-border));
+	border: 1px solid var(--conflict-line, var(--color-border));
 	border-radius: 0.95rem;
 	background: color-mix(
 		in oklch,
-		var(--conflict-surface, var(--color-surface)) 78%,
+		var(--conflict-bg, var(--color-surface)) 78%,
 		var(--color-panel) 22%
 	);
 	color: inherit;
@@ -627,16 +662,17 @@ select {
 	border-color: var(--color-accent-strong);
 	box-shadow:
 		0 10px 20px color-mix(in oklch, var(--color-accent-strong) 12%, transparent 88%),
-		inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 34%, transparent 66%);
+		inset 0 0 0 1px
+			color-mix(in oklch, var(--conflict-line, var(--color-accent-strong)) 34%, transparent 66%);
 }
 
 .calendar-conflict-chip-dot {
 	width: 0.7rem;
 	height: 0.7rem;
 	border-radius: 999px;
-	background: var(--conflict-border, var(--color-accent-strong));
+	background: var(--conflict-line, var(--color-accent-strong));
 	box-shadow: 0 0 0 3px
-		color-mix(in oklch, var(--conflict-border, var(--color-accent-strong)) 18%, transparent 82%);
+		color-mix(in oklch, var(--conflict-line, var(--color-accent-strong)) 18%, transparent 82%);
 	flex: 0 0 auto;
 }
 
@@ -648,12 +684,17 @@ select {
 .calendar-conflict-chip-copy strong {
 	font-size: 0.86rem;
 	line-height: 1.2;
+	color: var(--conflict-text, var(--color-foreground));
 }
 
 .calendar-conflict-chip-copy small {
 	font-size: 0.75rem;
 	line-height: 1.25;
-	color: var(--color-muted-foreground);
+	color: color-mix(
+		in oklch,
+		var(--conflict-text, var(--color-muted-foreground)) 62%,
+		var(--color-foreground) 38%
+	);
 }
 
 .surface-head h2 {
@@ -905,18 +946,17 @@ select {
 .event-calendar-host .watum-ec-event.is-conflict-focus {
 	border-width: 2px;
 	box-shadow:
-		0 16px 28px
-			color-mix(in oklch, var(--conflict-border, var(--color-danger)) 12%, transparent 88%),
+		0 16px 28px color-mix(in oklch, var(--conflict-line, var(--color-danger)) 16%, transparent 84%),
 		inset 0 0 0 3px
-			color-mix(in oklch, var(--conflict-border, var(--color-danger)) 18%, transparent 82%);
+			color-mix(in oklch, var(--conflict-line, var(--color-danger)) 24%, transparent 76%);
 	transform: translateY(-1px);
 }
 
 .event-calendar-host .watum-ec-event.is-conflict {
-	border-color: var(--conflict-border, var(--color-danger));
+	border-color: var(--conflict-line, var(--color-danger));
 	background: color-mix(
 		in oklch,
-		var(--conflict-surface, var(--color-danger-soft)) 92%,
+		var(--conflict-bg, var(--color-danger-soft)) 92%,
 		var(--color-panel) 8%
 	);
 }
@@ -926,7 +966,7 @@ select {
 	border-color: var(--color-accent-strong);
 	background: color-mix(
 		in oklch,
-		var(--conflict-surface, var(--color-danger-soft)) 70%,
+		var(--conflict-bg, var(--color-danger-soft)) 70%,
 		var(--color-accent-soft) 30%
 	);
 	box-shadow:
@@ -966,7 +1006,9 @@ select {
 	display: grid;
 	gap: 0.3rem;
 	padding: 0.22rem 0.18rem 0.12rem;
+	height: 100%;
 	min-width: 0;
+	overflow: hidden;
 }
 
 .event-calendar-host .watum-event-copy strong {
@@ -988,14 +1030,14 @@ select {
 }
 
 .event-calendar-host .watum-ec-event.is-conflict .watum-event-copy strong {
-	color: var(--conflict-ink, var(--color-danger));
+	color: var(--conflict-text, var(--color-danger));
 }
 
 .event-calendar-host .watum-ec-event.is-conflict .watum-event-copy span,
 .event-calendar-host .watum-ec-event.is-conflict .watum-event-copy small {
 	color: color-mix(
 		in oklch,
-		var(--conflict-ink, var(--color-danger)) 74%,
+		var(--conflict-text, var(--color-danger)) 74%,
 		var(--color-foreground) 26%
 	);
 }
@@ -1008,21 +1050,74 @@ select {
 	padding: 0.18rem 0.45rem;
 	border-radius: 0.5rem;
 	border: 1px solid
-		color-mix(in oklch, var(--conflict-border, var(--color-danger)) 72%, transparent 28%);
+		color-mix(in oklch, var(--conflict-line, var(--color-danger)) 72%, transparent 28%);
 	background: color-mix(
 		in oklch,
-		var(--conflict-surface, var(--color-danger-soft)) 82%,
+		var(--conflict-bg, var(--color-danger-soft)) 82%,
 		var(--color-panel) 18%
 	);
-	color: var(--conflict-ink, var(--color-danger));
+	color: var(--conflict-text, var(--color-danger));
 	font-size: 0.72rem;
 	font-weight: 700;
 	line-height: 1;
 }
 
+.event-calendar-host .watum-ec-event.is-short::before,
+.event-calendar-host .watum-ec-event.is-tiny::before {
+	height: 0.16rem;
+}
+
+.event-calendar-host .watum-ec-event.is-short .watum-event-copy {
+	gap: 0.1rem;
+	padding: 0.12rem 0.16rem 0.08rem;
+}
+
+.event-calendar-host .watum-ec-event.is-short .watum-event-copy strong,
+.event-calendar-host .watum-ec-event.is-short .watum-event-copy span,
+.event-calendar-host .watum-ec-event.is-tiny .watum-event-copy strong,
+.event-calendar-host .watum-ec-event.is-tiny .watum-event-copy span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.event-calendar-host .watum-ec-event.is-short .watum-event-copy strong {
+	font-size: 0.78rem;
+	line-height: 1.06;
+}
+
+.event-calendar-host .watum-ec-event.is-short .watum-event-copy span {
+	font-size: 0.68rem;
+	line-height: 1.05;
+}
+
+.event-calendar-host .watum-ec-event.is-tiny .watum-event-copy {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
+	padding: 0.02rem 0.14rem;
+}
+
+.event-calendar-host .watum-ec-event.is-tiny .watum-event-copy strong {
+	min-width: 0;
+	flex: 1 1 auto;
+	font-size: 0.72rem;
+	line-height: 1;
+}
+
+.event-calendar-host .watum-ec-event.is-tiny .watum-event-copy span {
+	flex: 0 0 auto;
+	font-size: 0.66rem;
+	line-height: 1;
+	color: var(--color-foreground-soft);
+}
+
 .student-dashboard,
+.lecturer-dashboard,
 .student-summary-row,
-.student-grade-items {
+.student-grade-items,
+.student-weekly-list,
+.schedule-row-list {
 	display: grid;
 	gap: 0.75rem;
 	min-width: 0;
@@ -1034,14 +1129,16 @@ select {
 
 .student-hero,
 .student-summary-row div,
-.student-grade-list {
+.student-grade-list,
+.student-weekly-list {
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-xl);
 	background: var(--color-panel);
 }
 
 .student-hero,
-.student-grade-list {
+.student-grade-list,
+.student-weekly-list {
 	padding: 1.1rem;
 }
 
@@ -1068,8 +1165,49 @@ select {
 }
 
 .student-hero-copy p,
-.student-grade-list h3 {
+.student-grade-list h3,
+.student-weekly-list h3 {
 	margin: 0;
+}
+
+.student-section-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	flex-wrap: wrap;
+}
+
+.schedule-row-card {
+	display: grid;
+	grid-template-columns: minmax(0, 1.5fr) minmax(8rem, 0.7fr) minmax(7rem, 0.6fr);
+	gap: 0.75rem;
+	align-items: start;
+	padding: 0.85rem 0.9rem;
+	border: 1px solid var(--color-border);
+	border-radius: 0.8rem;
+	background: var(--color-surface);
+}
+
+.schedule-row-card > div {
+	display: grid;
+	gap: 0.18rem;
+	min-width: 0;
+}
+
+.schedule-row-card span {
+	color: var(--color-muted-foreground);
+	font-size: 0.91rem;
+	line-height: 1.35;
+}
+
+.schedule-row-card strong {
+	font-size: 0.96rem;
+	line-height: 1.3;
+}
+
+.lecturer-board {
+	align-items: stretch;
 }
 
 .student-actions {
@@ -1316,19 +1454,24 @@ select {
 	gap: 0.75rem;
 	align-items: start;
 	padding: 0.9rem;
-	border: 1px solid var(--conflict-border, var(--color-border));
+	border: 1px solid var(--conflict-line, var(--color-border));
 	border-radius: 0.9rem;
 	background: color-mix(
 		in oklch,
-		var(--conflict-surface, var(--color-surface)) 86%,
+		var(--conflict-bg, var(--color-surface)) 86%,
 		var(--color-panel) 14%
 	);
 }
 
 .builder-conflict-card.selected {
 	box-shadow:
-		0 12px 24px color-mix(in oklch, var(--conflict-ink, var(--color-danger)) 10%, transparent 90%),
-		inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 38%, transparent 62%);
+		0 12px 24px color-mix(in oklch, var(--conflict-text, var(--color-danger)) 12%, transparent 88%),
+		inset 0 0 0 1px
+			color-mix(in oklch, var(--conflict-line, var(--color-accent-strong)) 38%, transparent 62%);
+}
+
+.builder-conflict-card-copy strong {
+	color: var(--conflict-text, var(--color-foreground));
 }
 
 .builder-conflict-card-copy {
@@ -1341,7 +1484,7 @@ select {
 .builder-conflict-card-copy small {
 	color: color-mix(
 		in oklch,
-		var(--conflict-ink, var(--color-muted-foreground)) 72%,
+		var(--conflict-text, var(--color-muted-foreground)) 72%,
 		var(--color-foreground) 28%
 	);
 	overflow-wrap: anywhere;
@@ -1463,7 +1606,7 @@ select {
 	margin: 0 0 0.85rem;
 	font-size: 0.92rem;
 	line-height: 1.42;
-	color: var(--conflict-ink, var(--color-danger));
+	color: var(--conflict-text, var(--color-danger));
 	max-width: 72ch;
 }
 
@@ -1494,8 +1637,8 @@ select {
 }
 
 .calendar-overlap-item.conflict {
-	border-color: var(--conflict-border);
-	background: color-mix(in oklch, var(--conflict-surface) 82%, var(--color-panel) 18%);
+	border-color: var(--conflict-line);
+	background: color-mix(in oklch, var(--conflict-bg) 82%, var(--color-panel) 18%);
 }
 
 .calendar-overlap-item.selected {
@@ -1508,7 +1651,7 @@ select {
 
 .calendar-overlap-item.conflict.selected {
 	border-color: var(--color-accent-strong);
-	background: color-mix(in oklch, var(--conflict-surface) 68%, var(--color-accent-soft) 32%);
+	background: color-mix(in oklch, var(--conflict-bg) 68%, var(--color-accent-soft) 32%);
 	box-shadow:
 		0 12px 24px color-mix(in oklch, var(--color-danger) 12%, transparent 88%),
 		inset 0 0 0 1px color-mix(in oklch, var(--color-accent-strong) 42%, transparent 58%);
@@ -1526,12 +1669,12 @@ select {
 }
 
 .calendar-overlap-item.conflict .calendar-overlap-copy strong {
-	color: var(--conflict-ink);
+	color: var(--conflict-text);
 }
 
 .calendar-overlap-item.conflict .calendar-overlap-copy span,
 .calendar-overlap-item.conflict .calendar-overlap-copy small {
-	color: color-mix(in oklch, var(--conflict-ink) 72%, var(--color-foreground) 28%);
+	color: color-mix(in oklch, var(--conflict-text) 72%, var(--color-foreground) 28%);
 }
 
 .calendar-overlap-actions {
@@ -1545,7 +1688,7 @@ select {
 	margin: 0;
 	font-size: 0.9rem;
 	line-height: 1.42;
-	color: var(--conflict-ink, var(--color-danger));
+	color: var(--conflict-text, var(--color-danger));
 	max-width: 70ch;
 }
 
@@ -1558,12 +1701,12 @@ select {
 }
 
 .detail-card.calendar-conflict {
-	border-color: var(--conflict-border);
-	background: color-mix(in oklch, var(--conflict-surface) 82%, var(--color-panel) 18%);
+	border-color: var(--conflict-line);
+	background: color-mix(in oklch, var(--conflict-bg) 82%, var(--color-panel) 18%);
 }
 
 .detail-card.calendar-conflict h3 {
-	color: var(--conflict-ink);
+	color: var(--conflict-text);
 }
 
 .workspace-shell {
@@ -2133,8 +2276,8 @@ select {
 }
 
 .list-row.conflict {
-	background: var(--conflict-surface);
-	border-color: var(--conflict-border);
+	background: color-mix(in oklch, var(--conflict-bg) 86%, var(--color-panel) 14%);
+	border-color: var(--conflict-line);
 }
 
 .list-row.conflict.selected {
@@ -2143,11 +2286,11 @@ select {
 }
 
 .list-row.conflict strong {
-	color: var(--conflict-ink);
+	color: var(--conflict-text);
 }
 
 .list-row.conflict .list-conflict-copy {
-	color: var(--conflict-ink);
+	color: var(--conflict-text);
 }
 
 .list-row:hover {
@@ -2325,6 +2468,8 @@ select {
 	}
 
 	.schedule-filter-grid,
+	.primary-schedule-filter-grid,
+	.advanced-schedule-filter-grid,
 	.list-filter-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
@@ -2422,7 +2567,13 @@ select {
 	}
 
 	.schedule-filter-grid,
+	.primary-schedule-filter-grid,
+	.advanced-schedule-filter-grid,
 	.list-filter-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.schedule-row-card {
 		grid-template-columns: minmax(0, 1fr);
 	}
 
@@ -2471,8 +2622,8 @@ select {
 	}
 
 	.workspace-list .list-stack {
-		max-height: clamp(14rem, 36dvh, 22rem);
-		overflow: auto;
+		max-height: none;
+		overflow: visible;
 	}
 }
 

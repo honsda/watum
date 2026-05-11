@@ -139,6 +139,8 @@
 	function bulkUpdateStudyProgramsForm() {
 		return bulkUpdateStudyPrograms as FormState;
 	}
+
+	const canManage = $derived(currentRole === 'ADMIN');
 </script>
 
 <div class="workspace-shell">
@@ -147,7 +149,11 @@
 			<div>
 				<h3>Daftar program studi</h3>
 			</div>
-			<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginCreate}>Tambah</Button>
+			{#if canManage}
+				<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginCreate}
+					>Tambah</Button
+				>
+			{/if}
 		</div>
 		<label class="search-box"
 			><Search size={16} /><input
@@ -159,7 +165,7 @@
 					><X size={14} /></button
 				>{/if}</label
 		>
-		{#if bulkCount > 0}
+		{#if canManage && bulkCount > 0}
 			<div class="bulk-bar">
 				<span class="bulk-count">{bulkCount} prodi dipilih</span>
 				<div class="bulk-actions">
@@ -175,7 +181,7 @@
 			</div>
 		{/if}
 		<div class="list-stack">
-			{#if filteredStudyPrograms.length > 1}
+			{#if canManage && filteredStudyPrograms.length > 1}
 				<label class="list-row select-all-row">
 					<input
 						type="checkbox"
@@ -192,14 +198,16 @@
 					class:selected={selectedStudyProgramId === item.id}
 					class:checked={item.id != null && bulkSelectedIds.has(item.id)}
 				>
-					<label class="row-checkbox"
-						><input
-							type="checkbox"
-							checked={item.id != null && bulkSelectedIds.has(item.id)}
-							onchange={() => item.id && onBulkToggleId(item.id)}
-							onclick={(e) => e.stopPropagation()}
-						/></label
-					>
+					{#if canManage}
+						<label class="row-checkbox"
+							><input
+								type="checkbox"
+								checked={item.id != null && bulkSelectedIds.has(item.id)}
+								onchange={() => item.id && onBulkToggleId(item.id)}
+								onclick={(e) => e.stopPropagation()}
+							/></label
+						>
+					{/if}
 					<div
 						role="button"
 						tabindex="0"
@@ -261,10 +269,12 @@
 						? 'Ubah massal program studi'
 						: selectedStudyProgram
 							? selectedStudyProgram.name
-							: 'Tambah program studi'}
+							: canManage
+								? 'Tambah program studi'
+								: 'Pilih satu program studi'}
 				</h3>
 			</div>
-			{#if currentRole === 'ADMIN'}
+			{#if canManage}
 				<div class="detail-actions">
 					{#if editorView === 'studyPrograms'}
 						<Button variant="ghost" size="sm" class="ghost-button" onclick={onStopEditing}
@@ -326,7 +336,7 @@
 					Gunakan mode tinjau agar struktur prodi tetap mudah dibaca sebelum proses edit dimulai.
 				</p>
 			</div>
-		{:else if currentRole === 'ADMIN' && editorView === 'studyPrograms'}
+		{:else if canManage && editorView === 'studyPrograms'}
 			<form
 				class="editor-grid"
 				{...selectedStudyProgramId ? updateStudyProgramEnhance : createStudyProgramEnhance}
@@ -387,7 +397,7 @@
 					>
 				</div>
 			</form>
-		{:else if editorView === 'studyPrograms-bulk'}
+		{:else if canManage && editorView === 'studyPrograms-bulk'}
 			<form class="editor-grid" {...bulkUpdateStudyProgramsEnhance}>
 				<p class="editor-note">
 					Ubah fakultas dan ketua prodi {bulkCount} prodi terpilih sekaligus. Kosongkan field yang tidak

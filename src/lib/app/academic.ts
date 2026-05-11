@@ -1,6 +1,6 @@
-import { formatDateTime, getTimeComponents } from '$lib/time-helpers';
 import type { SelectClassRoomsResult } from '$lib/server/sql/select-class-rooms';
 import type { SelectEnrollmentsResult } from '$lib/server/sql/select-enrollments';
+import { formatDateTime, getTimeComponents } from '$lib/time-helpers';
 
 export const DAY_ORDER = ['SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU'] as const;
 
@@ -39,42 +39,66 @@ const CONFLICT_TONES = [
 	{
 		surface: 'oklch(0.95 0.032 18)',
 		border: 'oklch(0.8 0.092 18)',
-		ink: 'oklch(0.53 0.168 18)'
+		ink: 'oklch(0.53 0.168 18)',
+		darkSurface: 'oklch(0.29 0.062 18)',
+		darkBorder: 'oklch(0.7 0.13 18)',
+		darkInk: 'oklch(0.88 0.055 18)'
 	},
 	{
 		surface: 'oklch(0.96 0.032 72)',
 		border: 'oklch(0.83 0.11 72)',
-		ink: 'oklch(0.56 0.17 72)'
+		ink: 'oklch(0.56 0.17 72)',
+		darkSurface: 'oklch(0.3 0.055 72)',
+		darkBorder: 'oklch(0.72 0.13 72)',
+		darkInk: 'oklch(0.9 0.06 72)'
 	},
 	{
 		surface: 'oklch(0.95 0.03 145)',
 		border: 'oklch(0.8 0.1 145)',
-		ink: 'oklch(0.52 0.15 145)'
+		ink: 'oklch(0.52 0.15 145)',
+		darkSurface: 'oklch(0.29 0.048 145)',
+		darkBorder: 'oklch(0.72 0.12 145)',
+		darkInk: 'oklch(0.88 0.06 145)'
 	},
 	{
 		surface: 'oklch(0.95 0.028 205)',
 		border: 'oklch(0.79 0.095 205)',
-		ink: 'oklch(0.5 0.145 205)'
+		ink: 'oklch(0.5 0.145 205)',
+		darkSurface: 'oklch(0.29 0.05 205)',
+		darkBorder: 'oklch(0.72 0.12 205)',
+		darkInk: 'oklch(0.88 0.06 205)'
 	},
 	{
 		surface: 'oklch(0.95 0.03 255)',
 		border: 'oklch(0.79 0.1 255)',
-		ink: 'oklch(0.49 0.16 255)'
+		ink: 'oklch(0.49 0.16 255)',
+		darkSurface: 'oklch(0.29 0.055 255)',
+		darkBorder: 'oklch(0.73 0.12 255)',
+		darkInk: 'oklch(0.88 0.055 255)'
 	},
 	{
 		surface: 'oklch(0.95 0.03 300)',
 		border: 'oklch(0.8 0.105 300)',
-		ink: 'oklch(0.52 0.17 300)'
+		ink: 'oklch(0.52 0.17 300)',
+		darkSurface: 'oklch(0.3 0.058 300)',
+		darkBorder: 'oklch(0.75 0.12 300)',
+		darkInk: 'oklch(0.9 0.058 300)'
 	},
 	{
 		surface: 'oklch(0.95 0.03 340)',
 		border: 'oklch(0.81 0.105 340)',
-		ink: 'oklch(0.54 0.17 340)'
+		ink: 'oklch(0.54 0.17 340)',
+		darkSurface: 'oklch(0.3 0.06 340)',
+		darkBorder: 'oklch(0.74 0.12 340)',
+		darkInk: 'oklch(0.9 0.06 340)'
 	},
 	{
 		surface: 'oklch(0.95 0.028 32)',
 		border: 'oklch(0.81 0.1 32)',
-		ink: 'oklch(0.55 0.16 32)'
+		ink: 'oklch(0.55 0.16 32)',
+		darkSurface: 'oklch(0.3 0.058 32)',
+		darkBorder: 'oklch(0.72 0.12 32)',
+		darkInk: 'oklch(0.9 0.058 32)'
 	}
 ] as const;
 
@@ -281,7 +305,7 @@ export function conflictToneVariables(conflictTone: number | null) {
 	if (conflictTone == null) return '';
 	const tone = CONFLICT_TONES[conflictTone % CONFLICT_TONES.length];
 
-	return `--conflict-surface: ${tone.surface}; --conflict-border: ${tone.border}; --conflict-ink: ${tone.ink};`;
+	return `--conflict-surface: ${tone.surface}; --conflict-border: ${tone.border}; --conflict-ink: ${tone.ink}; --conflict-dark-surface: ${tone.darkSurface}; --conflict-dark-border: ${tone.darkBorder}; --conflict-dark-ink: ${tone.darkInk};`;
 }
 
 export function groupCardsByDay(cards: ScheduleCard[]) {

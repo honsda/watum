@@ -123,6 +123,8 @@
 		onPagePrevious: () => void;
 		onPageNext: () => void;
 	} = $props();
+
+	const canManage = $derived(currentRole === 'ADMIN');
 </script>
 
 <div class="workspace-shell">
@@ -131,7 +133,11 @@
 			<div>
 				<h3>Daftar mata kuliah</h3>
 			</div>
-			<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginCreate}>Tambah</Button>
+			{#if canManage}
+				<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginCreate}
+					>Tambah</Button
+				>
+			{/if}
 		</div>
 		<label class="search-box"
 			><Search size={16} /><input
@@ -143,7 +149,7 @@
 					><X size={14} /></button
 				>{/if}</label
 		>
-		{#if bulkCount > 0}
+		{#if canManage && bulkCount > 0}
 			<div class="bulk-bar">
 				<span class="bulk-count">{bulkCount} mata kuliah dipilih</span>
 				<div class="bulk-actions">
@@ -159,7 +165,7 @@
 			</div>
 		{/if}
 		<div class="list-stack">
-			{#if filteredCourses.length > 1}
+			{#if canManage && filteredCourses.length > 1}
 				<label class="list-row select-all-row">
 					<input
 						type="checkbox"
@@ -176,14 +182,16 @@
 					class:selected={selectedCourseId === item.id}
 					class:checked={item.id != null && bulkSelectedIds.has(item.id)}
 				>
-					<label class="row-checkbox"
-						><input
-							type="checkbox"
-							checked={item.id != null && bulkSelectedIds.has(item.id)}
-							onchange={() => item.id && onBulkToggleId(item.id)}
-							onclick={(e) => e.stopPropagation()}
-						/></label
-					>
+					{#if canManage}
+						<label class="row-checkbox"
+							><input
+								type="checkbox"
+								checked={item.id != null && bulkSelectedIds.has(item.id)}
+								onchange={() => item.id && onBulkToggleId(item.id)}
+								onclick={(e) => e.stopPropagation()}
+							/></label
+						>
+					{/if}
 					<div
 						role="button"
 						tabindex="0"
@@ -259,10 +267,12 @@
 						? 'Ubah massal mata kuliah'
 						: selectedCourse
 							? selectedCourse.name
-							: 'Tambah mata kuliah'}
+							: canManage
+								? 'Tambah mata kuliah'
+								: 'Pilih satu mata kuliah'}
 				</h3>
 			</div>
-			{#if currentRole === 'ADMIN'}
+			{#if canManage}
 				<div class="detail-actions">
 					{#if editorView === 'courses'}
 						<Button variant="ghost" size="sm" class="ghost-button" onclick={onStopEditing}
@@ -338,7 +348,7 @@
 					Gunakan mode tinjau untuk membaca beban kuliah dan relasi dosen sebelum membuka editor.
 				</p>
 			</div>
-		{:else if currentRole === 'ADMIN' && editorView === 'courses'}
+		{:else if canManage && editorView === 'courses'}
 			<form class="editor-grid" {...selectedCourseId ? updateCourseEnhance : createCourseEnhance}>
 				{#if selectedCourseId}<input type="hidden" name="id" value={courseDraft.id} />{:else}<p
 						class="editor-note"
@@ -412,7 +422,7 @@
 					>
 				</div>
 			</form>
-		{:else if editorView === 'courses-bulk'}
+		{:else if canManage && editorView === 'courses-bulk'}
 			<form class="editor-grid" {...bulkUpdateCoursesEnhance}>
 				<p class="editor-note">
 					Ubah SKS, prodi, dan dosen {bulkCount} mata kuliah terpilih sekaligus. Kosongkan field yang

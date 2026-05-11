@@ -139,22 +139,22 @@ export function navigationGroupsForRole(role: AppRole | undefined): NavigationGr
 		return [
 			{
 				id: 'overview',
-				label: 'Ringkasan',
-				description: 'Lihat kelas terdekat, bentrok, dan ruang yang masih tersedia.',
+				label: 'Mengajar',
+				description: 'Lihat kelas terdekat dan kalender mengajar mingguan.',
 				icon: LayoutPanelTop,
 				views: ['dashboard', 'calendar']
 			},
 			{
 				id: 'planning',
 				label: 'Penjadwalan',
-				description: 'Pindahkan jadwal dan pilih ruang dari halaman penjadwalan.',
+				description: 'Atur waktu dan ruang untuk kelas yang Anda ampu.',
 				icon: Waypoints,
 				views: ['builder', 'classrooms']
 			},
 			{
 				id: 'records',
-				label: 'Perkuliahan',
-				description: 'Buka KRS, nilai, dan mata kuliah aktif saat keputusan akademik diperlukan.',
+				label: 'Evaluasi',
+				description: 'Kelola KRS, nilai, dan mata kuliah yang diampu.',
 				icon: ClipboardList,
 				views: ['enrollments', 'grades', 'courses']
 			},
@@ -198,6 +198,11 @@ export function headerAction(view: ViewId, role: AppRole | undefined) {
 	if (role === 'STUDENT') {
 		if (view === 'dashboard') return { label: 'Buka kalender', target: 'calendar' as ViewId };
 		return null;
+	}
+	if (role === 'LECTURER') {
+		if (view === 'dashboard') return { label: 'Buka kalender', target: 'calendar' as ViewId };
+		if (view === 'calendar') return { label: 'Buka KRS', target: 'enrollments' as ViewId };
+		return { label: 'Kembali ke ringkasan', target: 'dashboard' as ViewId };
 	}
 
 	if (view === 'builder') return { label: 'Lihat kalender', target: 'calendar' as ViewId };

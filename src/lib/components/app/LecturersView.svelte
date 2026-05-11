@@ -138,6 +138,8 @@
 	function bulkUpdateLecturersForm() {
 		return bulkUpdateLecturers as FormState;
 	}
+
+	const canManage = $derived(currentRole === 'ADMIN');
 </script>
 
 <div class="workspace-shell">
@@ -146,7 +148,7 @@
 			<div>
 				<h3>Daftar dosen</h3>
 			</div>
-			{#if currentRole === 'ADMIN'}
+			{#if canManage}
 				<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginCreate}
 					>Tambah</Button
 				>
@@ -162,7 +164,7 @@
 					><X size={14} /></button
 				>{/if}</label
 		>
-		{#if bulkCount > 0}
+		{#if canManage && bulkCount > 0}
 			<div class="bulk-bar">
 				<span class="bulk-count">{bulkCount} dosen dipilih</span>
 				<div class="bulk-actions">
@@ -178,7 +180,7 @@
 			</div>
 		{/if}
 		<div class="list-stack">
-			{#if filteredLecturers.length > 1}
+			{#if canManage && filteredLecturers.length > 1}
 				<label class="list-row select-all-row">
 					<input
 						type="checkbox"
@@ -195,14 +197,16 @@
 					class:selected={selectedLecturerId === item.id}
 					class:checked={item.id != null && bulkSelectedIds.has(item.id)}
 				>
-					<label class="row-checkbox"
-						><input
-							type="checkbox"
-							checked={item.id != null && bulkSelectedIds.has(item.id)}
-							onchange={() => item.id && onBulkToggleId(item.id)}
-							onclick={(e) => e.stopPropagation()}
-						/></label
-					>
+					{#if canManage}
+						<label class="row-checkbox"
+							><input
+								type="checkbox"
+								checked={item.id != null && bulkSelectedIds.has(item.id)}
+								onchange={() => item.id && onBulkToggleId(item.id)}
+								onclick={(e) => e.stopPropagation()}
+							/></label
+						>
+					{/if}
 					<div
 						role="button"
 						tabindex="0"
@@ -247,10 +251,12 @@
 						? 'Ubah massal dosen'
 						: selectedLecturer
 							? selectedLecturer.name
-							: 'Tambah dosen'}
+							: canManage
+								? 'Tambah dosen'
+								: 'Pilih satu dosen'}
 				</h3>
 			</div>
-			{#if currentRole === 'ADMIN'}
+			{#if canManage}
 				<div class="detail-actions">
 					{#if editorView === 'lecturers'}
 						<Button variant="ghost" size="sm" class="ghost-button" onclick={onStopEditing}
@@ -298,7 +304,7 @@
 					Mode tinjau membantu Anda membaca konteks dosen sebelum membuka form edit.
 				</p>
 			</div>
-		{:else if currentRole === 'ADMIN' && editorView === 'lecturers'}
+		{:else if canManage && editorView === 'lecturers'}
 			<form
 				class="editor-grid"
 				{...selectedLecturerId ? updateLecturerEnhance : createLecturerEnhance}
@@ -350,7 +356,7 @@
 					>
 				</div>
 			</form>
-		{:else if editorView === 'lecturers-bulk'}
+		{:else if canManage && editorView === 'lecturers-bulk'}
 			<form class="editor-grid" {...bulkUpdateLecturersEnhance}>
 				<p class="editor-note">
 					Ubah data {bulkCount} dosen terpilih sekaligus. Kosongkan field yang tidak ingin diubah.

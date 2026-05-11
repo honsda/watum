@@ -131,6 +131,30 @@
 			? courses.filter((c) => c.study_program_id === studentStudyProgramId)
 			: courses
 	);
+	const advancedFilterCount = $derived(
+		[
+			state.scheduleCourseFilter,
+			state.scheduleRoomFilter,
+			state.scheduleLecturerFilter,
+			state.scheduleSemesterFilter,
+			state.scheduleAcademicYearFilter
+		].filter(Boolean).length
+	);
+	const searchPlaceholder = $derived(
+		currentRole === 'STUDENT'
+			? 'Cari mata kuliah, ruang, atau dosen'
+			: currentRole === 'LECTURER'
+				? 'Cari kelas, mahasiswa, ruang, atau mata kuliah'
+				: 'Cari mahasiswa, mata kuliah, ruang, atau dosen'
+	);
+	const calendarEmptyTitle = $derived(
+		currentRole === 'STUDENT' ? 'Belum ada jadwal minggu ini' : 'Tidak ada jadwal yang cocok'
+	);
+	const calendarEmptyCopy = $derived(
+		currentRole === 'STUDENT'
+			? 'Jadwal Anda akan tampil di sini setelah KRS disetujui dan waktu kelas ditentukan.'
+			: 'Ubah kata kunci atau longgarkan filter untuk menampilkan jadwal pada kalender.'
+	);
 
 	function conflictGroupMetaCopy(
 		details: { count: number; lecturers: string; rooms: string } | null
@@ -151,7 +175,7 @@
 		</header>
 
 		<section class="schedule-filter-panel">
-			<div class="editor-grid schedule-filter-grid">
+			<div class="editor-grid schedule-filter-grid primary-schedule-filter-grid">
 				<label class="schedule-filter-search">
 					<span>Cari jadwal</span>
 					<div class="search-box compact">
@@ -159,7 +183,7 @@
 						<input
 							bind:value={state.enrollmentSearch}
 							aria-label="Cari jadwal kalender"
-							placeholder="Cari mahasiswa, mata kuliah, ruang, atau dosen"
+							placeholder={searchPlaceholder}
 							oninput={() => queueCollectionRefresh('enrollments')}
 						/>
 					</div>
@@ -176,159 +200,171 @@
 						{/each}
 					</select>
 				</label>
-				<label>
-					<span>Mata kuliah</span>
-					<select
-						bind:value={state.scheduleCourseFilter}
-						onchange={() => queueCollectionRefresh('enrollments', 0)}
-					>
-						<option value="">Semua mata kuliah</option>
-						{#each calendarCourses as item (item.id)}
-							<option value={item.id}>{item.name}</option>
-						{/each}
-					</select>
-				</label>
-				<label>
-					<span>Ruang</span>
-					<div
-						class="combobox-wrap"
-						onfocusout={(e) => {
-							if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-								state.scheduleRoomFilterOpen = false;
-							}
-						}}
-					>
-						<input
-							type="text"
-							class="combobox-input"
-							placeholder="Cari ruang filter..."
-							value={state.scheduleRoomFilter
-								? selectedScheduleRoomFilterLabel
-								: state.scheduleRoomFilterSearch}
-							oninput={(e) => {
-								state.scheduleRoomFilterSearch = (e.currentTarget as HTMLInputElement).value;
-								if (state.scheduleRoomFilter) {
-									state.scheduleRoomFilter = '';
-									queueCollectionRefresh('enrollments', 0);
-								}
-								queueScheduleRoomFilterRefresh();
-								state.scheduleRoomFilterOpen = true;
-							}}
-							onfocus={(e) => {
-								if (state.scheduleRoomFilter) {
-									(e.currentTarget as HTMLInputElement).select();
-								}
-								state.scheduleRoomFilterOpen = true;
-								if (!scheduleRoomFilterOptions.length) {
-									queueScheduleRoomFilterRefresh(0);
+			</div>
+			<details
+				class="advanced-filter-panel"
+				open={currentRole !== 'STUDENT' || advancedFilterCount > 0}
+			>
+				<summary>
+					<span>Filter lanjutan</span>
+					<strong>{advancedFilterCount} aktif</strong>
+				</summary>
+				<div class="editor-grid schedule-filter-grid advanced-schedule-filter-grid">
+					<label>
+						<span>Mata kuliah</span>
+						<select
+							bind:value={state.scheduleCourseFilter}
+							onchange={() => queueCollectionRefresh('enrollments', 0)}
+						>
+							<option value="">Semua mata kuliah</option>
+							{#each calendarCourses as item (item.id)}
+								<option value={item.id}>{item.name}</option>
+							{/each}
+						</select>
+					</label>
+					<label>
+						<span>Ruang</span>
+						<div
+							class="combobox-wrap"
+							onfocusout={(e) => {
+								if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+									state.scheduleRoomFilterOpen = false;
 								}
 							}}
-						/>
-						{#if scheduleRoomFilterIssue}
-							<p class="combobox-error">{scheduleRoomFilterIssue}</p>
-						{:else if state.scheduleRoomFilterOpen && scheduleRoomFilterLoading && !scheduleRoomFilterOptions.length}
-							<p class="combobox-empty">Memuat ruang kelas...</p>
-						{:else if state.scheduleRoomFilterOpen}
-							<div class="combobox-dropdown" role="listbox">
-								<button
-									type="button"
-									role="option"
-									aria-selected={!state.scheduleRoomFilter}
-									class="combobox-option"
-									class:active={!state.scheduleRoomFilter}
-									onmousedown={(e) => {
-										e.preventDefault();
+						>
+							<input
+								type="text"
+								class="combobox-input"
+								placeholder="Cari ruang filter..."
+								value={state.scheduleRoomFilter
+									? selectedScheduleRoomFilterLabel
+									: state.scheduleRoomFilterSearch}
+								oninput={(e) => {
+									state.scheduleRoomFilterSearch = (e.currentTarget as HTMLInputElement).value;
+									if (state.scheduleRoomFilter) {
 										state.scheduleRoomFilter = '';
-										state.scheduleRoomFilterSearch = '';
-										state.scheduleRoomFilterOpen = false;
 										queueCollectionRefresh('enrollments', 0);
-									}}
-								>
-									<strong>Semua ruang</strong>
-									<span>Hapus filter ruang</span>
-								</button>
-								{#each filteredScheduleRoomFilterOptions as item (item.id)}
+									}
+									queueScheduleRoomFilterRefresh();
+									state.scheduleRoomFilterOpen = true;
+								}}
+								onfocus={(e) => {
+									if (state.scheduleRoomFilter) {
+										(e.currentTarget as HTMLInputElement).select();
+									}
+									state.scheduleRoomFilterOpen = true;
+									if (!scheduleRoomFilterOptions.length) {
+										queueScheduleRoomFilterRefresh(0);
+									}
+								}}
+							/>
+							{#if scheduleRoomFilterIssue}
+								<p class="combobox-error">{scheduleRoomFilterIssue}</p>
+							{:else if state.scheduleRoomFilterOpen && scheduleRoomFilterLoading && !scheduleRoomFilterOptions.length}
+								<p class="combobox-empty">Memuat ruang kelas...</p>
+							{:else if state.scheduleRoomFilterOpen}
+								<div class="combobox-dropdown" role="listbox">
 									<button
 										type="button"
 										role="option"
-										aria-selected={state.scheduleRoomFilter === item.id}
+										aria-selected={!state.scheduleRoomFilter}
 										class="combobox-option"
-										class:active={state.scheduleRoomFilter === item.id}
+										class:active={!state.scheduleRoomFilter}
 										onmousedown={(e) => {
 											e.preventDefault();
-											state.scheduleRoomFilter = item.id ?? '';
+											state.scheduleRoomFilter = '';
 											state.scheduleRoomFilterSearch = '';
 											state.scheduleRoomFilterOpen = false;
 											queueCollectionRefresh('enrollments', 0);
 										}}
 									>
-										<strong>{item.name}</strong>
-										<span>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
-										>
+										<strong>Semua ruang</strong>
+										<span>Hapus filter ruang</span>
 									</button>
-								{/each}
-								{#if !filteredScheduleRoomFilterOptions.length && !scheduleRoomFilterLoading}
-									<p class="combobox-empty">Ruang tidak ditemukan.</p>
-								{/if}
-								{#if scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
-									<div class="combobox-footer">
-										<span class="combobox-meta">
-											{scheduleRoomFilterOptions.length} opsi dimuat
-										</span>
+									{#each filteredScheduleRoomFilterOptions as item (item.id)}
 										<button
 											type="button"
-											class="combobox-more"
-											disabled={!scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
+											role="option"
+											aria-selected={state.scheduleRoomFilter === item.id}
+											class="combobox-option"
+											class:active={state.scheduleRoomFilter === item.id}
 											onmousedown={(e) => {
 												e.preventDefault();
-												loadMoreScheduleRoomFilterOptions();
+												state.scheduleRoomFilter = item.id ?? '';
+												state.scheduleRoomFilterSearch = '';
+												state.scheduleRoomFilterOpen = false;
+												queueCollectionRefresh('enrollments', 0);
 											}}
 										>
-											{scheduleRoomFilterLoading ? 'Memuat...' : 'Muat lebih banyak'}
+											<strong>{item.name}</strong>
+											<span
+												>{beautifyRoomType(item.class_room_type)} • kapasitas {item.capacity}</span
+											>
 										</button>
-									</div>
-								{/if}
-							</div>
-						{/if}
-					</div>
-				</label>
-				<label>
-					<span>Dosen</span>
-					<select
-						bind:value={state.scheduleLecturerFilter}
-						onchange={() => queueCollectionRefresh('enrollments', 0)}
-					>
-						<option value="">Semua dosen</option>
-						{#each lecturers as item (item.id)}
-							<option value={item.id}>{item.name}</option>
-						{/each}
-					</select>
-				</label>
-				<label>
-					<span>Semester</span>
-					<select
-						bind:value={state.scheduleSemesterFilter}
-						onchange={() => queueCollectionRefresh('enrollments', 0)}
-					>
-						<option value="">Semua semester</option>
-						{#each scheduleSemesterOptions as item (item)}
-							<option value={item}>{item}</option>
-						{/each}
-					</select>
-				</label>
-				<label>
-					<span>Tahun akademik</span>
-					<select
-						bind:value={state.scheduleAcademicYearFilter}
-						onchange={() => queueCollectionRefresh('enrollments', 0)}
-					>
-						<option value="">Semua tahun</option>
-						{#each scheduleAcademicYearOptions as item (item)}
-							<option value={item}>{item}</option>
-						{/each}
-					</select>
-				</label>
-			</div>
+									{/each}
+									{#if !filteredScheduleRoomFilterOptions.length && !scheduleRoomFilterLoading}
+										<p class="combobox-empty">Ruang tidak ditemukan.</p>
+									{/if}
+									{#if scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
+										<div class="combobox-footer">
+											<span class="combobox-meta">
+												{scheduleRoomFilterOptions.length} opsi dimuat
+											</span>
+											<button
+												type="button"
+												class="combobox-more"
+												disabled={!scheduleRoomFilterHasMore || scheduleRoomFilterLoading}
+												onmousedown={(e) => {
+													e.preventDefault();
+													loadMoreScheduleRoomFilterOptions();
+												}}
+											>
+												{scheduleRoomFilterLoading ? 'Memuat...' : 'Muat lebih banyak'}
+											</button>
+										</div>
+									{/if}
+								</div>
+							{/if}
+						</div>
+					</label>
+					<label>
+						<span>Dosen</span>
+						<select
+							bind:value={state.scheduleLecturerFilter}
+							onchange={() => queueCollectionRefresh('enrollments', 0)}
+						>
+							<option value="">Semua dosen</option>
+							{#each lecturers as item (item.id)}
+								<option value={item.id}>{item.name}</option>
+							{/each}
+						</select>
+					</label>
+					<label>
+						<span>Semester</span>
+						<select
+							bind:value={state.scheduleSemesterFilter}
+							onchange={() => queueCollectionRefresh('enrollments', 0)}
+						>
+							<option value="">Semua semester</option>
+							{#each scheduleSemesterOptions as item (item)}
+								<option value={item}>{item}</option>
+							{/each}
+						</select>
+					</label>
+					<label>
+						<span>Tahun akademik</span>
+						<select
+							bind:value={state.scheduleAcademicYearFilter}
+							onchange={() => queueCollectionRefresh('enrollments', 0)}
+						>
+							<option value="">Semua tahun</option>
+							{#each scheduleAcademicYearOptions as item (item)}
+								<option value={item}>{item}</option>
+							{/each}
+						</select>
+					</label>
+				</div>
+			</details>
 			<div class="list-summary schedule-filter-summary">
 				<span>{filteredScheduleCards.length} jadwal tampil</span>
 				<div class="schedule-filter-actions">
@@ -401,10 +437,8 @@
 			</section>
 		{:else if !filteredScheduleCards.length}
 			<section class="calendar-empty-state support-panel">
-				<h3>Tidak ada jadwal yang cocok</h3>
-				<p class="detail-hint">
-					Ubah kata kunci atau longgarkan filter untuk menampilkan jadwal pada kalender.
-				</p>
+				<h3>{calendarEmptyTitle}</h3>
+				<p class="detail-hint">{calendarEmptyCopy}</p>
 			</section>
 		{:else}
 			<div class="event-calendar-host">
@@ -575,14 +609,16 @@
 									>
 										Lihat jadwal
 									</Button>
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										size="sm"
-										onclick={() => openBuilderForSchedule(peer)}
-									>
-										Buka penjadwalan
-									</Button>
+									{#if currentRole !== 'STUDENT'}
+										<Button
+											class="ghost-button"
+											variant="ghost"
+											size="sm"
+											onclick={() => openBuilderForSchedule(peer)}
+										>
+											Buka penjadwalan
+										</Button>
+									{/if}
 								</div>
 							</div>
 						{/each}
@@ -611,14 +647,16 @@
 									>
 										Lihat jadwal
 									</Button>
-									<Button
-										class="ghost-button"
-										variant="ghost"
-										size="sm"
-										onclick={() => openBuilderForSchedule(peer)}
-									>
-										Buka penjadwalan
-									</Button>
+									{#if currentRole !== 'STUDENT'}
+										<Button
+											class="ghost-button"
+											variant="ghost"
+											size="sm"
+											onclick={() => openBuilderForSchedule(peer)}
+										>
+											Buka penjadwalan
+										</Button>
+									{/if}
 								</div>
 							</div>
 						{/each}
@@ -636,7 +674,7 @@
 				jadwal, atau pilih salah satu grup bentrok di atas untuk melihat rinciannya lebih dulu.
 			</p>
 		{:else if !filteredScheduleCards.length}
-			<p class="empty-copy">Belum ada jadwal yang cocok dengan filter saat ini.</p>
+			<p class="empty-copy">{calendarEmptyCopy}</p>
 		{:else}
 			<p class="empty-copy">Pilih satu blok jadwal untuk melihat detail kelas.</p>
 		{/if}

@@ -151,6 +151,7 @@
 			? courses.filter((c) => c.study_program_id === studentStudyProgramId)
 			: courses
 	);
+	const canManageGrades = $derived(currentRole !== 'STUDENT');
 </script>
 
 <div class="workspace-shell">
@@ -159,7 +160,7 @@
 			<div>
 				<h3>Daftar nilai</h3>
 			</div>
-			{#if currentRole !== 'STUDENT'}
+			{#if canManageGrades}
 				<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginCreate}
 					>Tambah</Button
 				>
@@ -197,7 +198,7 @@
 				</select>
 			</label>
 		</div>
-		{#if bulkCount > 0}
+		{#if canManageGrades && bulkCount > 0}
 			<div class="bulk-bar">
 				<span class="bulk-count">{bulkCount} nilai dipilih</span>
 				<div class="bulk-actions">
@@ -213,7 +214,7 @@
 			</div>
 		{/if}
 		<div class="list-stack">
-			{#if filteredGrades.length > 1}
+			{#if canManageGrades && filteredGrades.length > 1}
 				<label class="list-row select-all-row">
 					<input
 						type="checkbox"
@@ -230,14 +231,16 @@
 					class:selected={selectedGradeId === item.id}
 					class:checked={item.id != null && bulkSelectedIds.has(item.id)}
 				>
-					<label class="row-checkbox"
-						><input
-							type="checkbox"
-							checked={item.id != null && bulkSelectedIds.has(item.id)}
-							onchange={() => item.id && onBulkToggleId(item.id)}
-							onclick={(e) => e.stopPropagation()}
-						/></label
-					>
+					{#if canManageGrades}
+						<label class="row-checkbox"
+							><input
+								type="checkbox"
+								checked={item.id != null && bulkSelectedIds.has(item.id)}
+								onchange={() => item.id && onBulkToggleId(item.id)}
+								onclick={(e) => e.stopPropagation()}
+							/></label
+						>
+					{/if}
 					<div
 						role="button"
 						tabindex="0"
@@ -295,10 +298,12 @@
 						? 'Ubah massal nilai'
 						: selectedGrade
 							? `${selectedGrade.student_name} • ${selectedGrade.course_name}`
-							: 'Input nilai baru'}
+							: canManageGrades
+								? 'Input nilai baru'
+								: 'Pilih satu nilai'}
 				</h3>
 			</div>
-			{#if currentRole !== 'STUDENT'}
+			{#if canManageGrades}
 				<div class="detail-actions">
 					{#if editorView === 'grades'}
 						<Button variant="ghost" size="sm" class="ghost-button" onclick={onStopEditing}
@@ -345,14 +350,14 @@
 				</div>
 				<p class="detail-hint">Mode tinjau memisahkan peninjauan hasil dari proses edit nilai.</p>
 			</div>
-		{:else if currentRole !== 'STUDENT' && editorView === 'grades'}
+		{:else if canManageGrades && editorView === 'grades'}
 			<form class="editor-grid" {...selectedGradeId ? updateGradeEnhance : createGradeEnhance}>
 				{#if selectedGradeId}<input type="hidden" name="id" value={gradeDraft.id} />{/if}
 				<label
 					><span>KRS</span><select bind:value={gradeDraft.enrollmentId}
-						><option value="">Pilih KRS disetujui</option>{#if enrollmentsIssue && !enrollments.length}<option
-								value=""
-								disabled>{enrollmentsIssue}</option
+						><option value="">Pilih KRS disetujui</option
+						>{#if enrollmentsIssue && !enrollments.length}<option value="" disabled
+								>{enrollmentsIssue}</option
 							>{:else if !enrollments.length}<option value="" disabled
 								>Tidak ada KRS yang sudah disetujui</option
 							>{/if}{#each enrollments as item (item.id)}<option value={item.id}
@@ -407,7 +412,7 @@
 					>
 				</div>
 			</form>
-		{:else if editorView === 'grades-bulk'}
+		{:else if canManageGrades && editorView === 'grades-bulk'}
 			<form class="editor-grid" {...bulkUpdateGradesEnhance}>
 				<p class="editor-note">
 					Ubah komponen nilai {bulkCount} nilai terpilih sekaligus. Total dan nilai huruf akan dihitung
@@ -470,7 +475,9 @@
 			</form>
 		{:else}
 			<p class="empty-copy">
-				Pilih satu nilai untuk melihat hasil, atau tambahkan nilai baru saat evaluasi perlu dicatat.
+				{canManageGrades
+					? 'Pilih satu nilai untuk melihat hasil, atau tambahkan nilai baru saat evaluasi perlu dicatat.'
+					: 'Pilih satu nilai untuk melihat rincian hasil evaluasi.'}
 			</p>
 		{/if}
 	</section>

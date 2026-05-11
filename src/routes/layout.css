@@ -24,6 +24,9 @@
 	--app-danger: oklch(0.53 0.11 34);
 	--app-danger-soft: oklch(0.93 0.028 34);
 	--app-shadow: oklch(0.22 0.018 282);
+	--conflict-bg: var(--conflict-surface, var(--app-danger-soft));
+	--conflict-line: var(--conflict-border, var(--app-danger));
+	--conflict-text: var(--conflict-ink, var(--app-danger));
 	--radius-xl: 0.95rem;
 	--radius-lg: 0.75rem;
 
@@ -71,6 +74,9 @@
 	--app-danger: oklch(0.74 0.11 34);
 	--app-danger-soft: oklch(0.29 0.038 34);
 	--app-shadow: oklch(0.04 0.008 286);
+	--conflict-bg: var(--conflict-dark-surface, var(--app-danger-soft));
+	--conflict-line: var(--conflict-dark-border, var(--app-danger));
+	--conflict-text: var(--conflict-dark-ink, oklch(0.9 0.055 34));
 }
 
 @theme inline {

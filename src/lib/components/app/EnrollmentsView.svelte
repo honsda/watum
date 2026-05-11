@@ -179,6 +179,16 @@
 		return item.id ? (scheduleCardMap[item.id] ?? null) : null;
 	}
 
+	function scheduleCopy(item: SelectEnrollmentsResult) {
+		if (item.status === 'PENDING') return 'Menunggu persetujuan';
+		if (!item.schedule_day) return 'Jadwal belum ditentukan';
+		return `${DAY_LABELS[item.schedule_day as keyof typeof DAY_LABELS]} • ${formatTimeRange(
+			item.schedule_start_time,
+			item.schedule_end_time,
+			timezone
+		)}`;
+	}
+
 	const requestCourses = $derived(
 		studentStudyProgramId
 			? courses.filter((c) => c.study_program_id === studentStudyProgramId)
@@ -187,9 +197,9 @@
 	const studentCanRequestEnrollment = $derived(
 		Boolean(
 			enrollmentPolicyLoaded &&
-				enrollmentPolicy?.requestsOpen &&
-				requestCourses.length &&
-				requestEnrollmentEnhance
+			enrollmentPolicy?.requestsOpen &&
+			requestCourses.length &&
+			requestEnrollmentEnhance
 		)
 	);
 </script>
@@ -205,8 +215,7 @@
 					size="sm"
 					class="primary-button"
 					disabled={!studentCanRequestEnrollment}
-					onclick={() => onStartRequest?.()}
-					>Ajukan mata kuliah</Button
+					onclick={() => onStartRequest?.()}>Ajukan mata kuliah</Button
 				>
 			{/if}
 		</div>
@@ -378,7 +387,7 @@
 							{/if}
 						</div>
 						<small>
-							{item.semester} • {item.academic_year}
+							{scheduleCopy(item)} • {item.semester} • {item.academic_year}
 							{#if item.status === 'PENDING'}
 								<Badge variant="secondary">Menunggu</Badge>
 							{/if}
@@ -407,19 +416,15 @@
 						? 'Ubah massal KRS'
 						: currentRole === 'ADMIN' && !selectedEnrollment
 							? 'Pengaturan pengajuan KRS'
-						: selectedEnrollment
-							? selectedEnrollment.course_name
-							: 'Pilih satu KRS'}
+							: selectedEnrollment
+								? selectedEnrollment.course_name
+								: 'Pilih satu KRS'}
 				</h3>
 			</div>
 			{#if selectedEnrollment && editorView !== 'enrollments-bulk'}
 				<div class="detail-actions">
 					{#if currentRole === 'ADMIN'}
-						<Button
-							variant="outline"
-							size="sm"
-							onclick={() => onShowPolicySettings?.()}
-						>
+						<Button variant="outline" size="sm" onclick={() => onShowPolicySettings?.()}>
 							Pengaturan
 						</Button>
 					{/if}
@@ -428,23 +433,20 @@
 							variant="ghost"
 							size="sm"
 							class="ghost-button"
-							onclick={() => onCancelRequest?.(selectedEnrollment.id!)}
-							>Batalkan pengajuan</Button
+							onclick={() => onCancelRequest?.(selectedEnrollment.id!)}>Batalkan pengajuan</Button
 						>
 					{:else if currentRole !== 'STUDENT' && selectedEnrollment.status === 'PENDING'}
 						<Button
 							variant="ghost"
 							size="sm"
 							class="ghost-button"
-							onclick={() => onOpenBuilderForApproval?.(selectedEnrollment)}
-							>Setujui</Button
+							onclick={() => onOpenBuilderForApproval?.(selectedEnrollment)}>Setujui</Button
 						>
 						<Button
 							variant="destructive"
 							size="sm"
 							class="danger-button"
-							onclick={() => onRejectRequest?.(selectedEnrollment.id!)}
-							>Tolak</Button
+							onclick={() => onRejectRequest?.(selectedEnrollment.id!)}>Tolak</Button
 						>
 					{:else if currentRole !== 'STUDENT' && selectedEnrollment.status === 'APPROVED'}
 						<Button
@@ -466,7 +468,9 @@
 				<div class="detail-lines">
 					<div>
 						<span>Status</span><strong
-							>{selectedEnrollment.status === 'PENDING' ? 'Menunggu persetujuan' : 'Disetujui'}</strong
+							>{selectedEnrollment.status === 'PENDING'
+								? 'Menunggu persetujuan'
+								: 'Disetujui'}</strong
 						>
 					</div>
 					<div>
@@ -551,9 +555,7 @@
 						name="semester"
 						value={bulkEditEnrollmentSemester}
 						onchange={(event) =>
-							onBulkEditEnrollmentSemesterInput(
-								(event.currentTarget as HTMLSelectElement).value
-							)}
+							onBulkEditEnrollmentSemesterInput((event.currentTarget as HTMLSelectElement).value)}
 					>
 						<option value="">Tidak diubah</option>
 						<option value="GANJIL">GANJIL</option>
@@ -662,11 +664,11 @@
 				<p class="editor-note">Ajukan mata kuliah baru untuk semester ini.</p>
 				<label>
 					<span>Mata kuliah</span>
-				<select name="courseId" required disabled={!studentCanRequestEnrollment}>
-					<option value="" disabled selected>Pilih mata kuliah</option>
-					{#each requestCourses as course (course.id)}
-						<option value={course.id}>{course.name}</option>
-					{/each}
+					<select name="courseId" required disabled={!studentCanRequestEnrollment}>
+						<option value="" disabled selected>Pilih mata kuliah</option>
+						{#each requestCourses as course (course.id)}
+							<option value={course.id}>{course.name}</option>
+						{/each}
 					</select>
 				</label>
 				<label>
@@ -710,12 +712,11 @@
 		padding: 1rem;
 		border: 1px solid color-mix(in oklch, var(--color-accent-strong) 18%, var(--color-border) 82%);
 		border-radius: 1rem;
-		background:
-			linear-gradient(
-				180deg,
-				color-mix(in oklch, var(--color-accent-soft) 22%, var(--color-surface) 78%),
-				var(--color-panel)
-			);
+		background: linear-gradient(
+			180deg,
+			color-mix(in oklch, var(--color-accent-soft) 22%, var(--color-surface) 78%),
+			var(--color-panel)
+		);
 	}
 
 	.policy-settings-kicker {

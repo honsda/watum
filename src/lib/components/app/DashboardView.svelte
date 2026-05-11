@@ -10,6 +10,7 @@
 	let {
 		role,
 		nextSchedule,
+		scheduleCards,
 		enrollments,
 		grades,
 		studentGradeHighlights,
@@ -34,6 +35,7 @@
 	}: {
 		role: AppRole;
 		nextSchedule: ScheduleCard | null;
+		scheduleCards: ScheduleCard[];
 		enrollments: { length: number };
 		grades: { length: number };
 		studentGradeHighlights: SelectGradesResult[];
@@ -81,6 +83,13 @@
 		if (!details) return null;
 		return `${details.count} jadwal • Ruang: ${details.rooms} • Dosen: ${details.lecturers}`;
 	}
+
+	const visibleScheduleCards = $derived(scheduleCards.slice(0, 6));
+	const pendingEnrollments = $derived(
+		Array.isArray(enrollments)
+			? enrollments.filter((item: { status?: string | null }) => item.status === 'PENDING').length
+			: 0
+	);
 </script>
 
 <div class="dashboard-stack">
@@ -168,6 +177,147 @@
 					</div>
 				</section>
 			{/if}
+
+			<section class="student-weekly-list">
+				<div class="student-section-head">
+					<h3>Jadwal minggu ini</h3>
+					<Button
+						class="ghost-button"
+						variant="ghost"
+						size="sm"
+						onclick={() => onActivateView('calendar')}>Buka kalender</Button
+					>
+				</div>
+				{#if visibleScheduleCards.length}
+					<div class="schedule-row-list">
+						{#each visibleScheduleCards as card (card.id)}
+							<div class="schedule-row-card">
+								<div>
+									<strong
+										><span
+											role="button"
+											tabindex="0"
+											class="entity-link"
+											onkeydown={handleKeyboardClick}
+											onclick={() =>
+												onNavigateToEntity('courses', card.original.course_id, card.course)}
+											>{card.course}</span
+										></strong
+									>
+									<span>{card.lecturer}</span>
+								</div>
+								<div>
+									<strong>{DAY_LABELS[card.day]}</strong>
+									<span>{card.startLabel} - {card.endLabel}</span>
+								</div>
+								<div>
+									<span
+										role="button"
+										tabindex="0"
+										class="entity-link"
+										onkeydown={handleKeyboardClick}
+										onclick={() =>
+											onNavigateToEntity('classrooms', card.original.class_room_id, card.room)}
+										><strong>{card.room}</strong></span
+									>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<p class="empty-copy">Belum ada jadwal yang disetujui untuk ditampilkan minggu ini.</p>
+				{/if}
+			</section>
+		</section>
+	{:else if role === 'LECTURER'}
+		<section class="lecturer-dashboard">
+			<section class="decision-board lecturer-board">
+				<article class="decision-lead decision-steady">
+					<h3 class="decision-title">
+						{#if nextSchedule}
+							Kelas mengajar berikutnya
+						{:else}
+							Belum ada kelas mengajar aktif
+						{/if}
+					</h3>
+					{#if nextSchedule}
+						<section class="decision-primary decision-primary-steady">
+							<div class="decision-primary-copy">
+								<span
+									role="button"
+									tabindex="0"
+									class="entity-link"
+									onkeydown={handleKeyboardClick}
+									onclick={() =>
+										onNavigateToEntity(
+											'courses',
+											nextSchedule.original.course_id,
+											nextSchedule.course
+										)}><strong>{nextSchedule.course}</strong></span
+								>
+								<p>
+									{DAY_LABELS[nextSchedule.day]} • {nextSchedule.startLabel} - {nextSchedule.endLabel}
+									• {nextSchedule.room}
+								</p>
+							</div>
+						</section>
+					{/if}
+					<div class="decision-actions">
+						<Button class="primary-button" onclick={() => onActivateView('calendar')}
+							>Lihat kalender</Button
+						>
+						<Button class="ghost-button" variant="ghost" onclick={() => onActivateView('grades')}
+							>Kelola nilai</Button
+						>
+					</div>
+				</article>
+
+				<aside class="decision-notes">
+					<div class="decision-note-row">
+						<span>Kelas aktif</span>
+						<strong>{enrollments.length} KRS pada kelas Anda</strong>
+					</div>
+					<div class="decision-note-row">
+						<span>Pengajuan menunggu</span>
+						<strong>{pendingEnrollments} KRS perlu keputusan</strong>
+					</div>
+					<div class="decision-note-row">
+						<span>Nilai tercatat</span>
+						<strong>{grades.length} hasil nilai</strong>
+					</div>
+				</aside>
+			</section>
+
+			<section class="student-weekly-list lecturer-weekly-list">
+				<div class="student-section-head">
+					<h3>Jadwal mengajar</h3>
+					<Button
+						class="ghost-button"
+						variant="ghost"
+						size="sm"
+						onclick={() => onActivateView('enrollments')}>Buka KRS</Button
+					>
+				</div>
+				{#if visibleScheduleCards.length}
+					<div class="schedule-row-list">
+						{#each visibleScheduleCards as card (card.id)}
+							<div class="schedule-row-card">
+								<div>
+									<strong>{card.course}</strong>
+									<span>{card.student}</span>
+								</div>
+								<div>
+									<strong>{DAY_LABELS[card.day]}</strong>
+									<span>{card.startLabel} - {card.endLabel}</span>
+								</div>
+								<div><strong>{card.room}</strong></div>
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<p class="empty-copy">Belum ada jadwal mengajar pada data yang dimuat.</p>
+				{/if}
+			</section>
 		</section>
 	{:else}
 		<section class="decision-board">
