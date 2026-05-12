@@ -1,32 +1,32 @@
-import { getRequestEvent } from '$app/server';
-import { env } from '$env/dynamic/private';
-import { error } from '@sveltejs/kit';
-import { verify } from '@node-rs/argon2';
-import { createHash, randomBytes, randomUUID } from 'crypto';
-import { SignJWT, jwtVerify } from 'jose';
-import type { PoolConnection, ResultSetHeader, RowDataPacket } from './db';
-import { getConnection, getPool, retryRead, withTransaction } from './db';
-import { selectUsers } from './sql';
+import { verify } from "@node-rs/argon2";
+import { error } from "@sveltejs/kit";
+import { createHash, randomBytes, randomUUID } from "crypto";
+import { jwtVerify, SignJWT } from "jose";
+import { getRequestEvent } from "$app/server";
+import { env } from "$env/dynamic/private";
+import type { PoolConnection, ResultSetHeader, RowDataPacket } from "./db";
+import { getConnection, getPool, retryRead, withTransaction } from "./db";
+import { selectUsers } from "./sql";
 
 const ACCESS_TOKEN_TTL_SECONDS = 60 * 5;
 const REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
-const ACCESS_CONTEXT_BINDING_CLAIM = 'ctx';
-const PASSWORD_VERSION_CLAIM = 'pwdv';
-const REFRESH_TOKEN_COOKIE_NAME = 'refresh_token';
+const ACCESS_CONTEXT_BINDING_CLAIM = "ctx";
+const PASSWORD_VERSION_CLAIM = "pwdv";
+const REFRESH_TOKEN_COOKIE_NAME = "refresh_token";
 const SECURE_REFRESH_TOKEN_COOKIE_NAME = `__Secure-${REFRESH_TOKEN_COOKIE_NAME}`;
 const LEGACY_HOST_REFRESH_TOKEN_COOKIE_NAME = `__Host-${REFRESH_TOKEN_COOKIE_NAME}`;
-const REFRESH_TOKEN_COOKIE_PATH = '/auth';
+const REFRESH_TOKEN_COOKIE_PATH = "/auth";
 const LEGACY_SESSION_COOKIE_NAMES = [
-	'session_token',
-	'__Host-session_token',
-	'session_id'
+	"session_token",
+	"__Host-session_token",
+	"session_id",
 ] as const;
 const textEncoder = new TextEncoder();
 
 interface User {
 	id: string;
 	email: string;
-	role: 'ADMIN' | 'STUDENT' | 'LECTURER';
+	role: "ADMIN" | "STUDENT" | "LECTURER";
 	studentId: string | null;
 	lecturerId: string | null;
 	studyProgramId: string | null;
@@ -53,6 +53,13 @@ interface AuthenticatedLoginResult {
 	passwordHash: string;
 }
 
+type RefreshSessionResult =
+	| {
+			session: { accessToken: string; refreshToken: string; user: User };
+			clearCookies: false;
+	  }
+	| { session: null; clearCookies: boolean };
+
 type SelectUserRow = Awaited<ReturnType<typeof selectUsers>>[number];
 
 function mapUser(user: SelectUserRow): User {
@@ -63,13 +70,17 @@ function mapUser(user: SelectUserRow): User {
 		studentId: user.student_id ?? null,
 		lecturerId: user.lecturer_id ?? null,
 		studyProgramId: user.student_study_program_id ?? null,
-		student: user.student_id ? { id: user.student_id, name: user.student_name ?? '' } : null,
-		lecturer: user.lecturer_id ? { id: user.lecturer_id, name: user.lecturer_name ?? '' } : null
+		student: user.student_id
+			? { id: user.student_id, name: user.student_name ?? "" }
+			: null,
+		lecturer: user.lecturer_id
+			? { id: user.lecturer_id, name: user.lecturer_name ?? "" }
+			: null,
 	};
 }
 
 function hashValue(value: string) {
-	return createHash('sha256').update(value).digest('base64url');
+	return createHash("sha256").update(value).digest("base64url");
 }
 
 function hashRefreshToken(token: string) {
@@ -77,7 +88,7 @@ function hashRefreshToken(token: string) {
 }
 
 function createOpaqueToken() {
-	return randomBytes(48).toString('base64url');
+	return randomBytes(48).toString("base64url");
 }
 
 function getPasswordVersion(passwordHash: string) {
@@ -86,14 +97,14 @@ function getPasswordVersion(passwordHash: string) {
 
 function getRequestContextBinding() {
 	const { request } = getRequestEvent();
-	const userAgent = request.headers.get('user-agent') ?? '';
+	const userAgent = request.headers.get("user-agent") ?? "";
 
-	return hashValue(['access-context-v2', userAgent].join('\n'));
+	return hashValue(["access-context-v2", userAgent].join("\n"));
 }
 
 function getJwtSecret() {
 	if (!env.JWT_SECRET) {
-		throw new Error('JWT_SECRET is not configured');
+		throw new Error("JWT_SECRET is not configured");
 	}
 
 	return textEncoder.encode(env.JWT_SECRET);
@@ -101,21 +112,25 @@ function getJwtSecret() {
 
 function getJwtIssuer() {
 	if (!env.JWT_ISSUER) {
-		if (env.NODE_ENV === 'production') {
-			throw new Error('JWT_ISSUER is required in production');
+		if (env.NODE_ENV === "production") {
+			throw new Error("JWT_ISSUER is required in production");
 		}
-		console.warn('JWT_ISSUER environment variable is not set — JWT issuer validation is disabled');
+		console.warn(
+			"JWT_ISSUER environment variable is not set — JWT issuer validation is disabled",
+		);
 		return undefined;
 	}
 	return env.JWT_ISSUER;
 }
 
 function useSecureCookies(url: URL) {
-	return url.protocol === 'https:' || env.NODE_ENV === 'production';
+	return url.protocol === "https:" || env.NODE_ENV === "production";
 }
 
 function getPreferredRefreshTokenCookieName(url: URL) {
-	return useSecureCookies(url) ? SECURE_REFRESH_TOKEN_COOKIE_NAME : REFRESH_TOKEN_COOKIE_NAME;
+	return useSecureCookies(url)
+		? SECURE_REFRESH_TOKEN_COOKIE_NAME
+		: REFRESH_TOKEN_COOKIE_NAME;
 }
 
 function getRefreshTokenCookieNames(url: URL) {
@@ -125,8 +140,8 @@ function getRefreshTokenCookieNames(url: URL) {
 			preferred,
 			REFRESH_TOKEN_COOKIE_NAME,
 			SECURE_REFRESH_TOKEN_COOKIE_NAME,
-			LEGACY_HOST_REFRESH_TOKEN_COOKIE_NAME
-		])
+			LEGACY_HOST_REFRESH_TOKEN_COOKIE_NAME,
+		]),
 	];
 }
 
@@ -134,28 +149,28 @@ function getRefreshTokenCookieOptions(url: URL) {
 	return {
 		path: REFRESH_TOKEN_COOKIE_PATH,
 		httpOnly: true,
-		sameSite: 'strict' as const,
-		secure: useSecureCookies(url)
+		sameSite: "strict" as const,
+		secure: useSecureCookies(url),
 	};
 }
 
 function getLegacySessionCookieOptions(url: URL) {
 	return {
-		path: '/',
+		path: "/",
 		httpOnly: true,
-		sameSite: 'lax' as const,
-		secure: useSecureCookies(url)
+		sameSite: "lax" as const,
+		secure: useSecureCookies(url),
 	};
 }
 
 function getAccessTokenFromRequest() {
-	const authorization = getRequestEvent().request.headers.get('authorization');
+	const authorization = getRequestEvent().request.headers.get("authorization");
 	if (!authorization) {
 		return null;
 	}
 
-	const [scheme, token] = authorization.split(' ');
-	if (scheme !== 'Bearer' || !token) {
+	const [scheme, token] = authorization.split(" ");
+	if (scheme !== "Bearer" || !token) {
 		return null;
 	}
 
@@ -187,7 +202,7 @@ function setRefreshTokenCookie(token: string) {
 	const preferredCookieName = getPreferredRefreshTokenCookieName(url);
 	const options = {
 		...getRefreshTokenCookieOptions(url),
-		maxAge: REFRESH_TOKEN_TTL_SECONDS
+		maxAge: REFRESH_TOKEN_TTL_SECONDS,
 	};
 
 	cookies.set(preferredCookieName, token, options);
@@ -215,9 +230,9 @@ function isRefreshTokenExpired(expiresAt: Date | string) {
 async function signAccessToken(userId: string, passwordHash: string) {
 	let jwt = new SignJWT({
 		[ACCESS_CONTEXT_BINDING_CLAIM]: getRequestContextBinding(),
-		[PASSWORD_VERSION_CLAIM]: getPasswordVersion(passwordHash)
+		[PASSWORD_VERSION_CLAIM]: getPasswordVersion(passwordHash),
 	})
-		.setProtectedHeader({ alg: 'HS256' })
+		.setProtectedHeader({ alg: "HS256" })
 		.setSubject(userId)
 		.setIssuedAt()
 		.setExpirationTime(`${ACCESS_TOKEN_TTL_SECONDS}s`);
@@ -230,29 +245,35 @@ async function signAccessToken(userId: string, passwordHash: string) {
 	return jwt.sign(getJwtSecret());
 }
 
-async function verifyAccessToken(token: string): Promise<AccessTokenPayload | null> {
+async function verifyAccessToken(
+	token: string,
+): Promise<AccessTokenPayload | null> {
 	try {
 		const issuer = getJwtIssuer();
-		const { payload } = await jwtVerify(token, getJwtSecret(), issuer ? { issuer } : undefined);
+		const { payload } = await jwtVerify(
+			token,
+			getJwtSecret(),
+			issuer ? { issuer } : undefined,
+		);
 		const contextBinding = payload[ACCESS_CONTEXT_BINDING_CLAIM];
 		const passwordVersion = payload[PASSWORD_VERSION_CLAIM];
 
-		if (typeof payload.sub !== 'string' || payload.sub.length === 0) {
+		if (typeof payload.sub !== "string" || payload.sub.length === 0) {
 			return null;
 		}
 
-		if (typeof contextBinding !== 'string' || contextBinding.length === 0) {
+		if (typeof contextBinding !== "string" || contextBinding.length === 0) {
 			return null;
 		}
 
-		if (typeof passwordVersion !== 'string' || passwordVersion.length === 0) {
+		if (typeof passwordVersion !== "string" || passwordVersion.length === 0) {
 			return null;
 		}
 
 		return {
 			userId: payload.sub,
 			contextBinding,
-			passwordVersion
+			passwordVersion,
 		};
 	} catch {
 		return null;
@@ -264,21 +285,21 @@ async function insertRefreshToken(
 	userId: string,
 	tokenHash: string,
 	contextBinding: string,
-	expiresAt: Date
+	expiresAt: Date,
 ) {
 	await connection.query(
 		`INSERT INTO refresh_tokens (id, user_id, token_hash, context_binding, expires_at)
 		 VALUES (?, ?, ?, ?, ?)`,
-		[randomUUID(), userId, tokenHash, contextBinding, expiresAt]
+		[randomUUID(), userId, tokenHash, contextBinding, expiresAt],
 	);
 }
 
 async function selectUserById(
 	connection: PoolConnection | ReturnType<typeof getPool>,
-	userId: string
+	userId: string,
 ) {
 	const [user] = await selectUsers(connection as PoolConnection, {
-		where: [['id', '=', userId]]
+		where: [["id", "=", userId]],
 	});
 	return user ?? null;
 }
@@ -300,10 +321,14 @@ export async function getUser(): Promise<User | null> {
 
 	const [user] = await retryRead(() =>
 		selectUsers(getPool(), {
-			where: [['id', '=', session.userId]]
-		})
+			where: [["id", "=", session.userId]],
+		}),
 	);
-	if (!user || !user.password || getPasswordVersion(user.password) !== session.passwordVersion) {
+	if (
+		!user ||
+		!user.password ||
+		getPasswordVersion(user.password) !== session.passwordVersion
+	) {
 		return null;
 	}
 
@@ -313,22 +338,22 @@ export async function getUser(): Promise<User | null> {
 export async function requireUser(): Promise<User> {
 	const user = await getUser();
 	if (!user) {
-		error(401, 'Unauthorized');
+		error(401, "Unauthorized");
 	}
 	return user;
 }
 
-export async function requireRole(roles: Array<User['role']>): Promise<User> {
+export async function requireRole(roles: Array<User["role"]>): Promise<User> {
 	const user = await requireUser();
 	if (!roles.includes(user.role)) {
-		error(403, 'Forbidden');
+		error(403, "Forbidden");
 	}
 	return user;
 }
 
 export async function setSession(
 	userId: string,
-	passwordHash: string
+	passwordHash: string,
 ): Promise<{ accessToken: string }> {
 	const refreshToken = createOpaqueToken();
 	const refreshTokenHash = hashRefreshToken(refreshToken);
@@ -336,21 +361,30 @@ export async function setSession(
 	const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000);
 
 	await withTransaction(async (connection) => {
-		await connection.query('DELETE FROM refresh_tokens WHERE user_id = ? AND context_binding = ?', [
+		await connection.query(
+			"DELETE FROM refresh_tokens WHERE user_id = ? AND context_binding = ?",
+			[userId, contextBinding],
+		);
+		await insertRefreshToken(
+			connection,
 			userId,
-			contextBinding
-		]);
-		await insertRefreshToken(connection, userId, refreshTokenHash, contextBinding, expiresAt);
+			refreshTokenHash,
+			contextBinding,
+			expiresAt,
+		);
 	});
 
 	setRefreshTokenCookie(refreshToken);
 
 	return {
-		accessToken: await signAccessToken(userId, passwordHash)
+		accessToken: await signAccessToken(userId, passwordHash),
 	};
 }
 
-export async function refreshSession(): Promise<{ accessToken: string; user: User } | null> {
+export async function refreshSession(): Promise<{
+	accessToken: string;
+	user: User;
+} | null> {
 	const refreshToken = getRefreshTokenFromCookies();
 	if (!refreshToken) {
 		clearRefreshTokenCookies();
@@ -360,84 +394,107 @@ export async function refreshSession(): Promise<{ accessToken: string; user: Use
 	const refreshTokenHash = hashRefreshToken(refreshToken);
 	const contextBinding = getRequestContextBinding();
 
-	const result = await withTransaction(async (connection) => {
-		const [rows] = await connection.query<RefreshTokenRow[]>(
-			`SELECT id, user_id, token_hash, context_binding, expires_at
+	const result = await withTransaction<RefreshSessionResult>(
+		async (connection) => {
+			const [rows] = await connection.query<RefreshTokenRow[]>(
+				`SELECT id, user_id, token_hash, context_binding, expires_at
 			 FROM refresh_tokens
 			 WHERE token_hash = ?
 			 LIMIT 1
 			 FOR UPDATE`,
-			[refreshTokenHash]
-		);
+				[refreshTokenHash],
+			);
 
-		const refreshTokenRow = rows[0];
-		if (!refreshTokenRow) {
-			return null;
+			const refreshTokenRow = rows[0];
+			if (!refreshTokenRow) {
+				return { session: null, clearCookies: false };
+			}
+
+			if (isRefreshTokenExpired(refreshTokenRow.expires_at)) {
+				await connection.query("DELETE FROM refresh_tokens WHERE id = ?", [
+					refreshTokenRow.id,
+				]);
+				return { session: null, clearCookies: true };
+			}
+
+			if (refreshTokenRow.context_binding !== contextBinding) {
+				return { session: null, clearCookies: false };
+			}
+
+			const user = await selectUserById(connection, refreshTokenRow.user_id);
+			if (!user?.password) {
+				await connection.query("DELETE FROM refresh_tokens WHERE id = ?", [
+					refreshTokenRow.id,
+				]);
+				return { session: null, clearCookies: true };
+			}
+
+			await connection.query("DELETE FROM refresh_tokens WHERE id = ?", [
+				refreshTokenRow.id,
+			]);
+
+			const nextRefreshToken = createOpaqueToken();
+			const nextRefreshTokenHash = hashRefreshToken(nextRefreshToken);
+			const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000);
+			await insertRefreshToken(
+				connection,
+				refreshTokenRow.user_id,
+				nextRefreshTokenHash,
+				contextBinding,
+				expiresAt,
+			);
+
+			return {
+				clearCookies: false,
+				session: {
+					accessToken: await signAccessToken(
+						refreshTokenRow.user_id,
+						user.password,
+					),
+					refreshToken: nextRefreshToken,
+					user: mapUser(user),
+				},
+			};
+		},
+	);
+
+	if (!result.session) {
+		if (result.clearCookies) {
+			clearRefreshTokenCookies();
 		}
-
-		if (isRefreshTokenExpired(refreshTokenRow.expires_at)) {
-			await connection.query('DELETE FROM refresh_tokens WHERE id = ?', [refreshTokenRow.id]);
-			return null;
-		}
-
-		if (refreshTokenRow.context_binding !== contextBinding) {
-			return null;
-		}
-
-		const user = await selectUserById(connection, refreshTokenRow.user_id);
-		if (!user?.password) {
-			await connection.query('DELETE FROM refresh_tokens WHERE id = ?', [refreshTokenRow.id]);
-			return null;
-		}
-
-		await connection.query('DELETE FROM refresh_tokens WHERE id = ?', [refreshTokenRow.id]);
-
-		const nextRefreshToken = createOpaqueToken();
-		const nextRefreshTokenHash = hashRefreshToken(nextRefreshToken);
-		const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000);
-		await insertRefreshToken(
-			connection,
-			refreshTokenRow.user_id,
-			nextRefreshTokenHash,
-			contextBinding,
-			expiresAt
-		);
-
-		return {
-			accessToken: await signAccessToken(refreshTokenRow.user_id, user.password),
-			refreshToken: nextRefreshToken,
-			user: mapUser(user)
-		};
-	});
-
-	if (!result) {
-		clearRefreshTokenCookies();
 		return null;
 	}
 
-	setRefreshTokenCookie(result.refreshToken);
+	setRefreshTokenCookie(result.session.refreshToken);
 	return {
-		accessToken: result.accessToken,
-		user: result.user
+		accessToken: result.session.accessToken,
+		user: result.session.user,
 	};
 }
 
 export async function clearSession() {
 	const refreshToken = getRefreshTokenFromCookies();
 	if (refreshToken) {
-		await getPool().query<ResultSetHeader>('DELETE FROM refresh_tokens WHERE token_hash = ?', [
-			hashRefreshToken(refreshToken)
-		]);
+		await getPool().query<ResultSetHeader>(
+			"DELETE FROM refresh_tokens WHERE token_hash = ?",
+			[hashRefreshToken(refreshToken)],
+		);
 	}
 
 	clearRefreshTokenCookies();
 }
 
 export async function revokeRefreshTokensForUser(userId: string) {
-	await getPool().query<ResultSetHeader>('DELETE FROM refresh_tokens WHERE user_id = ?', [userId]);
+	await getPool().query<ResultSetHeader>(
+		"DELETE FROM refresh_tokens WHERE user_id = ?",
+		[userId],
+	);
 }
 
-export async function login(email: string, password: string): Promise<AuthenticatedLoginResult> {
+export async function login(
+	email: string,
+	password: string,
+): Promise<AuthenticatedLoginResult> {
 	const [user] = await retryRead(() =>
 		selectUsers(getPool(), {
 			select: {
@@ -446,27 +503,27 @@ export async function login(email: string, password: string): Promise<Authentica
 				role: true,
 				password: true,
 				student_id: true,
-				lecturer_id: true
+				lecturer_id: true,
 			},
-			where: [['email', '=', email]]
-		})
+			where: [["email", "=", email]],
+		}),
 	);
 	if (!user?.password) {
-		throw error(401, 'Email atau password salah');
+		throw error(401, "Email atau password salah");
 	}
 	const valid = await verify(user.password, password);
 	if (!valid) {
-		throw error(401, 'Email atau password salah');
+		throw error(401, "Email atau password salah");
 	}
 	return {
 		user: mapUser(user),
-		passwordHash: user.password
+		passwordHash: user.password,
 	};
 }
 
 export async function loginAndSetSession(
 	email: string,
-	password: string
+	password: string,
 ): Promise<{ user: User; accessToken: string }> {
 	const connection = await getConnection();
 
@@ -478,18 +535,18 @@ export async function loginAndSetSession(
 				role: true,
 				password: true,
 				student_id: true,
-				lecturer_id: true
+				lecturer_id: true,
 			},
-			where: [['email', '=', email]]
+			where: [["email", "=", email]],
 		});
 
 		if (!user?.id || !user.password) {
-			throw error(401, 'Email atau password salah');
+			throw error(401, "Email atau password salah");
 		}
 
 		const valid = await verify(user.password, password);
 		if (!valid) {
-			throw error(401, 'Email atau password salah');
+			throw error(401, "Email atau password salah");
 		}
 
 		const refreshToken = createOpaqueToken();
@@ -500,10 +557,16 @@ export async function loginAndSetSession(
 		await connection.beginTransaction();
 		try {
 			await connection.query(
-				'DELETE FROM refresh_tokens WHERE user_id = ? AND context_binding = ?',
-				[user.id, contextBinding]
+				"DELETE FROM refresh_tokens WHERE user_id = ? AND context_binding = ?",
+				[user.id, contextBinding],
 			);
-			await insertRefreshToken(connection, user.id, refreshTokenHash, contextBinding, expiresAt);
+			await insertRefreshToken(
+				connection,
+				user.id,
+				refreshTokenHash,
+				contextBinding,
+				expiresAt,
+			);
 			await connection.commit();
 		} catch (err) {
 			await connection.rollback();
@@ -514,7 +577,7 @@ export async function loginAndSetSession(
 
 		return {
 			user: mapUser(user),
-			accessToken: await signAccessToken(user.id, user.password)
+			accessToken: await signAccessToken(user.id, user.password),
 		};
 	} finally {
 		connection.release();

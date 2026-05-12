@@ -96,6 +96,17 @@
 		onPagePrevious: () => void;
 		onPageNext: () => void;
 	} = $props();
+
+	let detailMobileOpen = $state(false);
+
+	function openDetailPane(action?: () => void) {
+		detailMobileOpen = true;
+		action?.();
+	}
+
+	function closeDetailPane() {
+		detailMobileOpen = false;
+	}
 </script>
 
 <div class="workspace-shell">
@@ -122,13 +133,13 @@
 					<Button variant="ghost" size="sm" class="ghost-button" onclick={onClearSelection}
 						>Batal</Button
 					>
-					<Button variant="ghost" size="sm" class="ghost-button" onclick={onOpenBulkRole}
+					<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onOpenBulkRole)}
 						>Ubah peran</Button
 					>
-					<Button variant="ghost" size="sm" class="ghost-button" onclick={onOpenBulkPassword}
+					<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onOpenBulkPassword)}
 						>Reset password</Button
 					>
-					<Button variant="destructive" size="sm" class="danger-button" onclick={onOpenBulkDelete}
+					<Button variant="destructive" size="sm" class="danger-button" onclick={() => openDetailPane(onOpenBulkDelete)}
 						>Hapus</Button
 					>
 				</div>
@@ -164,7 +175,7 @@
 						tabindex="0"
 						class="row-content"
 						onkeydown={handleKeyboardClick}
-						onclick={() => onPickUser(item)}
+						onclick={() => openDetailPane(() => onPickUser(item))}
 					>
 						<div>
 							<strong>{item.email}</strong>
@@ -221,18 +232,22 @@
 			onNext={onPageNext}
 		/>
 	</section>
-	<section class="workspace-detail">
+	{#if detailMobileOpen}
+		<button class="detail-slide-backdrop" type="button" aria-label="Tutup detail" onclick={closeDetailPane}></button>
+	{/if}
+	<section class="workspace-detail detail-slide-over" class:mobile-open={detailMobileOpen}>
 		<div class="pane-head compact">
 			<div>
 				<h3>{selectedUser ? selectedUser.email : 'Pilih akun'}</h3>
 			</div>
+			<button class="detail-slide-close" type="button" onclick={closeDetailPane}>Tutup</button>
 			<div class="detail-actions">
 				{#if editorView === 'users'}
 					<Button variant="ghost" size="sm" class="ghost-button" onclick={onStopEditing}
 						>Tutup form</Button
 					>
 				{:else if selectedUser}
-					<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginEdit}
+					<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onBeginEdit)}
 						>Ubah akun</Button
 					>
 				{/if}

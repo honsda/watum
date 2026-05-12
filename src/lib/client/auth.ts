@@ -1,9 +1,10 @@
-import { browser } from '$app/environment';
+import { browser } from "$app/environment";
 
-const REFRESH_ENDPOINT_PATH = '/auth/refresh';
+const REFRESH_ENDPOINT_PATH = "/auth/refresh";
 const PROACTIVE_REFRESH_INTERVAL_MS = 4 * 60 * 1000; // 4 minutes
 const REFRESH_UNAVAILABLE_COOLDOWN_MS = 30 * 1000; // 30 seconds
-const AUTH_FETCH_PATCH = Symbol.for('watum.authFetchPatch');
+const REFRESH_ROTATION_RETRY_DELAY_MS = 250;
+const AUTH_FETCH_PATCH = Symbol.for("watum.authFetchPatch");
 
 let accessToken: string | null = null;
 let refreshPromise: Promise<string | null> | null = null;
@@ -26,7 +27,10 @@ function resolveUrl(input: RequestInfo | URL) {
 }
 
 function isRefreshRequest(url: URL) {
-	return url.origin === window.location.origin && url.pathname === REFRESH_ENDPOINT_PATH;
+	return (
+		url.origin === window.location.origin &&
+		url.pathname === REFRESH_ENDPOINT_PATH
+	);
 }
 
 function shouldAttachAccessToken(url: URL) {
@@ -35,19 +39,31 @@ function shouldAttachAccessToken(url: URL) {
 
 function buildAuthorizedRequest(baseRequest: Request, token: string) {
 	const headers = new Headers(baseRequest.headers);
-	headers.set('authorization', `Bearer ${token}`);
+	headers.set("authorization", `Bearer ${token}`);
 
 	return new Request(baseRequest, { headers });
 }
 
-async function requestNewAccessToken() {
-	const response = await baseFetch(REFRESH_ENDPOINT_PATH, {
-		method: 'POST',
-		credentials: 'same-origin',
+function delay(ms: number) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function fetchRefreshSession() {
+	return baseFetch(REFRESH_ENDPOINT_PATH, {
+		method: "POST",
+		credentials: "same-origin",
 		headers: {
-			accept: 'application/json'
-		}
+			accept: "application/json",
+		},
 	});
+}
+
+async function requestNewAccessToken() {
+	let response = await fetchRefreshSession();
+	if (response.status === 204) {
+		await delay(REFRESH_ROTATION_RETRY_DELAY_MS);
+		response = await fetchRefreshSession();
+	}
 
 	if (response.status === 204) {
 		accessToken = null;
@@ -64,7 +80,8 @@ async function requestNewAccessToken() {
 	}
 
 	const payload = (await response.json()) as { accessToken?: string };
-	accessToken = typeof payload.accessToken === 'string' ? payload.accessToken : null;
+	accessToken =
+		typeof payload.accessToken === "string" ? payload.accessToken : null;
 	refreshUnavailable = accessToken == null;
 	if (refreshUnavailable) {
 		refreshUnavailableAt = Date.now();
@@ -92,7 +109,10 @@ export async function ensureAccessToken(force = false) {
 		return accessToken;
 	}
 
-	if (refreshUnavailable && Date.now() - refreshUnavailableAt < REFRESH_UNAVAILABLE_COOLDOWN_MS) {
+	if (
+		refreshUnavailable &&
+		Date.now() - refreshUnavailableAt < REFRESH_UNAVAILABLE_COOLDOWN_MS
+	) {
 		return null;
 	}
 
@@ -121,7 +141,10 @@ function scheduleProactiveRefresh() {
 function handleVisibilityChange() {
 	if (!browser || document.hidden) return;
 	// When user returns to the tab, allow one retry if refresh was previously unavailable
-	if (refreshUnavailable && Date.now() - refreshUnavailableAt >= REFRESH_UNAVAILABLE_COOLDOWN_MS) {
+	if (
+		refreshUnavailable &&
+		Date.now() - refreshUnavailableAt >= REFRESH_UNAVAILABLE_COOLDOWN_MS
+	) {
 		refreshUnavailable = false;
 	}
 	// Proactively refresh if we don't have a token
@@ -136,14 +159,16 @@ function installAuthFetch() {
 	}
 
 	fetchInstalled = true;
-	const currentFetch = window.fetch as typeof window.fetch & { [AUTH_FETCH_PATCH]?: boolean };
+	const currentFetch = window.fetch as typeof window.fetch & {
+		[AUTH_FETCH_PATCH]?: boolean;
+	};
 	if (currentFetch[AUTH_FETCH_PATCH]) {
 		baseFetch = currentFetch.bind(window);
 		return;
 	}
 	baseFetch = currentFetch.bind(window);
 
-	document.addEventListener('visibilitychange', handleVisibilityChange);
+	document.addEventListener("visibilitychange", handleVisibilityChange);
 
 	const wrappedFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = resolveUrl(input);
@@ -151,8 +176,11 @@ function installAuthFetch() {
 			return baseFetch(input, init);
 		}
 
-		const baseRequest = input instanceof Request ? input : new Request(input, init);
-		const existingAuthorization = new Headers(baseRequest.headers).has('authorization');
+		const baseRequest =
+			input instanceof Request ? input : new Request(input, init);
+		const existingAuthorization = new Headers(baseRequest.headers).has(
+			"authorization",
+		);
 
 		let token = existingAuthorization ? null : accessToken;
 		if (!existingAuthorization && !token) {
@@ -173,7 +201,9 @@ function installAuthFetch() {
 			return response;
 		}
 
-		response = await baseFetch(buildAuthorizedRequest(baseRequest.clone(), refreshedToken));
+		response = await baseFetch(
+			buildAuthorizedRequest(baseRequest.clone(), refreshedToken),
+		);
 		return response;
 	};
 

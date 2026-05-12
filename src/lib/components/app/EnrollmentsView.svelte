@@ -48,7 +48,7 @@
 	type ConflictSummaryMap = Record<string, string>;
 	let {
 		currentRole,
-		state = $bindable<EnrollmentsViewState>({
+		state: viewState = $bindable<EnrollmentsViewState>({
 			enrollmentSearch: '',
 			scheduleDayFilter: '',
 			scheduleCourseFilter: '',
@@ -201,6 +201,16 @@
 			policyRequestsOpen && requestCourses.length && requestEnrollmentEnhance
 		)
 	);
+	let detailMobileOpen = $state(false);
+
+	function openDetailPane(action?: () => void) {
+		detailMobileOpen = true;
+		action?.();
+	}
+
+	function closeDetailPane() {
+		detailMobileOpen = false;
+	}
 </script>
 
 <div class="workspace-shell">
@@ -214,17 +224,24 @@
 					size="sm"
 					class="primary-button"
 					disabled={!studentCanRequestEnrollment}
-					onclick={() => onStartRequest?.()}>Ajukan mata kuliah</Button
+					onclick={() => openDetailPane(() => onStartRequest?.())}>Ajukan mata kuliah</Button
+				>
+			{:else if currentRole === 'ADMIN'}
+				<Button
+					variant="ghost"
+					size="sm"
+					class="ghost-button"
+					onclick={() => openDetailPane(() => onShowPolicySettings?.())}>Pengaturan</Button
 				>
 			{/if}
 		</div>
 		<label class="search-box"
 			><Search size={16} /><input
-				bind:value={state.enrollmentSearch}
+				bind:value={viewState.enrollmentSearch}
 				oninput={onSearchInput}
 				aria-label="Cari KRS aktif"
 				placeholder="Cari mahasiswa, mata kuliah, atau ruang"
-			/>{#if state.enrollmentSearch}<button
+			/>{#if viewState.enrollmentSearch}<button
 					type="button"
 					class="search-clear"
 					onclick={onClearSearch}><X size={14} /></button
@@ -233,7 +250,7 @@
 		<div class="editor-grid schedule-filter-grid list-filter-grid">
 			<label>
 				<span>Hari</span>
-				<select bind:value={state.scheduleDayFilter} onchange={onDayChange}>
+				<select bind:value={viewState.scheduleDayFilter} onchange={onDayChange}>
 					<option value="">Semua hari</option>
 					{#each days as day (day)}
 						<option value={day}>{DAY_LABELS[day]}</option>
@@ -242,7 +259,7 @@
 			</label>
 			<label>
 				<span>Mata kuliah</span>
-				<select bind:value={state.scheduleCourseFilter} onchange={onCourseFilterChange}>
+				<select bind:value={viewState.scheduleCourseFilter} onchange={onCourseFilterChange}>
 					<option value="">Semua mata kuliah</option>
 					{#each requestCourses as item (item.id)}
 						<option value={item.id}>{item.name}</option>
@@ -251,7 +268,7 @@
 			</label>
 			<label>
 				<span>Dosen</span>
-				<select bind:value={state.scheduleLecturerFilter} onchange={onDayChange}>
+				<select bind:value={viewState.scheduleLecturerFilter} onchange={onDayChange}>
 					<option value="">Semua Dosen</option>
 					{#each lecturers as item (item.id)}
 						<option value={item.id}>{item.name}</option>
@@ -260,7 +277,7 @@
 			</label>
 			<label>
 				<span>Semester</span>
-				<select bind:value={state.scheduleSemesterFilter} onchange={onSemesterFilterChange}>
+				<select bind:value={viewState.scheduleSemesterFilter} onchange={onSemesterFilterChange}>
 					<option value="">Semua semester</option>
 					{#each scheduleSemesterOptions as item (item)}
 						<option value={item}>{item}</option>
@@ -269,7 +286,7 @@
 			</label>
 			<label>
 				<span>Tahun akademik</span>
-				<select bind:value={state.scheduleAcademicYearFilter} onchange={onAcademicYearFilterChange}>
+				<select bind:value={viewState.scheduleAcademicYearFilter} onchange={onAcademicYearFilterChange}>
 					<option value="">Semua tahun</option>
 					{#each scheduleAcademicYearOptions as item (item)}
 						<option value={item}>{item}</option>
@@ -296,10 +313,10 @@
 				<div class="bulk-actions">
 					<Button variant="ghost" size="sm" class="ghost-button" onclick={onBulkClear}>Batal</Button
 					>
-					<Button variant="ghost" size="sm" class="ghost-button" onclick={onOpenBulkEdit}
+					<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onOpenBulkEdit)}
 						>Ubah</Button
 					>
-					<Button variant="destructive" size="sm" class="danger-button" onclick={onOpenBulkDelete}
+					<Button variant="destructive" size="sm" class="danger-button" onclick={() => openDetailPane(onOpenBulkDelete)}
 						>Hapus</Button
 					>
 				</div>
@@ -340,7 +357,7 @@
 						tabindex="0"
 						class="row-content"
 						onkeydown={handleKeyboardClick}
-						onclick={() => onPickEnrollment(item)}
+						onclick={() => openDetailPane(() => onPickEnrollment(item))}
 					>
 						<div>
 							<span
@@ -413,7 +430,10 @@
 			onNext={onPageNext}
 		/>
 	</section>
-	<section class="workspace-detail">
+	{#if detailMobileOpen}
+		<button class="detail-slide-backdrop" type="button" aria-label="Tutup detail" onclick={closeDetailPane}></button>
+	{/if}
+	<section class="workspace-detail detail-slide-over" class:mobile-open={detailMobileOpen}>
 		<div class="pane-head compact">
 			<div>
 				<h3>
@@ -426,6 +446,7 @@
 								: 'Pilih satu KRS'}
 				</h3>
 			</div>
+			<button class="detail-slide-close" type="button" onclick={closeDetailPane}>Tutup</button>
 			{#if selectedEnrollment && editorView !== 'enrollments-bulk'}
 				<div class="detail-actions">
 					{#if currentRole === 'ADMIN'}

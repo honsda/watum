@@ -140,6 +140,16 @@
 	}
 
 	const canManage = $derived(currentRole === 'ADMIN');
+	let detailMobileOpen = $state(false);
+
+	function openDetailPane(action?: () => void) {
+		detailMobileOpen = true;
+		action?.();
+	}
+
+	function closeDetailPane() {
+		detailMobileOpen = false;
+	}
 </script>
 
 <div class="workspace-shell">
@@ -149,7 +159,7 @@
 				<h3>Daftar Dosen</h3>
 			</div>
 			{#if canManage}
-				<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginCreate}
+				<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onBeginCreate)}
 					>Tambah</Button
 				>
 			{/if}
@@ -170,10 +180,10 @@
 				<div class="bulk-actions">
 					<Button variant="ghost" size="sm" class="ghost-button" onclick={onBulkClear}>Batal</Button
 					>
-					<Button variant="ghost" size="sm" class="ghost-button" onclick={onOpenBulkEdit}
+					<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onOpenBulkEdit)}
 						>Ubah</Button
 					>
-					<Button variant="destructive" size="sm" class="danger-button" onclick={onOpenBulkDelete}
+					<Button variant="destructive" size="sm" class="danger-button" onclick={() => openDetailPane(onOpenBulkDelete)}
 						>Hapus</Button
 					>
 				</div>
@@ -212,7 +222,7 @@
 						tabindex="0"
 						class="row-content"
 						onkeydown={handleKeyboardClick}
-						onclick={() => onPickLecturer(item)}
+						onclick={() => openDetailPane(() => onPickLecturer(item))}
 					>
 						<div>
 							<span
@@ -243,7 +253,10 @@
 			onNext={onPageNext}
 		/>
 	</section>
-	<section class="workspace-detail">
+	{#if detailMobileOpen}
+		<button class="detail-slide-backdrop" type="button" aria-label="Tutup detail" onclick={closeDetailPane}></button>
+	{/if}
+	<section class="workspace-detail detail-slide-over" class:mobile-open={detailMobileOpen}>
 		<div class="pane-head compact">
 			<div>
 				<h3>
@@ -256,6 +269,7 @@
 								: 'Pilih satu Dosen'}
 				</h3>
 			</div>
+			<button class="detail-slide-close" type="button" onclick={closeDetailPane}>Tutup</button>
 			{#if canManage}
 				<div class="detail-actions">
 					{#if editorView === 'lecturers'}
@@ -263,7 +277,7 @@
 							>Tutup form</Button
 						>
 					{:else if selectedLecturer}
-						<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginEdit}
+						<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onBeginEdit)}
 							>Edit</Button
 						>
 					{/if}

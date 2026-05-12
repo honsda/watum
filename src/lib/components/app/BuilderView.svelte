@@ -677,6 +677,17 @@
 		if (builderMode === 'approve') return approveEnrollmentForm().fields;
 		return selectedEnrollmentId ? updateEnrollmentForm().fields : createEnrollmentForm().fields;
 	}
+
+	let detailMobileOpen = $state(false);
+
+	function openDetailPane(action?: () => void) {
+		detailMobileOpen = true;
+		action?.();
+	}
+
+	function closeDetailPane() {
+		detailMobileOpen = false;
+	}
 </script>
 
 <div class={className}>
@@ -685,7 +696,7 @@
 			<div>
 				<h3>{builderTaskMode ? 'Jadwal terkait' : 'Jadwal aktif'}</h3>
 			</div>
-			<Button variant="ghost" size="sm" class="ghost-button" onclick={onClearSelection}
+			<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onClearSelection)}
 				>Tambah jadwal</Button
 			>
 		</div>
@@ -1127,7 +1138,7 @@
 					class:conflict={Boolean(scheduleCard?.hasConflict)}
 					class="list-row"
 					style={conflictToneVariables(scheduleCard?.conflictTone ?? null)}
-					onclick={() => onPickEnrollment(item)}
+					onclick={() => openDetailPane(() => onPickEnrollment(item))}
 				>
 					<div>
 						<span
@@ -1192,7 +1203,10 @@
 		/>
 	</section>
 
-	<section class="workspace-detail builder-detail">
+	{#if detailMobileOpen}
+		<button class="detail-slide-backdrop" type="button" aria-label="Tutup detail" onclick={closeDetailPane}></button>
+	{/if}
+	<section class="workspace-detail builder-detail detail-slide-over" class:mobile-open={detailMobileOpen}>
 		<div class="pane-head compact">
 			<div>
 				<h3>{builderTitle}</h3>
@@ -1210,6 +1224,7 @@
 					{/if}
 				{/if}
 			</div>
+			<button class="detail-slide-close" type="button" onclick={closeDetailPane}>Tutup</button>
 			{#if selectedEnrollmentId && builderMode === 'edit'}
 				<Button
 					variant="destructive"

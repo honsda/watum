@@ -28,7 +28,7 @@
 	};
 
 	let {
-		state = $bindable<CalendarViewState>({
+		state: viewState = $bindable<CalendarViewState>({
 			enrollmentSearch: '',
 			scheduleDayFilter: '',
 			scheduleCourseFilter: '',
@@ -133,11 +133,11 @@
 	);
 	const advancedFilterCount = $derived(
 		[
-			state.scheduleCourseFilter,
-			state.scheduleRoomFilter,
-			state.scheduleLecturerFilter,
-			state.scheduleSemesterFilter,
-			state.scheduleAcademicYearFilter
+			viewState.scheduleCourseFilter,
+			viewState.scheduleRoomFilter,
+			viewState.scheduleLecturerFilter,
+			viewState.scheduleSemesterFilter,
+			viewState.scheduleAcademicYearFilter
 		].filter(Boolean).length
 	);
 	const searchPlaceholder = $derived(
@@ -162,6 +162,32 @@
 		if (!details) return null;
 		return `${details.count} jadwal • Ruang: ${details.rooms} • Dosen: ${details.lecturers}`;
 	}
+
+	let detailMobileOpen = $state(false);
+	let lastDetailScheduleId = $state<string | null>(null);
+
+	function openDetailPane(action?: () => void) {
+		detailMobileOpen = true;
+		action?.();
+	}
+
+	function closeDetailPane() {
+		detailMobileOpen = false;
+	}
+
+	$effect(() => {
+		const nextDetailScheduleId = calendarDetailSchedule?.id ?? null;
+		if (!nextDetailScheduleId) {
+			lastDetailScheduleId = null;
+			detailMobileOpen = false;
+			return;
+		}
+
+		if (nextDetailScheduleId !== lastDetailScheduleId) {
+			lastDetailScheduleId = nextDetailScheduleId;
+			detailMobileOpen = true;
+		}
+	});
 </script>
 
 <div class="calendar-layout">
@@ -181,7 +207,7 @@
 					<div class="search-box compact">
 						<Search size={16} />
 						<input
-							bind:value={state.enrollmentSearch}
+							bind:value={viewState.enrollmentSearch}
 							aria-label="Cari jadwal kalender"
 							placeholder={searchPlaceholder}
 							oninput={() => queueCollectionRefresh('enrollments')}
@@ -191,7 +217,7 @@
 				<label>
 					<span>Hari</span>
 					<select
-						bind:value={state.scheduleDayFilter}
+						bind:value={viewState.scheduleDayFilter}
 						onchange={() => queueCollectionRefresh('enrollments', 0)}
 					>
 						<option value="">Semua hari</option>
@@ -213,7 +239,7 @@
 					<label>
 						<span>Mata kuliah</span>
 						<select
-							bind:value={state.scheduleCourseFilter}
+							bind:value={viewState.scheduleCourseFilter}
 							onchange={() => queueCollectionRefresh('enrollments', 0)}
 						>
 							<option value="">Semua mata kuliah</option>
@@ -228,7 +254,7 @@
 							class="combobox-wrap"
 							onfocusout={(e) => {
 								if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-									state.scheduleRoomFilterOpen = false;
+									viewState.scheduleRoomFilterOpen = false;
 								}
 							}}
 						>
@@ -236,23 +262,23 @@
 								type="text"
 								class="combobox-input"
 								placeholder="Cari ruang filter..."
-								value={state.scheduleRoomFilter
+								value={viewState.scheduleRoomFilter
 									? selectedScheduleRoomFilterLabel
-									: state.scheduleRoomFilterSearch}
+									: viewState.scheduleRoomFilterSearch}
 								oninput={(e) => {
-									state.scheduleRoomFilterSearch = (e.currentTarget as HTMLInputElement).value;
-									if (state.scheduleRoomFilter) {
-										state.scheduleRoomFilter = '';
+									viewState.scheduleRoomFilterSearch = (e.currentTarget as HTMLInputElement).value;
+									if (viewState.scheduleRoomFilter) {
+										viewState.scheduleRoomFilter = '';
 										queueCollectionRefresh('enrollments', 0);
 									}
 									queueScheduleRoomFilterRefresh();
-									state.scheduleRoomFilterOpen = true;
+									viewState.scheduleRoomFilterOpen = true;
 								}}
 								onfocus={(e) => {
-									if (state.scheduleRoomFilter) {
+									if (viewState.scheduleRoomFilter) {
 										(e.currentTarget as HTMLInputElement).select();
 									}
-									state.scheduleRoomFilterOpen = true;
+									viewState.scheduleRoomFilterOpen = true;
 									if (!scheduleRoomFilterOptions.length) {
 										queueScheduleRoomFilterRefresh(0);
 									}
@@ -260,21 +286,21 @@
 							/>
 							{#if scheduleRoomFilterIssue}
 								<p class="combobox-error">{scheduleRoomFilterIssue}</p>
-							{:else if state.scheduleRoomFilterOpen && scheduleRoomFilterLoading && !scheduleRoomFilterOptions.length}
+							{:else if viewState.scheduleRoomFilterOpen && scheduleRoomFilterLoading && !scheduleRoomFilterOptions.length}
 								<p class="combobox-empty">Memuat ruang kelas...</p>
-							{:else if state.scheduleRoomFilterOpen}
+							{:else if viewState.scheduleRoomFilterOpen}
 								<div class="combobox-dropdown" role="listbox">
 									<button
 										type="button"
 										role="option"
-										aria-selected={!state.scheduleRoomFilter}
+										aria-selected={!viewState.scheduleRoomFilter}
 										class="combobox-option"
-										class:active={!state.scheduleRoomFilter}
+										class:active={!viewState.scheduleRoomFilter}
 										onmousedown={(e) => {
 											e.preventDefault();
-											state.scheduleRoomFilter = '';
-											state.scheduleRoomFilterSearch = '';
-											state.scheduleRoomFilterOpen = false;
+											viewState.scheduleRoomFilter = '';
+											viewState.scheduleRoomFilterSearch = '';
+											viewState.scheduleRoomFilterOpen = false;
 											queueCollectionRefresh('enrollments', 0);
 										}}
 									>
@@ -285,14 +311,14 @@
 										<button
 											type="button"
 											role="option"
-											aria-selected={state.scheduleRoomFilter === item.id}
+											aria-selected={viewState.scheduleRoomFilter === item.id}
 											class="combobox-option"
-											class:active={state.scheduleRoomFilter === item.id}
+											class:active={viewState.scheduleRoomFilter === item.id}
 											onmousedown={(e) => {
 												e.preventDefault();
-												state.scheduleRoomFilter = item.id ?? '';
-												state.scheduleRoomFilterSearch = '';
-												state.scheduleRoomFilterOpen = false;
+												viewState.scheduleRoomFilter = item.id ?? '';
+												viewState.scheduleRoomFilterSearch = '';
+												viewState.scheduleRoomFilterOpen = false;
 												queueCollectionRefresh('enrollments', 0);
 											}}
 										>
@@ -330,7 +356,7 @@
 					<label>
 						<span>Dosen</span>
 						<select
-							bind:value={state.scheduleLecturerFilter}
+							bind:value={viewState.scheduleLecturerFilter}
 							onchange={() => queueCollectionRefresh('enrollments', 0)}
 						>
 							<option value="">Semua Dosen</option>
@@ -342,7 +368,7 @@
 					<label>
 						<span>Semester</span>
 						<select
-							bind:value={state.scheduleSemesterFilter}
+							bind:value={viewState.scheduleSemesterFilter}
 							onchange={() => queueCollectionRefresh('enrollments', 0)}
 						>
 							<option value="">Semua semester</option>
@@ -354,7 +380,7 @@
 					<label>
 						<span>Tahun akademik</span>
 						<select
-							bind:value={state.scheduleAcademicYearFilter}
+							bind:value={viewState.scheduleAcademicYearFilter}
 							onchange={() => queueCollectionRefresh('enrollments', 0)}
 						>
 							<option value="">Semua tahun</option>
@@ -386,12 +412,12 @@
 			<div class="calendar-conflict-toolbar">
 				<div class="calendar-conflict-toolbar-head">
 					<strong>{calendarConflictLegend.length} grup bentrok</strong>
-					{#if state.selectedConflictGroupId}
+					{#if viewState.selectedConflictGroupId}
 						<Button
 							class="ghost-button"
 							variant="ghost"
 							size="sm"
-							onclick={() => (state.selectedConflictGroupId = null)}
+							onclick={() => (viewState.selectedConflictGroupId = null)}
 						>
 							Lihat semua
 						</Button>
@@ -403,7 +429,7 @@
 							type="button"
 							class={`calendar-conflict-chip ${group.selected ? 'selected' : ''}`}
 							style={conflictToneVariables(group.tone)}
-							onclick={() => toggleConflictGroup(group.id, group.representative)}
+							onclick={() => openDetailPane(() => toggleConflictGroup(group.id, group.representative))}
 						>
 							<span class="calendar-conflict-chip-dot"></span>
 							<span class="calendar-conflict-chip-copy">
@@ -451,8 +477,12 @@
 		{/if}
 	</section>
 
+	{#if detailMobileOpen}
+		<button class="detail-slide-backdrop" type="button" aria-label="Tutup detail" onclick={closeDetailPane}></button>
+	{/if}
 	<section
-		class="detail-card"
+		class="detail-card detail-slide-over"
+		class:mobile-open={detailMobileOpen}
 		class:calendar-conflict={calendarDetailSchedule?.hasConflict}
 		style={conflictToneVariables(calendarDetailSchedule?.conflictTone ?? null)}
 	>
@@ -479,6 +509,7 @@
 						</p>
 					{/if}
 				</div>
+				<button class="detail-slide-close" type="button" onclick={closeDetailPane}>Tutup</button>
 				{#if currentRole !== 'STUDENT'}
 					<Button
 						class="ghost-button"

@@ -13,7 +13,9 @@ select {
 
 .rail-backdrop,
 .rail-toggle,
-.rail-close {
+.rail-close,
+.detail-slide-backdrop,
+.detail-slide-close {
 	display: none;
 	align-items: center;
 	justify-content: center;
@@ -417,6 +419,7 @@ select {
 .schedule-filter-search {
 	display: grid;
 	gap: 0.45rem;
+	min-inline-size: min(100%, 18rem);
 }
 
 .schedule-filter-summary {
@@ -436,13 +439,15 @@ select {
 
 .filter-bar {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 0.6rem;
 	align-items: end;
 	padding: 0 0 0.35rem;
 }
 
 .filter-bar .grow {
-	flex: 1 1 0;
+	flex: 1 1 18rem;
+	min-inline-size: min(100%, 18rem);
 }
 
 .filter-select {
@@ -2139,6 +2144,7 @@ select {
 .search-box {
 	grid-template-columns: auto 1fr auto;
 	align-items: center;
+	min-inline-size: min(100%, 17rem);
 	padding: 0.7rem 0.85rem;
 	border: 1px solid var(--color-border);
 	border-radius: 0.8rem;
@@ -2176,7 +2182,7 @@ select {
 }
 
 .search-box input {
-	min-width: 0;
+	min-inline-size: min(100%, 10rem);
 	padding: 0;
 	border: 0;
 	background: transparent;
@@ -2549,6 +2555,74 @@ select {
 	.advanced-schedule-filter-grid,
 	.list-filter-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.detail-slide-backdrop {
+		display: block;
+		position: fixed;
+		inset: 0;
+		z-index: 48;
+		border: 0;
+		background: color-mix(in oklch, var(--color-shadow) 28%, transparent 72%);
+		backdrop-filter: blur(2px);
+	}
+
+	.workspace-detail.detail-slide-over,
+	.calendar-layout .detail-card.detail-slide-over {
+		position: fixed;
+		inset: 0.5rem 0.5rem 0.5rem auto;
+		z-index: 49;
+		width: min(31rem, calc(100vw - 1rem));
+		max-width: calc(100vw - 1rem);
+		max-height: none;
+		padding: 0.95rem;
+		overflow: auto;
+		overscroll-behavior: contain;
+		box-shadow: 0 20px 48px color-mix(in oklch, var(--color-shadow) 24%, transparent 76%);
+		transform: translateX(calc(100% + 1rem));
+		visibility: hidden;
+		pointer-events: none;
+		transition:
+			transform 180ms ease,
+			visibility 180ms ease;
+	}
+
+	.workspace-detail.detail-slide-over.mobile-open,
+	.calendar-layout .detail-card.detail-slide-over.mobile-open {
+		transform: translateX(0);
+		visibility: visible;
+		pointer-events: auto;
+	}
+
+	.workspace-detail.detail-slide-over .pane-head,
+	.calendar-layout .detail-card.detail-slide-over .pane-head {
+		grid-template-columns: minmax(0, 1fr) auto !important;
+	}
+
+	.workspace-detail.detail-slide-over .detail-actions,
+	.calendar-layout .detail-card.detail-slide-over .detail-actions {
+		grid-column: 1 / -1;
+	}
+
+	.detail-slide-close {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 2.75rem;
+		height: 2.4rem;
+		padding: 0 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.7rem;
+		background: var(--color-surface);
+		color: inherit;
+		font: inherit;
+		font-size: 0.86rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.detail-slide-close:hover {
+		background: color-mix(in oklch, var(--color-surface) 78%, var(--color-border) 22%);
 	}
 }
 
