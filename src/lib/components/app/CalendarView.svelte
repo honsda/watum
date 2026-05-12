@@ -75,6 +75,7 @@
 		navigateToEntity,
 		openBuilderForSchedule,
 		focusSchedule,
+		clearCalendarSelection,
 		handleKeyboardClick,
 		studentStudyProgramId = null
 	}: {
@@ -122,6 +123,7 @@
 		navigateToEntity: (view: ViewId, id: string | null | undefined, name?: string) => void;
 		openBuilderForSchedule: (card: ScheduleCard) => void;
 		focusSchedule: (card: ScheduleCard) => void;
+		clearCalendarSelection: () => void;
 		handleKeyboardClick: (event: KeyboardEvent) => void;
 		studentStudyProgramId?: string | null;
 	} = $props();
@@ -173,6 +175,11 @@
 
 	function closeDetailPane() {
 		detailMobileOpen = false;
+	}
+
+	function closeDetailPaneAndClearSelection() {
+		closeDetailPane();
+		clearCalendarSelection();
 	}
 
 	$effect(() => {
@@ -478,7 +485,12 @@
 	</section>
 
 	{#if detailMobileOpen}
-		<button class="detail-slide-backdrop" type="button" aria-label="Tutup detail" onclick={closeDetailPane}></button>
+		<button
+			class="detail-slide-backdrop"
+			type="button"
+			aria-label="Tutup detail"
+			onclick={closeDetailPaneAndClearSelection}
+		></button>
 	{/if}
 	<section
 		class="detail-card detail-slide-over"

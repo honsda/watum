@@ -520,6 +520,11 @@
 		selectedConflictGroupId = card.hasConflict ? (card.conflictGroupId ?? card.id) : null;
 	}
 
+	function clearCalendarSelection() {
+		selectedScheduleId = null;
+		selectedConflictGroupId = null;
+	}
+
 	function toggleConflictGroup(groupId: string, representative: ScheduleCard) {
 		if (selectedConflictGroupId === groupId) {
 			selectedConflictGroupId = null;
@@ -531,6 +536,9 @@
 
 	function activateView(view: ViewId) {
 		if (!allowedViews.includes(view)) return;
+		if (view === 'calendar' && activeView !== 'calendar') {
+			clearCalendarSelection();
+		}
 		activeView = view;
 		mobileRailOpen = false;
 	}
@@ -1664,7 +1672,7 @@
 			const mod = await import('@event-calendar/core');
 			await import('@event-calendar/core/index.css');
 			EventCalendarComponent = mod.Calendar;
-			calendarPlugins = [mod.TimeGrid];
+			calendarPlugins = [mod.TimeGrid, mod.Interaction];
 		})();
 
 		try {
@@ -2723,8 +2731,9 @@
 			.filter((group): group is NonNullable<typeof group> => Boolean(group))
 	);
 	const effectiveSelectedScheduleId = $derived.by(() => {
+		if (!selectedScheduleId) return null;
+
 		if (
-			selectedScheduleId &&
 			calendarScheduleCards.some((item) => item.id === selectedScheduleId)
 		) {
 			return selectedScheduleId;
@@ -2738,7 +2747,7 @@
 			if (matchingSession) return matchingSession.id;
 		}
 
-		return calendarScheduleCards[0]?.id ?? null;
+		return null;
 	});
 	const calendarOptions = $derived.by(() => ({
 		view: 'timeGridWeek',
@@ -2866,6 +2875,9 @@
 		eventClick(info: { event: { extendedProps: { card?: ScheduleCard } } }) {
 			const card = info.event.extendedProps.card;
 			focusSchedule(card);
+		},
+		dateClick() {
+			clearCalendarSelection();
 		}
 	}));
 	const selectedSchedule = $derived(
@@ -4689,6 +4701,7 @@
 			navigateToEntity,
 			openBuilderForSchedule,
 			focusSchedule,
+			clearCalendarSelection,
 			handleKeyboardClick,
 			studentStudyProgramId: currentUser.current?.studyProgramId ?? null
 		})
