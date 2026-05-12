@@ -69,7 +69,9 @@
 .search-box {
 	grid-template-columns: auto 1fr auto;
 	align-items: center;
+	box-sizing: border-box;
 	min-inline-size: min(100%, 17rem);
+	max-inline-size: 100%;
 	padding: 0.7rem 0.85rem;
 	border: 1px solid var(--color-border);
 	border-radius: 0.8rem;
@@ -492,5 +494,14 @@
 	.workspace-list,
 	.workspace-detail {
 		padding: 0.95rem;
+	}
+
+	.search-box {
+		inline-size: 100%;
+		min-inline-size: 0;
+	}
+
+	.search-box input {
+		min-inline-size: 0;
 	}
 }

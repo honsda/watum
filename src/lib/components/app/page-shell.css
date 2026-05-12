@@ -442,6 +442,8 @@ select {
 	flex-wrap: wrap;
 	gap: 0.6rem;
 	align-items: end;
+	min-inline-size: 0;
+	max-inline-size: 100%;
 	padding: 0 0 0.35rem;
 }
 
@@ -453,7 +455,8 @@ select {
 .filter-select {
 	display: grid;
 	gap: 0.35rem;
-	min-width: 8rem;
+	min-inline-size: min(100%, 8rem);
+	max-inline-size: 100%;
 }
 
 .filter-select span {
@@ -2144,7 +2147,9 @@ select {
 .search-box {
 	grid-template-columns: auto 1fr auto;
 	align-items: center;
+	box-sizing: border-box;
 	min-inline-size: min(100%, 17rem);
+	max-inline-size: 100%;
 	padding: 0.7rem 0.85rem;
 	border: 1px solid var(--color-border);
 	border-radius: 0.8rem;
@@ -2854,6 +2859,22 @@ select {
 	.filter-bar {
 		flex-direction: column;
 		align-items: stretch;
+	}
+
+	.schedule-filter-search,
+	.filter-bar .grow,
+	.filter-select,
+	.search-box {
+		inline-size: 100%;
+		min-inline-size: 0;
+	}
+
+	.filter-bar .grow {
+		flex: 0 1 auto;
+	}
+
+	.search-box input {
+		min-inline-size: 0;
 	}
 }
 
