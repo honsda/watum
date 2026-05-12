@@ -180,6 +180,7 @@
 
 .user-row {
 	display: grid;
+	position: relative;
 	grid-template-columns: auto minmax(0, 1fr) auto;
 	gap: 0.5rem;
 	align-items: start;
@@ -202,6 +203,8 @@
 
 .user-row .row-checkbox {
 	display: flex;
+	position: relative;
+	z-index: 1;
 	align-items: flex-start;
 	padding-top: 0.2rem;
 }
@@ -219,6 +222,18 @@
 	text-align: left;
 	cursor: pointer;
 	font: inherit;
+}
+
+.user-row .row-content::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	cursor: pointer;
+}
+
+.user-row .row-content > * {
+	position: relative;
+	z-index: 1;
 }
 
 .user-row .row-content:focus-visible {
