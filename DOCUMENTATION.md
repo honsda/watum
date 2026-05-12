@@ -3,8 +3,8 @@
 > **Project**: Watum Academic Scheduling System  
 > **Stack**: SvelteKit 2.x, MariaDB (MySQL), Bun, TypeScript, mdsvex  
 > **Scale**: Live development dataset currently contains ~2.75M enrollments; stress seeding targets 10M total rows  
-> **Last Updated**: 2026-04-30
-> **Recent Changes**: Extracted major app views from `+page.svelte`, moved shared shell styling into imported CSS, added mdsvex docs routes, and refreshed documentation to match the current database snapshot and stress-seed behavior
+> **Last Updated**: 2026-05-12
+> **Recent Changes**: Added student enrollment request/approval workflow documentation, refreshed migration inventory through `027_practicum_schema_a4.sql`, documented the singleton enrollment policy table, and clarified MariaDB-safe trigger assignments for denormalized audit columns
 
 ---
 
@@ -77,21 +77,22 @@ The system is architected to scale to **10 million enrollment rows** while maint
 
 ### 3.1 Current Database Snapshot
 
-The database uses **InnoDB** with **utf8mb4** collation. The table below reflects the **current configured development/stress database** queried on **2026-04-30**.
+The database uses **InnoDB** with **utf8mb4** collation. The table below reflects the configured development/stress database snapshot, with the current schema shape documented from `026_consolidated_schema_snapshot.sql` and follow-up practicum schema notes.
 
-| Table            | Current rows | Purpose                 |
-| ---------------- | ------------ | ----------------------- |
-| `faculties`      | 3            | Faculty/Fakultas        |
-| `study_programs` | 6            | Study programs/Prodi    |
-| `students`       | 1,250,354    | Students                |
-| `lecturers`      | 251          | Lecturers               |
-| `courses`        | 48           | Courses/Mata Kuliah     |
-| `class_rooms`    | 71,636       | Classrooms              |
-| `schedules`      | 2,750,777    | Schedule slots          |
-| `enrollments`    | 2,750,777    | KRS enrollments         |
-| `grades`         | 1,925,533    | Grades/Nilai            |
-| `users`          | 1,250,606    | Authentication accounts |
-| `refresh_tokens` | 13           | Active sessions         |
+| Table               | Current rows | Purpose                 |
+| ------------------- | ------------ | ----------------------- |
+| `faculties`         | 3            | Faculty/Fakultas        |
+| `study_programs`    | 6            | Study programs/Prodi    |
+| `students`          | 1,250,354    | Students                |
+| `lecturers`         | 251          | Lecturers               |
+| `courses`           | 48           | Courses/Mata Kuliah     |
+| `class_rooms`       | 71,636       | Classrooms              |
+| `schedules`         | 2,750,777    | Schedule slots          |
+| `enrollments`       | 2,750,777    | KRS enrollments         |
+| `enrollment_policy` | 1            | Enrollment request gate |
+| `grades`            | 1,925,533    | Grades/Nilai            |
+| `users`             | 1,250,606    | Authentication accounts |
+| `refresh_tokens`    | 13           | Active sessions         |
 
 These counts are **environment-specific**. They should not be treated as fixed schema-level constants. In particular, the stress seed script derives row counts from formulas and optional overrides, so a different target or override value will produce a different snapshot.
 
@@ -99,6 +100,7 @@ These counts are **environment-specific**. They should not be treated as fixed s
 
 - **Manual IDs**: `faculties`, `study_programs`, `students`, `lecturers`, `courses` — use human-readable IDs (e.g., `FTI`, `TI`, `stress-mhs-0000001`)
 - **UUID IDs**: `class_rooms`, `schedules`, `enrollments`, `grades`, `users` — use `DEFAULT (UUID())`
+- **Singleton IDs**: `enrollment_policy` uses a fixed row (`id = 1`) for the current request window
 
 ### 3.3 Denormalization Strategy
 
@@ -185,8 +187,11 @@ The normalized foreign keys remain authoritative:
 - `enrollments.schedule_id`
 - `courses.lecturer_id`
 - `schedules.day/start_time/end_time`
+- `enrollments.status`
 
-The denormalized columns are derived cache columns. They must never be edited directly by application code during normal writes. All normal create/update paths write the normalized fields, then triggers populate derived fields.
+The denormalized columns are derived cache columns. They must never be edited directly by application code during normal writes. All normal create/update paths write the normalized fields and status, then triggers populate derived fields.
+
+`PENDING` enrollment requests are intentionally unscheduled: `class_room_id` and `schedule_id` can be `NULL` until approval. The current consolidated trigger definitions use sentinel audit values for missing room/schedule references and set schedule day/time fields to `NULL`; approval replaces those values by inserting a schedule and updating the enrollment to `APPROVED` in one transaction.
 
 If triggers are disabled or changed incorrectly, drift can happen. The most important drift case is `enrollments.lecturer_audit_sk` becoming different from `courses.lecturer_audit_sk`. That causes false lecturer conflicts or missed lecturer conflicts. The operational repair query is:
 
@@ -255,7 +260,8 @@ GROUP BY
   schedule_start_time,
   schedule_end_time
 HAVING MIN(course_id) != MAX(course_id);  -- student/lecturer: distinct courses
--- or HAVING COUNT(*) > 1;                -- room: any double-booking
+-- or HAVING MIN(schedule_audit_sk) != MAX(schedule_audit_sk);
+-- room: different schedule rows competing for one room window
 ```
 
 The scan can be index-only because all columns required for filtering, grouping, and conflict seed construction are inside the secondary index. MariaDB does not need to repeatedly visit the clustered primary row for each enrollment.
@@ -285,21 +291,24 @@ This trade-off is appropriate because conflict reads are frequent and user-facin
 
 ### 3.5 Triggers
 
-Five triggers maintain denormalized data:
+Seven triggers maintain denormalized data and grade totals:
 
-| Trigger                     | Table       | Event         | Purpose                                                             |
-| --------------------------- | ----------- | ------------- | ------------------------------------------------------------------- |
-| `courses_bi_audit_keys`     | courses     | BEFORE INSERT | Set `lecturer_audit_sk` from lecturers table                        |
-| `courses_bu_audit_keys`     | courses     | BEFORE UPDATE | Conditionally update `lecturer_audit_sk` when `lecturer_id` changes |
-| `courses_au_audit_keys`     | courses     | AFTER UPDATE  | Cascade `lecturer_audit_sk` to enrollments when it changes          |
-| `enrollments_bi_audit_keys` | enrollments | BEFORE INSERT | Populate all 9 denormalized columns                                 |
-| `enrollments_bu_audit_keys` | enrollments | BEFORE UPDATE | Conditionally update denormalized columns only when FKs change      |
+| Trigger                     | Table       | Event         | Purpose                                                                  |
+| --------------------------- | ----------- | ------------- | ------------------------------------------------------------------------ |
+| `courses_bi_audit_keys`     | courses     | BEFORE INSERT | Set `lecturer_audit_sk` from lecturers table                             |
+| `courses_bu_audit_keys`     | courses     | BEFORE UPDATE | Conditionally update `lecturer_audit_sk` when `lecturer_id` changes      |
+| `courses_au_audit_keys`     | courses     | AFTER UPDATE  | Cascade `lecturer_audit_sk` to enrollments when it changes               |
+| `enrollments_bi_audit_keys` | enrollments | BEFORE INSERT | Populate denormalized audit/time columns, including pending-row defaults |
+| `enrollments_bu_audit_keys` | enrollments | BEFORE UPDATE | Conditionally update denormalized columns only when source fields change |
+| `grades_bi_compute_total`   | grades      | BEFORE INSERT | Compute weighted `total_score` from assignment/midterm/final scores      |
+| `grades_bu_compute_total`   | grades      | BEFORE UPDATE | Recompute `total_score` only when component scores change                |
 
 **Trigger optimization history**:
 
 - Original: Unconditional `SELECT` subqueries on every enrollment update (~8 queries × 69k rows = 552k queries per course lecturer change)
 - Optimized: `IF NOT (OLD.x <=> NEW.x)` guards skip subqueries when FKs haven't changed
-- `courses_au_audit_keys`: Uses `WHERE lecturer_audit_sk <> NEW.lecturer_audit_sk` to skip already-correct rows
+- `courses_au_audit_keys`: Uses `WHERE NOT (lecturer_audit_sk <=> NEW.lecturer_audit_sk)` to skip already-correct rows with null-safe comparison
+- Latest MariaDB-safe trigger definitions select multi-column lookups into declared local variables first, then assign `NEW.*` fields with `SET`; this avoids selecting directly into pseudo-record fields.
 
 #### 3.5.1 Trigger Responsibilities
 
@@ -307,15 +316,17 @@ Triggers maintain the invariant that every enrollment row has conflict-ready aud
 
 The trigger responsibilities are split by table:
 
-| Trigger                     | Responsibility                                                                                                   |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `courses_bi_audit_keys`     | On course insert, copy the lecturer's `audit_sk` into `courses.lecturer_audit_sk`                                |
-| `courses_bu_audit_keys`     | On course update, refresh `courses.lecturer_audit_sk` only if `lecturer_id` changed                              |
-| `courses_au_audit_keys`     | After a course lecturer audit key changes, cascade the new `lecturer_audit_sk` to affected enrollments           |
-| `enrollments_bi_audit_keys` | On enrollment insert, populate student/course/lecturer/classroom/schedule audit keys and derived schedule fields |
-| `enrollments_bu_audit_keys` | On enrollment update, update only the audit/derived fields whose source foreign key or source value changed      |
+| Trigger                     | Responsibility                                                                                                      |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `courses_bi_audit_keys`     | On course insert, copy the lecturer's `audit_sk` into `courses.lecturer_audit_sk`                                   |
+| `courses_bu_audit_keys`     | On course update, refresh `courses.lecturer_audit_sk` only if `lecturer_id` changed                                 |
+| `courses_au_audit_keys`     | After a course lecturer audit key changes, cascade the new `lecturer_audit_sk` to affected enrollments              |
+| `enrollments_bi_audit_keys` | On enrollment insert, populate student/course/lecturer audit keys and schedule fields; pending rows keep null times |
+| `enrollments_bu_audit_keys` | On enrollment update, update only the audit/derived fields whose source foreign key or source value changed         |
+| `grades_bi_compute_total`   | On grade insert, compute the weighted total score                                                                   |
+| `grades_bu_compute_total`   | On grade update, recompute the weighted total only when score components changed                                    |
 
-The important rule is **source-column conditionality**. Updating an enrollment's grade-related or unrelated fields should not execute subqueries against students, courses, classrooms, and schedules. Only changes to `student_id`, `course_id`, `class_room_id`, `schedule_id`, `academic_year`, or `semester` should recalculate matching denormalized columns.
+The important rule is **source-column conditionality**. Updating an enrollment's status, grade-related fields, or unrelated fields should not execute subqueries against students, courses, classrooms, and schedules. Only changes to `student_id`, `course_id`, `class_room_id`, `schedule_id`, `academic_year`, or `semester` should recalculate matching denormalized columns.
 
 #### 3.5.2 Null-Safe Change Checks
 
@@ -341,23 +352,35 @@ IF NOT (OLD.student_id <=> NEW.student_id) THEN
 END IF;
 
 IF NOT (OLD.course_id <=> NEW.course_id) THEN
-  SET NEW.course_audit_sk = (
-    SELECT c.audit_sk FROM courses c WHERE c.id = NEW.course_id LIMIT 1
-  );
-  SET NEW.lecturer_audit_sk = (
-    SELECT c.lecturer_audit_sk FROM courses c WHERE c.id = NEW.course_id LIMIT 1
-  );
+  SELECT c.audit_sk, c.lecturer_audit_sk
+    INTO v_course_audit_sk, v_lecturer_audit_sk
+    FROM courses c WHERE c.id = NEW.course_id LIMIT 1;
+  SET NEW.course_audit_sk = v_course_audit_sk;
+  SET NEW.lecturer_audit_sk = v_lecturer_audit_sk;
 END IF;
 
 IF NOT (OLD.schedule_id <=> NEW.schedule_id) THEN
-  SET NEW.schedule_audit_sk = (...);
-  SET NEW.schedule_day = (...);
-  SET NEW.schedule_start_time = (...);
-  SET NEW.schedule_end_time = (...);
+  IF NEW.schedule_id IS NOT NULL THEN
+    SELECT sch.audit_sk, sch.day, sch.start_time, sch.end_time
+      INTO v_schedule_audit_sk, v_schedule_day,
+           v_schedule_start_time, v_schedule_end_time
+      FROM schedules sch WHERE sch.id = NEW.schedule_id LIMIT 1;
+    SET NEW.schedule_audit_sk = v_schedule_audit_sk;
+    SET NEW.schedule_day = v_schedule_day;
+    SET NEW.schedule_start_time = v_schedule_start_time;
+    SET NEW.schedule_end_time = v_schedule_end_time;
+  ELSE
+    SET NEW.schedule_audit_sk = 0;
+    SET NEW.schedule_day = NULL;
+    SET NEW.schedule_start_time = NULL;
+    SET NEW.schedule_end_time = NULL;
+  END IF;
 END IF;
 ```
 
 This matters most when a bulk operation touches many enrollment rows but does not change their scheduling foreign keys. The old trigger performed all lookup subqueries for every row. The optimized trigger performs zero lookup subqueries for unchanged dependencies.
+
+The multi-column lookups deliberately use declared local variables (`v_course_audit_sk`, `v_schedule_day`, etc.) followed by `SET NEW.* = ...`. This is the portable MariaDB pattern used by both `018_optimize_triggers.sql` and the consolidated schema snapshot.
 
 #### 3.5.4 Course Lecturer Cascade Trigger
 
@@ -371,11 +394,11 @@ IF NOT (OLD.lecturer_audit_sk <=> NEW.lecturer_audit_sk) THEN
   SET lecturer_audit_sk = NEW.lecturer_audit_sk,
       course_audit_sk = NEW.audit_sk
   WHERE course_id = NEW.id
-    AND lecturer_audit_sk <> NEW.lecturer_audit_sk;
+    AND NOT (lecturer_audit_sk <=> NEW.lecturer_audit_sk);
 END IF;
 ```
 
-The outer `IF` prevents any enrollment update when the lecturer audit key did not change. The `WHERE lecturer_audit_sk <> NEW.lecturer_audit_sk` predicate prevents rewriting rows that are already correct.
+The outer `IF` prevents any enrollment update when the lecturer audit key did not change. The `WHERE NOT (lecturer_audit_sk <=> NEW.lecturer_audit_sk)` predicate prevents rewriting rows that are already correct while preserving null-safe behavior.
 
 This is critical because changing a lecturer for a heavily enrolled course can touch more than 100k enrollment rows. Every rewritten enrollment row also updates the three conflict indexes. Skipping already-correct rows directly reduces redo log writes, index maintenance, lock duration, and replication/binlog volume.
 
@@ -424,23 +447,29 @@ WHERE e.schedule_day <> s.day
 
 ### 3.6 Migrations
 
-22 migration files in `src/lib/server/migrations/`:
+27 migration files in `src/lib/server/migrations/`:
 
-| File                                       | Purpose                                                  |
-| ------------------------------------------ | -------------------------------------------------------- |
-| `001_schema.sql`                           | Base schema + indexes                                    |
-| `002_refresh_tokens.sql`                   | Session management                                       |
-| `003-003`                                  | Refresh token indexes                                    |
-| `004-009`                                  | Schedule overlap + large dataset indexes                 |
-| `010-011`                                  | Conflict audit integer keys                              |
-| `012`                                      | **Denormalized schedule columns + covering indexes**     |
-| `013-016`                                  | Index cleanup + fulltext search                          |
-| `017`                                      | Time column optimizations                                |
-| `018_optimize_triggers.sql`                | Conditional trigger guards                               |
-| `019_drop_courses_au_trigger.sql`          | Dropped cascade trigger (later restored)                 |
-| `020_recreate_courses_au_trigger.sql`      | Restored trigger with optimized query                    |
-| `021_grades_constraints.sql`               | Grade score CHECK constraints + total_score auto trigger |
-| `022_enrollment_course_lecturer_index.sql` | Composite index for lecturer cascade trigger performance |
+| File                                          | Purpose                                                                 |
+| --------------------------------------------- | ----------------------------------------------------------------------- |
+| `001_schema.sql`                              | Base schema + indexes                                                   |
+| `002_refresh_tokens.sql`                      | Session management                                                      |
+| `003_refresh_tokens_user_context_index.sql`   | Refresh token user/context lookup                                       |
+| `004-009`                                     | Schedule overlap, keyset pagination, and conflict scale indexes         |
+| `010-011`                                     | Conflict audit integer keys                                             |
+| `012_conflict_audit_denormalized.sql`         | Denormalized schedule columns + covering conflict indexes               |
+| `013-016`                                     | Index cleanup/restoration + fulltext search                             |
+| `017_time_columns.sql`                        | Time column optimizations                                               |
+| `018_covering_conflict_audit_indexes.sql`     | Covering conflict audit index refinement                                |
+| `018_optimize_triggers.sql`                   | Conditional trigger guards and local-variable assignments               |
+| `019_drop_courses_au_trigger.sql`             | Dropped cascade trigger (later restored)                                |
+| `020_recreate_courses_au_trigger.sql`         | Restored trigger with optimized query                                   |
+| `021_grades_constraints.sql`                  | Grade score CHECK constraints + total_score auto trigger                |
+| `022_enrollment_course_lecturer_index.sql`    | Composite index for lecturer cascade trigger performance                |
+| `023_enrollment_academic_year_uniqueness.sql` | Makes enrollment uniqueness term-aware with academic year               |
+| `024_enrollment_status.sql`                   | Adds `PENDING`/`APPROVED` enrollment status and nullable scheduling FKs |
+| `025_enrollment_policy.sql`                   | Adds singleton policy controlling student request window                |
+| `026_consolidated_schema_snapshot.sql`        | Fresh-install schema snapshot including current triggers                |
+| `027_practicum_schema_a4.sql`                 | Compact A4 practicum schema without auth/audit/tuning layers            |
 
 ---
 
@@ -564,11 +593,41 @@ Role access matrix:
 | `LECTURER` | All except `users`; read-only on students, faculties, studyPrograms                                                                         |
 | `STUDENT`  | dashboard, calendar, classrooms, courses, lecturers, enrollments, grades                                                                    |
 
+Students can create enrollment requests only for courses in their own study program and only when the singleton enrollment policy has requests open. Lecturers can approve or reject pending requests only for courses they teach; admins can manage all requests.
+
 ### 4.5 Non-Blocking UI Refreshes
 
 Form submissions use **optimistic UI updates** followed by fire-and-forget background refreshes. The enhance handler returns immediately after `submit()` resolves, closing the editor and showing success feedback. Collection refreshes (`refreshDependencies`) run in the background via `void` (unawaited). This keeps the loading spinner from blocking the UI while data reloads over the network.
 
-### 4.4 Global Loading Spinner
+### 4.6 Enrollment Request and Approval Workflow
+
+The enrollment module supports two enrollment states:
+
+| Status     | Meaning                                                                    |
+| ---------- | -------------------------------------------------------------------------- |
+| `PENDING`  | Student requested a course, but no classroom/schedule has been assigned    |
+| `APPROVED` | Request has been scheduled and participates in normal calendar/grade flows |
+
+The workflow is controlled by the singleton `enrollment_policy` row (`id = 1`):
+
+| Field                              | Purpose                                            |
+| ---------------------------------- | -------------------------------------------------- |
+| `semester`                         | Active request semester (`GANJIL` or `GENAP`)      |
+| `academic_year`                    | Active academic year, e.g. `2025/2026`             |
+| `student_enrollment_requests_open` | Boolean gate for student self-service KRS requests |
+
+Workflow:
+
+1. `getEnrollmentPolicy` reads or initializes the singleton policy row.
+2. `updateEnrollmentPolicy` lets admins set the active semester/year and open/close requests.
+3. `requestEnrollment` lets students create a `PENDING` enrollment for the active policy term.
+4. `cancelEnrollmentRequest` lets students delete their own pending request.
+5. `approveEnrollment` lets admins or owning lecturers assign room/time, insert a `schedules` row, and update the enrollment to `APPROVED` inside one transaction.
+6. `rejectEnrollment` deletes a pending request after authorization checks.
+
+The unique key `enrollments_student_course_term_key (student_id, course_id, semester, academic_year)` prevents duplicate requests or duplicate approved enrollments for the same course in the same term. Pending rows have no `class_room_id` or `schedule_id`; approval fills both values after room, student, and lecturer conflict checks pass.
+
+### 4.7 Global Loading Spinner
 
 A `fetch` interceptor tracks all remote requests:
 
@@ -630,7 +689,7 @@ Three resource conflict types are tracked:
 
 | Type         | Condition                                                                             |
 | ------------ | ------------------------------------------------------------------------------------- |
-| **Room**     | More than one distinct course uses the same room in the same schedule window          |
+| **Room**     | More than one distinct schedule row uses the same room in the same schedule window    |
 | **Student**  | One student is enrolled in more than one distinct course in the same schedule window  |
 | **Lecturer** | One lecturer is assigned to more than one distinct course in the same schedule window |
 
@@ -732,7 +791,7 @@ GROUP BY
   e.schedule_start_time,
   e.schedule_end_time
 HAVING MIN(e.course_id) != MAX(e.course_id);  -- for student/lecturer
--- or HAVING COUNT(*) > 1;                     -- for room
+-- or HAVING MIN(e.schedule_audit_sk) != MAX(e.schedule_audit_sk);  -- for room
 ```
 
 The result is a list of compact conflict seeds. A seed contains only:
@@ -751,26 +810,26 @@ It does not yet contain names or full enrollment rows. This keeps the expensive 
 
 The `HAVING` predicate differs by conflict type because the semantics of "double-booking" depend on the resource:
 
-| Conflict type | HAVING predicate                   | Rationale                                                                                                            |
-| ------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Room          | `COUNT(*) > 1`                     | Any room double-booking is a real conflict — even two sections of the same course consuming the same physical space  |
-| Student       | `MIN(course_id) != MAX(course_id)` | A student enrolled twice in the same course at the same slot is data corruption, not a real conflict                 |
-| Lecturer      | `MIN(course_id) != MAX(course_id)` | A lecturer teaching one course with hundreds of students is normal; only multiple distinct courses indicate conflict |
+| Conflict type | HAVING predicate                                   | Rationale                                                                                                                    |
+| ------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Room          | `MIN(schedule_audit_sk) != MAX(schedule_audit_sk)` | Multiple students in one scheduled class share the same schedule row; only different schedule rows indicate room competition |
+| Student       | `MIN(course_id) != MAX(course_id)`                 | A student enrolled twice in the same course at the same slot is data corruption, not a real conflict                         |
+| Lecturer      | `MIN(course_id) != MAX(course_id)`                 | A lecturer teaching one course with hundreds of students is normal; only multiple distinct courses indicate conflict         |
 
 Student and lecturer conflicts previously used `COUNT(DISTINCT course_id) > 1`, which builds a hash table to track distinct values per group. The `MIN/MAX` approach avoids this overhead — for non-NULL values it is semantically equivalent but significantly faster on large groups because it only tracks two values instead of all distinct values.
 
-Without this split, lecturer audit would report thousands of false-positive "conflicts" per lecturer, because each course has hundreds of student enrollments, and `COUNT(*) > 1` would trigger for every populated time slot.
+Without this split, room and lecturer audits would report thousands of false-positive "conflicts": a normal scheduled class has many enrollment rows sharing one `schedule_audit_sk`, and a lecturer teaching one large course has hundreds of student enrollments in the same time slot.
 
 Examples:
 
-| Scenario                                                       | Room | Student | Lecturer | Reason                                              |
-| -------------------------------------------------------------- | ---- | ------- | -------- | --------------------------------------------------- |
-| 40 students in one course in room A at 08:00                   | No¹  | No      | No       | Single course; not a conflict for any resource      |
-| Course A and Course B both use room A at 08:00                 | Yes  | —       | —        | Two distinct courses competing for one room         |
-| Student S enrolled in Course A and Course B at 08:00           | —    | Yes     | —        | Same student has two distinct courses in same slot  |
-| Lecturer L teaches Course A and Course B at 08:00 in two rooms | —    | —       | Yes      | Same lecturer has two distinct teaching assignments |
+| Scenario                                                       | Room | Student | Lecturer | Reason                                                |
+| -------------------------------------------------------------- | ---- | ------- | -------- | ----------------------------------------------------- |
+| 40 students in one course in room A at 08:00                   | No   | No      | No       | Single schedule row and single course; not a conflict |
+| Course A and Course B both use room A at 08:00                 | Yes  | —       | —        | Two distinct courses competing for one room           |
+| Student S enrolled in Course A and Course B at 08:00           | —    | Yes     | —        | Same student has two distinct courses in same slot    |
+| Lecturer L teaches Course A and Course B at 08:00 in two rooms | —    | —       | Yes      | Same lecturer has two distinct teaching assignments   |
 
-¹ Room would only flag if the same room has 2+ separate enrollment rows pointing to the same time slot, which would mean two schedule rows competing for one room.
+Room conflicts are based on distinct `schedule_audit_sk` values, not raw enrollment-row counts. This prevents a normal class with many enrolled students from looking like a room conflict.
 
 #### 6.3.4 Parallel Audit Execution
 
@@ -1054,7 +1113,7 @@ Important assumptions:
 Current server audit semantics:
 
 - The server groups by **identical** denormalized schedule windows (same `start_time` + `end_time`).
-- Room conflicts use `HAVING COUNT(*) > 1` — any room double-booking is flagged.
+- Room conflicts use `HAVING MIN(schedule_audit_sk) != MAX(schedule_audit_sk)` — multiple students in one scheduled class are ignored, but different schedule rows in the same room/time are flagged.
 - Student/lecturer conflicts use `HAVING MIN(course_id) != MAX(course_id)` — multiple students in the same course at the same time slot is not flagged.
 - The audit runs **in parallel** per conflict type, with each query hitting a different covering index.
 - The audit cache TTL is 5 minutes; stale data is returned immediately while a background refresh runs.
@@ -1105,7 +1164,7 @@ GROUP BY
   schedule_day,
   schedule_start_time,
   schedule_end_time
-HAVING COUNT(*) > 1
+HAVING MIN(schedule_audit_sk) != MAX(schedule_audit_sk)
 ORDER BY members DESC
 LIMIT 20;
 ```
@@ -4081,7 +4140,7 @@ Adding TanStack Query now would duplicate concerns already handled by SvelteKit 
 ### Issue: Update course extremely slow (~20s)
 
 **Cause**: Trigger updating 104k enrollment rows × 3 indexes  
-**Fix**: Optimized trigger with `WHERE lecturer_audit_sk <> NEW.lecturer_audit_sk` to skip already-correct rows
+**Fix**: Optimized trigger with `WHERE NOT (lecturer_audit_sk <=> NEW.lecturer_audit_sk)` to skip already-correct rows with null-safe comparison
 
 ### Issue: UI lag when selecting schedule rows
 
