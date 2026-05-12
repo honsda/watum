@@ -146,7 +146,7 @@
 	<section class="workspace-list">
 		<div class="pane-head">
 			<div>
-				<h3>Daftar dosen</h3>
+				<h3>Daftar Dosen</h3>
 			</div>
 			{#if canManage}
 				<Button variant="ghost" size="sm" class="ghost-button" onclick={onBeginCreate}
@@ -158,15 +158,15 @@
 			><Search size={16} /><input
 				bind:value={lecturerSearch}
 				oninput={onSearchInput}
-				aria-label="Cari data dosen"
-				placeholder="Cari ID dosen, nama, atau email"
+				aria-label="Cari data Dosen"
+				placeholder="Cari ID Dosen, nama, atau email"
 			/>{#if lecturerSearch}<button type="button" class="search-clear" onclick={onClearSearch}
 					><X size={14} /></button
 				>{/if}</label
 		>
 		{#if canManage && bulkCount > 0}
 			<div class="bulk-bar">
-				<span class="bulk-count">{bulkCount} dosen dipilih</span>
+				<span class="bulk-count">{bulkCount} Dosen dipilih</span>
 				<div class="bulk-actions">
 					<Button variant="ghost" size="sm" class="ghost-button" onclick={onBulkClear}>Batal</Button
 					>
@@ -232,7 +232,7 @@
 			{/each}
 		</div>
 		<CollectionPagination
-			label="dosen"
+			label="Dosen"
 			pageNumber={collectionPagination.pageNumber}
 			canPrevious={collectionPagination.history.length > 0}
 			limit={collectionPagination.limit}
@@ -248,12 +248,12 @@
 			<div>
 				<h3>
 					{editorView === 'lecturers-bulk'
-						? 'Ubah massal dosen'
+						? 'Ubah massal Dosen'
 						: selectedLecturer
 							? selectedLecturer.name
 							: canManage
-								? 'Tambah dosen'
-								: 'Pilih satu dosen'}
+								? 'Tambah Dosen'
+								: 'Pilih satu Dosen'}
 				</h3>
 			</div>
 			{#if canManage}
@@ -292,7 +292,7 @@
 		{#if selectedLecturer && editorView !== 'lecturers' && editorView !== 'lecturers-bulk'}
 			<div class="detail-stack">
 				<div class="detail-lines">
-					<div><span>ID dosen</span><strong>{selectedLecturer.id}</strong></div>
+					<div><span>ID Dosen</span><strong>{selectedLecturer.id}</strong></div>
 					<div><span>Email</span><strong>{selectedLecturer.email}</strong></div>
 					<div><span>Telepon</span><strong>{selectedLecturer.phone || '-'}</strong></div>
 					<div><span>Alamat</span><strong>{selectedLecturer.address || '-'}</strong></div>
@@ -301,7 +301,7 @@
 					</div>
 				</div>
 				<p class="detail-hint">
-					Mode tinjau membantu Anda membaca konteks dosen sebelum membuka form edit.
+					Mode tinjau membantu Anda membaca konteks Dosen sebelum membuka form edit.
 				</p>
 			</div>
 		{:else if canManage && editorView === 'lecturers'}
@@ -316,7 +316,7 @@
 						value={lecturerDraft.id}
 					/>
 				{:else}
-					<p class="editor-note">ID dosen dibuat otomatis saat data disimpan.</p>
+					<p class="editor-note">ID Dosen dibuat otomatis saat data disimpan.</p>
 				{/if}
 				<label
 					><span>Nama</span><input
@@ -352,14 +352,14 @@
 				>
 				<div class="editor-submit">
 					<Button type="submit" class="primary-button"
-						>{selectedLecturerId ? 'Simpan perubahan' : 'Tambah dosen'}</Button
+						>{selectedLecturerId ? 'Simpan perubahan' : 'Tambah Dosen'}</Button
 					>
 				</div>
 			</form>
 		{:else if canManage && editorView === 'lecturers-bulk'}
 			<form class="editor-grid" {...bulkUpdateLecturersEnhance}>
 				<p class="editor-note">
-					Ubah data {bulkCount} dosen terpilih sekaligus. Kosongkan field yang tidak ingin diubah.
+					Ubah data {bulkCount} Dosen terpilih sekaligus. Kosongkan field yang tidak ingin diubah.
 				</p>
 				<input type="hidden" name="ids" value={[...bulkSelectedIds].join(',')} />
 				<label
@@ -404,13 +404,13 @@
 						type="submit"
 						class="primary-button"
 						disabled={(bulkUpdateLecturersForm().pending ?? 0) > 0}
-						>Simpan perubahan {bulkCount} dosen</Button
+						>Simpan perubahan {bulkCount} Dosen</Button
 					>
 				</div>
 			</form>
 		{:else}
 			<p class="empty-copy">
-				Pilih satu dosen untuk melihat detail, atau tambahkan dosen baru saat data pengampu berubah.
+				Pilih satu Dosen untuk melihat detail, atau tambahkan Dosen baru saat data pengampu berubah.
 			</p>
 		{/if}
 	</section>

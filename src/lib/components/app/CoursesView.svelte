@@ -144,7 +144,7 @@
 				bind:value={courseSearch}
 				oninput={onSearchInput}
 				aria-label="Cari data mata kuliah"
-				placeholder="Cari kode, nama, atau dosen pengampu"
+				placeholder="Cari kode, nama, atau Dosen pengampu"
 			/>{#if courseSearch}<button type="button" class="search-clear" onclick={onClearSearch}
 					><X size={14} /></button
 				>{/if}</label
@@ -345,7 +345,7 @@
 					<div><span>Peserta</span><strong>{selectedCourse.enrollment_count ?? 0}</strong></div>
 				</div>
 				<p class="detail-hint">
-					Gunakan mode tinjau untuk membaca beban kuliah dan relasi dosen sebelum membuka editor.
+					Gunakan mode tinjau untuk membaca beban kuliah dan relasi Dosen sebelum membuka editor.
 				</p>
 			</div>
 		{:else if canManage && editorView === 'courses'}
@@ -394,7 +394,7 @@
 				>
 				<label
 					><span>Dosen pengampu</span><select name="lecturerId" bind:value={courseDraft.lecturerId}
-						><option value="">Pilih dosen</option
+						><option value="">Pilih Dosen</option
 						>{#if courseDraft.lecturerId && !lecturers.some((item) => item.id === courseDraft.lecturerId)}<option
 								value={courseDraft.lecturerId}
 								>{selectedCourse?.lecturer_name ?? courseDraft.lecturerId}</option
@@ -410,11 +410,11 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								onNavigateToEntity('lecturers', courseDraft.lecturerId);
-							}}>Lihat dosen</span
+							}}>Lihat Dosen</span
 						>{/if}</label
 				>
 				{#if courseEditorBlocked}<p class="editor-note">
-						Program studi dan dosen harus tersedia sebelum mata kuliah bisa disimpan.
+						Program studi dan Dosen harus tersedia sebelum mata kuliah bisa disimpan.
 					</p>{/if}
 				<div class="editor-submit">
 					<Button type="submit" class="primary-button" disabled={courseEditorBlocked}
@@ -425,7 +425,7 @@
 		{:else if canManage && editorView === 'courses-bulk'}
 			<form class="editor-grid" {...bulkUpdateCoursesEnhance}>
 				<p class="editor-note">
-					Ubah SKS, prodi, dan dosen {bulkCount} mata kuliah terpilih sekaligus. Kosongkan field yang
+					Ubah SKS, prodi, dan Dosen {bulkCount} mata kuliah terpilih sekaligus. Kosongkan field yang
 					tidak ingin diubah.
 				</p>
 				<input type="hidden" name="ids" value={[...bulkSelectedIds].join(',')} />
@@ -460,7 +460,7 @@
 					><span>Dosen pengampu</span><select
 						name="lecturerId"
 						bind:value={bulkEditCourseLecturerId}
-						><option value="">Pilih dosen</option>{#each lecturers as item (item.id)}<option
+						><option value="">Pilih Dosen</option>{#each lecturers as item (item.id)}<option
 								value={item.id}>{item.name}</option
 							>{/each}</select
 					>{#if bulkEditCourseLecturerId}<span
@@ -471,7 +471,7 @@
 							onclick={(e) => {
 								e.stopPropagation();
 								onNavigateToEntity('lecturers', bulkEditCourseLecturerId);
-							}}>Lihat dosen</span
+							}}>Lihat Dosen</span
 						>{/if}</label
 				>
 				<div class="builder-inline-actions">

@@ -1487,7 +1487,7 @@
 			setHasMore: (value) => (scheduleLecturerFilterHasMore = value),
 			setNextCursor: (value) => (scheduleLecturerFilterNextCursor = value),
 			errorMessage,
-			issueFallback: 'Daftar dosen gagal dimuat.'
+			issueFallback: 'Daftar Dosen gagal dimuat.'
 		});
 	}
 
@@ -2792,7 +2792,7 @@
 			const card = info.event.extendedProps.card;
 			if (!card) return undefined;
 			const timeLabel = `${escapeHtml(card.startLabel)} - ${escapeHtml(card.endLabel)}`;
-			const studentCountLabel = `${card.studentCount} mhs`;
+			const studentCountLabel = `${card.studentCount} Mahasiswa`;
 			const escapedStudentCountLabel = escapeHtml(studentCountLabel);
 			const metaLabel = `${escapeHtml(card.room)} • ${escapeHtml(card.lecturer)} • ${escapedStudentCountLabel}`;
 
@@ -2988,7 +2988,7 @@
 			const details = card?.conflictGroupId ? conflictGroupDetailsById[card.conflictGroupId] : null;
 			if (details) {
 				summaries[id] =
-					`${details.count} jadwal • ruang: ${details.rooms} • dosen: ${details.lecturers}`;
+					`${details.count} jadwal • Ruang: ${details.rooms} • Dosen: ${details.lecturers}`;
 				continue;
 			}
 
@@ -3215,7 +3215,7 @@
 		roomPickerLookup.get(scheduleRoomFilter)?.name ?? 'Semua ruang'
 	);
 	const selectedScheduleLecturerFilterLabel = $derived(
-		scheduleLecturerFilterLookup.get(scheduleLecturerFilter)?.name ?? 'Semua dosen'
+		scheduleLecturerFilterLookup.get(scheduleLecturerFilter)?.name ?? 'Semua Dosen'
 	);
 	const draftTimeSummary = $derived.by(() => {
 		if (!timeStepReady) return 'Belum ditetapkan';
@@ -3918,7 +3918,7 @@
 		plan: () => cloneRefreshPlan(lecturerCourseUsersRefreshPlan),
 		after: () => stopEditing('lecturers'),
 		notify: reportSuccess,
-		message: 'Profil dosen berhasil diperbarui.'
+		message: 'Profil Dosen berhasil diperbarui.'
 	});
 	const createFacultyEnhance = buildCreateRefreshEnhancer({
 		createEnhancer,
@@ -4012,7 +4012,7 @@
 		plan: () => cloneRefreshPlan(enrollmentGradesRefreshPlan),
 		after: () => clearSelection('builder'),
 		notify: reportSuccess,
-		message: 'Pengajuan mata kuliah berhasil dikirim. Menunggu persetujuan dosen/admin.'
+		message: 'Pengajuan mata kuliah berhasil dikirim. Menunggu persetujuan Dosen/Admin.'
 	});
 	const approveEnrollmentEnhance = buildCreateRefreshEnhancer({
 		createEnhancer,
@@ -4976,9 +4976,9 @@
 			openBulkDelete: createBulkDeleteAction({
 				kind: 'bulk-lecturers',
 				bulkKey: 'lecturers',
-				noun: 'dosen',
+				noun: 'Dosen',
 				successMessage: 'Dosen terpilih berhasil dihapus.',
-				failureMessage: 'Gagal menghapus dosen terpilih.'
+				failureMessage: 'Gagal menghapus Dosen terpilih.'
 			}),
 			extras: {
 				filteredLecturers,

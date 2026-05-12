@@ -963,7 +963,7 @@
 						type="text"
 						role="combobox"
 						class="combobox-input"
-						placeholder="Cari dosen filter..."
+						placeholder="Cari Dosen filter..."
 						aria-expanded={filterState.scheduleLecturerFilterOpen}
 						aria-controls="schedule-lecturer-filter-listbox"
 						aria-autocomplete="list"
@@ -999,7 +999,7 @@
 					{#if scheduleLecturerFilterIssue}
 						<p class="combobox-error">{scheduleLecturerFilterIssue}</p>
 					{:else if filterState.scheduleLecturerFilterOpen && scheduleLecturerFilterLoading && !scheduleLecturerFilterOptions.length}
-						<p class="combobox-empty">Memuat dosen...</p>
+						<p class="combobox-empty">Memuat Dosen...</p>
 					{:else if filterState.scheduleLecturerFilterOpen}
 						<div id="schedule-lecturer-filter-listbox" class="combobox-dropdown" role="listbox">
 							<button
@@ -1016,8 +1016,8 @@
 								onfocus={() => (scheduleLecturerFilterActiveIndex = 0)}
 								onmouseover={() => (scheduleLecturerFilterActiveIndex = 0)}
 							>
-								<strong>Semua dosen</strong>
-								<span>Hapus filter dosen</span>
+								<strong>Semua Dosen</strong>
+								<span>Hapus filter Dosen</span>
 							</button>
 							{#each scheduleLecturerFilterOptions as item, index (item.id)}
 								<button

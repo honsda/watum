@@ -317,7 +317,7 @@
 					/></label
 				>
 				<label
-					><span>ID dosen terkait</span><input
+					><span>ID Dosen terkait</span><input
 						name="lecturerId"
 						bind:value={userDraft.lecturerId}
 					/></label

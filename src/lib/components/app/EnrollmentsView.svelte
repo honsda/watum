@@ -252,7 +252,7 @@
 			<label>
 				<span>Dosen</span>
 				<select bind:value={state.scheduleLecturerFilter} onchange={onDayChange}>
-					<option value="">Semua dosen</option>
+					<option value="">Semua Dosen</option>
 					{#each lecturers as item (item.id)}
 						<option value={item.id}>{item.name}</option>
 					{/each}

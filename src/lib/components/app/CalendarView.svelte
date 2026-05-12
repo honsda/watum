@@ -142,10 +142,10 @@
 	);
 	const searchPlaceholder = $derived(
 		currentRole === 'STUDENT'
-			? 'Cari mata kuliah, ruang, atau dosen'
+			? 'Cari mata kuliah, ruang, atau Dosen'
 			: currentRole === 'LECTURER'
 				? 'Cari kelas, mahasiswa, ruang, atau mata kuliah'
-				: 'Cari mahasiswa, mata kuliah, ruang, atau dosen'
+				: 'Cari Mahasiswa, mata kuliah, ruang, atau Dosen'
 	);
 	const calendarEmptyTitle = $derived(
 		currentRole === 'STUDENT' ? 'Belum ada jadwal minggu ini' : 'Tidak ada jadwal yang cocok'
@@ -333,7 +333,7 @@
 							bind:value={state.scheduleLecturerFilter}
 							onchange={() => queueCollectionRefresh('enrollments', 0)}
 						>
-							<option value="">Semua dosen</option>
+							<option value="">Semua Dosen</option>
 							{#each lecturers as item (item.id)}
 								<option value={item.id}>{item.name}</option>
 							{/each}
@@ -423,7 +423,7 @@
 			<section class="calendar-empty-state support-panel">
 				<h3>Terapkan filter jadwal terlebih dahulu</h3>
 				<p class="detail-hint">
-					Kalender penuh disembunyikan. Pilih mata kuliah, ruang, dosen, hari, semester, atau tahun
+					Kalender penuh disembunyikan. Pilih mata kuliah, ruang, Dosen, hari, semester, atau tahun
 					akademik untuk menampilkan jadwal yang ingin dilihat.
 				</p>
 			</section>
