@@ -382,6 +382,52 @@
 		);
 	}
 
+	function clearScheduleCardConflict(card: ScheduleCard): ScheduleCard {
+		if (!card.hasConflict && !card.conflictGroupId && card.conflictTone == null) return card;
+		return { ...card, hasConflict: false, conflictGroupId: null, conflictTone: null };
+	}
+
+	function scheduleSessionKey(card: ScheduleCard) {
+		return card.original.schedule_id
+			? `schedule:${card.original.schedule_id}`
+			: `enrollment:${card.id}`;
+	}
+
+	function mergeCalendarSessionCards(
+		cards: ScheduleCard[],
+		preferredConflictGroupId: string | null
+	) {
+		const sessions = new Map<string, ScheduleCard>();
+
+		for (const card of cards) {
+			const key = scheduleSessionKey(card);
+			const existing = sessions.get(key);
+			if (!existing) {
+				sessions.set(key, card);
+				continue;
+			}
+
+			const prefersCurrentConflictGroup =
+				preferredConflictGroupId && card.conflictGroupId === preferredConflictGroupId;
+			const shouldUseCurrent =
+				Boolean(prefersCurrentConflictGroup) || (!existing.hasConflict && card.hasConflict);
+			const base = shouldUseCurrent ? card : existing;
+			sessions.set(key, {
+				...base,
+				studentCount: Math.max(existing.studentCount, card.studentCount)
+			});
+		}
+
+		return [...sessions.values()];
+	}
+
+	function idsFingerprint(items: Array<{ id?: string | null }>) {
+		return items
+			.map((item) => item.id)
+			.filter(Boolean)
+			.join('|');
+	}
+
 	type ConflictAuditResult = Awaited<ReturnType<typeof getEnrollmentConflictAudit>>;
 	type ConflictAuditGroupResult = ConflictAuditResult['groups'][number];
 	type ConflictAuditMemberResult = ConflictAuditGroupResult['members'][number];
@@ -431,6 +477,7 @@
 			startMinutes,
 			endMinutes,
 			durationMinutes: Math.max(30, endMinutes - startMinutes),
+			studentCount: 1,
 			hasConflict: true,
 			conflictGroupId: groupId,
 			conflictTone: tone,
@@ -814,10 +861,12 @@
 	}
 
 	function upcomingScheduleRank(card: ScheduleCard, now = new Date()) {
-		if (card.original.status && card.original.status !== 'APPROVED') return Number.POSITIVE_INFINITY;
+		if (card.original.status && card.original.status !== 'APPROVED')
+			return Number.POSITIVE_INFINITY;
 		const { dayOfWeek } = getTimeComponents(now, timezone);
 		const currentDayIndex = dayOfWeek >= 1 && dayOfWeek <= DAY_ORDER.length ? dayOfWeek - 1 : 0;
-		const currentMinutes = dayOfWeek >= 1 && dayOfWeek <= DAY_ORDER.length ? toMinutes(now, timezone) : 0;
+		const currentMinutes =
+			dayOfWeek >= 1 && dayOfWeek <= DAY_ORDER.length ? toMinutes(now, timezone) : 0;
 		let dayDelta = DAY_ORDER.indexOf(card.day) - currentDayIndex;
 		if (dayDelta < 0 || (dayDelta === 0 && card.startMinutes < currentMinutes)) {
 			dayDelta += DAY_ORDER.length;
@@ -866,6 +915,7 @@
 	let collectionLoaded = $state<CollectionLoadedState>(createCollectionLoadedState());
 	let schedulePreviewLoaded = $state(false);
 	let conflictAudit = $state<Awaited<ReturnType<typeof getEnrollmentConflictAudit>> | null>(null);
+	let conflictAuditLoaded = $state(false);
 	let classRoomDashboardSummary = $state<RoomDashboardSummary | null>(null);
 	let classRoomDashboardMetrics = $state<{
 		items: RoomMetric[];
@@ -1595,6 +1645,7 @@
 		schedulePreview = { items: [], hasMore: false, loading: false };
 		schedulePreviewLoaded = false;
 		conflictAudit = null;
+		conflictAuditLoaded = false;
 		classRoomDashboardSummary = null;
 		classRoomDashboardMetrics = null;
 		classRoomDashboardPagination = emptyCollectionPaginationState();
@@ -1788,13 +1839,20 @@
 		const academicYear = scheduleAcademicYearFilter || scheduleAcademicYearOptions[0] || undefined;
 		const semester = scheduleSemesterFilter || scheduleSemesterOptions[0] || undefined;
 		const role = currentUser.current?.role as AppRole | undefined;
-		const scopedEnrollmentIds =
-			role === 'LECTURER'
-				? (activeView === 'builder' ? filteredBuilderEnrollments : filteredEnrollments)
-						.map((item) => item.id)
-						.filter((id): id is string => Boolean(id))
-						.slice(0, 500)
-				: [];
+		const auditEnrollmentSource =
+			role === 'STUDENT'
+				? []
+				: activeView === 'builder'
+					? filteredBuilderEnrollments
+					: activeView === 'enrollments'
+						? filteredEnrollments
+						: activeView === 'calendar'
+							? schedulePreview.items
+							: [];
+		const scopedEnrollmentIds = auditEnrollmentSource
+			.map((item) => item.id)
+			.filter((id): id is string => Boolean(id))
+			.slice(0, 500);
 		return {
 			academicYear,
 			semester,
@@ -1818,15 +1876,19 @@
 	async function refreshConflictAudit() {
 		if (!loadedForUserId) {
 			conflictAudit = null;
+			conflictAuditLoaded = false;
 			return;
 		}
 
+		conflictAuditLoaded = false;
 		try {
 			conflictAudit = await resolveRemoteQuery(
 				getEnrollmentConflictAudit(buildConflictAuditFilters())
 			);
+			conflictAuditLoaded = true;
 		} catch {
 			conflictAudit = null;
+			conflictAuditLoaded = false;
 		}
 	}
 
@@ -2357,7 +2419,10 @@
 		if (!userId || !['dashboard', 'calendar', 'builder', 'enrollments'].includes(view)) return;
 		if (!shouldLoadConflictAudit(view, role)) return;
 		if (view === 'enrollments' && !collectionLoaded.enrollments) return;
-		if (!['builder', 'enrollments'].includes(view) && (!schedulePreviewLoaded || schedulePreview.loading)) {
+		if (
+			!['builder', 'enrollments'].includes(view) &&
+			(!schedulePreviewLoaded || schedulePreview.loading)
+		) {
 			return;
 		}
 		const _deps = [
@@ -2368,9 +2433,12 @@
 			scheduleRoomFilter,
 			scheduleLecturerFilter,
 			schedulePreview.items.length,
-			enrollments.length
+			enrollments.length,
+			idsFingerprint(schedulePreview.items),
+			idsFingerprint(enrollments)
 		];
 		void _deps;
+		conflictAuditLoaded = false;
 		if (view === 'builder' && role === 'LECTURER') {
 			void refreshConflictAudit();
 			return;
@@ -2527,16 +2595,25 @@
 	);
 	const scheduleCards = $derived.by(() => {
 		const membership = conflictAuditMembershipByEnrollmentId;
-		if (!Object.keys(membership).length) {
+		const auditAuthoritative =
+			conflictAuditLoaded &&
+			shouldLoadConflictAudit(activeView, currentUser.current?.role as AppRole | undefined);
+
+		if (!auditAuthoritative && !Object.keys(membership).length) {
 			return localScheduleCards;
 		}
+
 		return localScheduleCards.map((card) => {
 			const match = membership[card.id];
+			if (!match && auditAuthoritative) {
+				return clearScheduleCardConflict(card);
+			}
+
 			return {
 				...card,
-				hasConflict: Boolean(match),
-				conflictGroupId: match?.groupId ?? null,
-				conflictTone: match?.tone ?? null
+				hasConflict: match ? true : card.hasConflict,
+				conflictGroupId: match?.groupId ?? card.conflictGroupId,
+				conflictTone: match?.tone ?? card.conflictTone
 			};
 		});
 	});
@@ -2545,6 +2622,9 @@
 		scheduleCards.filter(
 			(card) => scheduleFiltersMatch(card.original) && scheduleSearchMatches(card.original)
 		)
+	);
+	const calendarScheduleCards = $derived.by(() =>
+		mergeCalendarSessionCards(filteredScheduleCards, selectedConflictGroupId)
 	);
 	const calendarAnchorDate = $derived(createCalendarAnchorDate(calendarWeekOffset));
 	const calendarWeekLabel = $derived.by(() => {
@@ -2556,14 +2636,14 @@
 		});
 		return `${formatter.format(start)} - ${formatter.format(end)}`;
 	});
-	const calendarVisibleRange = $derived.by(() => rangeForScheduleCards(filteredScheduleCards));
+	const calendarVisibleRange = $derived.by(() => rangeForScheduleCards(calendarScheduleCards));
 	const calendarSessionCountByDay = $derived.by(() =>
 		Object.fromEntries(
-			DAY_ORDER.map((day) => [day, filteredScheduleCards.filter((card) => card.day === day).length])
+			DAY_ORDER.map((day) => [day, calendarScheduleCards.filter((card) => card.day === day).length])
 		)
 	);
 	const calendarEvents = $derived.by(() =>
-		filteredScheduleCards.map((card) => ({
+		calendarScheduleCards.map((card) => ({
 			id: card.id,
 			title: card.course,
 			start: dateForScheduleCard(card, card.startMinutes),
@@ -2571,16 +2651,39 @@
 			extendedProps: { card }
 		}))
 	);
-	const calendarConflictLegend = $derived(auditConflictGroups);
+	const calendarConflictLegend = $derived.by(() =>
+		auditConflictGroups
+			.map((group) => {
+				const representative = calendarScheduleCards.find((card) => card.conflictGroupId === group.id);
+				if (!representative) return null;
+
+				return {
+					...group,
+					representative,
+					selected: selectedConflictGroupId === group.id,
+					label: `${DAY_LABELS[representative.day]} ${representative.startLabel}`,
+					course: representative.course
+				};
+			})
+			.filter((group): group is NonNullable<typeof group> => Boolean(group))
+	);
 	const effectiveSelectedScheduleId = $derived.by(() => {
 		if (
 			selectedScheduleId &&
-			filteredScheduleCards.some((item) => item.id === selectedScheduleId)
+			calendarScheduleCards.some((item) => item.id === selectedScheduleId)
 		) {
 			return selectedScheduleId;
 		}
 
-		return filteredScheduleCards[0]?.id ?? null;
+		const selectedSourceCard = scheduleCards.find((item) => item.id === selectedScheduleId);
+		if (selectedSourceCard?.original.schedule_id) {
+			const matchingSession = calendarScheduleCards.find(
+				(item) => item.original.schedule_id === selectedSourceCard.original.schedule_id
+			);
+			if (matchingSession) return matchingSession.id;
+		}
+
+		return calendarScheduleCards[0]?.id ?? null;
 	});
 	const calendarOptions = $derived.by(() => ({
 		view: 'timeGridWeek',
@@ -2631,13 +2734,15 @@
 			const card = info.event.extendedProps.card;
 			if (!card) return undefined;
 			const timeLabel = `${escapeHtml(card.startLabel)} - ${escapeHtml(card.endLabel)}`;
-			const metaLabel = `${escapeHtml(card.room)} • ${escapeHtml(card.lecturer)}`;
+			const studentCountLabel = `${card.studentCount} mhs`;
+			const escapedStudentCountLabel = escapeHtml(studentCountLabel);
+			const metaLabel = `${escapeHtml(card.room)} • ${escapeHtml(card.lecturer)} • ${escapedStudentCountLabel}`;
 
 			if (card.durationMinutes <= 30) {
 				return {
 					html: `
 						<div class="watum-event-copy">
-							<span>${timeLabel}</span>
+							<span>${timeLabel} • ${escapedStudentCountLabel}</span>
 							<strong>${escapeHtml(card.course)}</strong>
 						</div>
 					`
@@ -2649,7 +2754,7 @@
 					html: `
 						<div class="watum-event-copy">
 							<strong>${escapeHtml(card.course)}</strong>
-							<span>${timeLabel}</span>
+							<span>${timeLabel} • ${escapedStudentCountLabel}</span>
 						</div>
 					`
 				};
@@ -2685,7 +2790,7 @@
 
 			info.el.setAttribute(
 				'title',
-				`${card.course} • ${card.startLabel} - ${card.endLabel} • ${card.room} • ${card.lecturer}`
+				`${card.course} • ${card.startLabel} - ${card.endLabel} • ${card.room} • ${card.lecturer} • ${card.studentCount} mahasiswa`
 			);
 		},
 		eventClick(info: { event: { extendedProps: { card?: ScheduleCard } } }) {
@@ -2694,7 +2799,7 @@
 		}
 	}));
 	const selectedSchedule = $derived(
-		filteredScheduleCards.find((item) => item.id === effectiveSelectedScheduleId) ??
+		calendarScheduleCards.find((item) => item.id === effectiveSelectedScheduleId) ??
 			auditConflictCardMap[effectiveSelectedScheduleId ?? ''] ??
 			null
 	);
@@ -2830,9 +2935,13 @@
 	const builderConflictCards = $derived(auditConflictGroups);
 	const overlapPeersByCardId = $derived.by(() => {
 		const peers: Record<string, ScheduleCard[]> = {};
-		for (const card of scheduleAnalyticsCards) {
-			peers[card.id] = scheduleAnalyticsCards
-				.filter((candidate) => schedulesOverlap(card, candidate))
+		for (const card of calendarScheduleCards) {
+			peers[card.id] = calendarScheduleCards
+				.filter(
+					(candidate) =>
+						scheduleSessionKey(candidate) !== scheduleSessionKey(card) &&
+						schedulesOverlap(card, candidate)
+				)
 				.sort((left, right) => left.startMinutes - right.startMinutes);
 		}
 		return peers;
@@ -2898,10 +3007,10 @@
 	);
 	const calendarExceedsVisibleLimit = $derived(
 		currentUser.current?.role !== 'STUDENT' &&
-			filteredScheduleCards.length > CALENDAR_MAX_VISIBLE_SCHEDULES
+			calendarScheduleCards.length > CALENDAR_MAX_VISIBLE_SCHEDULES
 	);
 	const calendarCanRender = $derived(
-		!calendarNeedsFilters && !calendarExceedsVisibleLimit && filteredScheduleCards.length > 0
+		!calendarNeedsFilters && !calendarExceedsVisibleLimit && calendarScheduleCards.length > 0
 	);
 	const studentPickerLookup = $derived.by(() => {
 		// eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -4419,6 +4528,10 @@
 	const selectedScheduleConflictPeers = $derived(
 		selectedSchedule ? (conflictPeersByCardId[selectedSchedule.id] ?? []) : []
 	);
+	const calendarSessionKeys = $derived.by(() => new Set(calendarScheduleCards.map(scheduleSessionKey)));
+	const calendarSelectedScheduleConflictPeers = $derived(
+		selectedScheduleConflictPeers.filter((peer) => calendarSessionKeys.has(scheduleSessionKey(peer)))
+	);
 	const selectedScheduleOverlapPeers = $derived(
 		selectedSchedule ? (overlapPeersByCardId[selectedSchedule.id] ?? []) : []
 	);
@@ -4475,7 +4588,7 @@
 			lecturers,
 			scheduleSemesterOptions,
 			scheduleAcademicYearOptions,
-			filteredScheduleCards,
+			filteredScheduleCards: calendarScheduleCards,
 			scheduleActiveFilterCount,
 			calendarConflictLegend,
 			calendarNeedsFilters,
@@ -4487,7 +4600,7 @@
 			calendarDetailSchedule,
 			selectedScheduleConflictSummary,
 			selectedScheduleConflictGroup,
-			selectedScheduleConflictPeers,
+			selectedScheduleConflictPeers: calendarSelectedScheduleConflictPeers,
 			selectedScheduleOverlapPeers,
 			selectedScheduleId,
 			scheduleRoomFilterOptions,

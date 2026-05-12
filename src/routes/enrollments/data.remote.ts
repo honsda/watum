@@ -85,6 +85,7 @@ const enrollmentListSelect = {
 	course_id: true,
 	lecturer_id: true,
 	class_room_id: true,
+	schedule_id: true,
 	semester: true,
 	academic_year: true,
 	student_name: true,
@@ -300,7 +301,9 @@ async function selectSchedulePreviewRows(
 		"SELECT e.id, e.student_id, e.course_id, c.lecturer_id, e.class_room_id, e.schedule_id,",
 		"e.semester, e.academic_year, s.name AS student_name, c.name AS course_name,",
 		"l.name AS lecturer_name, cr.name AS class_room_name,",
-		"e.schedule_day, e.schedule_start_time, e.schedule_end_time, e.status",
+		"e.schedule_day, e.schedule_start_time, e.schedule_end_time,",
+		"CASE WHEN e.schedule_id IS NULL THEN 1 ELSE (SELECT COUNT(*) FROM enrollments session_e FORCE INDEX (idx_enrollments_schedule) WHERE session_e.schedule_id = e.schedule_id) END AS student_count,",
+		"e.status",
 	].join(" ");
 
 	if (user.role === "STUDENT") {
@@ -418,6 +421,39 @@ type EnrollmentPrefetchJoin =
 	| "schedules"
 	| "grades";
 
+async function attachSessionStudentCounts(rows: SelectEnrollmentsResult[]) {
+	const scheduleIds = Array.from(
+		new Set(
+			rows
+				.map((row) => row.schedule_id)
+				.filter((id): id is string => Boolean(id)),
+		),
+	);
+	if (!scheduleIds.length) {
+		return rows.map((row) => ({ ...row, student_count: 1 }));
+	}
+
+	const [countRows] = await getPool().query(
+		[
+			"SELECT schedule_id, COUNT(*) AS student_count",
+			"FROM enrollments FORCE INDEX (idx_enrollments_schedule)",
+			"WHERE schedule_id IN (?)",
+			"GROUP BY schedule_id",
+		].join(" "),
+		[scheduleIds],
+	);
+	const counts = new Map(
+		(countRows as Array<{ schedule_id: string; student_count: number }>).map(
+			(row) => [row.schedule_id, Number(row.student_count) || 1],
+		),
+	);
+
+	return rows.map((row) => ({
+		...row,
+		student_count: row.schedule_id ? (counts.get(row.schedule_id) ?? 1) : 1,
+	}));
+}
+
 async function hydrateEnrollmentsByIds(ids: string[]) {
 	if (!ids.length) {
 		return [];
@@ -428,9 +464,10 @@ async function hydrateEnrollmentsByIds(ids: string[]) {
 		where: [["id", "IN", ids]],
 	});
 	const rowsById = new Map(fullRows.map((row) => [row.id, row]));
-	return ids
+	const orderedRows = ids
 		.map((id) => rowsById.get(id))
 		.filter((row): row is SelectEnrollmentsResult => Boolean(row));
+	return attachSessionStudentCounts(orderedRows);
 }
 
 /**

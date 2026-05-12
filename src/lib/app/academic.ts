@@ -29,6 +29,7 @@ export type ScheduleCard = {
 	startMinutes: number;
 	endMinutes: number;
 	durationMinutes: number;
+	studentCount: number;
 	hasConflict: boolean;
 	conflictGroupId: string | null;
 	conflictTone: number | null;
@@ -145,6 +146,18 @@ export function buildScheduleCards(
 	timezone: string
 ): ScheduleCard[] {
 	const safeEnrollments = Array.isArray(enrollments) ? enrollments : [];
+	const visibleStudentCountsByScheduleId = new Map<string, Set<string>>();
+
+	for (const item of safeEnrollments) {
+		if (!item.schedule_id) continue;
+		const students = visibleStudentCountsByScheduleId.get(item.schedule_id) ?? new Set<string>();
+		if (item.student_id) {
+			students.add(item.student_id);
+		} else if (item.id) {
+			students.add(item.id);
+		}
+		visibleStudentCountsByScheduleId.set(item.schedule_id, students);
+	}
 
 	const cards = safeEnrollments
 		.filter(
@@ -161,6 +174,12 @@ export function buildScheduleCards(
 		.map((item) => {
 			const startMinutes = toMinutes(item.schedule_start_time, timezone);
 			const endMinutes = toMinutes(item.schedule_end_time, timezone);
+			const visibleStudentCount = item.schedule_id
+				? (visibleStudentCountsByScheduleId.get(item.schedule_id)?.size ?? 1)
+				: 1;
+			const studentCount = Number(
+				(item as SelectEnrollmentsResult & { student_count?: number | string }).student_count
+			);
 
 			return {
 				id: item.id,
@@ -176,6 +195,10 @@ export function buildScheduleCards(
 				startMinutes,
 				endMinutes,
 				durationMinutes: Math.max(endMinutes - startMinutes, 0),
+				studentCount:
+					Number.isFinite(studentCount) && studentCount > 0
+						? Math.max(studentCount, visibleStudentCount)
+						: visibleStudentCount,
 				hasConflict: false,
 				conflictGroupId: null,
 				conflictTone: null,
@@ -239,7 +262,37 @@ export function buildScheduleCards(
 		}
 	};
 
+	const connectOverlappingDistinctSessions = (indexes: number[]) => {
+		if (indexes.length < 2) return;
+
+		for (let leftPosition = 0; leftPosition < indexes.length; leftPosition += 1) {
+			const leftIndex = indexes[leftPosition];
+			const leftCard = cards[leftIndex];
+			for (
+				let rightPosition = leftPosition + 1;
+				rightPosition < indexes.length;
+				rightPosition += 1
+			) {
+				const rightIndex = indexes[rightPosition];
+				const rightCard = cards[rightIndex];
+				const sameStoredSession =
+					leftCard.original.schedule_id &&
+					rightCard.original.schedule_id &&
+					leftCard.original.schedule_id === rightCard.original.schedule_id;
+
+				if (sameStoredSession) continue;
+				if (
+					leftCard.startMinutes < rightCard.endMinutes &&
+					rightCard.startMinutes < leftCard.endMinutes
+				) {
+					unite(leftIndex, rightIndex);
+				}
+			}
+		}
+	};
+
 	for (const day of DAY_ORDER) {
+		const roomIndexes = new Map<string, number[]>();
 		const resourceIndexes = new Map<string, number[]>();
 
 		for (const card of cards) {
@@ -249,10 +302,9 @@ export function buildScheduleCards(
 
 			const roomKey = card.original.class_room_id ?? card.room;
 			if (roomKey) {
-				const key = `room:${roomKey}`;
-				const indexes = resourceIndexes.get(key) ?? [];
+				const indexes = roomIndexes.get(roomKey) ?? [];
 				indexes.push(cardIndex);
-				resourceIndexes.set(key, indexes);
+				roomIndexes.set(roomKey, indexes);
 			}
 
 			const studentKey = card.original.student_id;
@@ -274,6 +326,10 @@ export function buildScheduleCards(
 
 		for (const indexes of resourceIndexes.values()) {
 			connectOverlappingCards(indexes);
+		}
+
+		for (const indexes of roomIndexes.values()) {
+			connectOverlappingDistinctSessions(indexes);
 		}
 	}
 

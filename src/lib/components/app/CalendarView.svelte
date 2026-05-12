@@ -366,7 +366,7 @@
 				</div>
 			</details>
 			<div class="list-summary schedule-filter-summary">
-				<span>{filteredScheduleCards.length} jadwal tampil</span>
+				<span>{filteredScheduleCards.length} sesi tampil</span>
 				<div class="schedule-filter-actions">
 					<Badge variant="secondary">{scheduleActiveFilterCount} filter aktif</Badge>
 					<Button
@@ -528,6 +528,10 @@
 					>
 				</div>
 				<div>
+					<span>Mahasiswa sesi</span><strong>{calendarDetailSchedule.studentCount} mahasiswa</strong
+					>
+				</div>
+				<div>
 					<span>Semester</span><strong
 						>{calendarDetailSchedule.semester} • {calendarDetailSchedule.academicYear}</strong
 					>
@@ -635,7 +639,7 @@
 							>
 								<div class="calendar-overlap-copy">
 									<strong>{peer.course}</strong>
-									<span>{peer.student} • {peer.lecturer} • {peer.room}</span>
+									<span>{peer.studentCount} mahasiswa • {peer.lecturer} • {peer.room}</span>
 									<small>{DAY_LABELS[peer.day]} • {peer.startLabel} - {peer.endLabel}</small>
 								</div>
 								<div class="calendar-overlap-actions">
