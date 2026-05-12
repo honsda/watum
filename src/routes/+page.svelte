@@ -324,6 +324,15 @@
 	const RANGE_PADDING_MINUTES = 60;
 	const MIN_VISIBLE_MINUTES = 6 * 60;
 	const CALENDAR_MAX_VISIBLE_SCHEDULES = 60;
+	const CALENDAR_DAY_INDEX: Record<(typeof DAY_ORDER)[number], number> = {
+		SENIN: 1,
+		SELASA: 2,
+		RABU: 3,
+		KAMIS: 4,
+		JUMAT: 5,
+		SABTU: 6
+	};
+
 	function createCalendarWeekStart() {
 		return new Date(2025, 0, 6);
 	}
@@ -840,6 +849,40 @@
 		return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:00`;
 	}
 
+	function visibleDaysForCalendar(cards: ScheduleCard[], dayFilter: string) {
+		if (dayFilter && dayFilter in CALENDAR_DAY_INDEX) {
+			return [dayFilter as (typeof DAY_ORDER)[number]];
+		}
+
+		const daysWithSessions = new Set(cards.map((card) => card.day));
+		const visibleDays = DAY_ORDER.filter((day) => daysWithSessions.has(day));
+		return visibleDays.length ? visibleDays : DAY_ORDER;
+	}
+
+	function hiddenDaysForCalendar(visibleDays: ReadonlyArray<(typeof DAY_ORDER)[number]>) {
+		const visibleIndexes = new Set(visibleDays.map((day) => CALENDAR_DAY_INDEX[day]));
+		return [0, 1, 2, 3, 4, 5, 6].filter((dayIndex) => !visibleIndexes.has(dayIndex));
+	}
+
+	function calendarColumnWidth(visibleDayCount: number) {
+		if (visibleDayCount <= 1) return 'minmax(18rem, 1fr)';
+		if (visibleDayCount === 2) return 'minmax(16rem, 1fr)';
+		if (visibleDayCount === 3) return 'minmax(14rem, 1fr)';
+		return 'minmax(11.5rem, 1fr)';
+	}
+
+	function calendarSlotHeight(visibleDayCount: number) {
+		if (visibleDayCount <= 2) return 42;
+		if (visibleDayCount === 3) return 38;
+		return 34;
+	}
+
+	function dateForCalendarDay(day: (typeof DAY_ORDER)[number]) {
+		const date = createCalendarAnchorDate(calendarWeekOffset);
+		date.setDate(date.getDate() + DAY_ORDER.indexOf(day));
+		return date;
+	}
+
 	function dayKeyFromDate(date: Date): (typeof DAY_ORDER)[number] | null {
 		const map = {
 			1: 'SENIN',
@@ -854,8 +897,7 @@
 	}
 
 	function dateForScheduleCard(card: ScheduleCard, minutes: number) {
-		const date = createCalendarAnchorDate(calendarWeekOffset);
-		date.setDate(date.getDate() + DAY_ORDER.indexOf(card.day));
+		const date = dateForCalendarDay(card.day);
 		date.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
 		return date;
 	}
@@ -2623,11 +2665,24 @@
 			(card) => scheduleFiltersMatch(card.original) && scheduleSearchMatches(card.original)
 		)
 	);
+	const calendarVisibleDays = $derived(visibleDaysForCalendar(filteredScheduleCards, scheduleDayFilter));
+	const calendarHiddenDays = $derived(hiddenDaysForCalendar(calendarVisibleDays));
+	const calendarColumnWidthValue = $derived(calendarColumnWidth(calendarVisibleDays.length));
+	const calendarSlotHeightValue = $derived(calendarSlotHeight(calendarVisibleDays.length));
 	const calendarScheduleCards = $derived.by(() =>
 		mergeCalendarSessionCards(filteredScheduleCards, selectedConflictGroupId)
 	);
 	const calendarAnchorDate = $derived(createCalendarAnchorDate(calendarWeekOffset));
 	const calendarWeekLabel = $derived.by(() => {
+		if (calendarVisibleDays.length === 1) {
+			const day = calendarVisibleDays[0]!;
+			const formatter = new Intl.DateTimeFormat('id-ID', {
+				day: 'numeric',
+				month: 'long'
+			});
+			return `${DAY_LABELS[day]}, ${formatter.format(dateForCalendarDay(day))}`;
+		}
+
 		const start = calendarAnchorDate.getTime();
 		const end = start + 5 * 24 * 60 * 60 * 1000;
 		const formatter = new Intl.DateTimeFormat('id-ID', {
@@ -2639,7 +2694,7 @@
 	const calendarVisibleRange = $derived.by(() => rangeForScheduleCards(calendarScheduleCards));
 	const calendarSessionCountByDay = $derived.by(() =>
 		Object.fromEntries(
-			DAY_ORDER.map((day) => [day, calendarScheduleCards.filter((card) => card.day === day).length])
+			calendarVisibleDays.map((day) => [day, calendarScheduleCards.filter((card) => card.day === day).length])
 		)
 	);
 	const calendarEvents = $derived.by(() =>
@@ -2690,14 +2745,15 @@
 		date: calendarAnchorDate,
 		locale: 'id-ID',
 		firstDay: 1,
-		hiddenDays: [0],
+		hiddenDays: calendarHiddenDays,
 		height: 'auto',
 		allDaySlot: false,
 		nowIndicator: true,
 		customScrollbars: true,
+		columnWidth: calendarColumnWidthValue,
 		slotDuration: '00:30:00',
 		slotLabelInterval: '01:00:00',
-		slotHeight: 34,
+		slotHeight: calendarSlotHeightValue,
 		slotMinTime: timeString(calendarVisibleRange.start),
 		slotMaxTime: timeString(calendarVisibleRange.end),
 		scrollTime: timeString(calendarVisibleRange.start),
@@ -2718,6 +2774,8 @@
 				classes.push('is-tiny');
 			} else if (card?.durationMinutes && card.durationMinutes <= 45) {
 				classes.push('is-short');
+			} else if (card?.durationMinutes && card.durationMinutes <= 60) {
+				classes.push('is-medium');
 			}
 			if (card?.hasConflict) classes.push('is-conflict');
 			if (info.event.id === effectiveSelectedScheduleId) classes.push('is-selected');
@@ -2755,6 +2813,18 @@
 						<div class="watum-event-copy">
 							<strong>${escapeHtml(card.course)}</strong>
 							<span>${timeLabel} • ${escapedStudentCountLabel}</span>
+						</div>
+					`
+				};
+			}
+
+			if (card.durationMinutes <= 60) {
+				return {
+					html: `
+						<div class="watum-event-copy">
+							<strong>${escapeHtml(card.course)}</strong>
+							<span>${timeLabel} • ${escapedStudentCountLabel}</span>
+							<small>${escapeHtml(card.room)}</small>
 						</div>
 					`
 				};

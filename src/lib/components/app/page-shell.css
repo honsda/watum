@@ -824,6 +824,12 @@ select {
 	border: 0;
 }
 
+.event-calendar-host .ec-main {
+	min-width: 0;
+	overscroll-behavior-inline: contain;
+	-webkit-overflow-scrolling: touch;
+}
+
 .event-calendar-host .ec-time-grid .ec-header .ec-day-head,
 .event-calendar-host .ec-time-grid .ec-body .ec-day {
 	position: relative;
@@ -908,6 +914,7 @@ select {
 .event-calendar-host .watum-ec-event {
 	position: relative;
 	overflow: hidden;
+	container-type: inline-size;
 	isolation: isolate;
 	border-radius: 0.95rem;
 	border: 1px solid color-mix(in oklch, var(--color-border) 88%, var(--color-surface) 12%);
@@ -1012,18 +1019,32 @@ select {
 }
 
 .event-calendar-host .watum-event-copy strong {
+	min-width: 0;
 	font-size: 0.88rem;
 	line-height: 1.18;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	overflow: hidden;
 	overflow-wrap: anywhere;
 	word-break: break-word;
 }
 
 .event-calendar-host .watum-event-copy span {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 	font-size: 0.76rem;
 	color: var(--color-muted-foreground);
 }
 
 .event-calendar-host .watum-event-copy small {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 	font-size: 0.75rem;
 	line-height: 1.25;
 	color: var(--color-foreground-soft);
@@ -1072,6 +1093,11 @@ select {
 	padding: 0.12rem 0.16rem 0.08rem;
 }
 
+.event-calendar-host .watum-ec-event.is-medium .watum-event-copy {
+	gap: 0.16rem;
+	padding: 0.18rem 0.18rem 0.1rem;
+}
+
 .event-calendar-host .watum-ec-event.is-short .watum-event-copy strong,
 .event-calendar-host .watum-ec-event.is-short .watum-event-copy span,
 .event-calendar-host .watum-ec-event.is-tiny .watum-event-copy strong,
@@ -1084,6 +1110,8 @@ select {
 .event-calendar-host .watum-ec-event.is-short .watum-event-copy strong {
 	font-size: 0.78rem;
 	line-height: 1.06;
+	-webkit-line-clamp: 1;
+	line-clamp: 1;
 }
 
 .event-calendar-host .watum-ec-event.is-short .watum-event-copy span {
@@ -1110,6 +1138,41 @@ select {
 	font-size: 0.66rem;
 	line-height: 1;
 	color: var(--color-foreground-soft);
+}
+
+@container (max-width: 11rem) {
+	.event-calendar-host .watum-event-copy {
+		gap: 0.12rem;
+		padding: 0.14rem 0.16rem 0.08rem;
+	}
+
+	.event-calendar-host .watum-event-copy strong {
+		font-size: 0.78rem;
+		line-height: 1.08;
+		-webkit-line-clamp: 1;
+		line-clamp: 1;
+		overflow-wrap: normal;
+		word-break: normal;
+	}
+
+	.event-calendar-host .watum-event-copy small {
+		display: none;
+	}
+
+	.event-calendar-host .watum-event-flag {
+		display: none;
+	}
+}
+
+@container (min-width: 17rem) {
+	.event-calendar-host .watum-event-copy {
+		gap: 0.34rem;
+		padding-inline: 0.28rem;
+	}
+
+	.event-calendar-host .watum-event-copy strong {
+		font-size: 0.94rem;
+	}
 }
 
 .student-dashboard,
@@ -2678,7 +2741,7 @@ select {
 
 	.event-calendar-host .ec {
 		--ec-slot-height: 38px;
-		min-width: 68rem;
+		min-width: 0;
 	}
 
 	.event-calendar-host .ec-time-grid .ec-header .ec-sidebar,
