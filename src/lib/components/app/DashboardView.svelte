@@ -212,23 +212,6 @@
 					<span>Nilai tersedia</span>
 					<strong>{grades.length} hasil sudah masuk</strong>
 				</div>
-				<div>
-					<span>Ruang yang dipakai</span>
-					<strong
-						>{#if nextSchedule}<span
-								role="button"
-								tabindex="0"
-								class="entity-link"
-								onkeydown={handleKeyboardClick}
-								onclick={() =>
-									onNavigateToEntity(
-										'courses',
-										nextSchedule.original.course_id,
-										nextSchedule.course
-									)}>{nextSchedule.course}</span
-							>{:else}Belum ada kelas terjadwal{/if}</strong
-					>
-				</div>
 			</section>
 
 			{#if studentGradeHighlights.length}

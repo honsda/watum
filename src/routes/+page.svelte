@@ -910,24 +910,36 @@
 		return date;
 	}
 
+	function isApprovedScheduleCard(card: ScheduleCard) {
+		return !card.original.status || card.original.status === 'APPROVED';
+	}
+
 	function upcomingScheduleRank(card: ScheduleCard, now = new Date()) {
-		if (card.original.status && card.original.status !== 'APPROVED')
-			return Number.POSITIVE_INFINITY;
+		if (!isApprovedScheduleCard(card)) return Number.POSITIVE_INFINITY;
 		const { dayOfWeek } = getTimeComponents(now, timezone);
 		const currentDayIndex = dayOfWeek >= 1 && dayOfWeek <= DAY_ORDER.length ? dayOfWeek - 1 : 0;
 		const currentMinutes =
 			dayOfWeek >= 1 && dayOfWeek <= DAY_ORDER.length ? toMinutes(now, timezone) : 0;
-		let dayDelta = DAY_ORDER.indexOf(card.day) - currentDayIndex;
-		if (dayDelta < 0 || (dayDelta === 0 && card.startMinutes < currentMinutes)) {
-			dayDelta += DAY_ORDER.length;
+		const dayDelta = DAY_ORDER.indexOf(card.day) - currentDayIndex;
+		if (dayDelta < 0 || (dayDelta === 0 && card.endMinutes <= currentMinutes)) {
+			return Number.POSITIVE_INFINITY;
 		}
 		return dayDelta * 24 * 60 + card.startMinutes;
 	}
 
-	function sortUpcomingSchedules(cards: ScheduleCard[]) {
-		return [...cards]
-			.filter((card) => Number.isFinite(upcomingScheduleRank(card)))
-			.sort((left, right) => upcomingScheduleRank(left) - upcomingScheduleRank(right));
+	function sortUpcomingSchedules(cards: ScheduleCard[], now = new Date()) {
+		return cards
+			.map((card) => ({ card, rank: upcomingScheduleRank(card, now) }))
+			.filter(({ rank }) => Number.isFinite(rank))
+			.sort((left, right) => left.rank - right.rank)
+			.map(({ card }) => card);
+	}
+
+	function sortWeeklySchedules(cards: ScheduleCard[]) {
+		return [...cards].filter(isApprovedScheduleCard).sort((left, right) => {
+			const dayDelta = DAY_ORDER.indexOf(left.day) - DAY_ORDER.indexOf(right.day);
+			return dayDelta === 0 ? left.startMinutes - right.startMinutes : dayDelta;
+		});
 	}
 
 	function escapeHtml(value: string) {
@@ -955,6 +967,7 @@
 	let feedback = $state<Feedback>(null);
 	let appLoading = $state(false);
 	let viewRefreshLoading = $state(false);
+	let scheduleNow = $state(new Date());
 	let initialViewHydrated = $state(false);
 	let loadedForUserId = $state<string | null>(null);
 	let viewRestored = $state(!browser);
@@ -985,6 +998,7 @@
 	let pendingRefreshTimer: number | null = null;
 	let collectionRefreshTimers: Partial<Record<DataCollectionKey, number>> = {};
 	let conflictAuditRefreshTimer: number | null = null;
+	let scheduleNowTimer: number | null = null;
 	let studentPickerSearch = $state('');
 	let coursePickerSearch = $state('');
 	let studentPickerOpen = $state(false);
@@ -1634,6 +1648,10 @@
 
 	onMount(() => {
 		if (!browser) return;
+		scheduleNow = new Date();
+		scheduleNowTimer = window.setInterval(() => {
+			scheduleNow = new Date();
+		}, 60_000);
 		const storedTheme = localStorage.getItem('watum-theme');
 		applyTheme(storedTheme === 'dark' ? 'dark' : 'light');
 		const resolvedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1656,6 +1674,10 @@
 
 	onDestroy(() => {
 		clearRefreshTimers();
+		if (scheduleNowTimer != null) {
+			window.clearInterval(scheduleNowTimer);
+			scheduleNowTimer = null;
+		}
 		if (browser) {
 			document.body.style.overflow = '';
 		}
@@ -3028,7 +3050,10 @@
 		}
 		return peers;
 	});
-	const upcomingScheduleCards = $derived.by(() => sortUpcomingSchedules(scheduleCards));
+	const upcomingScheduleCards = $derived.by(() =>
+		sortUpcomingSchedules(scheduleCards, scheduleNow)
+	);
+	const weeklyScheduleCards = $derived.by(() => sortWeeklySchedules(scheduleCards));
 	const nextSchedule = $derived(upcomingScheduleCards[0] ?? null);
 	const underusedRooms = $derived.by(() => {
 		const occupiedRoomIds = new Set(
@@ -4637,7 +4662,8 @@
 		buildDashboardViewProps({
 			role: requireCurrentRole(),
 			nextSchedule,
-			scheduleCards: upcomingScheduleCards,
+			scheduleCards:
+				requireCurrentRole() === 'STUDENT' ? weeklyScheduleCards : upcomingScheduleCards,
 			enrollments,
 			grades,
 			studentGradeHighlights,
