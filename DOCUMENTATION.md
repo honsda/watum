@@ -4,7 +4,7 @@
 > **Stack**: SvelteKit 2.x, MariaDB (MySQL), Bun, TypeScript, mdsvex  
 > **Scale**: Live development dataset currently contains ~2.75M enrollments; stress seeding targets 10M total rows  
 > **Last Updated**: 2026-05-12
-> **Recent Changes**: Added student enrollment request/approval workflow documentation, refreshed migration inventory through `027_practicum_schema_a4.sql`, documented the singleton enrollment policy table, and clarified MariaDB-safe trigger assignments for denormalized audit columns
+> **Recent Changes**: Added student enrollment request/approval workflow documentation, refreshed migration inventory through `027_practicum_schema_a4.sql`, documented the singleton enrollment policy table, and clarified the normalized practicum schema without denormalized audit columns
 
 ---
 
@@ -469,7 +469,7 @@ WHERE e.schedule_day <> s.day
 | `024_enrollment_status.sql`                   | Adds `PENDING`/`APPROVED` enrollment status and nullable scheduling FKs |
 | `025_enrollment_policy.sql`                   | Adds singleton policy controlling student request window                |
 | `026_consolidated_schema_snapshot.sql`        | Fresh-install schema snapshot including current triggers                |
-| `027_practicum_schema_a4.sql`                 | Compact A4 practicum schema without auth/audit/tuning layers            |
+| `027_practicum_schema_a4.sql`                 | Standalone normalized practicum subset using production columns only    |
 
 ---
 
