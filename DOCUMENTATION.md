@@ -2,9 +2,9 @@
 
 > **Project**: Watum Academic Scheduling System  
 > **Stack**: SvelteKit 2.x, MariaDB (MySQL), Bun, TypeScript, mdsvex  
-> **Scale**: Live development dataset currently contains ~2.75M enrollments; stress seeding targets 10M total rows  
-> **Last Updated**: 2026-05-12
-> **Recent Changes**: Added student enrollment request/approval workflow documentation, refreshed migration inventory through `027_practicum_schema_a4.sql`, documented the singleton enrollment policy table, and clarified MariaDB-safe trigger assignments for denormalized audit columns
+> **Scale**: Current configured database contains 61,152 enrollments; stress seeding still targets up to 10M total rows
+> **Last Updated**: 2026-05-17
+> **Recent Changes**: Refreshed live database snapshot from `projectbasdat2`, documented the split between SQL migrations and stale Prisma/schema dumps, updated migration/runtime operations notes, and corrected file-structure counts
 
 ---
 
@@ -77,29 +77,61 @@ The system is architected to scale to **10 million enrollment rows** while maint
 
 ### 3.1 Current Database Snapshot
 
-The database uses **InnoDB** with **utf8mb4** collation. The table below reflects the configured development/stress database snapshot, with the current schema shape documented from `026_consolidated_schema_snapshot.sql` and follow-up practicum schema notes.
+The configured database inspected on **2026-05-17** is `projectbasdat2` on **MariaDB 11.8.6**. Tables use **InnoDB** with **utf8mb4_unicode_ci** collation. Exact `COUNT(*)` values from the live database are:
 
-| Table               | Current rows | Purpose                 |
-| ------------------- | ------------ | ----------------------- |
-| `faculties`         | 3            | Faculty/Fakultas        |
-| `study_programs`    | 6            | Study programs/Prodi    |
-| `students`          | 1,250,354    | Students                |
-| `lecturers`         | 251          | Lecturers               |
-| `courses`           | 48           | Courses/Mata Kuliah     |
-| `class_rooms`       | 71,636       | Classrooms              |
-| `schedules`         | 2,750,777    | Schedule slots          |
-| `enrollments`       | 2,750,777    | KRS enrollments         |
-| `enrollment_policy` | 1            | Enrollment request gate |
-| `grades`            | 1,925,533    | Grades/Nilai            |
-| `users`             | 1,250,606    | Authentication accounts |
-| `refresh_tokens`    | 13           | Active sessions         |
+| Table               | Current rows | Approx storage | Index storage | Purpose                 |
+| ------------------- | ------------ | -------------- | ------------- | ----------------------- |
+| `faculties`         | 3            | 0.05 MB        | 0.03 MB       | Faculty/Fakultas        |
+| `study_programs`    | 6            | 0.08 MB        | 0.06 MB       | Study programs/Prodi    |
+| `students`          | 27,796       | 20.09 MB       | 9.58 MB       | Students                |
+| `lecturers`         | 1,012        | 0.47 MB        | 0.25 MB       | Lecturers               |
+| `courses`           | 48           | 0.14 MB        | 0.13 MB       | Courses/Mata Kuliah     |
+| `class_rooms`       | 500          | 0.20 MB        | 0.14 MB       | Classrooms              |
+| `schedules`         | 1,800        | 1.14 MB        | 0.91 MB       | Schedule slots          |
+| `enrollments`       | 61,152       | 131.33 MB      | 117.78 MB     | KRS enrollments         |
+| `enrollment_policy` | 1            | 0.03 MB        | 0.00 MB       | Enrollment request gate |
+| `grades`            | 42,798       | 13.58 MB       | 9.06 MB       | Grades/Nilai            |
+| `users`             | 28,809       | 19.69 MB       | 9.14 MB       | Authentication accounts |
+| `refresh_tokens`    | 10           | 0.08 MB        | 0.06 MB       | Active sessions         |
+| `schema_migrations` | 24           | 0.02 MB        | 0.00 MB       | Migration ledger        |
 
-These counts are **environment-specific**. They should not be treated as fixed schema-level constants. In particular, the stress seed script derives row counts from formulas and optional overrides, so a different target or override value will produce a different snapshot.
+Current enrollment status distribution:
+
+| Status     | Rows   |
+| ---------- | ------ |
+| `APPROVED` | 61,152 |
+| `PENDING`  | 0      |
+
+Current singleton enrollment policy (`id = 1`): `semester = GANJIL`, `academic_year = 2025/2026`, `student_enrollment_requests_open = true`.
+
+These counts are **environment-specific**. They should not be treated as fixed schema-level constants. The stress seed script derives row counts from formulas and optional overrides, so a different target or override value will produce a different snapshot. Older documentation and historical dumps may reference a previous ~2.75M-enrollment stress database; that is not the currently configured live database.
+
+### 3.1.1 Schema Source of Truth
+
+The application uses **raw SQL migrations and mysql2**, not Prisma Client, as the operational database source of truth.
+
+| Artifact                                                         | Current role                                                                                                                       |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/server/migrations/*.sql`                                | Authoritative schema history and fresh-install reference                                                                           |
+| `src/lib/server/migrations/026_consolidated_schema_snapshot.sql` | Best repository snapshot for the full production schema, including audit columns, triggers, indexes, enrollment status, and policy |
+| `src/lib/server/migrations/027_practicum_schema_a4.sql`          | Simplified teaching/practicum schema only; intentionally omits auth, audit columns, triggers, policy table, and tuning indexes     |
+| `prisma/schema.prisma`                                           | Stale reference; does not model audit columns, trigger-maintained fields, current indexes, or `TIME` schedule columns exactly      |
+| `schema.sql`                                                     | Older MariaDB dump from 2026-05-05; missing later enrollment status/policy details and not authoritative for fresh installs        |
+
+The app source under `src/` does not use `PrismaClient`. Keep schema changes in SQL migrations first; update Prisma only if it becomes an actively maintained generated-client target again.
+
+### 3.1.2 Live Migration State
+
+The repository currently contains **27 SQL migration files** (`001` through `027`). The live `schema_migrations` table currently records **24 applied rows**, from `001_schema.sql` through `023_enrollment_academic_year_uniqueness.sql`.
+
+Important live-state nuance: the database schema already contains the `status` column on `enrollments` and the `enrollment_policy` table, even though `024_enrollment_status.sql` and `025_enrollment_policy.sql` are not present in the migration ledger. Treat the ledger as partially out of sync with the live schema until migration bookkeeping is reconciled.
+
+One live-only index, `idx_enrollments_schedule_shared_seed (schedule_id)`, is present in the configured database but is not present in `026_consolidated_schema_snapshot.sql`. The repository snapshot already has `idx_enrollments_schedule (schedule_id)`, so this appears redundant unless a local experiment depends on the alternate name.
 
 ### 3.2 ID Strategy
 
 - **Manual IDs**: `faculties`, `study_programs`, `students`, `lecturers`, `courses` — use human-readable IDs (e.g., `FTI`, `TI`, `stress-mhs-0000001`)
-- **UUID IDs**: `class_rooms`, `schedules`, `enrollments`, `grades`, `users` — use `DEFAULT (UUID())`
+- **Application-generated IDs**: `class_rooms`, `schedules`, `enrollments`, `grades`, `users`, `refresh_tokens` store `VARCHAR(64)` IDs. Current application write paths generate UUIDs with `crypto.randomUUID()`; older/generated paths may still use caller-supplied IDs. The SQL schema does not define `DEFAULT (UUID())` for these primary keys.
 - **Singleton IDs**: `enrollment_policy` uses a fixed row (`id = 1`) for the current request window
 
 ### 3.3 Denormalization Strategy
@@ -121,6 +153,8 @@ enrollments
 ```
 
 **Why**: Conflict queries need to `GROUP BY` resource + time slot. Without denormalization, every aggregation would require JOINing `schedules` (2.7M times). With it, MariaDB performs **index-only scans** on covering indexes.
+
+The current configured database has 61,152 enrollment rows; the 2.7M-row references in this section describe the previous stress-scale workload that motivated the design.
 
 #### 3.3.1 Why Denormalization Is Required
 
@@ -206,7 +240,7 @@ After mass correcting millions of rows, rebuild or optimize affected indexes if 
 
 ### 3.4 Covering Conflict Indexes
 
-Three covering indexes support the conflict audit system:
+Three primary covering indexes support the conflict audit system:
 
 ```sql
 -- Room conflicts
@@ -228,7 +262,7 @@ idx_enrollments_lecturer_conflict
  course_id, audit_sk, schedule_audit_sk)
 ```
 
-Each is ~266 MB and allows the conflict scanner to run in **~250ms** for a full scan.
+On the current 61,152-row live database, `enrollments` uses about **117.78 MB** of index storage across all secondary indexes. Earlier ~2.75M-row stress snapshots measured each major conflict covering index at roughly **266 MB** and supported **~250ms** full index-only scans. Treat those numbers as stress-scale references, not current live-database measurements.
 
 #### 3.4.1 Covering Index Design
 
@@ -470,6 +504,15 @@ WHERE e.schedule_day <> s.day
 | `025_enrollment_policy.sql`                   | Adds singleton policy controlling student request window                |
 | `026_consolidated_schema_snapshot.sql`        | Fresh-install schema snapshot including current triggers                |
 | `027_practicum_schema_a4.sql`                 | Compact A4 practicum schema without auth/audit/tuning layers            |
+
+The live database migration ledger currently stops at `023_enrollment_academic_year_uniqueness.sql`, but live table definitions include later features such as nullable scheduling fields, `enrollments.status`, and `enrollment_policy`. This indicates schema state and `schema_migrations` bookkeeping are not perfectly aligned for the configured database.
+
+Operational migration runner notes:
+
+- `docker-entrypoint.sh` auto-runs `bun ./scripts/run-migrations.mjs` when `AUTO_APPLY_MIGRATIONS` is unset or set to `true`.
+- `scripts/run-migrations.mjs` creates/uses `schema_migrations`, acquires the MariaDB advisory lock `watum:auto-apply-migrations`, sorts files matching `^\d+_.+\.sql$`, and records successful files.
+- The runner ignores selected idempotency errors (`ER_TABLE_EXISTS_ERROR`, `ER_DUP_KEYNAME`, `ER_DUP_FIELDNAME`, `ER_CANT_DROP_FIELD_OR_KEY`) so partially-applied additive migrations can continue.
+- Several trigger migrations contain `DELIMITER` blocks. Validate trigger-heavy migrations in staging before relying on auto-apply, because migration splitting and trigger DDL are easy places for environment-specific SQL behavior to diverge.
 
 ---
 
@@ -1673,7 +1716,7 @@ For searches, the first page uses the search endpoint with `cursor = undefined`;
 
 #### 7.4.5 Classroom Picker Pagination and Search
 
-Classroom selectors originally loaded all classrooms with `getAllClassRooms()`. At 71,636 rooms, this created unnecessary network payload, memory usage, and UI filtering cost.
+Classroom selectors originally loaded all classrooms with `getAllClassRooms()`. In older stress snapshots this reached 71,636 rooms; the current configured database has 500 rooms, but the picker remains paginated so the UI does not depend on total classroom count.
 
 The current selector architecture uses `searchClassRooms({ q, cursor })`:
 
@@ -3896,7 +3939,7 @@ bun seed:stress
   - `lecturers = max(48, ceil(students / 5000))`
   - `class_rooms` from enrollment volume and available slot capacity
 
-This means the stress dataset is **not defined by one fixed table-count snapshot**. The live database currently in use has `1,250,354` students and `2,750,777` enrollments, which corresponds to a run using a lower effective student target than the default 10M-row derivation.
+This means the stress dataset is **not defined by one fixed table-count snapshot**. The currently configured database has `27,796` students and `61,152` enrollments. Older benchmark notes referenced a previous run with `1,250,354` students and `2,750,777` enrollments; that snapshot is no longer the active configured database.
 
 **Tunable via env**:
 
@@ -3904,35 +3947,36 @@ This means the stress dataset is **not defined by one fixed table-count snapshot
 STRESS_SEED_TARGET_ROWS=5000000 bun seed:stress
 ```
 
-### 9.2 Benchmark Suite (`scripts/benchmark-suite.mjs`)
+### 9.2 Benchmark Suite
 
-A custom Node.js HTTP load tester (JMeter replacement):
+The current repository includes TypeScript benchmark scripts under `scripts/`:
+
+| Script                           | Purpose                                  |
+| -------------------------------- | ---------------------------------------- |
+| `scripts/benchmark-all.ts`       | Broader benchmark entry point            |
+| `scripts/benchmark-conflicts.ts` | Conflict-audit focused benchmark tooling |
+
+Historical benchmark output remains under `performance/`. Older docs and reports may mention a removed `scripts/benchmark-suite.mjs`; use the current TypeScript scripts unless that file is restored.
+
+Current commands:
 
 ```bash
-# Full benchmark (200 users, 3 loops, 300s ramp-up)
-node scripts/benchmark-suite.mjs
-
-# Quick smoke test
-node scripts/benchmark-suite.mjs --threads 10 --loops 1 --ramp-up 0
-
-# Custom host
-BENCHMARK_HOST=http://localhost:4173 node scripts/benchmark-suite.mjs
+bun scripts/benchmark-all.ts
+bun scripts/benchmark-conflicts.ts
 ```
 
 **Transactions tested**:
 
-- Login User / Login Admin
-- Refresh Access Token
-- Get Current User
-- Get Courses / Students / Enrollments / Grades
-- User Operation Flow (login → refresh → get user → get courses → get students → get enrollments → get grades)
-- Admin Write Cycle (update course → verify → restore) × 3 courses
+- Conflict audit cold/warm paths
+- Room conflict scans
+- Student conflict scans
+- Lecturer conflict scans
+- All conflict types together
 
 **Output**:
 
-- Console: samples, errors, mean latency, p95, throughput
-- HTML report: `performance/benchmark-report/index.html`
-- JSON stats: `performance/benchmark-report/statistics.json`
+- Console: elapsed milliseconds, hydrated/total group counts, conflicted enrollment count, truncation flag
+- Historical HTML/JSON reports may still exist under `performance/benchmark-report/`
 
 ### 9.3 JMeter Plan (`performance/watum-benchmark.jmx`)
 
@@ -3944,17 +3988,67 @@ Alternative JMeter test plan with the same transaction mix.
 
 ### 10.1 Runtime
 
+The production runtime is Bun with `svelte-adapter-bun`. The SvelteKit adapter is configured with `precompress: true` and `dynamic_origin: true`; `docker-entrypoint.sh` derives `ORIGIN` from `COOLIFY_FQDN` when needed and forces `HOST_HEADER=x-no-such-header` so proxied HTTPS origins are reconstructed correctly before SvelteKit remote-function CSRF checks run.
+
+SvelteKit remote functions are enabled through `kit.experimental.remoteFunctions`. The Svelte compiler defaults to runes mode for project files and leaves external library files unchanged.
+
 ### 10.2 Environment Variables
+
+Common environment variables:
+
+| Variable                  | Purpose                                                             | Code/default behavior                              |
+| ------------------------- | ------------------------------------------------------------------- | -------------------------------------------------- |
+| `DB_HOST`                 | MariaDB host                                                        | Defaults to `localhost`                            |
+| `DB_PORT`                 | MariaDB port                                                        | Defaults to `3306`                                 |
+| `DB_USER`                 | MariaDB user                                                        | Defaults to `root`                                 |
+| `DB_PASSWORD`             | MariaDB password                                                    | Defaults to empty string                           |
+| `DB_NAME`                 | MariaDB database                                                    | Defaults to `akademik_db`                          |
+| `DB_CONNECTION_LIMIT`     | mysql2 pool connection and max-idle size                            | Defaults to `50`                                   |
+| `DB_QUEUE_LIMIT`          | mysql2 wait queue cap                                               | Defaults to `500`                                  |
+| `DB_LIST_QUERY_LIMIT`     | Default page/list query limit                                       | Code fallback is `120`; `.env.example` uses `1000` |
+| `DB_MAX_LIST_QUERY_LIMIT` | Hard cap for requested list limits                                  | Defaults to `5000`                                 |
+| `DB_CONNECT_TIMEOUT`      | mysql2 connection timeout in ms                                     | Defaults to `10000`                                |
+| `JWT_SECRET`              | Required secret for HS256 access-token signing                      | Required at runtime                                |
+| `JWT_ISSUER`              | Optional issuer claim; required in production by auth module policy | Disabled with warning in development if unset      |
+| `AUTO_APPLY_MIGRATIONS`   | Whether Docker startup auto-runs SQL migrations                     | Defaults to `true` in `docker-entrypoint.sh`       |
+| `ORIGIN`                  | Public origin behind proxy                                          | Auto-derived from `COOLIFY_FQDN` if omitted        |
+| `COOLIFY_FQDN`            | Coolify-provided public host list                                   | First comma-separated host is used                 |
 
 ### 10.3 Coolify Deployment
 
+Coolify startup path:
+
+1. `docker-entrypoint.sh` derives `ORIGIN=https://<first COOLIFY_FQDN>` if `ORIGIN` is not already set.
+2. `HOST_HEADER` is forced to `x-no-such-header` to trigger Bun adapter origin rewriting behind Traefik.
+3. If `AUTO_APPLY_MIGRATIONS` is `true` or unset, `bun ./scripts/run-migrations.mjs` applies pending migration files.
+4. The container starts `bun build/index.js`.
+
+Do not set `HOST_HEADER` manually in Coolify for this app unless the adapter/proxy behavior is intentionally being reworked.
+
 ### 10.4 Build & Preview
+
+Primary commands:
+
+```bash
+bun install
+bun run check
+bun run build
+bun run preview
+```
+
+Development uses:
+
+```bash
+bun run dev
+```
+
+The build uses Vite 8 with `terser`, drops console/debugger statements, and targets `es2022`.
 
 ### 10.5 Database Maintenance
 
 ```bash
-# Run migrations
-mysql -h <host> -u root -p < src/lib/server/migrations/001_schema.sql
+# Run pending repository migrations using the same runner as Docker startup
+bun ./scripts/run-migrations.mjs
 
 # Fix lecturer_audit_sk drift (if trigger was disabled)
 mysql -h <host> -u root -p -e "
@@ -3969,6 +4063,8 @@ ALTER TABLE enrollments DROP INDEX idx_enrollments_lecturer_conflict;
 ALTER TABLE enrollments ADD INDEX idx_enrollments_lecturer_conflict (...);
 ```
 
+Before applying migrations manually, check both `schema_migrations` and actual table definitions. The current configured database contains post-`023` schema features even though the migration ledger stops at `023`, so blindly replaying later migrations can produce duplicate-column or duplicate-table behavior.
+
 ---
 
 ## 11. File Structure
@@ -3977,7 +4073,7 @@ ALTER TABLE enrollments ADD INDEX idx_enrollments_lecturer_conflict (...);
 watum/
 ├── src/
 │   ├── routes/                          # SvelteKit routes
-│   │   ├── +page.svelte                 # Main authenticated route controller (~5.2k lines)
+│   │   ├── +page.svelte                 # Main authenticated route controller
 │   │   ├── +layout.svelte               # Root layout (fonts, auth, loading spinner)
 │   │   ├── docs/                        # mdsvex-powered in-app documentation
 │   │   ├── auth/
@@ -3997,52 +4093,51 @@ watum/
 │   │   ├── study-programs/
 │   │   ├── users/
 │   │   └── test/
+│   │       ├── +page.server.ts          # Dev-only route guard; returns 404 outside development
 │   │       └── +page.svelte             # API testing playground
 │   ├── lib/
 │   │   ├── app/
-│   │   │   └── navigation.ts            # Role-based view catalog and shell metadata
+│   │   │   ├── academic.ts              # Academic utilities (schedules, conflicts, room metrics)
+│   │   │   ├── enrollment-policy.ts     # Singleton enrollment policy normalization
+│   │   │   ├── navigation.ts            # Role-based view catalog and shell metadata
+│   │   │   └── ...                      # Collection, picker, selection, refresh helpers
 │   │   ├── client/
 │   │   │   ├── auth.ts                  # Access token management, fetch interceptor
 │   │   │   ├── form-enhancers.ts        # Shared remote-form success/error helpers
 │   │   │   └── loading.svelte.ts        # Global loading state
 │   │   ├── components/
-│   │   │   └── app/                     # Extracted dashboard/calendar/builder/CRUD views
+│   │   │   ├── app/                     # Extracted dashboard/calendar/builder/CRUD views
+│   │   │   └── ui/                      # shadcn/ui components
 │   │   ├── server/
 │   │   │   ├── db.ts                    # Connection pool, transaction helper
 │   │   │   ├── auth.ts                  # JWT, refresh tokens, password hashing
 │   │   │   ├── conflict-audit.ts        # Conflict detection engine
 │   │   │   ├── entity-id.ts             # ID generation utilities
 │   │   │   ├── search.ts                # Fulltext, prefix, cursor helpers
-│   │   │   ├── time-helpers.ts          # Timezone-aware time formatting
-│   │   │   ├── migrations/              # 22 SQL migration files
+│   │   │   ├── migrations/              # 27 SQL migration files
 │   │   │   └── sql/                     # Generated + handwritten SQL queries
 │   │   │       ├── select-*.ts          # Dynamic SELECT builders
 │   │   │       ├── insert-*.ts          # INSERT queries
 │   │   │       ├── update-*.ts          # UPDATE queries
 │   │   │       ├── delete-*.ts          # DELETE queries
 │   │   │       └── crud/                # Low-level CRUD operations
-│   │   ├── components/
-│   │   │   ├── app/
-│   │   │   │   ├── ClassroomDashboard.svelte
-│   │   │   │   ├── CollectionPagination.svelte
-│   │   │   │   └── GlobalSpinner.svelte
-│   │   │   └── ui/                      # shadcn/ui components
 │   │   ├── validations/                 # Valibot schemas
 │   │   │   ├── course.ts
 │   │   │   ├── enrollment.ts
 │   │   │   ├── student.ts
 │   │   │   └── ...
-│   │   └── app/
-│   │       └── academic.ts              # Academic utilities (schedules, conflicts, room metrics)
+│   │   └── time-helpers.ts              # Timezone-aware time formatting
 │   └── app.html                         # HTML template
 ├── scripts/
-│   ├── benchmark-suite.mjs              # HTTP load tester
-│   ├── benchmark-loader.mjs             # ESM loader for benchmark
-│   └── benchmark-env.mjs                # Environment defaults
+│   ├── benchmark-all.ts                 # Broad benchmark tooling
+│   ├── benchmark-conflicts.ts           # Conflict audit benchmark tooling
+│   ├── run-migrations.mjs               # SQL migration runner used by Docker startup
+│   └── seed-stress-coolify.sh           # Coolify stress seed helper
 ├── stress-seed.ts                       # Formula-driven stress data generator targeting 10M total rows
 ├── Dockerfile                           # Multi-stage Bun build
 ├── docker-entrypoint.sh                 # Coolify startup (ORIGIN, HOST_HEADER, migrations)
-├── bun.lock                             # Bun lockfile (replaced package-lock.json)
+├── bun.lock                             # Bun lockfile
+├── package-lock.json                    # Historical npm lockfile still present
 ├── .env.example                         # Environment template
 ├── performance/
 │   ├── benchmark-report/                # Generated reports
