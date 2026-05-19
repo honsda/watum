@@ -196,6 +196,10 @@
 		selectedDraftStudent,
 		selectedDraftCourse,
 		selectedDraftRoom,
+		builderRoster,
+		builderRosterLoading,
+		builderRosterIssue,
+		builderRosterSaving,
 		draftTimeSummary,
 		filteredRoomsForPicker,
 		builderConflictCards,
@@ -236,6 +240,7 @@
 		onConfirmDelete,
 		onCancelDelete,
 		onQueueStudentPickerRefresh,
+		onSaveBuilderRoster,
 		onQueueCoursePickerRefresh,
 		onQueueRoomPickerRefresh,
 		onLoadMoreStudentPickerOptions,
@@ -281,6 +286,10 @@
 		selectedDraftStudent: string;
 		selectedDraftCourse: string;
 		selectedDraftRoom: string;
+		builderRoster: SelectEnrollmentsResult[];
+		builderRosterLoading: boolean;
+		builderRosterIssue: string | null;
+		builderRosterSaving: boolean;
 		draftTimeSummary: string;
 		filteredRoomsForPicker: SelectClassRoomsResult[];
 		builderConflictCards: ConflictGroupCard[];
@@ -321,6 +330,7 @@
 		onConfirmDelete: () => void;
 		onCancelDelete: () => void;
 		onQueueStudentPickerRefresh: (delay?: number) => void;
+		onSaveBuilderRoster: (studentIds: string[]) => void;
 		onQueueCoursePickerRefresh: (delay?: number) => void;
 		onQueueRoomPickerRefresh: (delay?: number) => void;
 		onLoadMoreStudentPickerOptions: () => void;
@@ -343,6 +353,11 @@
 	let studentPickerActiveIndex = $state(-1);
 	let coursePickerActiveIndex = $state(-1);
 	let roomPickerActiveIndex = $state(-1);
+	let rosterStudentIds = $state<string[]>([]);
+	let rosterLastSelectionKey = $state<string | null>(null);
+	let rosterSearch = $state('');
+	let rosterPage = $state(1);
+	const ROSTER_PAGE_SIZE = 8;
 
 	const participantStepReady = $derived(
 		Boolean(enrollmentDraft.studentId && enrollmentDraft.courseId)
@@ -359,6 +374,29 @@
 	const roomStepReady = $derived(Boolean(enrollmentDraft.classRoomId));
 	const participantStepLocked = $derived(builderMode !== 'create');
 	const termStepLocked = $derived(builderMode !== 'create');
+	const rosterStudentIdSet = $derived(new Set(rosterStudentIds));
+	const rosterStudentRows = $derived.by(() => {
+		const byId = new Map<string, SelectEnrollmentsResult>();
+		for (const row of builderRoster) {
+			if (row.student_id) byId.set(row.student_id, row);
+		}
+		return rosterStudentIds.map((studentId) => byId.get(studentId)).filter(Boolean) as SelectEnrollmentsResult[];
+	});
+	const rosterPageCount = $derived(Math.max(1, Math.ceil(rosterStudentRows.length / ROSTER_PAGE_SIZE)));
+	const visibleRosterStudentRows = $derived.by(() => {
+		const currentPage = Math.min(rosterPage, rosterPageCount);
+		const start = (currentPage - 1) * ROSTER_PAGE_SIZE;
+		return rosterStudentRows.slice(start, start + ROSTER_PAGE_SIZE);
+	});
+	const rosterPickerOptions = $derived(
+		studentPickerOptions.filter((student) => student.id && !rosterStudentIdSet.has(student.id))
+	);
+	const rosterDirty = $derived.by(() => {
+		const sourceIds = builderRoster.map((row) => row.student_id).filter(Boolean) as string[];
+		if (sourceIds.length !== rosterStudentIds.length) return true;
+		const sourceSet = new Set(sourceIds);
+		return rosterStudentIds.some((id) => !sourceSet.has(id));
+	});
 	const builderTitle = $derived(
 		builderMode === 'approve'
 			? 'Setujui pengajuan KRS'
@@ -461,6 +499,128 @@
 	) {
 		if (!details) return null;
 		return `${details.count} jadwal • Ruang: ${details.rooms} • Dosen: ${details.lecturers}`;
+	}
+
+	function builderEnrollmentSessionKey(item: SelectEnrollmentsResult) {
+		return item.schedule_id ? `schedule:${item.schedule_id}` : `enrollment:${item.id}`;
+	}
+
+	function selectedEnrollmentBelongsToSession(item: SelectEnrollmentsResult) {
+		if (!selectedEnrollmentId) return false;
+		if (selectedEnrollmentId === item.id) return true;
+		const selectedCard = scheduleCardMap[selectedEnrollmentId] ?? auditConflictCardMap[selectedEnrollmentId];
+		return Boolean(
+			item.schedule_id && selectedCard?.original.schedule_id === item.schedule_id
+		);
+	}
+
+	function enrollmentSessionStudentCount(item: SelectEnrollmentsResult) {
+		const count = Number((item as SelectEnrollmentsResult & { student_count?: number | string }).student_count);
+		return Number.isFinite(count) && count > 0 ? count : 1;
+	}
+
+	const rolledUpBuilderEnrollments = $derived.by(() => {
+		const rows = new Map<
+			string,
+			{
+				item: SelectEnrollmentsResult;
+				studentCount: number;
+				studentNames: string[];
+			}
+		>();
+
+		for (const item of filteredBuilderEnrollments) {
+			const key = builderEnrollmentSessionKey(item);
+			const existing = rows.get(key);
+			if (!existing) {
+				rows.set(key, {
+					item,
+					studentCount: enrollmentSessionStudentCount(item),
+					studentNames: item.student_name ? [item.student_name] : []
+				});
+				continue;
+			}
+
+			if (selectedEnrollmentBelongsToSession(item)) {
+				existing.item = item;
+			}
+			existing.studentCount = Math.max(
+				existing.studentCount,
+				existing.studentNames.length + 1,
+				enrollmentSessionStudentCount(item)
+			);
+			if (item.student_name && !existing.studentNames.includes(item.student_name)) {
+				existing.studentNames.push(item.student_name);
+			}
+		}
+
+		return [...rows.values()];
+	});
+
+	const selectedBuilderSession = $derived.by(() => {
+		if (!selectedEnrollmentId) return null;
+		return rolledUpBuilderEnrollments.find((row) => selectedEnrollmentBelongsToSession(row.item)) ?? null;
+	});
+	const selectedSessionStudentCount = $derived(
+		selectedBuilderSession?.studentCount ?? (selectedEnrollmentId ? 1 : 0)
+	);
+	const selectedSessionStudentNames = $derived(selectedBuilderSession?.studentNames ?? []);
+	const selectedSessionParticipantLabel = $derived(
+		selectedEnrollmentId && selectedSessionStudentCount > 1
+			? `${selectedSessionStudentCount} mahasiswa`
+			: selectedDraftStudent
+	);
+	const selectedSessionParticipantDetail = $derived.by(() => {
+		if (!selectedEnrollmentId || selectedSessionStudentCount <= 1) return selectedDraftCourse;
+		if (!selectedSessionStudentNames.length) return selectedDraftCourse;
+
+		const names = selectedSessionStudentNames.slice(0, 3).join(', ');
+		const remaining = selectedSessionStudentCount - selectedSessionStudentNames.length;
+		return remaining > 0 ? `${names} +${remaining} lainnya` : names;
+	});
+
+	$effect(() => {
+		const selectionKey = selectedEnrollmentId
+			? `${selectedEnrollmentId}:${builderRoster.map((row) => row.id).join('|')}`
+			: null;
+		if (selectionKey === rosterLastSelectionKey) return;
+		rosterLastSelectionKey = selectionKey;
+		rosterStudentIds = builderRoster.map((row) => row.student_id).filter(Boolean) as string[];
+		rosterPage = 1;
+		rosterSearch = '';
+		workflowState.studentPickerSearch = '';
+	});
+
+	$effect(() => {
+		if (rosterPage <= rosterPageCount) return;
+		rosterPage = rosterPageCount;
+	});
+
+	function addRosterStudent(item: SelectStudentsResult) {
+		if (!item.id || rosterStudentIdSet.has(item.id)) return;
+		rosterStudentIds = [...rosterStudentIds, item.id];
+		rosterSearch = '';
+		workflowState.studentPickerSearch = '';
+		workflowState.studentPickerOpen = false;
+		studentPickerActiveIndex = -1;
+	}
+
+	function removeRosterStudent(studentId: string | null | undefined) {
+		if (!studentId || rosterStudentIds.length <= 1) return;
+		rosterStudentIds = rosterStudentIds.filter((id) => id !== studentId);
+	}
+
+	function changeRosterPage(direction: 'previous' | 'next') {
+		if (direction === 'previous') {
+			rosterPage = Math.max(1, rosterPage - 1);
+			return;
+		}
+		rosterPage = Math.min(rosterPageCount, rosterPage + 1);
+	}
+
+	function saveRosterChanges() {
+		if (!rosterDirty || builderRosterSaving || rosterStudentIds.length === 0) return;
+		onSaveBuilderRoster(rosterStudentIds);
 	}
 
 	function selectScheduleCourseFilterOption(item: SelectCoursesResult | null) {
@@ -596,11 +756,13 @@
 	}
 
 	function handleStudentPickerKeydown(event: KeyboardEvent) {
-		const optionCount = studentPickerOptions.length;
+		const isRosterPicker = builderMode === 'edit' && selectedEnrollmentId;
+		const options = isRosterPicker ? rosterPickerOptions : studentPickerOptions;
+		const optionCount = options.length;
 		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
 			event.preventDefault();
 			workflowState.studentPickerOpen = true;
-			if (!studentPickerOptions.length) onQueueStudentPickerRefresh(0);
+			if (!options.length) onQueueStudentPickerRefresh(0);
 			if (optionCount > 0) {
 				const delta = event.key === 'ArrowDown' ? 1 : -1;
 				studentPickerActiveIndex = clampActiveIndex(studentPickerActiveIndex + delta, optionCount);
@@ -608,10 +770,14 @@
 			return;
 		}
 		if (event.key === 'Enter' && workflowState.studentPickerOpen) {
-			const item = studentPickerOptions[studentPickerActiveIndex];
+			const item = options[studentPickerActiveIndex];
 			if (item) {
 				event.preventDefault();
-				selectStudentPickerOption(item);
+				if (isRosterPicker) {
+					addRosterStudent(item);
+				} else {
+					selectStudentPickerOption(item);
+				}
 			}
 			return;
 		}
@@ -1105,7 +1271,7 @@
 		</label>
 
 		<div class="list-summary">
-			<span>{filteredBuilderEnrollments.length} jadwal ditemukan</span>
+			<span>{rolledUpBuilderEnrollments.length} sesi jadwal ditemukan</span>
 			<div class="schedule-filter-actions">
 				{#if filterState.builderConflictOnly}
 					<Badge variant="secondary">Bentrok saja</Badge>
@@ -1126,7 +1292,8 @@
 		</div>
 
 		<div class="list-stack">
-			{#each filteredBuilderEnrollments as item (item.id)}
+			{#each rolledUpBuilderEnrollments as row (builderEnrollmentSessionKey(row.item))}
+				{@const item = row.item}
 				{@const scheduleCard = item.id
 					? (scheduleCardMap[item.id] ?? auditConflictCardMap[item.id])
 					: null}
@@ -1134,7 +1301,7 @@
 					role="button"
 					tabindex="0"
 					onkeydown={handleKeyboardClick}
-					class:selected={selectedEnrollmentId === item.id}
+					class:selected={selectedEnrollmentBelongsToSession(item)}
 					class:conflict={Boolean(scheduleCard?.hasConflict)}
 					class="list-row"
 					style={conflictToneVariables(scheduleCard?.conflictTone ?? null)}
@@ -1152,16 +1319,10 @@
 							}}><strong>{item.course_name}</strong></span
 						>
 						<span
-							><span
-								role="button"
-								tabindex="0"
-								class="entity-link"
-								onkeydown={handleKeyboardClick}
-								onclick={(e) => {
-									e.stopPropagation();
-									onNavigateToEntity('students', item.student_id, item.student_name);
-								}}>{item.student_name}</span
-							>
+							><span>{row.studentCount} mahasiswa</span>
+							{#if row.studentNames.length}
+								<span> ({row.studentNames.slice(0, 2).join(', ')}{row.studentNames.length > 2 ? ` +${row.studentNames.length - 2}` : ''})</span>
+							{/if}
 							•
 							<span
 								role="button"
@@ -1314,8 +1475,8 @@
 			<section class="builder-snapshot">
 				<div>
 					<span>Peserta</span>
-					<strong>{selectedDraftStudent}</strong>
-					<p>{selectedDraftCourse}</p>
+					<strong>{selectedSessionParticipantLabel}</strong>
+					<p>{selectedSessionParticipantDetail}</p>
 				</div>
 				<div>
 					<span>Waktu</span>
@@ -1398,12 +1559,149 @@
 					{/if}
 					<div class="detail-lines">
 						<div>
-							<span>Mahasiswa</span><strong>{selectedDraftStudent}</strong>
+							<span>Mahasiswa</span><strong>{selectedSessionParticipantLabel}</strong>
+							{#if selectedSessionParticipantDetail !== selectedDraftCourse}
+								<p>{selectedSessionParticipantDetail}</p>
+							{/if}
 						</div>
 						<div>
 							<span>Mata kuliah</span><strong>{selectedDraftCourse}</strong>
 						</div>
 					</div>
+					{#if builderMode === 'edit'}
+						<section class="support-panel roster-editor">
+							<div class="builder-section-head roster-editor-head">
+								<h4>Peserta sesi</h4>
+								<p class="builder-note">Tambah atau hapus mahasiswa untuk sesi jadwal ini.</p>
+							</div>
+							{#if builderRosterIssue}
+								<p class="combobox-error">{builderRosterIssue}</p>
+							{:else if builderRosterLoading}
+								<p class="empty-copy">Memuat peserta sesi...</p>
+							{:else}
+								<div class="roster-list">
+									{#each visibleRosterStudentRows as row (row.student_id)}
+										<div class="roster-row">
+											<div>
+												<strong>{row.student_name}</strong>
+												<span>{row.student_id}</span>
+											</div>
+											<Button
+												type="button"
+												variant="ghost"
+												size="sm"
+												class="ghost-button"
+												disabled={rosterStudentIds.length <= 1 || builderRosterSaving}
+												onclick={() => removeRosterStudent(row.student_id)}
+											>
+												Hapus
+											</Button>
+										</div>
+									{/each}
+								</div>
+								{#if rosterPageCount > 1}
+									<div class="roster-pagination">
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											disabled={rosterPage <= 1}
+											onclick={() => changeRosterPage('previous')}
+										>
+											Sebelumnya
+										</Button>
+										<span>{Math.min(rosterPage, rosterPageCount)} / {rosterPageCount}</span>
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											class="ghost-button"
+											disabled={rosterPage >= rosterPageCount}
+											onclick={() => changeRosterPage('next')}
+										>
+											Berikutnya
+										</Button>
+									</div>
+								{/if}
+								<label class="roster-add-control">
+									<span>Tambah mahasiswa</span>
+									<div
+										class="combobox-wrap"
+										onfocusout={(e) => {
+											if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+												workflowState.studentPickerOpen = false;
+												studentPickerActiveIndex = -1;
+											}
+										}}
+									>
+										<input
+											type="text"
+											role="combobox"
+											class="combobox-input"
+											placeholder="Cari mahasiswa..."
+											aria-expanded={workflowState.studentPickerOpen}
+											aria-controls="roster-student-picker-listbox"
+											aria-autocomplete="list"
+											aria-activedescendant={activeDescendantId('roster-student-picker', studentPickerActiveIndex)}
+											bind:value={rosterSearch}
+											oninput={() => {
+												studentPickerActiveIndex = -1;
+												workflowState.studentPickerOpen = true;
+												workflowState.studentPickerSearch = rosterSearch;
+												onQueueStudentPickerRefresh();
+											}}
+											onkeydown={handleStudentPickerKeydown}
+										onfocus={() => {
+											studentPickerActiveIndex = -1;
+											workflowState.studentPickerOpen = true;
+											workflowState.studentPickerSearch = rosterSearch;
+											onQueueStudentPickerRefresh(0);
+										}}
+										/>
+										{#if studentPickerIssue}
+											<p class="combobox-error">{studentPickerIssue}</p>
+										{:else if workflowState.studentPickerOpen && studentPickerLoading && !rosterPickerOptions.length}
+											<p class="combobox-empty">Memuat mahasiswa...</p>
+										{:else if workflowState.studentPickerOpen}
+											<div id="roster-student-picker-listbox" class="combobox-dropdown" role="listbox">
+												{#each rosterPickerOptions as item, index (item.id)}
+													<button
+														id={`roster-student-picker-option-${index}`}
+														type="button"
+														role="option"
+														aria-selected="false"
+														class="combobox-option"
+														class:active={studentPickerActiveIndex === index}
+														onclick={() => addRosterStudent(item)}
+														onfocus={() => (studentPickerActiveIndex = index)}
+														onmouseover={() => (studentPickerActiveIndex = index)}
+													>
+														<strong>{item.name}</strong>
+														<span>{item.id}</span>
+													</button>
+												{/each}
+												{#if !rosterPickerOptions.length && !studentPickerLoading}
+													<p class="combobox-empty">Tidak ada mahasiswa lain yang cocok.</p>
+												{/if}
+											</div>
+										{/if}
+									</div>
+								</label>
+								<div class="builder-section-actions split roster-actions">
+									<p class="editor-note">Perubahan peserta disimpan terpisah dari jadwal dan ruang.</p>
+									<Button
+										type="button"
+										class="primary-button"
+										disabled={!rosterDirty || builderRosterSaving || rosterStudentIds.length === 0}
+										onclick={saveRosterChanges}
+									>
+										{builderRosterSaving ? 'Menyimpan...' : 'Simpan peserta'}
+									</Button>
+								</div>
+							{/if}
+						</section>
+					{/if}
 				{:else}
 					<div class="editor-grid">
 						<label>
@@ -1873,7 +2171,10 @@
 				<div class="detail-lines builder-review-grid">
 					<div>
 						<span>Mahasiswa</span>
-						<strong>{selectedDraftStudent}</strong>
+						<strong>{selectedSessionParticipantLabel}</strong>
+						{#if selectedSessionParticipantDetail !== selectedDraftCourse}
+							<p>{selectedSessionParticipantDetail}</p>
+						{/if}
 					</div>
 					<div>
 						<span>Mata kuliah</span>
@@ -1893,11 +2194,12 @@
 						Jika masih ragu, kembali satu langkah lalu perbaiki waktu atau ruang sebelum simpan.
 					</p>
 					<div class="builder-inline-actions">
-						<Button type="button" variant="ghost" class="ghost-button" onclick={retreatBuilderStep}
-							>Kembali</Button
-						>
-						<Button type="submit" class="primary-button builder-submit">{builderSubmitLabel}</Button
-						>
+			<Button type="button" variant="ghost" class="ghost-button" onclick={retreatBuilderStep}
+				>Kembali</Button
+			>
+			<Button type="submit" class="primary-button builder-submit" disabled={rosterDirty || builderRosterSaving}
+				>{rosterDirty ? 'Simpan peserta dulu' : builderSubmitLabel}</Button
+			>
 					</div>
 				</div>
 			</section>
@@ -1930,10 +2232,13 @@
 	.builder-section-head,
 	.builder-section-actions,
 	.builder-room-stage,
+	.roster-editor,
+	.roster-list,
 	.search-box,
 	.pane-head,
 	.editor-grid,
 	.detail-lines,
+	.roster-row,
 	.support-list {
 		display: grid;
 		gap: 0.8rem;
@@ -2127,6 +2432,51 @@
 		justify-content: flex-end;
 	}
 
+	.roster-editor {
+		margin-top: 0.85rem;
+	}
+
+	.roster-editor-head {
+		gap: 0.35rem;
+	}
+
+	.roster-pagination {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.65rem;
+	}
+
+	.roster-pagination span {
+		color: var(--color-muted-foreground);
+	}
+
+	.roster-row {
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 0.7rem;
+		padding: 0.68rem 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.72rem;
+		background: var(--color-surface);
+	}
+
+	.roster-row > div,
+	.roster-add-control {
+		display: grid;
+		gap: 0.28rem;
+		min-width: 0;
+	}
+
+	.roster-row span,
+	.roster-add-control > span {
+		color: var(--color-muted-foreground);
+	}
+
+	.roster-actions {
+		align-items: center;
+	}
+
 	.schedule-filter-actions :global([data-slot='button']),
 	.builder-inline-actions :global([data-slot='button']),
 	.builder-conflict-card-actions :global([data-slot='button']),
@@ -2216,6 +2566,7 @@
 	.builder-note,
 	.empty-copy,
 	.warning-panel p:not(.warning-title),
+	.detail-lines p,
 	.builder-snapshot p {
 		margin: 0;
 		font-size: 0.91rem;

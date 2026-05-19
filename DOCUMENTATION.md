@@ -3,8 +3,8 @@
 > **Project**: Watum Academic Scheduling System  
 > **Stack**: SvelteKit 2.x, MariaDB (MySQL), Bun, TypeScript, mdsvex  
 > **Scale**: Current configured database contains 61,152 enrollments; stress seeding still targets up to 10M total rows
-> **Last Updated**: 2026-05-17
-> **Recent Changes**: Refreshed live database snapshot from `projectbasdat2`, documented the split between SQL migrations and stale Prisma/schema dumps, updated migration/runtime operations notes, and corrected file-structure counts
+> **Last Updated**: 2026-05-19
+> **Recent Changes**: Documented schedule-session rollups, builder/calendar distinct-session filtering, and schedule-builder roster editing behavior
 
 ---
 
@@ -562,6 +562,23 @@ export const deleteCourse = command(v.string(), async (id) => { ... });
 
 **Serialization**: Uses `devalue` for structured clone serialization (handles Dates, Maps, Sets, etc.).
 
+#### 4.1.1 Enrollment Schedule Queries
+
+`src/routes/enrollments/data.remote.ts` exposes enrollment queries for both row-oriented and session-oriented views:
+
+| Remote function                   | Purpose                                                                                                             |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `getEnrollments(page)`            | Normal paginated enrollment-row listing                                                                             |
+| `searchEnrollments(filters)`      | Normal filtered enrollment-row listing                                                                              |
+| `searchEnrollments({ preview })`  | Calendar schedule preview mode; scans raw rows and collapses by distinct schedule session                           |
+| `searchEnrollments({ sessions })` | Schedule-builder list mode; uses the same distinct-session collapse behavior without implying calendar-only usage   |
+| `getEnrollmentSessionRoster(id)`  | Loads all enrollment rows sharing the selected enrollment's `schedule_id`                                           |
+| `updateEnrollmentSessionRoster()` | Replaces the selected session's student roster by inserting/removing enrollment rows around the shared schedule row |
+
+Session-oriented results deliberately return `nextCursor: null`. Cursoring raw enrollment IDs after collapsing sessions can skip or duplicate visible sessions because many enrollment rows may represent one schedule session. The UI therefore treats session search as a bounded preview/list result and asks users to narrow filters if the result set is still too broad.
+
+Do not call `.run()` from reactive render/effect code on the client. Use the existing query resolution helper (`resolveRemoteQuery(...)`) for client event/effect paths, or await remote queries directly where SvelteKit allows it. `.run()` is reserved for supported event-handler/load-style paths and server-compatible imperative calls.
+
 ### 4.2 Auth Flow
 
 ```
@@ -670,7 +687,36 @@ Workflow:
 
 The unique key `enrollments_student_course_term_key (student_id, course_id, semester, academic_year)` prevents duplicate requests or duplicate approved enrollments for the same course in the same term. Pending rows have no `class_room_id` or `schedule_id`; approval fills both values after room, student, and lecturer conflict checks pass.
 
-### 4.7 Global Loading Spinner
+### 4.7 Schedule Sessions, Filters, and Builder Roster Editing
+
+The scheduling UI has two different data shapes:
+
+| Shape             | Meaning                                                                                         | Primary users                       |
+| ----------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Enrollment rows   | One row per student-course-term enrollment                                                      | Enrollment table, grades, requests  |
+| Schedule sessions | One visible class meeting/session, usually represented by many enrollment rows sharing schedule | Calendar and schedule builder views |
+
+Calendar and schedule-builder views should reason in **schedule sessions**, not raw enrollment rows. A course with 100 enrolled students may have 100 enrollment rows but only one visible session card. Showing or filtering by raw rows causes distorted behavior, especially for room-only filters where the first page can be dominated by many students from one session.
+
+Current behavior:
+
+- `searchEnrollments({ preview: true })` powers calendar preview searches and returns distinct schedule sessions.
+- `searchEnrollments({ sessions: true })` powers the schedule builder list and returns distinct schedule sessions.
+- Session-mode searches scan a larger raw enrollment window, collapse by `schedule_id`, attach `student_count`, and return up to the UI-visible session limit.
+- The route controller treats server-filtered schedule results as authoritative; it no longer re-applies local schedule filters to the returned `ScheduleCard` list.
+- The builder list rolls up rows sharing a `schedule_id` and displays `N mahasiswa` instead of repeating one row per enrolled student.
+
+The builder editor includes roster editing for an approved schedule session:
+
+1. `getEnrollmentSessionRoster(id)` loads all enrollment rows sharing the selected enrollment's `schedule_id`.
+2. The editor shows roster rows in a paginated list and uses a blank add-student search field.
+3. `updateEnrollmentSessionRoster({ id, studentIds })` adds/removes enrollment rows for the session while preserving the shared `schedule_id`, room, course, semester, and academic year.
+4. The server validates that at least one student remains, all students exist, no added student is already enrolled in the same course/term elsewhere, and added students do not have schedule conflicts.
+5. Students with grades cannot be removed from a session roster.
+
+Roster changes are saved separately from schedule/time/room edits. If roster changes are dirty, the builder disables the schedule submit button until the roster is saved.
+
+### 4.8 Global Loading Spinner
 
 A `fetch` interceptor tracks all remote requests:
 
@@ -3216,6 +3262,7 @@ export type ScheduleCard = {
 	startMinutes: number; // Minutes since midnight
 	endMinutes: number;
 	durationMinutes: number; // endMinutes - startMinutes
+	studentCount: number; // Total students in the session when available
 	hasConflict: boolean; // Set by buildScheduleCards()
 	conflictGroupId: string | null;
 	conflictTone: number | null; // Index into CONFLICT_TONES
@@ -3304,7 +3351,13 @@ Returns `"Belum dijadwalkan"` (Not yet scheduled) if either value is missing.
 
 **`buildScheduleCards(enrollments, timezone): ScheduleCard[]`**
 
-Transforms raw enrollment rows into display-ready cards and detects visual conflicts using the union-find (disjoint set) algorithm.
+Transforms raw enrollment rows into display-ready cards and detects visual conflicts using the union-find (disjoint set) algorithm. Calendar and builder session-mode queries may provide one representative enrollment row per `schedule_id`, plus `student_count`; normal row-mode lists may provide many rows for the same schedule.
+
+`buildScheduleCards()` handles both shapes:
+
+- If `student_count` is available, it uses that as the session's displayed student count.
+- If `student_count` is missing, it counts visible rows sharing the same `schedule_id`.
+- The raw `original` row remains the representative enrollment used for selection and editor actions.
 
 **Phase 1: Card creation**
 
@@ -3325,6 +3378,7 @@ Filters out rows missing required fields, then maps each row:
   startMinutes: toMinutes(item.schedule_start_time, timezone),
   endMinutes: toMinutes(item.schedule_end_time, timezone),
   durationMinutes: Math.max(endMinutes - startMinutes, 0),
+  studentCount,
   hasConflict: false,
   conflictGroupId: null,
   conflictTone: null,
@@ -4294,6 +4348,24 @@ Adding TanStack Query now would duplicate concerns already handled by SvelteKit 
 **Cause**: The original unique key used `(student_id, course_id, semester)` and the application duplicate check matched the same fields, which blocked retaking the same course in the same semester label across a different academic year.
 
 **Fix**: A migration now changes enrollment uniqueness to `(student_id, course_id, semester, academic_year)`, and application duplicate checks use the same four fields.
+
+### Issue: Calendar and builder filters hid valid schedule sessions
+
+**Cause**: Calendar and builder views originally loaded/paginated raw enrollment rows even though the UI displays schedule sessions. A room-only filter could return many student rows for one session and crowd out other sessions in the same room. The client also re-applied local filters after the server already returned filtered schedule results, which could exclude a valid session when the server match came from another row in the same rolled-up session.
+
+**Fix**: `searchEnrollments({ preview: true })` and `searchEnrollments({ sessions: true })` now scan a larger raw row window, collapse by distinct `schedule_id`, attach `student_count`, and return session-level results. The schedule card pipeline now trusts the server-filtered result set instead of re-filtering it on the client.
+
+### Issue: Schedule builder repeated every student in a shared session
+
+**Cause**: The builder list rendered one row per enrollment row, so a course with many enrolled students appeared as many duplicate schedule rows.
+
+**Fix**: The builder list rolls up rows by `schedule_id`, displays `N mahasiswa`, and keeps selection/actions pointed at a representative enrollment. The editor loads the full session roster separately via `getEnrollmentSessionRoster(id)` and saves roster edits through `updateEnrollmentSessionRoster()`.
+
+### Issue: Roster add-student search autofilled with the selected representative student
+
+**Cause**: The roster add-student search reused the same `studentPickerSearch` state as the main create-mode participant picker. Selecting/editing a session populated that shared search value with the representative student name.
+
+**Fix**: The roster editor now has its own search state, clears it when a session changes or after a student is added, and paginates the enrolled-students roster independently.
 
 ### Issue: Internal `/test` route exposed manual remote-function tooling in production
 

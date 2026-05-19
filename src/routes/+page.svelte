@@ -179,11 +179,13 @@
 	import {
 		getEnrollments,
 		getEnrollment,
+		getEnrollmentSessionRoster,
 		getEnrollmentConflictAudit,
 		getSchedulePreview,
 		searchEnrollments,
 		createEnrollment,
 		updateEnrollment,
+		updateEnrollmentSessionRoster,
 		deleteEnrollment,
 		bulkDeleteEnrollments,
 		bulkUpdateEnrollments,
@@ -995,6 +997,10 @@
 	let enrollmentPolicyDraft = $state<EnrollmentPolicy>(createDefaultEnrollmentPolicy());
 	let enrollmentPolicyLoaded = $state(false);
 	let enrollmentPolicyIssue = $state<string | null>(null);
+	let builderRoster = $state<SelectEnrollmentsResult[]>([]);
+	let builderRosterLoading = $state(false);
+	let builderRosterIssue = $state<string | null>(null);
+	let builderRosterSaving = $state(false);
 	let pendingRefreshTimer: number | null = null;
 	let collectionRefreshTimers: Partial<Record<DataCollectionKey, number>> = {};
 	let conflictAuditRefreshTimer: number | null = null;
@@ -1591,34 +1597,6 @@
 		void refreshScheduleLecturerFilterOptions(scheduleLecturerFilterNextCursor);
 	}
 
-	function scheduleFiltersMatch(item: SelectEnrollmentsResult) {
-		if (scheduleCourseFilter && item.course_id !== scheduleCourseFilter) return false;
-		if (scheduleRoomFilter && item.class_room_id !== scheduleRoomFilter) return false;
-		if (scheduleLecturerFilter && item.lecturer_id !== scheduleLecturerFilter) return false;
-		if (scheduleDayFilter && item.schedule_day !== scheduleDayFilter) return false;
-		if (scheduleSemesterFilter && item.semester !== scheduleSemesterFilter) return false;
-		if (scheduleAcademicYearFilter && item.academic_year !== scheduleAcademicYearFilter)
-			return false;
-		return true;
-	}
-
-	function scheduleSearchMatches(item: SelectEnrollmentsResult) {
-		if (!enrollmentSearch) return true;
-		const dayLabel = item.schedule_day
-			? DAY_LABELS[item.schedule_day as keyof typeof DAY_LABELS]
-			: '';
-
-		return (
-			matchesText(item.student_name, enrollmentSearch) ||
-			matchesText(item.course_name, enrollmentSearch) ||
-			matchesText(item.class_room_name, enrollmentSearch) ||
-			matchesText(item.lecturer_name, enrollmentSearch) ||
-			matchesText(dayLabel, enrollmentSearch) ||
-			matchesText(item.semester, enrollmentSearch) ||
-			matchesText(item.academic_year, enrollmentSearch)
-		);
-	}
-
 	function resetScheduleFilters() {
 		enrollmentSearch = '';
 		scheduleCourseFilter = '';
@@ -1733,6 +1711,10 @@
 		selectedGradeRecord = null;
 		selectedUserRecord = null;
 		collectionIssues = {};
+		builderRoster = [];
+		builderRosterLoading = false;
+		builderRosterIssue = null;
+		builderRosterSaving = false;
 		collectionPagination = createCollectionPaginationState();
 		collectionLoaded = createCollectionLoadedState();
 		roomPickerOptions = [];
@@ -1839,9 +1821,13 @@
 
 	function requestEnrollmentsPage(cursor: string | null) {
 		const params = buildEnrollmentSearchParams(cursor);
+		const sessionMode = activeView === 'builder';
 		const hasFilters = Object.entries(params).some(
 			([key, value]) => key !== 'cursor' && value != null
 		);
+		if (sessionMode) {
+			return searchEnrollments({ ...params, sessions: true });
+		}
 		return hasFilters ? searchEnrollments(params) : getEnrollments({ cursor: cursor ?? undefined });
 	}
 
@@ -2524,6 +2510,17 @@
 	});
 
 	$effect(() => {
+		if (activeView !== 'builder' || !selectedEnrollmentId || builderMode !== 'edit') {
+			builderRoster = [];
+			builderRosterIssue = null;
+			return;
+		}
+		const _deps = [selectedEnrollmentId, activeView, builderMode];
+		void _deps;
+		void refreshBuilderRoster(selectedEnrollmentId);
+	});
+
+	$effect(() => {
 		if (!selectedConflictGroupId) return;
 		if (calendarConflictLegend.some((group) => group.id === selectedConflictGroupId)) return;
 		selectedConflictGroupId = null;
@@ -2690,11 +2687,7 @@
 		});
 	});
 	const scheduleAnalyticsCards = $derived(schedulePreview.hasMore ? [] : scheduleCards);
-	const filteredScheduleCards = $derived(
-		scheduleCards.filter(
-			(card) => scheduleFiltersMatch(card.original) && scheduleSearchMatches(card.original)
-		)
-	);
+	const filteredScheduleCards = $derived(scheduleCards);
 	const calendarVisibleDays = $derived(visibleDaysForCalendar(filteredScheduleCards, scheduleDayFilter));
 	const calendarHiddenDays = $derived(hiddenDaysForCalendar(calendarVisibleDays));
 	const calendarColumnWidthValue = $derived(calendarColumnWidth(calendarVisibleDays.length));
@@ -3442,6 +3435,45 @@
 			return result.items.find((item) => item.id === id) ?? null;
 		} catch {
 			return null;
+		}
+	}
+
+	async function refreshBuilderRoster(id = selectedEnrollmentId) {
+		if (!id || activeView !== 'builder') {
+			builderRoster = [];
+			builderRosterIssue = null;
+			return;
+		}
+
+		builderRosterLoading = true;
+		try {
+			builderRoster = await resolveRemoteQuery(getEnrollmentSessionRoster(id));
+			builderRosterIssue = null;
+		} catch (error) {
+			builderRosterIssue = errorMessage(error, 'Daftar peserta sesi gagal dimuat.');
+		} finally {
+			builderRosterLoading = false;
+		}
+	}
+
+	async function saveBuilderRoster(studentIds: string[]) {
+		if (!selectedEnrollmentId || builderRosterSaving) return;
+		builderRosterSaving = true;
+		try {
+			const result = await updateEnrollmentSessionRoster({
+				id: selectedEnrollmentId,
+				studentIds
+			});
+			const nextId = (result as { id?: string } | undefined)?.id ?? selectedEnrollmentId;
+			await refreshDependencies({ collections: ['enrollments'], includeSchedulePreview: true });
+			await syncBuilderSelection(nextId, true);
+			await refreshBuilderRoster(nextId);
+			setFeedback('success', 'Peserta jadwal berhasil diperbarui.');
+		} catch (error) {
+			const message = (error as { body?: { message?: string }; message?: string })?.body?.message;
+			setFeedback('danger', message || (error as Error).message || 'Peserta jadwal gagal diperbarui.');
+		} finally {
+			builderRosterSaving = false;
 		}
 	}
 
@@ -4772,6 +4804,10 @@
 			selectedDraftStudent,
 			selectedDraftCourse,
 			selectedDraftRoom,
+			builderRoster,
+			builderRosterLoading,
+			builderRosterIssue,
+			builderRosterSaving,
 			draftTimeSummary,
 			filteredRoomsForPicker,
 			builderConflictCards,
@@ -4812,6 +4848,7 @@
 			onConfirmDelete: confirmPendingDelete,
 			onCancelDelete: cancelPendingDelete,
 			onQueueStudentPickerRefresh: queueStudentPickerRefresh,
+			onSaveBuilderRoster: saveBuilderRoster,
 			onQueueCoursePickerRefresh: queueCoursePickerRefresh,
 			onQueueRoomPickerRefresh: queueRoomPickerRefresh,
 			onLoadMoreStudentPickerOptions: loadMoreStudentPickerOptions,

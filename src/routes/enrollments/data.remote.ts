@@ -53,6 +53,7 @@ import {
 	approveEnrollmentSchema,
 	days,
 	enrollmentSchema,
+	enrollmentSessionRosterSchema,
 	studentEnrollmentRequestSchema,
 } from "$lib/validations/enrollment";
 import { listPageEntries, listPageSchema } from "$lib/validations/pagination";
@@ -384,6 +385,7 @@ export const getSchedulePreview = query(listPageSchema, async (page) => {
 const searchEnrollmentsSchema = v.object({
 	...listPageEntries,
 	preview: v.optional(v.boolean()),
+	sessions: v.optional(v.boolean()),
 	q: v.optional(v.string()),
 	id: v.optional(v.string()),
 	studentId: v.optional(v.string()),
@@ -478,6 +480,20 @@ async function collapsePreviewScheduleSessions(
 	return {
 		items: await attachSessionStudentCounts(sessionRows),
 		hasMore,
+	};
+}
+
+async function toSessionLimitedListResult(
+	rows: SelectEnrollmentsResult[],
+	limit: number,
+	scanLimit: number,
+) {
+	const result = await collapsePreviewScheduleSessions(rows, limit, scanLimit);
+	return {
+		items: result.items,
+		limit,
+		hasMore: result.hasMore,
+		nextCursor: null,
 	};
 }
 
@@ -766,6 +782,7 @@ export const searchEnrollments = query(
 	async (filters) => {
 		const user = await requireUser();
 		const where: SelectEnrollmentsWhere[] = [];
+		const sessionMode = Boolean(filters.preview || filters.sessions);
 		const limit = getListQueryLimit(filters.preview ? 60 : 40);
 		if (user.role === "STUDENT") {
 			where.push(["student_id", "=", user.studentId!]);
@@ -871,7 +888,8 @@ export const searchEnrollments = query(
 		if (q) {
 			const qPrefix = prefixSearchPattern(q)!;
 			const qWordPrefix = wordPrefixSearchPattern(q)!;
-			const queryLimit = limit + 1;
+			const searchLimit = sessionMode ? getListQueryLimit(limit * 50) : limit;
+			const queryLimit = searchLimit + 1;
 			const resultSets = await Promise.all([
 				selectEnrollments(getPool(), {
 					select: enrollmentListSelect,
@@ -884,7 +902,7 @@ export const searchEnrollments = query(
 					[qPrefix, qWordPrefix],
 					filters,
 					user,
-					limit,
+					searchLimit,
 					afterId,
 				),
 				prefetchEnrollmentSearchResults(
@@ -893,7 +911,7 @@ export const searchEnrollments = query(
 					[qPrefix, qWordPrefix],
 					filters,
 					user,
-					limit,
+					searchLimit,
 					afterId,
 				),
 				prefetchEnrollmentSearchResults(
@@ -902,7 +920,7 @@ export const searchEnrollments = query(
 					[qPrefix, qWordPrefix],
 					filters,
 					user,
-					limit,
+					searchLimit,
 					afterId,
 				),
 				prefetchEnrollmentSearchResults(
@@ -911,7 +929,7 @@ export const searchEnrollments = query(
 					[qPrefix, qWordPrefix],
 					filters,
 					user,
-					limit,
+					searchLimit,
 					afterId,
 				),
 				prefetchEnrollmentSearchResults(
@@ -920,7 +938,7 @@ export const searchEnrollments = query(
 					[qPrefix],
 					filters,
 					user,
-					limit,
+					searchLimit,
 					afterId,
 				),
 				prefetchEnrollmentSearchResults(
@@ -929,7 +947,7 @@ export const searchEnrollments = query(
 					[qPrefix],
 					filters,
 					user,
-					limit,
+					searchLimit,
 					afterId,
 				),
 			]);
@@ -946,11 +964,19 @@ export const searchEnrollments = query(
 						[normalizedDay as (typeof days)[number]],
 						filters,
 						user,
-						limit,
+						searchLimit,
 						afterId,
 						{ forcePrimary: true },
 					),
 				);
+			}
+			if (sessionMode) {
+				const mergedRows = mergeLimitedListResult(
+					resultSets,
+					searchLimit,
+					(item) => item.id ?? null,
+				).items;
+				return toSessionLimitedListResult(mergedRows, limit, searchLimit);
 			}
 			return mergeLimitedListResult(
 				resultSets,
@@ -991,7 +1017,7 @@ export const searchEnrollments = query(
 			predicateValues.push(containsSearchPattern(filters.academicYear)!);
 		}
 
-		const previewScanLimit = filters.preview
+		const previewScanLimit = sessionMode
 			? getListQueryLimit(limit * 50)
 			: limit;
 		const rows = await prefetchEnrollmentSearchResults(
@@ -1005,18 +1031,8 @@ export const searchEnrollments = query(
 			{ forcePrimary: base === "enrollments" },
 		);
 
-		if (filters.preview) {
-			const preview = await collapsePreviewScheduleSessions(
-				rows,
-				limit,
-				previewScanLimit,
-			);
-			return {
-				items: preview.items,
-				limit,
-				hasMore: preview.hasMore,
-				nextCursor: null,
-			};
+		if (sessionMode) {
+			return toSessionLimitedListResult(rows, limit, previewScanLimit);
 		}
 
 		return toLimitedListResult(rows, limit, (item) => item.id ?? null);
@@ -1038,6 +1054,30 @@ export const getEnrollment = query(v.string(), async (id) => {
 		throw error(403, "Anda tidak berhak melihat data KRS ini");
 	}
 	return enrollment;
+});
+
+export const getEnrollmentSessionRoster = query(v.string(), async (id) => {
+	const user = await requireRole(["ADMIN", "LECTURER"]);
+	const [representative] = await selectEnrollments(getPool(), {
+		where: [["id", "=", id]],
+	});
+	if (!representative) {
+		throw error(404, "Data KRS tidak ditemukan");
+	}
+	if (
+		user.role === "LECTURER" &&
+		representative.lecturer_id !== user.lecturerId
+	) {
+		throw error(403, "Anda tidak berhak melihat peserta jadwal ini");
+	}
+	if (!representative.schedule_id) {
+		return [representative];
+	}
+
+	const rows = await selectEnrollments(getPool(), {
+		where: [["schedule_id", "=", representative.schedule_id]],
+	});
+	return attachSessionStudentCounts(rows);
 });
 
 const conflictAuditSchema = v.object({
@@ -1515,6 +1555,136 @@ export const updateEnrollment = form(
 		invalidateConflictAuditCache();
 		await getEnrollments().refresh();
 		return { success: true };
+	},
+);
+
+export const updateEnrollmentSessionRoster = command(
+	enrollmentSessionRosterSchema,
+	async (data) => {
+		const user = await requireRole(["ADMIN", "LECTURER"]);
+		const [representative] = await selectEnrollments(getPool(), {
+			where: [["id", "=", data.id]],
+		});
+		if (!representative) {
+			throw error(404, "Data KRS tidak ditemukan");
+		}
+		if (!representative.schedule_id) {
+			throw error(400, "Sesi jadwal belum lengkap");
+		}
+		if (
+			user.role === "LECTURER" &&
+			representative.lecturer_id !== user.lecturerId
+		) {
+			throw error(
+				403,
+				"Anda hanya dapat mengubah peserta untuk mata kuliah yang Anda ampu",
+			);
+		}
+
+		const studentIds = Array.from(new Set(data.studentIds.filter(Boolean)));
+		const existingRows = await selectEnrollments(getPool(), {
+			where: [["schedule_id", "=", representative.schedule_id]],
+		});
+		const existingByStudentId = new Map(
+			existingRows
+				.filter((item) => item.student_id)
+				.map((item) => [item.student_id!, item]),
+		);
+		const studentRows = await selectStudents(getPool(), {
+			select: { id: true },
+			where: [["id", "IN", studentIds]],
+		});
+		const foundStudentIds = new Set(
+			studentRows.map((student) => student.id).filter(Boolean),
+		);
+		const missingStudentIds = studentIds.filter(
+			(id) => !foundStudentIds.has(id),
+		);
+		if (missingStudentIds.length) {
+			throw error(400, "Beberapa mahasiswa tidak ditemukan");
+		}
+		const duplicateRows = await selectEnrollments(getPool(), {
+			select: { id: true, student_id: true, schedule_id: true },
+			where: [
+				["student_id", "IN", studentIds],
+				["course_id", "=", representative.course_id!],
+				["semester", "=", representative.semester!],
+				["academic_year", "=", representative.academic_year!],
+			],
+		});
+		const duplicateOutsideSession = duplicateRows.find(
+			(row) => row.schedule_id !== representative.schedule_id,
+		);
+		if (duplicateOutsideSession) {
+			throw error(
+				400,
+				`Mahasiswa ${duplicateOutsideSession.student_id} sudah terdaftar di mata kuliah ini`,
+			);
+		}
+
+		const studentConflicts = await Promise.all(
+			studentIds
+				.filter((studentId) => !existingByStudentId.has(studentId))
+				.map(async (studentId) => ({
+					studentId,
+					conflicts: await selectStudentScheduleConflict(getPool(), {
+						studentId,
+						day: representative.schedule_day!,
+						startTime: representative.schedule_start_time!,
+						endTime: representative.schedule_end_time!,
+						semester: representative.semester ?? undefined,
+						academicYear: representative.academic_year ?? undefined,
+					}),
+				})),
+		);
+		const firstConflict = studentConflicts.find(
+			(item) => item.conflicts.length,
+		);
+		if (firstConflict) {
+			throw error(
+				400,
+				`Mahasiswa ${firstConflict.studentId} memiliki jadwal bentrok`,
+			);
+		}
+
+		let nextSelectedId = existingByStudentId.get(studentIds[0]!)?.id ?? null;
+		await withTransaction(async (conn) => {
+			for (const existing of existingRows) {
+				if (
+					!existing.id ||
+					!existing.student_id ||
+					studentIds.includes(existing.student_id)
+				)
+					continue;
+				if (existing.grade_id) {
+					throw error(
+						400,
+						"Mahasiswa yang sudah memiliki nilai tidak dapat dihapus dari sesi",
+					);
+				}
+				await deleteEnrollmentDb(conn, { id: existing.id });
+			}
+
+			for (const studentId of studentIds) {
+				if (existingByStudentId.has(studentId)) continue;
+				const id = randomUUID();
+				await insertEnrollment(conn, {
+					id,
+					student_id: studentId,
+					course_id: representative.course_id!,
+					class_room_id: representative.class_room_id,
+					schedule_id: representative.schedule_id,
+					semester: representative.semester!,
+					academic_year: representative.academic_year!,
+					status: "APPROVED",
+				});
+				if (!nextSelectedId) nextSelectedId = id;
+			}
+		});
+
+		invalidateConflictAuditCache();
+		await getEnrollments().refresh();
+		return { success: true, id: nextSelectedId ?? data.id };
 	},
 );
 
