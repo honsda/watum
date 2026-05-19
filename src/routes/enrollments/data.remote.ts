@@ -454,6 +454,33 @@ async function attachSessionStudentCounts(rows: SelectEnrollmentsResult[]) {
 	}));
 }
 
+async function collapsePreviewScheduleSessions(
+	rows: SelectEnrollmentsResult[],
+	limit: number,
+	scanLimit: number,
+) {
+	const sessionRows: SelectEnrollmentsResult[] = [];
+	const seenSessions = new Set<string>();
+	let hasMore = rows.length > scanLimit;
+
+	for (const row of rows) {
+		const sessionId = row.schedule_id;
+		if (sessionId && seenSessions.has(sessionId)) continue;
+		if (sessionId) seenSessions.add(sessionId);
+
+		if (sessionRows.length >= limit) {
+			hasMore = true;
+			break;
+		}
+		sessionRows.push(row);
+	}
+
+	return {
+		items: await attachSessionStudentCounts(sessionRows),
+		hasMore,
+	};
+}
+
 async function hydrateEnrollmentsByIds(ids: string[]) {
 	if (!ids.length) {
 		return [];
@@ -964,20 +991,35 @@ export const searchEnrollments = query(
 			predicateValues.push(containsSearchPattern(filters.academicYear)!);
 		}
 
-		return toLimitedListResult(
-			await prefetchEnrollmentSearchResults(
-				base,
-				predicateSql,
-				predicateValues,
-				filters,
-				user,
-				limit,
-				afterId,
-				{ forcePrimary: base === "enrollments" },
-			),
-			limit,
-			(item) => item.id ?? null,
+		const previewScanLimit = filters.preview
+			? getListQueryLimit(limit * 50)
+			: limit;
+		const rows = await prefetchEnrollmentSearchResults(
+			base,
+			predicateSql,
+			predicateValues,
+			filters,
+			user,
+			previewScanLimit,
+			afterId,
+			{ forcePrimary: base === "enrollments" },
 		);
+
+		if (filters.preview) {
+			const preview = await collapsePreviewScheduleSessions(
+				rows,
+				limit,
+				previewScanLimit,
+			);
+			return {
+				items: preview.items,
+				limit,
+				hasMore: preview.hasMore,
+				nextCursor: null,
+			};
+		}
+
+		return toLimitedListResult(rows, limit, (item) => item.id ?? null);
 	},
 );
 
