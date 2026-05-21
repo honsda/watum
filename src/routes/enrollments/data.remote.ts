@@ -1,32 +1,33 @@
-import { error, invalid } from "@sveltejs/kit";
-import { randomUUID } from "crypto";
-import * as v from "valibot";
-import { command, form, query } from "$app/server";
+import { error, invalid } from '@sveltejs/kit';
+import { randomUUID } from 'crypto';
+import * as v from 'valibot';
+import { command, form, query } from '$app/server';
 import {
 	createDefaultEnrollmentPolicy,
 	isEnrollmentRequestsOpen,
-	normalizeEnrollmentPolicy,
-} from "$lib/app/enrollment-policy";
+	normalizeEnrollmentPolicy
+} from '$lib/app/enrollment-policy';
 import {
 	getListQueryCursor,
 	getListQueryLimit,
 	getPool,
 	mergeLimitedListResult,
+	type PoolConnection,
 	toLimitedListResult,
-	withTransaction,
-} from "$lib/server";
-import { requireRole, requireUser } from "$lib/server/auth";
+	withTransaction
+} from '$lib/server';
+import { requireRole, requireUser } from '$lib/server/auth';
 import {
 	auditEnrollmentConflicts,
 	type ConflictAuditResult,
-	invalidateConflictAuditCache,
-} from "$lib/server/conflict-audit";
+	invalidateConflictAuditCache
+} from '$lib/server/conflict-audit';
 import {
 	containsSearchPattern,
 	fulltextSearchPattern,
 	prefixSearchPattern,
-	wordPrefixSearchPattern,
-} from "$lib/server/search";
+	wordPrefixSearchPattern
+} from '$lib/server/search';
 import {
 	deleteEnrollment as deleteEnrollmentDb,
 	deleteSchedule,
@@ -42,25 +43,33 @@ import {
 	selectStudentScheduleConflict,
 	selectStudents,
 	updateEnrollment as updateEnrollmentDb,
-	updateSchedule,
-} from "$lib/server/sql";
-import { updateEnrollments as updateEnrollmentsDb } from "$lib/server/sql/crud/enrollments/update-enrollments";
-import type { SelectLecturerScheduleConflictResult } from "$lib/server/sql/select-lecturer-schedule-conflict";
-import type { SelectSchedulesConflictResult } from "$lib/server/sql/select-schedules-conflict";
-import type { SelectStudentScheduleConflictResult } from "$lib/server/sql/select-student-schedule-conflict";
-import { formatDateTime, getTimeComponents, parseISO } from "$lib/time-helpers";
+	updateSchedule
+} from '$lib/server/sql';
+import { updateEnrollments as updateEnrollmentsDb } from '$lib/server/sql/crud/enrollments/update-enrollments';
+import type { SelectLecturerScheduleConflictResult } from '$lib/server/sql/select-lecturer-schedule-conflict';
+import type { SelectSchedulesConflictResult } from '$lib/server/sql/select-schedules-conflict';
+import type { SelectStudentScheduleConflictResult } from '$lib/server/sql/select-student-schedule-conflict';
+import { formatDateTime, getTimeComponents, parseISO } from '$lib/time-helpers';
 import {
 	approveEnrollmentSchema,
 	days,
 	enrollmentSchema,
 	enrollmentSessionRosterSchema,
-	studentEnrollmentRequestSchema,
-} from "$lib/validations/enrollment";
-import { listPageEntries, listPageSchema } from "$lib/validations/pagination";
+	studentEnrollmentRequestSchema
+} from '$lib/validations/enrollment';
+import { listPageEntries, listPageSchema } from '$lib/validations/pagination';
 
 type ConflictNamedResult =
 	| SelectStudentScheduleConflictResult
 	| SelectLecturerScheduleConflictResult;
+
+type ScheduleDay = (typeof days)[number];
+
+type StudentConflictTarget = {
+	enrollmentId: string;
+	studentId: string;
+	studentName: string;
+};
 
 type EnrollmentPolicyRow = {
 	semester: string;
@@ -71,13 +80,9 @@ type EnrollmentPolicyRow = {
 const DEFAULT_ENROLLMENT_POLICY = createDefaultEnrollmentPolicy();
 
 const enrollmentPolicySchema = v.object({
-	semester: v.picklist(["GANJIL", "GENAP"]),
-	academicYear: v.pipe(
-		v.string(),
-		v.trim(),
-		v.minLength(1, "Tahun akademik wajib diisi"),
-	),
-	requestsOpen: v.optional(v.string()),
+	semester: v.picklist(['GANJIL', 'GENAP']),
+	academicYear: v.pipe(v.string(), v.trim(), v.minLength(1, 'Tahun akademik wajib diisi')),
+	requestsOpen: v.optional(v.string())
 });
 
 const enrollmentListSelect = {
@@ -96,18 +101,18 @@ const enrollmentListSelect = {
 	schedule_day: true,
 	schedule_start_time: true,
 	schedule_end_time: true,
-	status: true,
+	status: true
 } as const;
 
-const weekdayFromIndex = ["MINGGU", ...days] as const;
+const weekdayFromIndex = ['MINGGU', ...days] as const;
 
 function scheduleWindowLabel(
 	start: Date | string | null | undefined,
 	end: Date | string | null | undefined,
-	timezone: string,
+	timezone: string
 ) {
-	if (!start || !end) return "jadwal lain di hari yang sama";
-	return `${formatDateTime(start, "time", timezone)} - ${formatDateTime(end, "time", timezone)}`;
+	if (!start || !end) return 'jadwal lain di hari yang sama';
+	return `${formatDateTime(start, 'time', timezone)} - ${formatDateTime(end, 'time', timezone)}`;
 }
 
 function summarizeConflictWindows(
@@ -116,32 +121,47 @@ function summarizeConflictWindows(
 		end_time: Date | string | null | undefined;
 	}>,
 	timezone: string,
-	limit = 3,
+	limit = 3
 ) {
 	const labels = items
 		.slice(0, limit)
-		.map((item) =>
-			scheduleWindowLabel(item.start_time, item.end_time, timezone),
-		);
+		.map((item) => scheduleWindowLabel(item.start_time, item.end_time, timezone));
 	if (items.length <= limit) {
-		return labels.join(", ");
+		return labels.join(', ');
 	}
-	return `${labels.join(", ")}, dan ${items.length - limit} jadwal lain`;
+	return `${labels.join(', ')}, dan ${items.length - limit} jadwal lain`;
 }
 
-function summarizeNamedConflicts(
-	items: ConflictNamedResult[],
-	timezone: string,
-	limit = 3,
-) {
+function summarizeNamedConflicts(items: ConflictNamedResult[], timezone: string, limit = 3) {
 	const labels = items.slice(0, limit).map((item) => {
-		const name = item.course_name ?? "kelas lain";
+		const name = item.course_name ?? 'kelas lain';
 		return `${name} (${scheduleWindowLabel(item.start_time, item.end_time, timezone)})`;
 	});
 	if (items.length <= limit) {
-		return labels.join(", ");
+		return labels.join(', ');
 	}
-	return `${labels.join(", ")}, dan ${items.length - limit} jadwal lain`;
+	return `${labels.join(', ')}, dan ${items.length - limit} jadwal lain`;
+}
+
+async function updateScheduleSessionEnrollments(
+	connection: PoolConnection,
+	options: {
+		scheduleId: string;
+		classRoomId: string;
+		day: ScheduleDay;
+		startTime: string;
+		endTime: string;
+	}
+) {
+	await connection.query(
+		`UPDATE enrollments
+		 SET class_room_id = ?,
+		     schedule_day = ?,
+		     schedule_start_time = ?,
+		     schedule_end_time = ?
+		 WHERE schedule_id = ?`,
+		[options.classRoomId, options.day, options.startTime, options.endTime, options.scheduleId]
+	);
 }
 
 function isTimeOnlyInput(value: string) {
@@ -149,7 +169,7 @@ function isTimeOnlyInput(value: string) {
 }
 
 function normalizeTimeParts(value: string) {
-	const [hours = "0", minutes = "0", seconds = "0"] = value.split(":");
+	const [hours = '0', minutes = '0', seconds = '0'] = value.split(':');
 	const hourNumber = Number(hours);
 	const minuteNumber = Number(minutes);
 	const secondNumber = Number(seconds);
@@ -168,7 +188,7 @@ function normalizeTimeParts(value: string) {
 		return null;
 	}
 
-	return `${String(hourNumber).padStart(2, "0")}:${String(minuteNumber).padStart(2, "0")}:${String(secondNumber).padStart(2, "0")}`;
+	return `${String(hourNumber).padStart(2, '0')}:${String(minuteNumber).padStart(2, '0')}:${String(secondNumber).padStart(2, '0')}`;
 }
 
 function normalizeScheduleTime(value: string, timezone: string) {
@@ -179,7 +199,7 @@ function normalizeScheduleTime(value: string, timezone: string) {
 
 	const parsed = parseISO(trimmed, timezone);
 	if (Number.isNaN(parsed.getTime())) return null;
-	return normalizeTimeParts(formatDateTime(parsed, "time", timezone));
+	return normalizeTimeParts(formatDateTime(parsed, 'time', timezone));
 }
 
 function validateScheduleWindow(
@@ -188,43 +208,32 @@ function validateScheduleWindow(
 		day: (message: string) => Parameters<typeof invalid>[0];
 		startTime: (message: string) => Parameters<typeof invalid>[0];
 		endTime: (message: string) => Parameters<typeof invalid>[0];
-	},
+	}
 ) {
-	const clientTimezone = data.timezone ?? "UTC";
+	const clientTimezone = data.timezone ?? 'UTC';
 	const startTime = normalizeScheduleTime(data.startTime, clientTimezone);
 	const endTime = normalizeScheduleTime(data.endTime, clientTimezone);
 	if (!startTime) {
-		invalid(issue.startTime("Waktu mulai tidak valid"));
+		invalid(issue.startTime('Waktu mulai tidak valid'));
 	}
 	if (!endTime) {
-		invalid(issue.endTime("Waktu selesai tidak valid"));
+		invalid(issue.endTime('Waktu selesai tidak valid'));
 	}
 
 	if (!isTimeOnlyInput(data.startTime) || !isTimeOnlyInput(data.endTime)) {
 		const startDate = parseISO(data.startTime, clientTimezone);
 		const endDate = parseISO(data.endTime, clientTimezone);
 		const startDay =
-			weekdayFromIndex[
-				getTimeComponents(startDate, clientTimezone).dayOfWeek
-			] ?? "MINGGU";
+			weekdayFromIndex[getTimeComponents(startDate, clientTimezone).dayOfWeek] ?? 'MINGGU';
 		const endDay =
-			weekdayFromIndex[getTimeComponents(endDate, clientTimezone).dayOfWeek] ??
-			"MINGGU";
+			weekdayFromIndex[getTimeComponents(endDate, clientTimezone).dayOfWeek] ?? 'MINGGU';
 
 		if (startDay !== endDay) {
-			invalid(
-				issue.endTime(
-					"Waktu mulai dan selesai harus berada pada hari yang sama",
-				),
-			);
+			invalid(issue.endTime('Waktu mulai dan selesai harus berada pada hari yang sama'));
 		}
 
 		if (data.day !== startDay) {
-			invalid(
-				issue.day(
-					`Hari jadwal harus sesuai dengan tanggal yang dipilih (${startDay})`,
-				),
-			);
+			invalid(issue.day(`Hari jadwal harus sesuai dengan tanggal yang dipilih (${startDay})`));
 		}
 	}
 
@@ -238,21 +247,21 @@ async function ensureEnrollmentPolicyRow() {
 		[
 			DEFAULT_ENROLLMENT_POLICY.semester,
 			DEFAULT_ENROLLMENT_POLICY.academicYear,
-			DEFAULT_ENROLLMENT_POLICY.requestsOpen,
-		],
+			DEFAULT_ENROLLMENT_POLICY.requestsOpen
+		]
 	);
 }
 
 async function readEnrollmentPolicy() {
 	await ensureEnrollmentPolicyRow();
 	const [rows] = await getPool().query(
-		"SELECT semester, academic_year, student_enrollment_requests_open FROM enrollment_policy WHERE id = 1 LIMIT 1",
+		'SELECT semester, academic_year, student_enrollment_requests_open FROM enrollment_policy WHERE id = 1 LIMIT 1'
 	);
 	const [row] = rows as EnrollmentPolicyRow[];
 	return normalizeEnrollmentPolicy({
 		semester: row?.semester,
 		academicYear: row?.academic_year,
-		requestsOpen: row?.student_enrollment_requests_open,
+		requestsOpen: row?.student_enrollment_requests_open
 	});
 }
 
@@ -261,26 +270,23 @@ export const getEnrollmentPolicy = query(async () => {
 	return readEnrollmentPolicy();
 });
 
-export const updateEnrollmentPolicy = form(
-	enrollmentPolicySchema,
-	async (data) => {
-		await requireRole(["ADMIN"]);
-		await ensureEnrollmentPolicyRow();
-		const nextPolicy = normalizeEnrollmentPolicy(data);
-		await getPool().query(
-			`UPDATE enrollment_policy
+export const updateEnrollmentPolicy = form(enrollmentPolicySchema, async (data) => {
+	await requireRole(['ADMIN']);
+	await ensureEnrollmentPolicyRow();
+	const nextPolicy = normalizeEnrollmentPolicy(data);
+	await getPool().query(
+		`UPDATE enrollment_policy
 		 SET semester = ?, academic_year = ?, student_enrollment_requests_open = ?
 		 WHERE id = 1`,
-			[
-				nextPolicy.semester,
-				nextPolicy.academicYear,
-				isEnrollmentRequestsOpen(nextPolicy.requestsOpen) ? 1 : 0,
-			],
-		);
-		getEnrollmentPolicy().set(nextPolicy);
-		return { success: true };
-	},
-);
+		[
+			nextPolicy.semester,
+			nextPolicy.academicYear,
+			isEnrollmentRequestsOpen(nextPolicy.requestsOpen) ? 1 : 0
+		]
+	);
+	getEnrollmentPolicy().set(nextPolicy);
+	return { success: true };
+});
 
 export const getEnrollments = query(listPageSchema, async (page) => {
 	const user = await requireUser();
@@ -289,86 +295,90 @@ export const getEnrollments = query(listPageSchema, async (page) => {
 	return toLimitedListResult(
 		await selectSchedulePreviewRows(user, afterId, limit),
 		limit,
-		(item) => item.id ?? null,
+		(item) => item.id ?? null
 	);
 });
 
 async function selectSchedulePreviewRows(
 	user: Awaited<ReturnType<typeof requireUser>>,
 	afterId: string | undefined,
-	limit: number,
+	limit: number
 ) {
 	const selectSql = [
-		"SELECT e.id, e.student_id, e.course_id, c.lecturer_id, e.class_room_id, e.schedule_id,",
-		"e.semester, e.academic_year, s.name AS student_name, c.name AS course_name,",
-		"l.name AS lecturer_name, cr.name AS class_room_name,",
-		"e.schedule_day, e.schedule_start_time, e.schedule_end_time,",
-		"CASE WHEN e.schedule_id IS NULL THEN 1 ELSE (SELECT COUNT(*) FROM enrollments session_e FORCE INDEX (idx_enrollments_schedule) WHERE session_e.schedule_id = e.schedule_id) END AS student_count,",
-		"e.status",
-	].join(" ");
+		'SELECT e.id, e.student_id, e.course_id, c.lecturer_id, e.class_room_id, e.schedule_id,',
+		'e.semester, e.academic_year, s.name AS student_name, c.name AS course_name,',
+		'l.name AS lecturer_name, cr.name AS class_room_name,',
+		'e.schedule_day, e.schedule_start_time, e.schedule_end_time,',
+		'CASE WHEN e.schedule_id IS NULL THEN 1 ELSE (SELECT COUNT(*) FROM enrollments session_e FORCE INDEX (idx_enrollments_schedule) WHERE session_e.schedule_id = e.schedule_id) END AS student_count,',
+		'e.status'
+	].join(' ');
 
-	if (user.role === "STUDENT") {
+	if (user.role === 'STUDENT') {
 		const sql = [
 			selectSql,
-			"FROM enrollments e FORCE INDEX (idx_enrollments_student_id_id)",
-			"INNER JOIN students s ON e.student_id = s.id",
-			"INNER JOIN courses c ON e.course_id = c.id",
-			"INNER JOIN lecturers l ON c.lecturer_id = l.id",
-			"LEFT JOIN class_rooms cr ON e.class_room_id = cr.id",
-			`WHERE e.student_id = ?${afterId ? " AND e.id > ?" : ""}`,
-			"ORDER BY e.id ASC",
-			"LIMIT ?",
-		].join(" ");
-		const values = afterId
-			? [user.studentId!, afterId, limit + 1]
-			: [user.studentId!, limit + 1];
+			'FROM enrollments e FORCE INDEX (idx_enrollments_student_id_id)',
+			'INNER JOIN students s ON e.student_id = s.id',
+			'INNER JOIN courses c ON e.course_id = c.id',
+			'INNER JOIN lecturers l ON c.lecturer_id = l.id',
+			'LEFT JOIN class_rooms cr ON e.class_room_id = cr.id',
+			`WHERE e.student_id = ?${afterId ? ' AND e.id > ?' : ''}`,
+			'ORDER BY e.id ASC',
+			'LIMIT ?'
+		].join(' ');
+		const values = afterId ? [user.studentId!, afterId, limit + 1] : [user.studentId!, limit + 1];
 		const [rows] = await getPool().query(sql, values);
 		return rows as SelectEnrollmentsResult[];
 	}
 
-	if (user.role === "LECTURER") {
-		const [courseRows] = await getPool().query(
-			"SELECT id FROM courses WHERE lecturer_id = ?",
-			[user.lecturerId!],
-		);
-		const courseIds = (courseRows as Array<{ id: string }>)
-			.map((row) => row.id)
-			.filter(Boolean);
+	if (user.role === 'LECTURER') {
+		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
+			user.lecturerId!
+		]);
+		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id).filter(Boolean);
 		if (!courseIds.length) return [];
 		const sql = [
 			selectSql,
-			"FROM enrollments e FORCE INDEX (idx_enrollments_course_schedule_id)",
-			"INNER JOIN courses c ON e.course_id = c.id",
-			"INNER JOIN students s ON e.student_id = s.id",
-			"INNER JOIN lecturers l ON c.lecturer_id = l.id",
-			"LEFT JOIN class_rooms cr ON e.class_room_id = cr.id",
-			`WHERE e.course_id IN (?)${afterId ? " AND e.id > ?" : ""}`,
-			"ORDER BY e.id ASC",
-			"LIMIT ?",
-		].join(" ");
-		const values = afterId
-			? [courseIds, afterId, limit + 1]
-			: [courseIds, limit + 1];
+			'FROM enrollments e FORCE INDEX (idx_enrollments_course_schedule_id)',
+			'INNER JOIN courses c ON e.course_id = c.id',
+			'INNER JOIN students s ON e.student_id = s.id',
+			'INNER JOIN lecturers l ON c.lecturer_id = l.id',
+			'LEFT JOIN class_rooms cr ON e.class_room_id = cr.id',
+			`WHERE e.course_id IN (?)${afterId ? ' AND e.id > ?' : ''}`,
+			'ORDER BY e.id ASC',
+			'LIMIT ?'
+		].join(' ');
+		const values = afterId ? [courseIds, afterId, limit + 1] : [courseIds, limit + 1];
 		const [rows] = await getPool().query(sql, values);
 		return rows as SelectEnrollmentsResult[];
 	}
 
 	const sql = [
 		selectSql,
-		"FROM enrollments e FORCE INDEX (PRIMARY)",
-		"INNER JOIN students s ON e.student_id = s.id",
-		"INNER JOIN courses c ON e.course_id = c.id",
-		"INNER JOIN lecturers l ON c.lecturer_id = l.id",
-		"LEFT JOIN class_rooms cr ON e.class_room_id = cr.id",
-		afterId ? "WHERE e.id > ?" : "",
-		"ORDER BY e.id ASC",
-		"LIMIT ?",
+		'FROM enrollments e FORCE INDEX (PRIMARY)',
+		'INNER JOIN students s ON e.student_id = s.id',
+		'INNER JOIN courses c ON e.course_id = c.id',
+		'INNER JOIN lecturers l ON c.lecturer_id = l.id',
+		'LEFT JOIN class_rooms cr ON e.class_room_id = cr.id',
+		afterId ? 'WHERE e.id > ?' : '',
+		'ORDER BY e.id ASC',
+		'LIMIT ?'
 	]
 		.filter(Boolean)
-		.join(" ");
+		.join(' ');
 	const values = afterId ? [afterId, limit + 1] : [limit + 1];
 	const [rows] = await getPool().query(sql, values);
 	return rows as SelectEnrollmentsResult[];
+}
+
+async function deleteScheduleIfUnused(connection: PoolConnection, scheduleId: string) {
+	const [rows] = await connection.query(
+		'SELECT COUNT(*) AS remaining FROM enrollments WHERE schedule_id = ?',
+		[scheduleId]
+	);
+	const remaining = Number((rows as Array<{ remaining: number | string }>)[0]?.remaining ?? 0);
+	if (remaining === 0) {
+		await deleteSchedule(connection, { id: scheduleId });
+	}
 }
 
 export const getSchedulePreview = query(listPageSchema, async (page) => {
@@ -378,7 +388,7 @@ export const getSchedulePreview = query(listPageSchema, async (page) => {
 	return toLimitedListResult(
 		await selectSchedulePreviewRows(user, afterId, limit),
 		limit,
-		(item) => item.id ?? null,
+		(item) => item.id ?? null
 	);
 });
 
@@ -399,37 +409,31 @@ const searchEnrollmentsSchema = v.object({
 	courseName: v.optional(v.string()),
 	lecturerName: v.optional(v.string()),
 	classRoomName: v.optional(v.string()),
-	scheduleDay: v.optional(
-		v.picklist(["SENIN", "SELASA", "RABU", "KAMIS", "JUMAT", "SABTU"]),
-	),
-	letterGrade: v.optional(v.string()),
+	scheduleDay: v.optional(v.picklist(['SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU'])),
+	letterGrade: v.optional(v.string())
 });
 
 type EnrollmentSearchFilters = v.InferOutput<typeof searchEnrollmentsSchema>;
 type EnrollmentPrefetchBase =
-	| "students"
-	| "studyPrograms"
-	| "courses"
-	| "lecturers"
-	| "classRooms"
-	| "enrollments"
-	| "schedules";
+	| 'students'
+	| 'studyPrograms'
+	| 'courses'
+	| 'lecturers'
+	| 'classRooms'
+	| 'enrollments'
+	| 'schedules';
 type EnrollmentPrefetchJoin =
-	| "students"
-	| "studyPrograms"
-	| "courses"
-	| "lecturers"
-	| "classRooms"
-	| "schedules"
-	| "grades";
+	| 'students'
+	| 'studyPrograms'
+	| 'courses'
+	| 'lecturers'
+	| 'classRooms'
+	| 'schedules'
+	| 'grades';
 
 async function attachSessionStudentCounts(rows: SelectEnrollmentsResult[]) {
 	const scheduleIds = Array.from(
-		new Set(
-			rows
-				.map((row) => row.schedule_id)
-				.filter((id): id is string => Boolean(id)),
-		),
+		new Set(rows.map((row) => row.schedule_id).filter((id): id is string => Boolean(id)))
 	);
 	if (!scheduleIds.length) {
 		return rows.map((row) => ({ ...row, student_count: 1 }));
@@ -437,37 +441,43 @@ async function attachSessionStudentCounts(rows: SelectEnrollmentsResult[]) {
 
 	const [countRows] = await getPool().query(
 		[
-			"SELECT schedule_id, COUNT(*) AS student_count",
-			"FROM enrollments FORCE INDEX (idx_enrollments_schedule)",
-			"WHERE schedule_id IN (?)",
-			"GROUP BY schedule_id",
-		].join(" "),
-		[scheduleIds],
+			'SELECT schedule_id, COUNT(*) AS student_count',
+			'FROM enrollments FORCE INDEX (idx_enrollments_schedule)',
+			'WHERE schedule_id IN (?)',
+			'GROUP BY schedule_id'
+		].join(' '),
+		[scheduleIds]
 	);
 	const counts = new Map(
-		(countRows as Array<{ schedule_id: string; student_count: number }>).map(
-			(row) => [row.schedule_id, Number(row.student_count) || 1],
-		),
+		(countRows as Array<{ schedule_id: string; student_count: number }>).map((row) => [
+			row.schedule_id,
+			Number(row.student_count) || 1
+		])
 	);
 
 	return rows.map((row) => ({
 		...row,
-		student_count: row.schedule_id ? (counts.get(row.schedule_id) ?? 1) : 1,
+		student_count: row.schedule_id ? (counts.get(row.schedule_id) ?? 1) : 1
 	}));
 }
 
 async function collapsePreviewScheduleSessions(
 	rows: SelectEnrollmentsResult[],
 	limit: number,
-	scanLimit: number,
+	scanLimit: number
 ) {
+	const scannedRows = rows.slice(0, scanLimit);
 	const sessionRows: SelectEnrollmentsResult[] = [];
 	const seenSessions = new Set<string>();
 	let hasMore = rows.length > scanLimit;
+	let nextCursor: string | null = null;
 
-	for (const row of rows) {
+	for (const row of scannedRows) {
 		const sessionId = row.schedule_id;
-		if (sessionId && seenSessions.has(sessionId)) continue;
+		if (sessionId && seenSessions.has(sessionId)) {
+			nextCursor = row.id ?? nextCursor;
+			continue;
+		}
 		if (sessionId) seenSessions.add(sessionId);
 
 		if (sessionRows.length >= limit) {
@@ -475,25 +485,27 @@ async function collapsePreviewScheduleSessions(
 			break;
 		}
 		sessionRows.push(row);
+		nextCursor = row.id ?? nextCursor;
 	}
 
 	return {
 		items: await attachSessionStudentCounts(sessionRows),
 		hasMore,
+		nextCursor: hasMore ? nextCursor : null
 	};
 }
 
 async function toSessionLimitedListResult(
 	rows: SelectEnrollmentsResult[],
 	limit: number,
-	scanLimit: number,
+	scanLimit: number
 ) {
 	const result = await collapsePreviewScheduleSessions(rows, limit, scanLimit);
 	return {
 		items: result.items,
 		limit,
 		hasMore: result.hasMore,
-		nextCursor: null,
+		nextCursor: result.nextCursor
 	};
 }
 
@@ -504,7 +516,7 @@ async function hydrateEnrollmentsByIds(ids: string[]) {
 
 	const fullRows = await selectEnrollments(getPool(), {
 		select: enrollmentListSelect,
-		where: [["id", "IN", ids]],
+		where: [['id', 'IN', ids]]
 	});
 	const rowsById = new Map(fullRows.map((row) => [row.id, row]));
 	const orderedRows = ids
@@ -526,19 +538,19 @@ async function hydrateEnrollmentsByIds(ids: string[]) {
  */
 function resolveOptimalEnrollmentBase(
 	filters: EnrollmentSearchFilters,
-	user: Awaited<ReturnType<typeof requireUser>>,
+	user: Awaited<ReturnType<typeof requireUser>>
 ): EnrollmentPrefetchBase {
 	void user;
 	// Role restrictions are handled separately; they don't change the base.
-	if (filters.studentId) return "students";
-	if (filters.courseId) return "courses";
-	if (filters.classRoomId) return "classRooms";
-	if (filters.studentName) return "students";
-	if (filters.studyProgramName) return "studyPrograms";
-	if (filters.courseName) return "courses";
-	if (filters.lecturerName) return "lecturers";
-	if (filters.classRoomName) return "classRooms";
-	return "enrollments";
+	if (filters.studentId) return 'students';
+	if (filters.courseId) return 'courses';
+	if (filters.classRoomId) return 'classRooms';
+	if (filters.studentName) return 'students';
+	if (filters.studyProgramName) return 'studyPrograms';
+	if (filters.courseName) return 'courses';
+	if (filters.lecturerName) return 'lecturers';
+	if (filters.classRoomName) return 'classRooms';
+	return 'enrollments';
 }
 
 async function prefetchEnrollmentSearchResults(
@@ -552,7 +564,7 @@ async function prefetchEnrollmentSearchResults(
 	options?: {
 		forcePrimary?: boolean;
 		requiredJoins?: EnrollmentPrefetchJoin[];
-	},
+	}
 ) {
 	const joinParts: string[] = [];
 	const joined = {
@@ -562,554 +574,466 @@ async function prefetchEnrollmentSearchResults(
 		l: false,
 		cr: false,
 		sch: false,
-		g: false,
+		g: false
 	};
 
-	if (base === "students") {
-		joinParts.push(
-			"FROM students s",
-			"INNER JOIN enrollments e ON e.student_id = s.id",
-		);
+	if (base === 'students') {
+		joinParts.push('FROM students s', 'INNER JOIN enrollments e ON e.student_id = s.id');
 		joined.s = true;
-	} else if (base === "studyPrograms") {
+	} else if (base === 'studyPrograms') {
 		joinParts.push(
-			"FROM study_programs sp",
-			"INNER JOIN students s ON s.study_program_id = sp.id",
-			"INNER JOIN enrollments e ON e.student_id = s.id",
+			'FROM study_programs sp',
+			'INNER JOIN students s ON s.study_program_id = sp.id',
+			'INNER JOIN enrollments e ON e.student_id = s.id'
 		);
 		joined.sp = true;
 		joined.s = true;
-	} else if (base === "courses") {
-		joinParts.push(
-			"FROM courses c",
-			"INNER JOIN enrollments e ON e.course_id = c.id",
-		);
+	} else if (base === 'courses') {
+		joinParts.push('FROM courses c', 'INNER JOIN enrollments e ON e.course_id = c.id');
 		joined.c = true;
-	} else if (base === "lecturers") {
+	} else if (base === 'lecturers') {
 		joinParts.push(
-			"FROM lecturers l",
-			"INNER JOIN courses c ON c.lecturer_id = l.id",
-			"INNER JOIN enrollments e ON e.course_id = c.id",
+			'FROM lecturers l',
+			'INNER JOIN courses c ON c.lecturer_id = l.id',
+			'INNER JOIN enrollments e ON e.course_id = c.id'
 		);
 		joined.l = true;
 		joined.c = true;
-	} else if (base === "classRooms") {
-		joinParts.push(
-			"FROM class_rooms cr",
-			"INNER JOIN enrollments e ON e.class_room_id = cr.id",
-		);
+	} else if (base === 'classRooms') {
+		joinParts.push('FROM class_rooms cr', 'INNER JOIN enrollments e ON e.class_room_id = cr.id');
 		joined.cr = true;
-	} else if (base === "schedules") {
-		joinParts.push(
-			"FROM schedules sch",
-			"INNER JOIN enrollments e ON e.schedule_id = sch.id",
-		);
+	} else if (base === 'schedules') {
+		joinParts.push('FROM schedules sch', 'INNER JOIN enrollments e ON e.schedule_id = sch.id');
 		joined.sch = true;
 	} else {
 		joinParts.push(
-			options?.forcePrimary
-				? "FROM enrollments e FORCE INDEX (PRIMARY)"
-				: "FROM enrollments e",
+			options?.forcePrimary ? 'FROM enrollments e FORCE INDEX (PRIMARY)' : 'FROM enrollments e'
 		);
 	}
 
 	const ensureStudents = () => {
 		if (joined.s) return;
-		joinParts.push("INNER JOIN students s ON e.student_id = s.id");
+		joinParts.push('INNER JOIN students s ON e.student_id = s.id');
 		joined.s = true;
 	};
 	const ensureStudyPrograms = () => {
 		ensureStudents();
 		if (joined.sp) return;
-		joinParts.push(
-			"INNER JOIN study_programs sp ON s.study_program_id = sp.id",
-		);
+		joinParts.push('INNER JOIN study_programs sp ON s.study_program_id = sp.id');
 		joined.sp = true;
 	};
 	const ensureCourses = () => {
 		if (joined.c) return;
-		joinParts.push("INNER JOIN courses c ON e.course_id = c.id");
+		joinParts.push('INNER JOIN courses c ON e.course_id = c.id');
 		joined.c = true;
 	};
 	const ensureLecturers = () => {
 		ensureCourses();
 		if (joined.l) return;
-		joinParts.push("INNER JOIN lecturers l ON c.lecturer_id = l.id");
+		joinParts.push('INNER JOIN lecturers l ON c.lecturer_id = l.id');
 		joined.l = true;
 	};
 	const ensureClassRooms = () => {
 		if (joined.cr) return;
-		joinParts.push("INNER JOIN class_rooms cr ON e.class_room_id = cr.id");
+		joinParts.push('INNER JOIN class_rooms cr ON e.class_room_id = cr.id');
 		joined.cr = true;
 	};
 	const ensureSchedules = () => {
 		if (joined.sch) return;
-		joinParts.push("INNER JOIN schedules sch ON e.schedule_id = sch.id");
+		joinParts.push('INNER JOIN schedules sch ON e.schedule_id = sch.id');
 		joined.sch = true;
 	};
 	const ensureGrades = () => {
 		if (joined.g) return;
-		joinParts.push("LEFT JOIN grades g ON e.id = g.enrollment_id");
+		joinParts.push('LEFT JOIN grades g ON e.id = g.enrollment_id');
 		joined.g = true;
 	};
 
 	for (const join of options?.requiredJoins ?? []) {
-		if (join === "students") ensureStudents();
-		if (join === "studyPrograms") ensureStudyPrograms();
-		if (join === "courses") ensureCourses();
-		if (join === "lecturers") ensureLecturers();
-		if (join === "classRooms") ensureClassRooms();
-		if (join === "schedules") ensureSchedules();
-		if (join === "grades") ensureGrades();
+		if (join === 'students') ensureStudents();
+		if (join === 'studyPrograms') ensureStudyPrograms();
+		if (join === 'courses') ensureCourses();
+		if (join === 'lecturers') ensureLecturers();
+		if (join === 'classRooms') ensureClassRooms();
+		if (join === 'schedules') ensureSchedules();
+		if (join === 'grades') ensureGrades();
 	}
 
 	const whereParts = [predicateSql];
 	const values: unknown[] = [...predicateValues];
 
-	if (user.role === "STUDENT" && user.studentId) {
-		whereParts.push("e.student_id = ?");
+	if (user.role === 'STUDENT' && user.studentId) {
+		whereParts.push('e.student_id = ?');
 		values.push(user.studentId);
-	} else if (user.role === "LECTURER" && user.lecturerId) {
-		const [courseRows] = await getPool().query(
-			"SELECT id FROM courses WHERE lecturer_id = ?",
-			[user.lecturerId!],
-		);
-		const courseIds = (courseRows as Array<{ id: string }>).map(
-			(row) => row.id,
-		);
+	} else if (user.role === 'LECTURER' && user.lecturerId) {
+		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
+			user.lecturerId!
+		]);
+		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
 		if (!courseIds.length) {
 			return [];
 		}
-		whereParts.push("e.course_id IN (?)");
+		whereParts.push('e.course_id IN (?)');
 		values.push(courseIds);
 	}
 
 	if (filters.id) {
-		whereParts.push("e.id = ?");
+		whereParts.push('e.id = ?');
 		values.push(filters.id);
 	}
 	if (filters.studentId) {
-		whereParts.push("e.student_id = ?");
+		whereParts.push('e.student_id = ?');
 		values.push(filters.studentId);
 	}
 	if (filters.courseId) {
-		whereParts.push("e.course_id = ?");
+		whereParts.push('e.course_id = ?');
 		values.push(filters.courseId);
 	}
 	if (filters.lecturerId) {
-		const [courseRows] = await getPool().query(
-			"SELECT id FROM courses WHERE lecturer_id = ?",
-			[filters.lecturerId],
-		);
-		const courseIds = (courseRows as Array<{ id: string }>).map(
-			(row) => row.id,
-		);
+		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
+			filters.lecturerId
+		]);
+		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
 		if (!courseIds.length) {
 			return [];
 		}
-		whereParts.push("e.course_id IN (?)");
+		whereParts.push('e.course_id IN (?)');
 		values.push(courseIds);
 	}
 	if (filters.classRoomId) {
-		whereParts.push("e.class_room_id = ?");
+		whereParts.push('e.class_room_id = ?');
 		values.push(filters.classRoomId);
 	}
 	if (filters.semester) {
-		whereParts.push("e.semester LIKE ?");
+		whereParts.push('e.semester LIKE ?');
 		values.push(containsSearchPattern(filters.semester)!);
 	}
 	if (filters.academicYear) {
-		whereParts.push("e.academic_year LIKE ?");
+		whereParts.push('e.academic_year LIKE ?');
 		values.push(containsSearchPattern(filters.academicYear)!);
 	}
 	if (filters.studentName) {
 		ensureStudents();
-		whereParts.push("MATCH(s.name) AGAINST(? IN BOOLEAN MODE)");
+		whereParts.push('MATCH(s.name) AGAINST(? IN BOOLEAN MODE)');
 		values.push(fulltextSearchPattern(filters.studentName)!);
 	}
 	if (filters.studyProgramName) {
 		ensureStudyPrograms();
-		whereParts.push("MATCH(sp.name) AGAINST(? IN BOOLEAN MODE)");
+		whereParts.push('MATCH(sp.name) AGAINST(? IN BOOLEAN MODE)');
 		values.push(fulltextSearchPattern(filters.studyProgramName)!);
 	}
 	if (filters.courseName) {
 		ensureCourses();
-		whereParts.push("MATCH(c.name) AGAINST(? IN BOOLEAN MODE)");
+		whereParts.push('MATCH(c.name) AGAINST(? IN BOOLEAN MODE)');
 		values.push(fulltextSearchPattern(filters.courseName)!);
 	}
 	if (filters.lecturerName) {
 		ensureLecturers();
-		whereParts.push("MATCH(l.name) AGAINST(? IN BOOLEAN MODE)");
+		whereParts.push('MATCH(l.name) AGAINST(? IN BOOLEAN MODE)');
 		values.push(fulltextSearchPattern(filters.lecturerName)!);
 	}
 	if (filters.classRoomName) {
 		ensureClassRooms();
-		whereParts.push("MATCH(cr.name) AGAINST(? IN BOOLEAN MODE)");
+		whereParts.push('MATCH(cr.name) AGAINST(? IN BOOLEAN MODE)');
 		values.push(fulltextSearchPattern(filters.classRoomName)!);
 	}
 	if (filters.scheduleDay) {
-		whereParts.push("e.schedule_day = ?");
+		whereParts.push('e.schedule_day = ?');
 		values.push(filters.scheduleDay);
 	}
 	if (filters.letterGrade) {
 		ensureGrades();
-		whereParts.push("g.letter_grade = ?");
+		whereParts.push('g.letter_grade = ?');
 		values.push(filters.letterGrade);
 	}
 	if (afterId) {
-		whereParts.push("e.id > ?");
+		whereParts.push('e.id > ?');
 		values.push(afterId);
 	}
 
 	const sqlParts = [
-		"SELECT STRAIGHT_JOIN e.id",
+		'SELECT STRAIGHT_JOIN e.id',
 		...joinParts,
-		`WHERE ${whereParts.join(" AND ")}`,
-		"ORDER BY e.id ASC",
-		"LIMIT ?",
+		`WHERE ${whereParts.join(' AND ')}`,
+		'ORDER BY e.id ASC',
+		'LIMIT ?'
 	];
 	values.push(limit + 1);
 
-	const [rows] = await getPool().query(sqlParts.join(" "), values);
-	const ids = (rows as Array<{ id: string }>)
-		.map((row) => row.id)
-		.filter(Boolean);
+	const [rows] = await getPool().query(sqlParts.join(' '), values);
+	const ids = (rows as Array<{ id: string }>).map((row) => row.id).filter(Boolean);
 	return hydrateEnrollmentsByIds(ids);
 }
 
-export const searchEnrollments = query(
-	searchEnrollmentsSchema,
-	async (filters) => {
-		const user = await requireUser();
-		const where: SelectEnrollmentsWhere[] = [];
-		const sessionMode = Boolean(filters.preview || filters.sessions);
-		const limit = getListQueryLimit(filters.preview ? 60 : 40);
-		if (user.role === "STUDENT") {
-			where.push(["student_id", "=", user.studentId!]);
-		} else if (user.role === "LECTURER") {
-			// Same optimization as filters.lecturerId: pre-query courses to avoid
-			// a slow c.lecturer_id join filter on 2M+ rows.
-			const [courseRows] = await getPool().query(
-				"SELECT id FROM courses WHERE lecturer_id = ?",
-				[user.lecturerId!],
-			);
-			const courseIds = (courseRows as Array<{ id: string }>).map(
-				(row) => row.id,
-			);
-			if (!courseIds.length) {
-				return toLimitedListResult(
-					[] as SelectEnrollmentsResult[],
-					limit,
-					(item) => item.id ?? null,
-				);
-			}
-			if (courseIds.length === 1) {
-				where.push(["course_id", "=", courseIds[0]!]);
-			} else {
-				where.push(["course_id", "IN", courseIds]);
-			}
+export const searchEnrollments = query(searchEnrollmentsSchema, async (filters) => {
+	const user = await requireUser();
+	const where: SelectEnrollmentsWhere[] = [];
+	const sessionMode = Boolean(filters.preview || filters.sessions);
+	const limit = getListQueryLimit(filters.preview ? 60 : 40);
+	if (user.role === 'STUDENT') {
+		where.push(['student_id', '=', user.studentId!]);
+	} else if (user.role === 'LECTURER') {
+		// Same optimization as filters.lecturerId: pre-query courses to avoid
+		// a slow c.lecturer_id join filter on 2M+ rows.
+		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
+			user.lecturerId!
+		]);
+		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
+		if (!courseIds.length) {
+			return toLimitedListResult([] as SelectEnrollmentsResult[], limit, (item) => item.id ?? null);
 		}
-		if (filters.id) where.push(["id", "=", filters.id]);
-		if (filters.studentId) where.push(["student_id", "=", filters.studentId]);
-		if (filters.courseId) where.push(["course_id", "=", filters.courseId]);
-		if (filters.lecturerId) {
-			// Pre-query courses to avoid a slow c.lecturer_id join filter on 2M+ rows.
-			// Filtering by course_id IN (...) lets MariaDB use idx_enrollments_course_schedule_id.
-			const [courseRows] = await getPool().query(
-				"SELECT id FROM courses WHERE lecturer_id = ?",
-				[filters.lecturerId],
-			);
-			const courseIds = (courseRows as Array<{ id: string }>).map(
-				(row) => row.id,
-			);
-			if (!courseIds.length) {
-				return toLimitedListResult(
-					[] as SelectEnrollmentsResult[],
-					limit,
-					(item) => item.id ?? null,
-				);
-			}
-			if (courseIds.length === 1) {
-				where.push(["course_id", "=", courseIds[0]!]);
-			} else {
-				where.push(["course_id", "IN", courseIds]);
-			}
+		if (courseIds.length === 1) {
+			where.push(['course_id', '=', courseIds[0]!]);
+		} else {
+			where.push(['course_id', 'IN', courseIds]);
 		}
-		if (filters.classRoomId)
-			where.push(["class_room_id", "=", filters.classRoomId]);
-		if (filters.semester)
-			where.push([
-				"semester",
-				"LIKE",
-				containsSearchPattern(filters.semester)!,
-			]);
-		if (filters.academicYear)
-			where.push([
-				"academic_year",
-				"LIKE",
-				containsSearchPattern(filters.academicYear)!,
-			]);
-		if (filters.studentName)
-			where.push([
-				"student_name",
-				"FULLTEXT",
-				fulltextSearchPattern(filters.studentName)!,
-			]);
-		if (filters.studyProgramName)
-			where.push([
-				"study_program_name",
-				"FULLTEXT",
-				fulltextSearchPattern(filters.studyProgramName)!,
-			]);
-		if (filters.courseName)
-			where.push([
-				"course_name",
-				"FULLTEXT",
-				fulltextSearchPattern(filters.courseName)!,
-			]);
-		if (filters.lecturerName)
-			where.push([
-				"lecturer_name",
-				"FULLTEXT",
-				fulltextSearchPattern(filters.lecturerName)!,
-			]);
-		if (filters.classRoomName)
-			where.push([
-				"class_room_name",
-				"FULLTEXT",
-				fulltextSearchPattern(filters.classRoomName)!,
-			]);
-		if (filters.scheduleDay)
-			where.push(["schedule_day", "=", filters.scheduleDay]);
-		if (filters.letterGrade)
-			where.push(["letter_grade", "=", filters.letterGrade]);
-		const afterId = getListQueryCursor(filters.cursor);
-		const q = filters.q?.trim();
-		if (q) {
-			const qPrefix = prefixSearchPattern(q)!;
-			const qWordPrefix = wordPrefixSearchPattern(q)!;
-			const searchLimit = sessionMode ? getListQueryLimit(limit * 50) : limit;
-			const queryLimit = searchLimit + 1;
-			const resultSets = await Promise.all([
-				selectEnrollments(getPool(), {
-					select: enrollmentListSelect,
-					where: [...where, ["id", "=", q]],
-					params: { afterId, limit: queryLimit },
-				}),
-				prefetchEnrollmentSearchResults(
-					"students",
-					"(MATCH(s.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(s.name) AGAINST(? IN BOOLEAN MODE))",
-					[qPrefix, qWordPrefix],
+	}
+	if (filters.id) where.push(['id', '=', filters.id]);
+	if (filters.studentId) where.push(['student_id', '=', filters.studentId]);
+	if (filters.courseId) where.push(['course_id', '=', filters.courseId]);
+	if (filters.lecturerId) {
+		// Pre-query courses to avoid a slow c.lecturer_id join filter on 2M+ rows.
+		// Filtering by course_id IN (...) lets MariaDB use idx_enrollments_course_schedule_id.
+		const [courseRows] = await getPool().query('SELECT id FROM courses WHERE lecturer_id = ?', [
+			filters.lecturerId
+		]);
+		const courseIds = (courseRows as Array<{ id: string }>).map((row) => row.id);
+		if (!courseIds.length) {
+			return toLimitedListResult([] as SelectEnrollmentsResult[], limit, (item) => item.id ?? null);
+		}
+		if (courseIds.length === 1) {
+			where.push(['course_id', '=', courseIds[0]!]);
+		} else {
+			where.push(['course_id', 'IN', courseIds]);
+		}
+	}
+	if (filters.classRoomId) where.push(['class_room_id', '=', filters.classRoomId]);
+	if (filters.semester) where.push(['semester', 'LIKE', containsSearchPattern(filters.semester)!]);
+	if (filters.academicYear)
+		where.push(['academic_year', 'LIKE', containsSearchPattern(filters.academicYear)!]);
+	if (filters.studentName)
+		where.push(['student_name', 'FULLTEXT', fulltextSearchPattern(filters.studentName)!]);
+	if (filters.studyProgramName)
+		where.push([
+			'study_program_name',
+			'FULLTEXT',
+			fulltextSearchPattern(filters.studyProgramName)!
+		]);
+	if (filters.courseName)
+		where.push(['course_name', 'FULLTEXT', fulltextSearchPattern(filters.courseName)!]);
+	if (filters.lecturerName)
+		where.push(['lecturer_name', 'FULLTEXT', fulltextSearchPattern(filters.lecturerName)!]);
+	if (filters.classRoomName)
+		where.push(['class_room_name', 'FULLTEXT', fulltextSearchPattern(filters.classRoomName)!]);
+	if (filters.scheduleDay) where.push(['schedule_day', '=', filters.scheduleDay]);
+	if (filters.letterGrade) where.push(['letter_grade', '=', filters.letterGrade]);
+	const afterId = getListQueryCursor(filters.cursor);
+	const q = filters.q?.trim();
+	if (q) {
+		const qPrefix = prefixSearchPattern(q)!;
+		const qWordPrefix = wordPrefixSearchPattern(q)!;
+		const searchLimit = sessionMode ? getListQueryLimit(limit * 50) : limit;
+		const queryLimit = searchLimit + 1;
+		const resultSets = await Promise.all([
+			selectEnrollments(getPool(), {
+				select: enrollmentListSelect,
+				where: [...where, ['id', '=', q]],
+				params: { afterId, limit: queryLimit }
+			}),
+			prefetchEnrollmentSearchResults(
+				'students',
+				'(MATCH(s.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(s.name) AGAINST(? IN BOOLEAN MODE))',
+				[qPrefix, qWordPrefix],
+				filters,
+				user,
+				searchLimit,
+				afterId
+			),
+			prefetchEnrollmentSearchResults(
+				'courses',
+				'(MATCH(c.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(c.name) AGAINST(? IN BOOLEAN MODE))',
+				[qPrefix, qWordPrefix],
+				filters,
+				user,
+				searchLimit,
+				afterId
+			),
+			prefetchEnrollmentSearchResults(
+				'lecturers',
+				'(MATCH(l.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(l.name) AGAINST(? IN BOOLEAN MODE))',
+				[qPrefix, qWordPrefix],
+				filters,
+				user,
+				searchLimit,
+				afterId
+			),
+			prefetchEnrollmentSearchResults(
+				'classRooms',
+				'(MATCH(cr.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(cr.name) AGAINST(? IN BOOLEAN MODE))',
+				[qPrefix, qWordPrefix],
+				filters,
+				user,
+				searchLimit,
+				afterId
+			),
+			prefetchEnrollmentSearchResults(
+				'enrollments',
+				'e.semester LIKE ?',
+				[qPrefix],
+				filters,
+				user,
+				searchLimit,
+				afterId
+			),
+			prefetchEnrollmentSearchResults(
+				'enrollments',
+				'e.academic_year LIKE ?',
+				[qPrefix],
+				filters,
+				user,
+				searchLimit,
+				afterId
+			)
+		]);
+		const normalizedDay = q.toUpperCase();
+		if (['SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU'].includes(normalizedDay)) {
+			resultSets.push(
+				await prefetchEnrollmentSearchResults(
+					'enrollments',
+					'e.schedule_day = ?',
+					[normalizedDay as (typeof days)[number]],
 					filters,
 					user,
 					searchLimit,
 					afterId,
-				),
-				prefetchEnrollmentSearchResults(
-					"courses",
-					"(MATCH(c.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(c.name) AGAINST(? IN BOOLEAN MODE))",
-					[qPrefix, qWordPrefix],
-					filters,
-					user,
-					searchLimit,
-					afterId,
-				),
-				prefetchEnrollmentSearchResults(
-					"lecturers",
-					"(MATCH(l.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(l.name) AGAINST(? IN BOOLEAN MODE))",
-					[qPrefix, qWordPrefix],
-					filters,
-					user,
-					searchLimit,
-					afterId,
-				),
-				prefetchEnrollmentSearchResults(
-					"classRooms",
-					"(MATCH(cr.name) AGAINST(? IN BOOLEAN MODE) OR MATCH(cr.name) AGAINST(? IN BOOLEAN MODE))",
-					[qPrefix, qWordPrefix],
-					filters,
-					user,
-					searchLimit,
-					afterId,
-				),
-				prefetchEnrollmentSearchResults(
-					"enrollments",
-					"e.semester LIKE ?",
-					[qPrefix],
-					filters,
-					user,
-					searchLimit,
-					afterId,
-				),
-				prefetchEnrollmentSearchResults(
-					"enrollments",
-					"e.academic_year LIKE ?",
-					[qPrefix],
-					filters,
-					user,
-					searchLimit,
-					afterId,
-				),
-			]);
-			const normalizedDay = q.toUpperCase();
-			if (
-				["SENIN", "SELASA", "RABU", "KAMIS", "JUMAT", "SABTU"].includes(
-					normalizedDay,
+					{ forcePrimary: true }
 				)
-			) {
-				resultSets.push(
-					await prefetchEnrollmentSearchResults(
-						"enrollments",
-						"e.schedule_day = ?",
-						[normalizedDay as (typeof days)[number]],
-						filters,
-						user,
-						searchLimit,
-						afterId,
-						{ forcePrimary: true },
-					),
-				);
-			}
-			if (sessionMode) {
-				const mergedRows = mergeLimitedListResult(
-					resultSets,
-					searchLimit,
-					(item) => item.id ?? null,
-				).items;
-				return toSessionLimitedListResult(mergedRows, limit, searchLimit);
-			}
-			return mergeLimitedListResult(
-				resultSets,
-				limit,
-				(item) => item.id ?? null,
 			);
 		}
-		// Multi-filter search: pick the most selective dimension as the driving table.
-		// All other filters are applied as WHERE clauses on joined tables.
-		const base = resolveOptimalEnrollmentBase(filters, user);
-
-		let predicateSql = "1 = 1";
-		const predicateValues: unknown[] = [];
-
-		if (base === "students" && filters.studentName) {
-			predicateSql = "MATCH(s.name) AGAINST(? IN BOOLEAN MODE)";
-			predicateValues.push(fulltextSearchPattern(filters.studentName)!);
-		} else if (base === "studyPrograms" && filters.studyProgramName) {
-			predicateSql = "MATCH(sp.name) AGAINST(? IN BOOLEAN MODE)";
-			predicateValues.push(fulltextSearchPattern(filters.studyProgramName)!);
-		} else if (base === "courses" && filters.courseName) {
-			predicateSql = "MATCH(c.name) AGAINST(? IN BOOLEAN MODE)";
-			predicateValues.push(fulltextSearchPattern(filters.courseName)!);
-		} else if (base === "lecturers" && filters.lecturerName) {
-			predicateSql = "MATCH(l.name) AGAINST(? IN BOOLEAN MODE)";
-			predicateValues.push(fulltextSearchPattern(filters.lecturerName)!);
-		} else if (base === "classRooms" && filters.classRoomName) {
-			predicateSql = "MATCH(cr.name) AGAINST(? IN BOOLEAN MODE)";
-			predicateValues.push(fulltextSearchPattern(filters.classRoomName)!);
-		} else if (filters.scheduleDay) {
-			predicateSql = "e.schedule_day = ?";
-			predicateValues.push(filters.scheduleDay);
-		} else if (filters.semester) {
-			predicateSql = "e.semester LIKE ?";
-			predicateValues.push(containsSearchPattern(filters.semester)!);
-		} else if (filters.academicYear) {
-			predicateSql = "e.academic_year LIKE ?";
-			predicateValues.push(containsSearchPattern(filters.academicYear)!);
-		}
-
-		const previewScanLimit = sessionMode
-			? getListQueryLimit(limit * 50)
-			: limit;
-		const rows = await prefetchEnrollmentSearchResults(
-			base,
-			predicateSql,
-			predicateValues,
-			filters,
-			user,
-			previewScanLimit,
-			afterId,
-			{ forcePrimary: base === "enrollments" },
-		);
-
 		if (sessionMode) {
-			return toSessionLimitedListResult(rows, limit, previewScanLimit);
+			const mergedRows = mergeLimitedListResult(
+				resultSets,
+				searchLimit,
+				(item) => item.id ?? null
+			).items;
+			return toSessionLimitedListResult(mergedRows, limit, searchLimit);
 		}
+		return mergeLimitedListResult(resultSets, limit, (item) => item.id ?? null);
+	}
+	// Multi-filter search: pick the most selective dimension as the driving table.
+	// All other filters are applied as WHERE clauses on joined tables.
+	const base = resolveOptimalEnrollmentBase(filters, user);
 
-		return toLimitedListResult(rows, limit, (item) => item.id ?? null);
-	},
-);
+	let predicateSql = '1 = 1';
+	const predicateValues: unknown[] = [];
+
+	if (base === 'students' && filters.studentName) {
+		predicateSql = 'MATCH(s.name) AGAINST(? IN BOOLEAN MODE)';
+		predicateValues.push(fulltextSearchPattern(filters.studentName)!);
+	} else if (base === 'studyPrograms' && filters.studyProgramName) {
+		predicateSql = 'MATCH(sp.name) AGAINST(? IN BOOLEAN MODE)';
+		predicateValues.push(fulltextSearchPattern(filters.studyProgramName)!);
+	} else if (base === 'courses' && filters.courseName) {
+		predicateSql = 'MATCH(c.name) AGAINST(? IN BOOLEAN MODE)';
+		predicateValues.push(fulltextSearchPattern(filters.courseName)!);
+	} else if (base === 'lecturers' && filters.lecturerName) {
+		predicateSql = 'MATCH(l.name) AGAINST(? IN BOOLEAN MODE)';
+		predicateValues.push(fulltextSearchPattern(filters.lecturerName)!);
+	} else if (base === 'classRooms' && filters.classRoomName) {
+		predicateSql = 'MATCH(cr.name) AGAINST(? IN BOOLEAN MODE)';
+		predicateValues.push(fulltextSearchPattern(filters.classRoomName)!);
+	} else if (filters.scheduleDay) {
+		predicateSql = 'e.schedule_day = ?';
+		predicateValues.push(filters.scheduleDay);
+	} else if (filters.semester) {
+		predicateSql = 'e.semester LIKE ?';
+		predicateValues.push(containsSearchPattern(filters.semester)!);
+	} else if (filters.academicYear) {
+		predicateSql = 'e.academic_year LIKE ?';
+		predicateValues.push(containsSearchPattern(filters.academicYear)!);
+	}
+
+	const previewScanLimit = sessionMode ? getListQueryLimit(limit * 50) : limit;
+	const rows = await prefetchEnrollmentSearchResults(
+		base,
+		predicateSql,
+		predicateValues,
+		filters,
+		user,
+		previewScanLimit,
+		afterId,
+		{ forcePrimary: base === 'enrollments' }
+	);
+
+	if (sessionMode) {
+		return toSessionLimitedListResult(rows, limit, previewScanLimit);
+	}
+
+	return toLimitedListResult(rows, limit, (item) => item.id ?? null);
+});
 
 export const getEnrollment = query(v.string(), async (id) => {
 	const user = await requireUser();
 	const [enrollment] = await selectEnrollments(getPool(), {
-		where: [["id", "=", id]],
+		where: [['id', '=', id]]
 	});
 	if (!enrollment) {
-		throw error(404, "Data KRS tidak ditemukan");
+		throw error(404, 'Data KRS tidak ditemukan');
 	}
-	if (user.role === "STUDENT" && enrollment.student_id !== user.studentId) {
-		throw error(403, "Anda tidak berhak melihat data KRS ini");
+	if (user.role === 'STUDENT' && enrollment.student_id !== user.studentId) {
+		throw error(403, 'Anda tidak berhak melihat data KRS ini');
 	}
-	if (user.role === "LECTURER" && enrollment.lecturer_id !== user.lecturerId) {
-		throw error(403, "Anda tidak berhak melihat data KRS ini");
+	if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
+		throw error(403, 'Anda tidak berhak melihat data KRS ini');
 	}
 	return enrollment;
 });
 
 export const getEnrollmentSessionRoster = query(v.string(), async (id) => {
-	const user = await requireRole(["ADMIN", "LECTURER"]);
+	const user = await requireRole(['ADMIN', 'LECTURER']);
 	const [representative] = await selectEnrollments(getPool(), {
-		where: [["id", "=", id]],
+		where: [['id', '=', id]]
 	});
 	if (!representative) {
-		throw error(404, "Data KRS tidak ditemukan");
+		throw error(404, 'Data KRS tidak ditemukan');
 	}
-	if (
-		user.role === "LECTURER" &&
-		representative.lecturer_id !== user.lecturerId
-	) {
-		throw error(403, "Anda tidak berhak melihat peserta jadwal ini");
+	if (user.role === 'LECTURER' && representative.lecturer_id !== user.lecturerId) {
+		throw error(403, 'Anda tidak berhak melihat peserta jadwal ini');
 	}
 	if (!representative.schedule_id) {
 		return [representative];
 	}
 
 	const rows = await selectEnrollments(getPool(), {
-		where: [["schedule_id", "=", representative.schedule_id]],
+		where: [['schedule_id', '=', representative.schedule_id]]
 	});
 	return attachSessionStudentCounts(rows);
 });
 
 const conflictAuditSchema = v.object({
-	conflictType: v.optional(v.picklist(["room", "student", "lecturer"])),
+	conflictType: v.optional(v.picklist(['room', 'student', 'lecturer'])),
 	academicYear: v.optional(v.string()),
 	semester: v.optional(v.string()),
-	day: v.optional(
-		v.picklist(["SENIN", "SELASA", "RABU", "KAMIS", "JUMAT", "SABTU"]),
-	),
+	day: v.optional(v.picklist(['SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU'])),
 	courseId: v.optional(v.string()),
 	classRoomId: v.optional(v.string()),
 	lecturerId: v.optional(v.string()),
 	enrollmentIds: v.optional(v.pipe(v.array(v.string()), v.maxLength(500))),
-	limitGroups: v.optional(
-		v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(1000)),
-	),
-	memberSampleSize: v.optional(
-		v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(40)),
-	),
+	limitGroups: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(1000))),
+	memberSampleSize: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(40)))
 });
 
 type ConflictAuditInput = v.InferOutput<typeof conflictAuditSchema>;
 
 function emptyConflictAudit(
 	filters: ConflictAuditInput,
-	lecturerScope: string | null,
+	lecturerScope: string | null
 ): ConflictAuditResult {
 	return {
 		filters: {
 			academicYear: filters.academicYear ?? null,
 			semester: filters.semester ?? null,
-			lecturerScope,
+			lecturerScope
 		},
 		summary: {
 			totalGroups: 0,
@@ -1119,78 +1043,59 @@ function emptyConflictAudit(
 			conflictedEnrollments: 0,
 			conflictedRooms: 0,
 			conflictedStudents: 0,
-			conflictedLecturers: 0,
+			conflictedLecturers: 0
 		},
 		truncated: false,
-		groups: [],
+		groups: []
 	};
 }
 
-async function selectLecturerAuditEnrollmentIds(
-	lecturerId: string,
-	filters: ConflictAuditInput,
-) {
+async function selectLecturerAuditEnrollmentIds(lecturerId: string, filters: ConflictAuditInput) {
 	const sqlParts = [
-		"SELECT e.id",
-		"FROM enrollments e",
-		"INNER JOIN courses c ON c.id = e.course_id",
-		"WHERE c.lecturer_id = ?",
+		'SELECT e.id',
+		'FROM enrollments e',
+		'INNER JOIN courses c ON c.id = e.course_id',
+		'WHERE c.lecturer_id = ?'
 	];
 	const values: unknown[] = [lecturerId];
 	const requestedIds = filters.enrollmentIds?.filter(Boolean) ?? [];
 
 	if (requestedIds.length) {
-		sqlParts.push("AND e.id IN (?)");
+		sqlParts.push('AND e.id IN (?)');
 		values.push(requestedIds);
 	}
 	if (filters.academicYear) {
-		sqlParts.push("AND e.academic_year = ?");
+		sqlParts.push('AND e.academic_year = ?');
 		values.push(filters.academicYear);
 	}
 	if (filters.semester) {
-		sqlParts.push("AND e.semester = ?");
+		sqlParts.push('AND e.semester = ?');
 		values.push(filters.semester);
 	}
 	if (filters.day) {
-		sqlParts.push("AND e.schedule_day = ?");
+		sqlParts.push('AND e.schedule_day = ?');
 		values.push(filters.day);
 	}
 	if (filters.courseId) {
-		sqlParts.push("AND e.course_id = ?");
+		sqlParts.push('AND e.course_id = ?');
 		values.push(filters.courseId);
 	}
 	if (filters.classRoomId) {
-		sqlParts.push("AND e.class_room_id = ?");
+		sqlParts.push('AND e.class_room_id = ?');
 		values.push(filters.classRoomId);
 	}
 
-	sqlParts.push("ORDER BY e.id ASC", "LIMIT 500");
-	const [rows] = await getPool().query(sqlParts.join(" "), values);
+	sqlParts.push('ORDER BY e.id ASC', 'LIMIT 500');
+	const [rows] = await getPool().query(sqlParts.join(' '), values);
 	return (rows as Array<{ id: string }>).map((row) => row.id).filter(Boolean);
 }
 
-export const getEnrollmentConflictAudit = query(
-	conflictAuditSchema,
-	async (filters) => {
-		const user = await requireRole(["ADMIN", "LECTURER"]);
-		if (user.role === "LECTURER") {
-			const focusEnrollmentIds = await selectLecturerAuditEnrollmentIds(
-				user.lecturerId!,
-				filters,
-			);
-			if (!focusEnrollmentIds.length) {
-				return emptyConflictAudit(filters, user.lecturerId ?? null);
-			}
-
-			return auditEnrollmentConflicts(getPool(), {
-				conflictType: filters.conflictType,
-				academicYear: filters.academicYear,
-				semester: filters.semester,
-				day: filters.day,
-				focusEnrollmentIds,
-				limitGroups: filters.limitGroups,
-				memberSampleSize: filters.memberSampleSize,
-			});
+export const getEnrollmentConflictAudit = query(conflictAuditSchema, async (filters) => {
+	const user = await requireRole(['ADMIN', 'LECTURER']);
+	if (user.role === 'LECTURER') {
+		const focusEnrollmentIds = await selectLecturerAuditEnrollmentIds(user.lecturerId!, filters);
+		if (!focusEnrollmentIds.length) {
+			return emptyConflictAudit(filters, user.lecturerId ?? null);
 		}
 
 		return auditEnrollmentConflicts(getPool(), {
@@ -1198,59 +1103,63 @@ export const getEnrollmentConflictAudit = query(
 			academicYear: filters.academicYear,
 			semester: filters.semester,
 			day: filters.day,
-			courseId: filters.courseId,
-			classRoomId: filters.classRoomId,
-			focusEnrollmentIds: filters.enrollmentIds,
+			focusEnrollmentIds,
 			limitGroups: filters.limitGroups,
-			memberSampleSize: filters.memberSampleSize,
-			lecturerId: filters.lecturerId,
+			memberSampleSize: filters.memberSampleSize
 		});
-	},
-);
+	}
+
+	return auditEnrollmentConflicts(getPool(), {
+		conflictType: filters.conflictType,
+		academicYear: filters.academicYear,
+		semester: filters.semester,
+		day: filters.day,
+		courseId: filters.courseId,
+		classRoomId: filters.classRoomId,
+		focusEnrollmentIds: filters.enrollmentIds,
+		limitGroups: filters.limitGroups,
+		memberSampleSize: filters.memberSampleSize,
+		lecturerId: filters.lecturerId
+	});
+});
 
 export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
-	const user = await requireRole(["ADMIN", "LECTURER"]);
+	const user = await requireRole(['ADMIN', 'LECTURER']);
 
 	const [[student], [course], [classRoom]] = await Promise.all([
-		selectStudents(getPool(), { where: [["id", "=", data.studentId]] }),
-		selectCourses(getPool(), { where: [["id", "=", data.courseId]] }),
-		selectClassRooms(getPool(), { where: [["id", "=", data.classRoomId]] }),
+		selectStudents(getPool(), { where: [['id', '=', data.studentId]] }),
+		selectCourses(getPool(), { where: [['id', '=', data.courseId]] }),
+		selectClassRooms(getPool(), { where: [['id', '=', data.classRoomId]] })
 	]);
 
 	if (!student) {
-		invalid(issue.studentId("Mahasiswa tidak ditemukan"));
+		invalid(issue.studentId('Mahasiswa tidak ditemukan'));
 	}
 
 	if (!course) {
-		invalid(issue.courseId("Mata kuliah tidak ditemukan"));
+		invalid(issue.courseId('Mata kuliah tidak ditemukan'));
 	}
 	if (!course.lecturer_id) {
-		invalid(issue.courseId("Mata kuliah belum memiliki dosen pengampu"));
+		invalid(issue.courseId('Mata kuliah belum memiliki dosen pengampu'));
 	}
-	if (user.role === "LECTURER" && course.lecturer_id !== user.lecturerId) {
-		throw error(
-			403,
-			"Anda hanya dapat mengelola jadwal untuk mata kuliah yang Anda ampu",
-		);
+	if (user.role === 'LECTURER' && course.lecturer_id !== user.lecturerId) {
+		throw error(403, 'Anda hanya dapat mengelola jadwal untuk mata kuliah yang Anda ampu');
 	}
 
 	if (!classRoom) {
-		invalid(issue.classRoomId("Ruang kelas tidak ditemukan"));
+		invalid(issue.classRoomId('Ruang kelas tidak ditemukan'));
 	}
-	const { clientTimezone, startDate, endDate } = validateScheduleWindow(
-		data,
-		issue,
-	);
+	const { clientTimezone, startDate, endDate } = validateScheduleWindow(data, issue);
 
 	if (endDate <= startDate) {
-		invalid(issue.endTime("Waktu selesai harus lebih besar dari waktu mulai"));
+		invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
 	}
 
 	const [roomConflicts, existingRows, studentConflicts, lecturerConflicts]: [
 		SelectSchedulesConflictResult[],
 		SelectEnrollmentsResult[],
 		SelectStudentScheduleConflictResult[],
-		SelectLecturerScheduleConflictResult[],
+		SelectLecturerScheduleConflictResult[]
 	] = await Promise.all([
 		selectSchedulesConflict(getPool(), {
 			classRoomId: data.classRoomId,
@@ -1258,16 +1167,16 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 			startTime: startDate,
 			endTime: endDate,
 			semester: data.semester,
-			academicYear: data.academicYear,
+			academicYear: data.academicYear
 		}),
 		selectEnrollments(getPool(), {
 			select: { id: true },
 			where: [
-				["student_id", "=", data.studentId],
-				["course_id", "=", data.courseId],
-				["semester", "=", data.semester],
-				["academic_year", "=", data.academicYear],
-			],
+				['student_id', '=', data.studentId],
+				['course_id', '=', data.courseId],
+				['semester', '=', data.semester],
+				['academic_year', '=', data.academicYear]
+			]
 		}),
 		selectStudentScheduleConflict(getPool(), {
 			studentId: data.studentId,
@@ -1275,7 +1184,7 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 			startTime: startDate,
 			endTime: endDate,
 			semester: data.semester,
-			academicYear: data.academicYear,
+			academicYear: data.academicYear
 		}),
 		selectLecturerScheduleConflict(getPool(), {
 			lecturerId: course.lecturer_id,
@@ -1283,40 +1192,40 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 			startTime: startDate,
 			endTime: endDate,
 			semester: data.semester,
-			academicYear: data.academicYear,
-		}),
+			academicYear: data.academicYear
+		})
 	]);
 	const [existing] = existingRows;
 
 	if (roomConflicts.length) {
 		invalid(
 			issue.classRoomId(
-				`Ruang kelas bentrok dengan ${roomConflicts.length} jadwal lain: ${summarizeConflictWindows(roomConflicts, clientTimezone)}`,
-			),
+				`Ruang kelas bentrok dengan ${roomConflicts.length} jadwal lain: ${summarizeConflictWindows(roomConflicts, clientTimezone)}`
+			)
 		);
 	}
 
 	if (studentConflicts.length) {
 		invalid(
 			issue.studentId(
-				`Mahasiswa memiliki ${studentConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(studentConflicts, clientTimezone)}`,
-			),
+				`Mahasiswa memiliki ${studentConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(studentConflicts, clientTimezone)}`
+			)
 		);
 	}
 
 	if (lecturerConflicts.length) {
 		invalid(
 			issue.courseId(
-				`Dosen memiliki ${lecturerConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(lecturerConflicts, clientTimezone)}`,
-			),
+				`Dosen memiliki ${lecturerConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(lecturerConflicts, clientTimezone)}`
+			)
 		);
 	}
 
 	if (existing) {
 		invalid(
 			issue.courseId(
-				"Mahasiswa sudah terdaftar di mata kuliah ini pada semester dan tahun akademik yang sama",
-			),
+				'Mahasiswa sudah terdaftar di mata kuliah ini pada semester dan tahun akademik yang sama'
+			)
 		);
 	}
 
@@ -1329,7 +1238,7 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 			day: data.day,
 			start_time: startDate,
 			end_time: endDate,
-			lecturer_id: course.lecturer_id,
+			lecturer_id: course.lecturer_id
 		});
 
 		await insertEnrollment(conn, {
@@ -1340,7 +1249,7 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 			schedule_id: scheduleId,
 			semester: data.semester,
 			academic_year: data.academicYear,
-			status: "APPROVED",
+			status: 'APPROVED'
 		});
 	});
 	invalidateConflictAuditCache();
@@ -1350,35 +1259,42 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 		success: true,
 		id: enrollmentId,
 		enrollmentId: enrollmentId,
-		scheduleId: scheduleId,
+		scheduleId: scheduleId
 	};
 });
 
 export const updateEnrollment = form(
 	v.object({ id: v.string(), ...enrollmentSchema.entries }),
 	async (data, issue) => {
-		const user = await requireRole(["ADMIN", "LECTURER"]);
+		const user = await requireRole(['ADMIN', 'LECTURER']);
 		const [enrollment] = await selectEnrollments(getPool(), {
-			where: [["id", "=", data.id]],
+			where: [['id', '=', data.id]]
 		});
 		if (!enrollment) {
-			throw error(404, "Data KRS tidak ditemukan");
+			throw error(404, 'Data KRS tidak ditemukan');
 		}
-		if (
-			user.role === "LECTURER" &&
-			enrollment.lecturer_id !== user.lecturerId
-		) {
-			throw error(
-				403,
-				"Anda hanya dapat mengubah jadwal untuk mata kuliah yang Anda ampu",
-			);
+		if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
+			throw error(403, 'Anda hanya dapat mengubah jadwal untuk mata kuliah yang Anda ampu');
 		}
-		const isPending = enrollment.status === "PENDING";
-		if (!isPending && enrollment.grade_id) {
-			throw error(400, "Data KRS sudah memiliki nilai, tidak dapat diubah");
-		}
+		const isPending = enrollment.status === 'PENDING';
 		if (!isPending && !enrollment.schedule_id) {
-			throw error(400, "Data jadwal KRS tidak lengkap");
+			throw error(400, 'Data jadwal KRS tidak lengkap');
+		}
+		const sessionEnrollments = !isPending
+			? await selectEnrollments(getPool(), {
+					select: {
+						id: true,
+						student_id: true,
+						student_name: true,
+						grade_id: true
+					},
+					where: [['schedule_id', '=', enrollment.schedule_id!]]
+				})
+			: [];
+		const affectedSessionEnrollments =
+			!isPending && sessionEnrollments.length ? sessionEnrollments : [enrollment];
+		if (!isPending && affectedSessionEnrollments.some((item) => item.grade_id)) {
+			throw error(400, 'Sesi KRS sudah memiliki nilai, tidak dapat diubah');
 		}
 
 		const studentId = enrollment.student_id ?? data.studentId;
@@ -1387,50 +1303,62 @@ export const updateEnrollment = form(
 		const academicYear = enrollment.academic_year ?? data.academicYear;
 
 		const [student] = await selectStudents(getPool(), {
-			where: [["id", "=", studentId]],
+			where: [['id', '=', studentId]]
 		});
 		if (!student) {
-			invalid(issue.studentId("Mahasiswa tidak ditemukan"));
+			invalid(issue.studentId('Mahasiswa tidak ditemukan'));
 		}
 
 		const [course] = await selectCourses(getPool(), {
-			where: [["id", "=", courseId]],
+			where: [['id', '=', courseId]]
 		});
 		if (!course) {
-			invalid(issue.courseId("Mata kuliah tidak ditemukan"));
+			invalid(issue.courseId('Mata kuliah tidak ditemukan'));
 		}
 		if (!course.lecturer_id) {
-			invalid(issue.courseId("Mata kuliah belum memiliki dosen pengampu"));
+			invalid(issue.courseId('Mata kuliah belum memiliki dosen pengampu'));
 		}
-		if (user.role === "LECTURER" && course.lecturer_id !== user.lecturerId) {
-			throw error(
-				403,
-				"Anda hanya dapat memindahkan jadwal dalam mata kuliah yang Anda ampu",
-			);
+		if (user.role === 'LECTURER' && course.lecturer_id !== user.lecturerId) {
+			throw error(403, 'Anda hanya dapat memindahkan jadwal dalam mata kuliah yang Anda ampu');
 		}
 
 		const [classRoom] = await selectClassRooms(getPool(), {
-			where: [["id", "=", data.classRoomId]],
+			where: [['id', '=', data.classRoomId]]
 		});
 		if (!classRoom) {
-			invalid(issue.classRoomId("Ruang kelas tidak ditemukan"));
+			invalid(issue.classRoomId('Ruang kelas tidak ditemukan'));
 		}
-		const { clientTimezone, startDate, endDate } = validateScheduleWindow(
-			data,
-			issue,
-		);
+		const { clientTimezone, startDate, endDate } = validateScheduleWindow(data, issue);
 
 		if (endDate <= startDate) {
-			invalid(
-				issue.endTime("Waktu selesai harus lebih besar dari waktu mulai"),
-			);
+			invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
 		}
 
-		const [roomConflicts, studentConflicts, lecturerConflicts, existingRows]: [
+		const studentConflictTargets = (
+			isPending
+				? [
+						{
+							enrollmentId: data.id,
+							studentId,
+							studentName: student.name ?? studentId
+						}
+					]
+				: affectedSessionEnrollments.map((item) => ({
+						enrollmentId: item.id ?? '',
+						studentId: item.student_id ?? '',
+						studentName: item.student_name ?? item.student_id ?? 'Mahasiswa'
+					}))
+		).filter((item): item is StudentConflictTarget => Boolean(item.enrollmentId && item.studentId));
+
+		const [roomConflicts, studentConflictChecks, lecturerConflicts, existingRows]: [
 			SelectSchedulesConflictResult[],
-			SelectStudentScheduleConflictResult[],
+			Array<
+				StudentConflictTarget & {
+					conflicts: SelectStudentScheduleConflictResult[];
+				}
+			>,
 			SelectLecturerScheduleConflictResult[],
-			SelectEnrollmentsResult[],
+			SelectEnrollmentsResult[]
 		] = await Promise.all([
 			selectSchedulesConflict(getPool(), {
 				classRoomId: data.classRoomId,
@@ -1439,17 +1367,22 @@ export const updateEnrollment = form(
 				endTime: endDate,
 				semester,
 				academicYear,
-				excludeScheduleId: enrollment.schedule_id ?? undefined,
+				excludeScheduleId: enrollment.schedule_id ?? undefined
 			}),
-			selectStudentScheduleConflict(getPool(), {
-				studentId,
-				day: data.day,
-				startTime: startDate,
-				endTime: endDate,
-				semester,
-				academicYear,
-				excludeEnrollmentId: data.id,
-			}),
+			Promise.all(
+				studentConflictTargets.map(async (target) => ({
+					...target,
+					conflicts: await selectStudentScheduleConflict(getPool(), {
+						studentId: target.studentId,
+						day: data.day,
+						startTime: startDate,
+						endTime: endDate,
+						semester,
+						academicYear,
+						excludeEnrollmentId: target.enrollmentId
+					})
+				}))
+			),
 			selectLecturerScheduleConflict(getPool(), {
 				lecturerId: course.lecturer_id,
 				day: data.day,
@@ -1457,48 +1390,49 @@ export const updateEnrollment = form(
 				endTime: endDate,
 				semester,
 				academicYear,
-				excludeScheduleId: enrollment.schedule_id ?? undefined,
+				excludeScheduleId: enrollment.schedule_id ?? undefined
 			}),
 			selectEnrollments(getPool(), {
 				select: { id: true },
 				where: [
-					["student_id", "=", studentId],
-					["course_id", "=", courseId],
-					["semester", "=", semester],
-					["academic_year", "=", academicYear],
-				],
-			}),
+					['student_id', '=', studentId],
+					['course_id', '=', courseId],
+					['semester', '=', semester],
+					['academic_year', '=', academicYear]
+				]
+			})
 		]);
 		const [existing] = existingRows;
 		if (roomConflicts.length) {
 			invalid(
 				issue.classRoomId(
-					`Ruang kelas bentrok dengan ${roomConflicts.length} jadwal lain: ${summarizeConflictWindows(roomConflicts, clientTimezone)}`,
-				),
+					`Ruang kelas bentrok dengan ${roomConflicts.length} jadwal lain: ${summarizeConflictWindows(roomConflicts, clientTimezone)}`
+				)
 			);
 		}
 
-		if (studentConflicts.length) {
+		const firstStudentConflict = studentConflictChecks.find((item) => item.conflicts.length);
+		if (firstStudentConflict) {
 			invalid(
 				issue.studentId(
-					`Mahasiswa memiliki ${studentConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(studentConflicts, clientTimezone)}`,
-				),
+					`${firstStudentConflict.studentName} memiliki ${firstStudentConflict.conflicts.length} jadwal bentrok: ${summarizeNamedConflicts(firstStudentConflict.conflicts, clientTimezone)}`
+				)
 			);
 		}
 
 		if (lecturerConflicts.length) {
 			invalid(
 				issue.courseId(
-					`Dosen memiliki ${lecturerConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(lecturerConflicts, clientTimezone)}`,
-				),
+					`Dosen memiliki ${lecturerConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(lecturerConflicts, clientTimezone)}`
+				)
 			);
 		}
 
 		if (existing && existing.id !== data.id) {
 			invalid(
 				issue.courseId(
-					"Mahasiswa sudah terdaftar di mata kuliah ini pada semester dan tahun akademik yang sama",
-				),
+					'Mahasiswa sudah terdaftar di mata kuliah ini pada semester dan tahun akademik yang sama'
+				)
 			);
 		}
 		await withTransaction(async (conn) => {
@@ -1510,7 +1444,7 @@ export const updateEnrollment = form(
 					day: data.day,
 					start_time: startDate,
 					end_time: endDate,
-					lecturer_id: course.lecturer_id,
+					lecturer_id: course.lecturer_id
 				});
 				await updateEnrollmentDb(
 					conn,
@@ -1524,9 +1458,9 @@ export const updateEnrollment = form(
 						schedule_end_time: endDate,
 						semester,
 						academic_year: academicYear,
-						status: "APPROVED",
+						status: 'APPROVED'
 					},
-					{ id: data.id },
+					{ id: data.id }
 				);
 			} else {
 				await updateSchedule(
@@ -1536,89 +1470,74 @@ export const updateEnrollment = form(
 						day: data.day,
 						start_time: startDate,
 						end_time: endDate,
-						lecturer_id: course.lecturer_id,
+						lecturer_id: course.lecturer_id
 					},
-					{ id: enrollment.schedule_id! },
+					{ id: enrollment.schedule_id! }
 				);
-				await updateEnrollmentDb(
-					conn,
-					{
-						class_room_id: data.classRoomId,
-						schedule_day: data.day,
-						schedule_start_time: startDate,
-						schedule_end_time: endDate,
-					},
-					{ id: data.id },
-				);
+				await updateScheduleSessionEnrollments(conn, {
+					scheduleId: enrollment.schedule_id!,
+					classRoomId: data.classRoomId,
+					day: data.day,
+					startTime: startDate,
+					endTime: endDate
+				});
 			}
 		});
 		invalidateConflictAuditCache();
 		await getEnrollments().refresh();
 		return { success: true };
-	},
+	}
 );
 
 export const updateEnrollmentSessionRoster = command(
 	enrollmentSessionRosterSchema,
 	async (data) => {
-		const user = await requireRole(["ADMIN", "LECTURER"]);
+		const user = await requireRole(['ADMIN', 'LECTURER']);
 		const [representative] = await selectEnrollments(getPool(), {
-			where: [["id", "=", data.id]],
+			where: [['id', '=', data.id]]
 		});
 		if (!representative) {
-			throw error(404, "Data KRS tidak ditemukan");
+			throw error(404, 'Data KRS tidak ditemukan');
 		}
 		if (!representative.schedule_id) {
-			throw error(400, "Sesi jadwal belum lengkap");
+			throw error(400, 'Sesi jadwal belum lengkap');
 		}
-		if (
-			user.role === "LECTURER" &&
-			representative.lecturer_id !== user.lecturerId
-		) {
-			throw error(
-				403,
-				"Anda hanya dapat mengubah peserta untuk mata kuliah yang Anda ampu",
-			);
+		if (user.role === 'LECTURER' && representative.lecturer_id !== user.lecturerId) {
+			throw error(403, 'Anda hanya dapat mengubah peserta untuk mata kuliah yang Anda ampu');
 		}
 
 		const studentIds = Array.from(new Set(data.studentIds.filter(Boolean)));
 		const existingRows = await selectEnrollments(getPool(), {
-			where: [["schedule_id", "=", representative.schedule_id]],
+			where: [['schedule_id', '=', representative.schedule_id]]
 		});
 		const existingByStudentId = new Map(
-			existingRows
-				.filter((item) => item.student_id)
-				.map((item) => [item.student_id!, item]),
+			existingRows.filter((item) => item.student_id).map((item) => [item.student_id!, item])
 		);
 		const studentRows = await selectStudents(getPool(), {
 			select: { id: true },
-			where: [["id", "IN", studentIds]],
+			where: [['id', 'IN', studentIds]]
 		});
-		const foundStudentIds = new Set(
-			studentRows.map((student) => student.id).filter(Boolean),
-		);
-		const missingStudentIds = studentIds.filter(
-			(id) => !foundStudentIds.has(id),
-		);
+		const foundStudentIds = new Set(studentRows.map((student) => student.id).filter(Boolean));
+		const missingStudentIds = studentIds.filter((id) => !foundStudentIds.has(id));
 		if (missingStudentIds.length) {
-			throw error(400, "Beberapa mahasiswa tidak ditemukan");
+			throw error(400, 'Beberapa mahasiswa tidak ditemukan');
 		}
 		const duplicateRows = await selectEnrollments(getPool(), {
 			select: { id: true, student_id: true, schedule_id: true },
 			where: [
-				["student_id", "IN", studentIds],
-				["course_id", "=", representative.course_id!],
-				["semester", "=", representative.semester!],
-				["academic_year", "=", representative.academic_year!],
-			],
+				['student_id', 'IN', studentIds],
+				['course_id', '=', representative.course_id!],
+				['semester', '=', representative.semester!],
+				['academic_year', '=', representative.academic_year!]
+			]
 		});
 		const duplicateOutsideSession = duplicateRows.find(
-			(row) => row.schedule_id !== representative.schedule_id,
+			(row) => row.schedule_id !== representative.schedule_id
 		);
 		if (duplicateOutsideSession) {
 			throw error(
 				400,
-				`Mahasiswa ${duplicateOutsideSession.student_id} sudah terdaftar di mata kuliah ini`,
+				`Mahasiswa ${duplicateOutsideSession.student_id} sudah terdaftar di mata kuliah ini`
 			);
 		}
 
@@ -1633,34 +1552,22 @@ export const updateEnrollmentSessionRoster = command(
 						startTime: representative.schedule_start_time!,
 						endTime: representative.schedule_end_time!,
 						semester: representative.semester ?? undefined,
-						academicYear: representative.academic_year ?? undefined,
-					}),
-				})),
+						academicYear: representative.academic_year ?? undefined
+					})
+				}))
 		);
-		const firstConflict = studentConflicts.find(
-			(item) => item.conflicts.length,
-		);
+		const firstConflict = studentConflicts.find((item) => item.conflicts.length);
 		if (firstConflict) {
-			throw error(
-				400,
-				`Mahasiswa ${firstConflict.studentId} memiliki jadwal bentrok`,
-			);
+			throw error(400, `Mahasiswa ${firstConflict.studentId} memiliki jadwal bentrok`);
 		}
 
 		let nextSelectedId = existingByStudentId.get(studentIds[0]!)?.id ?? null;
 		await withTransaction(async (conn) => {
 			for (const existing of existingRows) {
-				if (
-					!existing.id ||
-					!existing.student_id ||
-					studentIds.includes(existing.student_id)
-				)
+				if (!existing.id || !existing.student_id || studentIds.includes(existing.student_id))
 					continue;
 				if (existing.grade_id) {
-					throw error(
-						400,
-						"Mahasiswa yang sudah memiliki nilai tidak dapat dihapus dari sesi",
-					);
+					throw error(400, 'Mahasiswa yang sudah memiliki nilai tidak dapat dihapus dari sesi');
 				}
 				await deleteEnrollmentDb(conn, { id: existing.id });
 			}
@@ -1676,7 +1583,7 @@ export const updateEnrollmentSessionRoster = command(
 					schedule_id: representative.schedule_id,
 					semester: representative.semester!,
 					academic_year: representative.academic_year!,
-					status: "APPROVED",
+					status: 'APPROVED'
 				});
 				if (!nextSelectedId) nextSelectedId = id;
 			}
@@ -1685,27 +1592,24 @@ export const updateEnrollmentSessionRoster = command(
 		invalidateConflictAuditCache();
 		await getEnrollments().refresh();
 		return { success: true, id: nextSelectedId ?? data.id };
-	},
+	}
 );
 
 export const deleteEnrollment = command(v.string(), async (id) => {
-	const user = await requireRole(["ADMIN", "LECTURER"]);
+	const user = await requireRole(['ADMIN', 'LECTURER']);
 	const [enrollment] = await selectEnrollments(getPool(), {
-		where: [["id", "=", id]],
+		where: [['id', '=', id]]
 	});
 	if (!enrollment) {
-		throw error(404, "Data KRS tidak ditemukan");
+		throw error(404, 'Data KRS tidak ditemukan');
 	}
-	if (user.role === "LECTURER" && enrollment.lecturer_id !== user.lecturerId) {
-		throw error(
-			403,
-			"Anda hanya dapat menghapus jadwal untuk mata kuliah yang Anda ampu",
-		);
+	if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
+		throw error(403, 'Anda hanya dapat menghapus jadwal untuk mata kuliah yang Anda ampu');
 	}
 	await withTransaction(async (conn) => {
 		await deleteEnrollmentDb(conn, { id });
 		if (enrollment.schedule_id) {
-			await deleteSchedule(conn, { id: enrollment.schedule_id });
+			await deleteScheduleIfUnused(conn, enrollment.schedule_id);
 		}
 	});
 	invalidateConflictAuditCache();
@@ -1716,30 +1620,27 @@ export const deleteEnrollment = command(v.string(), async (id) => {
 export const bulkDeleteEnrollments = command(
 	v.pipe(v.string(), v.minLength(1)),
 	async (idsParam) => {
-		const user = await requireRole(["ADMIN", "LECTURER"]);
-		const ids = idsParam.split(",").filter(Boolean);
-		if (!ids.length) throw error(400, "Tidak ada KRS dipilih");
-		if (ids.length > 200) throw error(400, "Maksimal 200 KRS sekaligus");
+		const user = await requireRole(['ADMIN', 'LECTURER']);
+		const ids = idsParam.split(',').filter(Boolean);
+		if (!ids.length) throw error(400, 'Tidak ada KRS dipilih');
+		if (ids.length > 200) throw error(400, 'Maksimal 200 KRS sekaligus');
 		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
 		await withTransaction(async (conn) => {
 			for (const id of ids) {
 				const [enrollment] = await selectEnrollments(conn, {
-					where: [["id", "=", id]],
+					where: [['id', '=', id]]
 				});
 				if (!enrollment) {
-					results.push({ id, ok: false, message: "Data KRS tidak ditemukan" });
+					results.push({ id, ok: false, message: 'Data KRS tidak ditemukan' });
 					continue;
 				}
-				if (
-					user.role === "LECTURER" &&
-					enrollment.lecturer_id !== user.lecturerId
-				) {
-					results.push({ id, ok: false, message: "Bukan jadwal Anda" });
+				if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
+					results.push({ id, ok: false, message: 'Bukan jadwal Anda' });
 					continue;
 				}
 				await deleteEnrollmentDb(conn, { id });
 				if (enrollment.schedule_id) {
-					await deleteSchedule(conn, { id: enrollment.schedule_id });
+					await deleteScheduleIfUnused(conn, enrollment.schedule_id);
 				}
 				results.push({ id, ok: true });
 			}
@@ -1749,44 +1650,41 @@ export const bulkDeleteEnrollments = command(
 			await getEnrollments().refresh();
 		}
 		return { success: true, results };
-	},
+	}
 );
 
 export const bulkUpdateEnrollments = form(
 	v.object({
 		ids: v.pipe(v.string(), v.minLength(1)),
 		semester: v.optional(v.string()),
-		academicYear: v.optional(v.string()),
+		academicYear: v.optional(v.string())
 	}),
 	async (data) => {
-		const user = await requireRole(["ADMIN", "LECTURER"]);
-		const ids = data.ids.split(",").filter(Boolean);
-		if (!ids.length) throw error(400, "Tidak ada KRS dipilih");
-		if (ids.length > 200) throw error(400, "Maksimal 200 KRS sekaligus");
+		const user = await requireRole(['ADMIN', 'LECTURER']);
+		const ids = data.ids.split(',').filter(Boolean);
+		if (!ids.length) throw error(400, 'Tidak ada KRS dipilih');
+		if (ids.length > 200) throw error(400, 'Maksimal 200 KRS sekaligus');
 		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
 		await withTransaction(async (conn) => {
 			for (const id of ids) {
 				const [enrollment] = await selectEnrollments(conn, {
-					where: [["id", "=", id]],
+					where: [['id', '=', id]]
 				});
 				if (!enrollment) {
-					results.push({ id, ok: false, message: "KRS tidak ditemukan" });
+					results.push({ id, ok: false, message: 'KRS tidak ditemukan' });
 					continue;
 				}
-				if (
-					user.role === "LECTURER" &&
-					enrollment.lecturer_id !== user.lecturerId
-				) {
-					results.push({ id, ok: false, message: "Bukan jadwal Anda" });
+				if (user.role === 'LECTURER' && enrollment.lecturer_id !== user.lecturerId) {
+					results.push({ id, ok: false, message: 'Bukan jadwal Anda' });
 					continue;
 				}
 				await updateEnrollmentsDb(
 					conn,
 					{
-						semester: data.semester || enrollment.semester || "",
-						academic_year: data.academicYear || enrollment.academic_year || "",
+						semester: data.semester || enrollment.semester || '',
+						academic_year: data.academicYear || enrollment.academic_year || ''
 					},
-					{ id },
+					{ id }
 				);
 				results.push({ id, ok: true });
 			}
@@ -1796,98 +1694,90 @@ export const bulkUpdateEnrollments = form(
 			await getEnrollments().refresh();
 		}
 		return { success: true, results };
-	},
+	}
 );
 
-export const requestEnrollment = form(
-	studentEnrollmentRequestSchema,
-	async (data, issue) => {
-		const user = await requireRole(["STUDENT"]);
-		if (!user.studentId) {
-			throw error(400, "Profil mahasiswa tidak ditemukan");
-		}
-		const policy = await readEnrollmentPolicy();
-		if (!policy.requestsOpen) {
-			throw error(400, "Pengajuan KRS sedang ditutup oleh admin");
-		}
+export const requestEnrollment = form(studentEnrollmentRequestSchema, async (data, issue) => {
+	const user = await requireRole(['STUDENT']);
+	if (!user.studentId) {
+		throw error(400, 'Profil mahasiswa tidak ditemukan');
+	}
+	const policy = await readEnrollmentPolicy();
+	if (!policy.requestsOpen) {
+		throw error(400, 'Pengajuan KRS sedang ditutup oleh admin');
+	}
 
-		const [[student], [course]] = await Promise.all([
-			selectStudents(getPool(), {
-				select: { study_program_id: true },
-				where: [["id", "=", user.studentId]],
-			}),
-			selectCourses(getPool(), {
-				select: { id: true, study_program_id: true, lecturer_id: true },
-				where: [["id", "=", data.courseId]],
-			}),
-		]);
+	const [[student], [course]] = await Promise.all([
+		selectStudents(getPool(), {
+			select: { study_program_id: true },
+			where: [['id', '=', user.studentId]]
+		}),
+		selectCourses(getPool(), {
+			select: { id: true, study_program_id: true, lecturer_id: true },
+			where: [['id', '=', data.courseId]]
+		})
+	]);
 
-		if (!student) {
-			throw error(404, "Profil mahasiswa tidak ditemukan");
-		}
-		if (!course) {
-			invalid(issue.courseId("Mata kuliah tidak ditemukan"));
-		}
-		if (course.study_program_id !== student.study_program_id) {
-			invalid(
-				issue.courseId("Mata kuliah tidak tersedia untuk program studi Anda"),
-			);
-		}
+	if (!student) {
+		throw error(404, 'Profil mahasiswa tidak ditemukan');
+	}
+	if (!course) {
+		invalid(issue.courseId('Mata kuliah tidak ditemukan'));
+	}
+	if (course.study_program_id !== student.study_program_id) {
+		invalid(issue.courseId('Mata kuliah tidak tersedia untuk program studi Anda'));
+	}
 
-		const existingRows = await selectEnrollments(getPool(), {
-			select: { id: true, status: true },
-			where: [
-				["student_id", "=", user.studentId],
-				["course_id", "=", data.courseId],
-				["semester", "=", policy.semester],
-				["academic_year", "=", policy.academicYear],
-			],
-		});
-		const [existing] = existingRows;
-		if (existing) {
-			invalid(
-				issue.courseId(
-					existing.status === "PENDING"
-						? "Anda sudah mengajukan mata kuliah ini, menunggu persetujuan"
-						: "Anda sudah terdaftar di mata kuliah ini pada semester dan tahun akademik yang sama",
-				),
-			);
-		}
+	const existingRows = await selectEnrollments(getPool(), {
+		select: { id: true, status: true },
+		where: [
+			['student_id', '=', user.studentId],
+			['course_id', '=', data.courseId],
+			['semester', '=', policy.semester],
+			['academic_year', '=', policy.academicYear]
+		]
+	});
+	const [existing] = existingRows;
+	if (existing) {
+		invalid(
+			issue.courseId(
+				existing.status === 'PENDING'
+					? 'Anda sudah mengajukan mata kuliah ini, menunggu persetujuan'
+					: 'Anda sudah terdaftar di mata kuliah ini pada semester dan tahun akademik yang sama'
+			)
+		);
+	}
 
-		const enrollmentId = randomUUID();
-		await insertEnrollment(getPool(), {
-			id: enrollmentId,
-			student_id: user.studentId,
-			course_id: data.courseId,
-			semester: policy.semester,
-			academic_year: policy.academicYear,
-			status: "PENDING",
-		});
-		await getEnrollments().refresh();
-		return { success: true, id: enrollmentId };
-	},
-);
+	const enrollmentId = randomUUID();
+	await insertEnrollment(getPool(), {
+		id: enrollmentId,
+		student_id: user.studentId,
+		course_id: data.courseId,
+		semester: policy.semester,
+		academic_year: policy.academicYear,
+		status: 'PENDING'
+	});
+	await getEnrollments().refresh();
+	return { success: true, id: enrollmentId };
+});
 
 export const cancelEnrollmentRequest = command(v.string(), async (id) => {
-	const user = await requireRole(["STUDENT"]);
+	const user = await requireRole(['STUDENT']);
 	if (!user.studentId) {
-		throw error(400, "Profil mahasiswa tidak ditemukan");
+		throw error(400, 'Profil mahasiswa tidak ditemukan');
 	}
 
 	const [enrollment] = await selectEnrollments(getPool(), {
-		where: [["id", "=", id]],
+		where: [['id', '=', id]]
 	});
 	if (!enrollment) {
-		throw error(404, "Data KRS tidak ditemukan");
+		throw error(404, 'Data KRS tidak ditemukan');
 	}
 	if (enrollment.student_id !== user.studentId) {
-		throw error(403, "Anda tidak berhak membatalkan pengajuan ini");
+		throw error(403, 'Anda tidak berhak membatalkan pengajuan ini');
 	}
-	if (enrollment.status !== "PENDING") {
-		throw error(
-			400,
-			"Hanya pengajuan yang belum disetujui yang dapat dibatalkan",
-		);
+	if (enrollment.status !== 'PENDING') {
+		throw error(400, 'Hanya pengajuan yang belum disetujui yang dapat dibatalkan');
 	}
 
 	await deleteEnrollmentDb(getPool(), { id });
@@ -1895,150 +1785,135 @@ export const cancelEnrollmentRequest = command(v.string(), async (id) => {
 	return { success: true };
 });
 
-export const approveEnrollment = form(
-	approveEnrollmentSchema,
-	async (data, issue) => {
-		const user = await requireRole(["ADMIN", "LECTURER"]);
-
-		const [enrollment] = await selectEnrollments(getPool(), {
-			where: [["id", "=", data.id]],
-		});
-		if (!enrollment) {
-			throw error(404, "Data KRS tidak ditemukan");
-		}
-		if (enrollment.status !== "PENDING") {
-			throw error(400, "KRS sudah disetujui atau ditolak sebelumnya");
-		}
-
-		const [course] = await selectCourses(getPool(), {
-			select: { lecturer_id: true },
-			where: [["id", "=", enrollment.course_id!]],
-		});
-		if (user.role === "LECTURER" && course?.lecturer_id !== user.lecturerId) {
-			throw error(
-				403,
-				"Anda hanya dapat menyetujui mata kuliah yang Anda ampu",
-			);
-		}
-
-		const [classRoom] = await selectClassRooms(getPool(), {
-			where: [["id", "=", data.classRoomId]],
-		});
-		if (!classRoom) {
-			invalid(issue.classRoomId("Ruang kelas tidak ditemukan"));
-		}
-
-		const { clientTimezone, startDate, endDate } = validateScheduleWindow(
-			data,
-			issue,
-		);
-		if (endDate <= startDate) {
-			invalid(
-				issue.endTime("Waktu selesai harus lebih besar dari waktu mulai"),
-			);
-		}
-
-		const [roomConflicts, studentConflicts, lecturerConflicts] =
-			await Promise.all([
-				selectSchedulesConflict(getPool(), {
-					classRoomId: data.classRoomId,
-					day: data.day,
-					startTime: startDate,
-					endTime: endDate,
-					semester: enrollment.semester ?? undefined,
-					academicYear: enrollment.academic_year ?? undefined,
-				}),
-				selectStudentScheduleConflict(getPool(), {
-					studentId: enrollment.student_id!,
-					day: data.day,
-					startTime: startDate,
-					endTime: endDate,
-					semester: enrollment.semester ?? undefined,
-					academicYear: enrollment.academic_year ?? undefined,
-				}),
-				selectLecturerScheduleConflict(getPool(), {
-					lecturerId: course?.lecturer_id ?? "",
-					day: data.day,
-					startTime: startDate,
-					endTime: endDate,
-					semester: enrollment.semester ?? undefined,
-					academicYear: enrollment.academic_year ?? undefined,
-				}),
-			]);
-
-		if (roomConflicts.length) {
-			invalid(
-				issue.classRoomId(
-					`Ruang kelas bentrok dengan ${roomConflicts.length} jadwal lain: ${summarizeConflictWindows(roomConflicts, clientTimezone)}`,
-				),
-			);
-		}
-		if (studentConflicts.length) {
-			invalid(
-				issue.classRoomId(
-					`Mahasiswa memiliki ${studentConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(studentConflicts, clientTimezone)}`,
-				),
-			);
-		}
-		if (lecturerConflicts.length) {
-			invalid(
-				issue.classRoomId(
-					`Dosen memiliki ${lecturerConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(lecturerConflicts, clientTimezone)}`,
-				),
-			);
-		}
-
-		const scheduleId = randomUUID();
-		await withTransaction(async (conn) => {
-			await insertSchedule(conn, {
-				id: scheduleId,
-				class_room_id: data.classRoomId,
-				day: data.day,
-				start_time: startDate,
-				end_time: endDate,
-				lecturer_id: course?.lecturer_id ?? undefined,
-			});
-			await updateEnrollmentDb(
-				conn,
-				{
-					class_room_id: data.classRoomId,
-					schedule_id: scheduleId,
-					schedule_day: data.day,
-					schedule_start_time: startDate,
-					schedule_end_time: endDate,
-					status: "APPROVED",
-				},
-				{ id: data.id },
-			);
-		});
-		invalidateConflictAuditCache();
-		await getEnrollments().refresh();
-		return { success: true, scheduleId };
-	},
-);
-
-export const rejectEnrollment = command(v.string(), async (id) => {
-	const user = await requireRole(["ADMIN", "LECTURER"]);
+export const approveEnrollment = form(approveEnrollmentSchema, async (data, issue) => {
+	const user = await requireRole(['ADMIN', 'LECTURER']);
 
 	const [enrollment] = await selectEnrollments(getPool(), {
-		where: [["id", "=", id]],
+		where: [['id', '=', data.id]]
 	});
 	if (!enrollment) {
-		throw error(404, "Data KRS tidak ditemukan");
+		throw error(404, 'Data KRS tidak ditemukan');
 	}
-	if (enrollment.status !== "PENDING") {
-		throw error(
-			400,
-			"Hanya pengajuan yang menunggu persetujuan yang dapat ditolak",
-		);
+	if (enrollment.status !== 'PENDING') {
+		throw error(400, 'KRS sudah disetujui atau ditolak sebelumnya');
 	}
 
 	const [course] = await selectCourses(getPool(), {
 		select: { lecturer_id: true },
-		where: [["id", "=", enrollment.course_id!]],
+		where: [['id', '=', enrollment.course_id!]]
 	});
-	if (user.role === "LECTURER" && course?.lecturer_id !== user.lecturerId) {
-		throw error(403, "Anda hanya dapat menolak mata kuliah yang Anda ampu");
+	if (user.role === 'LECTURER' && course?.lecturer_id !== user.lecturerId) {
+		throw error(403, 'Anda hanya dapat menyetujui mata kuliah yang Anda ampu');
+	}
+
+	const [classRoom] = await selectClassRooms(getPool(), {
+		where: [['id', '=', data.classRoomId]]
+	});
+	if (!classRoom) {
+		invalid(issue.classRoomId('Ruang kelas tidak ditemukan'));
+	}
+
+	const { clientTimezone, startDate, endDate } = validateScheduleWindow(data, issue);
+	if (endDate <= startDate) {
+		invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
+	}
+
+	const [roomConflicts, studentConflicts, lecturerConflicts] = await Promise.all([
+		selectSchedulesConflict(getPool(), {
+			classRoomId: data.classRoomId,
+			day: data.day,
+			startTime: startDate,
+			endTime: endDate,
+			semester: enrollment.semester ?? undefined,
+			academicYear: enrollment.academic_year ?? undefined
+		}),
+		selectStudentScheduleConflict(getPool(), {
+			studentId: enrollment.student_id!,
+			day: data.day,
+			startTime: startDate,
+			endTime: endDate,
+			semester: enrollment.semester ?? undefined,
+			academicYear: enrollment.academic_year ?? undefined
+		}),
+		selectLecturerScheduleConflict(getPool(), {
+			lecturerId: course?.lecturer_id ?? '',
+			day: data.day,
+			startTime: startDate,
+			endTime: endDate,
+			semester: enrollment.semester ?? undefined,
+			academicYear: enrollment.academic_year ?? undefined
+		})
+	]);
+
+	if (roomConflicts.length) {
+		invalid(
+			issue.classRoomId(
+				`Ruang kelas bentrok dengan ${roomConflicts.length} jadwal lain: ${summarizeConflictWindows(roomConflicts, clientTimezone)}`
+			)
+		);
+	}
+	if (studentConflicts.length) {
+		invalid(
+			issue.classRoomId(
+				`Mahasiswa memiliki ${studentConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(studentConflicts, clientTimezone)}`
+			)
+		);
+	}
+	if (lecturerConflicts.length) {
+		invalid(
+			issue.classRoomId(
+				`Dosen memiliki ${lecturerConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(lecturerConflicts, clientTimezone)}`
+			)
+		);
+	}
+
+	const scheduleId = randomUUID();
+	await withTransaction(async (conn) => {
+		await insertSchedule(conn, {
+			id: scheduleId,
+			class_room_id: data.classRoomId,
+			day: data.day,
+			start_time: startDate,
+			end_time: endDate,
+			lecturer_id: course?.lecturer_id ?? undefined
+		});
+		await updateEnrollmentDb(
+			conn,
+			{
+				class_room_id: data.classRoomId,
+				schedule_id: scheduleId,
+				schedule_day: data.day,
+				schedule_start_time: startDate,
+				schedule_end_time: endDate,
+				status: 'APPROVED'
+			},
+			{ id: data.id }
+		);
+	});
+	invalidateConflictAuditCache();
+	await getEnrollments().refresh();
+	return { success: true, scheduleId };
+});
+
+export const rejectEnrollment = command(v.string(), async (id) => {
+	const user = await requireRole(['ADMIN', 'LECTURER']);
+
+	const [enrollment] = await selectEnrollments(getPool(), {
+		where: [['id', '=', id]]
+	});
+	if (!enrollment) {
+		throw error(404, 'Data KRS tidak ditemukan');
+	}
+	if (enrollment.status !== 'PENDING') {
+		throw error(400, 'Hanya pengajuan yang menunggu persetujuan yang dapat ditolak');
+	}
+
+	const [course] = await selectCourses(getPool(), {
+		select: { lecturer_id: true },
+		where: [['id', '=', enrollment.course_id!]]
+	});
+	if (user.role === 'LECTURER' && course?.lecturer_id !== user.lecturerId) {
+		throw error(403, 'Anda hanya dapat menolak mata kuliah yang Anda ampu');
 	}
 
 	await deleteEnrollmentDb(getPool(), { id });

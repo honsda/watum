@@ -14,7 +14,6 @@
 		beautifyRoomType,
 		buildScheduleCards,
 		conflictToneVariables,
-		DAY_ORDER,
 		DAY_LABELS,
 		formatTimeRange,
 		matchesText,
@@ -23,7 +22,7 @@
 		type RoomMetric,
 		type ScheduleCard
 	} from '$lib/app/academic';
-	import { formatDateTime, getTimeComponents } from '$lib/time-helpers';
+	import { formatDateTime } from '$lib/time-helpers';
 	import {
 		headerAction,
 		navigationForRole,
@@ -32,7 +31,7 @@
 		viewCatalog,
 		type ViewId
 	} from '$lib/app/navigation';
-	import { collectionFallbackMessages, viewDataPlanForRole } from '$lib/app/collection-config';
+	import { collectionFallbackMessages } from '$lib/app/collection-config';
 	import {
 		createDefaultEnrollmentPolicy,
 		normalizeEnrollmentPolicy,
@@ -52,6 +51,10 @@
 	} from '$lib/app/view-prop-builders';
 	import { selectEntityRecord } from '$lib/app/entity-selection';
 	import { buildEntityDeleteIntent } from '$lib/app/delete-intents';
+	import {
+		buildConflictAuditFilters,
+		buildEnrollmentSearchParams
+	} from '$lib/app/enrollment-query';
 	import { runDeletePlan } from '$lib/app/delete-runner';
 	import { loadCollection, loadCollectionPage } from '$lib/app/collection-page';
 	import {
@@ -66,6 +69,64 @@
 		resolveRemoteQuery
 	} from '$lib/app/remote-utils';
 	import { createSimpleSearchRequester } from '$lib/app/search-requesters';
+	import {
+		clearBulkIds,
+		countBulkIds,
+		getBulkIds,
+		toggleAllBulkIds,
+		toggleBulkId
+	} from '$lib/app/bulk-state';
+	import {
+		emptyClassRoomDraft,
+		emptyCourseDraft,
+		emptyEnrollmentDraft,
+		emptyFacultyDraft,
+		emptyGradeDraft,
+		emptyLecturerDraft,
+		emptyStudentDraft,
+		emptyStudyProgramDraft,
+		emptyUserDraft,
+		enrollmentDraftFromRecord,
+		enrollmentDraftMatches,
+		type EnrollmentDraft
+	} from '$lib/app/form-drafts';
+	import {
+		calendarColumnWidth,
+		calendarSlotHeight,
+		clearScheduleCardConflict,
+		conflictPeerLabel,
+		createCalendarAnchorDate,
+		dateForCalendarDay,
+		dateForScheduleCard,
+		dayKeyFromDate,
+		escapeHtml,
+		hiddenDaysForCalendar,
+		idsFingerprint,
+		mergeCalendarSessionCards,
+		rangeForScheduleCards,
+		scheduleCardFromConflictMember,
+		scheduleSessionKey,
+		schedulesOverlap,
+		sortUpcomingSchedules,
+		sortWeeklySchedules,
+		summarizeDistinctValues,
+		timeString,
+		visibleDaysForCalendar
+	} from '$lib/app/calendar-schedules';
+	import {
+		createCollectionLoadedState,
+		createCollectionPaginationState,
+		emptyCollectionPaginationState,
+		getViewIssues,
+		shouldLoadClassRoomDashboard,
+		shouldLoadConflictAudit,
+		viewDataPlan,
+		type CollectionLoadedState,
+		type CollectionPaginationState,
+		type DataCollectionKey,
+		type RefreshDependencies
+	} from '$lib/app/view-data';
+	import { buildViewUrl, readViewFromSearch } from '$lib/app/view-route';
 	import {
 		classroomScheduleRefreshPlan,
 		cloneRefreshPlan,
@@ -277,223 +338,31 @@
 
 	type BuilderStep = 'participant' | 'time' | 'room' | 'review';
 	type BuilderMode = 'create' | 'edit' | 'approve';
-	type DataCollectionKey =
-		| 'classrooms'
-		| 'courses'
-		| 'students'
-		| 'lecturers'
-		| 'faculties'
-		| 'studyPrograms'
-		| 'enrollments'
-		| 'grades'
-		| 'users';
 	type LimitedCollectionResponse<T> = {
 		items: T[];
 		limit: number;
 		hasMore: boolean;
 		nextCursor: string | null;
 	};
-	type ViewDataPlan = {
-		collections: DataCollectionKey[];
-		requiresSchedulePreview: boolean;
-	};
-	type RefreshDependencies = {
-		collections?: DataCollectionKey[];
-		includeSchedulePreview?: boolean;
-		includeConflictAudit?: boolean;
-		forceCollections?: boolean;
-	};
-	type CollectionPaginationState = {
-		currentCursor: string | null;
-		nextCursor: string | null;
-		history: Array<string | null>;
-		pageNumber: number;
-		limit: number;
-		hasMore: boolean;
-		loading: boolean;
-		itemCount: number;
-	};
 	type SchedulePreviewState = {
 		items: SelectEnrollmentsResult[];
 		hasMore: boolean;
 		loading: boolean;
 	};
-	type CollectionLoadedState = Record<DataCollectionKey, boolean>;
 	const currentUser = getCurrentUser();
 	let timezone = $state('Asia/Jakarta');
-	const DEFAULT_DAY_START = 7 * 60;
-	const DEFAULT_DAY_END = 20 * 60;
-	const RANGE_PADDING_MINUTES = 60;
-	const MIN_VISIBLE_MINUTES = 6 * 60;
 	const CALENDAR_MAX_VISIBLE_SCHEDULES = 60;
-	const CALENDAR_DAY_INDEX: Record<(typeof DAY_ORDER)[number], number> = {
-		SENIN: 1,
-		SELASA: 2,
-		RABU: 3,
-		KAMIS: 4,
-		JUMAT: 5,
-		SABTU: 6
-	};
-
-	function createCalendarWeekStart() {
-		return new Date(2025, 0, 6);
-	}
-
-	function createCalendarAnchorDate(weekOffset = 0) {
-		const date = createCalendarWeekStart();
-		date.setDate(date.getDate() + weekOffset * 7);
-		return date;
-	}
 
 	function readViewFromUrl(): ViewId | null {
 		if (!browser) return null;
-		const rawView = new URLSearchParams(window.location.search).get('view');
-		if (!rawView) return null;
-		return rawView in viewCatalog ? (rawView as ViewId) : null;
+		return readViewFromSearch(window.location.search, viewCatalog);
 	}
 
 	function writeViewToUrl(view: ViewId) {
 		if (!browser) return;
-		const url = new URL(window.location.href);
-		if (view === 'dashboard') {
-			url.searchParams.delete('view');
-		} else {
-			url.searchParams.set('view', view);
-		}
 		const resolveRoute = resolve as unknown as (path: string) => string;
 		// eslint-disable-next-line svelte/no-navigation-without-resolve
-		replaceState(resolveRoute(`${url.pathname}${url.search}${url.hash}`), {});
-	}
-
-	function conflictPeerLabel(card: ScheduleCard) {
-		return `${card.course} • ${card.student} • ${card.room} • ${DAY_LABELS[card.day]} ${card.startLabel}-${card.endLabel}`;
-	}
-
-	function summarizeDistinctValues(values: Array<string | null | undefined>, maxVisible = 2) {
-		const uniqueValues = Array.from(
-			new Set(
-				values
-					.map((value) => value?.trim())
-					.filter((value): value is string => Boolean(value && value.length))
-			)
-		);
-
-		if (!uniqueValues.length) return '-';
-		if (uniqueValues.length <= maxVisible) return uniqueValues.join(', ');
-
-		return `${uniqueValues.slice(0, maxVisible).join(', ')} +${uniqueValues.length - maxVisible} lain`;
-	}
-
-	function schedulesOverlap(left: ScheduleCard, right: ScheduleCard) {
-		return (
-			left.id !== right.id &&
-			left.day === right.day &&
-			left.startMinutes < right.endMinutes &&
-			right.startMinutes < left.endMinutes
-		);
-	}
-
-	function clearScheduleCardConflict(card: ScheduleCard): ScheduleCard {
-		if (!card.hasConflict && !card.conflictGroupId && card.conflictTone == null) return card;
-		return { ...card, hasConflict: false, conflictGroupId: null, conflictTone: null };
-	}
-
-	function scheduleSessionKey(card: ScheduleCard) {
-		return card.original.schedule_id
-			? `schedule:${card.original.schedule_id}`
-			: `enrollment:${card.id}`;
-	}
-
-	function mergeCalendarSessionCards(
-		cards: ScheduleCard[],
-		preferredConflictGroupId: string | null
-	) {
-		const sessions = new Map<string, ScheduleCard>();
-
-		for (const card of cards) {
-			const key = scheduleSessionKey(card);
-			const existing = sessions.get(key);
-			if (!existing) {
-				sessions.set(key, card);
-				continue;
-			}
-
-			const prefersCurrentConflictGroup =
-				preferredConflictGroupId && card.conflictGroupId === preferredConflictGroupId;
-			const shouldUseCurrent =
-				Boolean(prefersCurrentConflictGroup) || (!existing.hasConflict && card.hasConflict);
-			const base = shouldUseCurrent ? card : existing;
-			sessions.set(key, {
-				...base,
-				studentCount: Math.max(existing.studentCount, card.studentCount)
-			});
-		}
-
-		return [...sessions.values()];
-	}
-
-	function idsFingerprint(items: Array<{ id?: string | null }>) {
-		return items
-			.map((item) => item.id)
-			.filter(Boolean)
-			.join('|');
-	}
-
-	type ConflictAuditResult = Awaited<ReturnType<typeof getEnrollmentConflictAudit>>;
-	type ConflictAuditGroupResult = ConflictAuditResult['groups'][number];
-	type ConflictAuditMemberResult = ConflictAuditGroupResult['members'][number];
-
-	function toEnrollmentResultFromConflictMember(
-		member: ConflictAuditMemberResult
-	): SelectEnrollmentsResult {
-		return {
-			id: member.enrollmentId,
-			student_id: member.studentId,
-			course_id: member.courseId,
-			lecturer_id: member.lecturerId,
-			class_room_id: member.classRoomId,
-			schedule_id: member.scheduleId,
-			semester: member.semester,
-			academic_year: member.academicYear,
-			student_name: member.studentName,
-			course_name: member.courseName,
-			lecturer_name: member.lecturerName,
-			class_room_name: member.classRoomName,
-			schedule_day: member.day,
-			schedule_start_time: member.startTime,
-			schedule_end_time: member.endTime,
-			status: 'APPROVED'
-		};
-	}
-
-	function scheduleCardFromConflictMember(
-		member: ConflictAuditMemberResult,
-		groupId: string,
-		tone: number
-	): ScheduleCard {
-		const original = toEnrollmentResultFromConflictMember(member);
-		const startMinutes = toMinutes(member.startTime, timezone);
-		const endMinutes = toMinutes(member.endTime, timezone);
-		return {
-			id: member.enrollmentId,
-			day: member.day,
-			course: member.courseName,
-			lecturer: member.lecturerName,
-			room: member.classRoomName,
-			student: member.studentName,
-			semester: member.semester,
-			academicYear: member.academicYear,
-			startLabel: formatDateTime(member.startTime, 'time', timezone),
-			endLabel: formatDateTime(member.endTime, 'time', timezone),
-			startMinutes,
-			endMinutes,
-			durationMinutes: Math.max(30, endMinutes - startMinutes),
-			studentCount: 1,
-			hasConflict: true,
-			conflictGroupId: groupId,
-			conflictTone: tone,
-			original
-		};
+		replaceState(resolveRoute(buildViewUrl(window.location.href, view)), {});
 	}
 
 	function openBuilderForSchedule(card: ScheduleCard | null | undefined) {
@@ -696,90 +565,6 @@
 		}
 	}
 
-	function emptyClassRoomDraft() {
-		return {
-			name: '',
-			classRoomType: 'REGULER',
-			capacity: 30,
-			hasProjector: true,
-			hasAC: true
-		};
-	}
-
-	function emptyCourseDraft() {
-		return { id: '', name: '', credits: 3, studyProgramId: '', lecturerId: '' };
-	}
-
-	function emptyStudentDraft() {
-		return { name: '', email: '', phone: '', address: '', yearAdmitted: 2024, studyProgramId: '' };
-	}
-
-	function emptyLecturerDraft() {
-		return { id: '', name: '', email: '', phone: '', address: '' };
-	}
-
-	function emptyFacultyDraft() {
-		return { id: '', name: '' };
-	}
-
-	function emptyStudyProgramDraft() {
-		return { id: '', name: '', head: '', facultyId: '' };
-	}
-
-	function emptyEnrollmentDraft() {
-		return {
-			id: '',
-			studentId: '',
-			courseId: '',
-			classRoomId: '',
-			day: 'SENIN',
-			startTime: '',
-			endTime: '',
-			semester: 'GANJIL',
-			academicYear: '2025/2026',
-			timezone
-		};
-	}
-
-	function normalizeSemesterValue(value: string | null | undefined) {
-		const normalized = value?.trim().toUpperCase() ?? '';
-		return normalized.startsWith('GEN') ? 'GENAP' : 'GANJIL';
-	}
-
-	function enrollmentDraftFromRecord(item: SelectEnrollmentsResult) {
-		return {
-			id: item.id ?? '',
-			studentId: item.student_id ?? '',
-			courseId: item.course_id ?? '',
-			classRoomId: item.class_room_id ?? '',
-			day: item.schedule_day ?? 'SENIN',
-			startTime: item.schedule_start_time
-				? formatDateTime(item.schedule_start_time, 'time', timezone)
-				: '',
-			endTime: item.schedule_end_time
-				? formatDateTime(item.schedule_end_time, 'time', timezone)
-				: '',
-			semester: normalizeSemesterValue(item.semester),
-			academicYear: item.academic_year ?? '2025/2026',
-			timezone
-		};
-	}
-
-	function enrollmentDraftMatches(left: typeof enrollmentDraft, right: typeof enrollmentDraft) {
-		return (
-			left.id === right.id &&
-			left.studentId === right.studentId &&
-			left.courseId === right.courseId &&
-			left.classRoomId === right.classRoomId &&
-			left.day === right.day &&
-			left.startTime === right.startTime &&
-			left.endTime === right.endTime &&
-			left.semester === right.semester &&
-			left.academicYear === right.academicYear &&
-			left.timezone === right.timezone
-		);
-	}
-
 	function syncEnrollmentPickerLabels(item: SelectEnrollmentsResult) {
 		const pickedStudent = item.student_id ? studentPickerLookup.get(item.student_id) : undefined;
 		const pickedCourse = item.course_id ? coursePickerLookup.get(item.course_id) : undefined;
@@ -788,7 +573,7 @@
 		roomPickerSearch = item.class_room_name ?? '';
 	}
 
-	async function hydratePickedEnrollment(id: string, seededDraft: typeof enrollmentDraft) {
+	async function hydratePickedEnrollment(id: string, seededDraft: EnrollmentDraft) {
 		try {
 			const full = await getEnrollment(id).run();
 			if (selectedEnrollmentId !== id) return;
@@ -796,161 +581,11 @@
 			selectedEnrollmentRecord = full;
 			if (!enrollmentDraftMatches(enrollmentDraft, seededDraft)) return;
 
-			enrollmentDraft = enrollmentDraftFromRecord(full);
+			enrollmentDraft = enrollmentDraftFromRecord(full, timezone);
 			syncEnrollmentPickerLabels(full);
 		} catch {
 			// The preview row is still usable if the follow-up hydration is unavailable.
 		}
-	}
-
-	function emptyGradeDraft() {
-		return { id: '', enrollmentId: '', assignmentScore: 80, midtermScore: 80, finalScore: 80 };
-	}
-
-	function emptyUserDraft() {
-		return { id: '', email: '', password: '', role: 'ADMIN', studentId: '', lecturerId: '' };
-	}
-
-	function roundUpHour(minutes: number) {
-		return Math.ceil(minutes / 60) * 60;
-	}
-
-	function roundDownHour(minutes: number) {
-		return Math.floor(minutes / 60) * 60;
-	}
-
-	function clampCalendarMinute(minutes: number) {
-		return Math.max(0, Math.min(minutes, 24 * 60));
-	}
-
-	function rangeForScheduleCards(cards: ScheduleCard[]) {
-		const validCards = cards.filter(
-			(card) =>
-				Number.isFinite(card.startMinutes) &&
-				Number.isFinite(card.endMinutes) &&
-				card.endMinutes > card.startMinutes
-		);
-
-		if (!validCards.length) {
-			return { start: DEFAULT_DAY_START, end: DEFAULT_DAY_END };
-		}
-
-		const firstStart = Math.min(...validCards.map((card) => card.startMinutes));
-		const lastEnd = Math.max(...validCards.map((card) => card.endMinutes));
-		let start = roundDownHour(clampCalendarMinute(firstStart - RANGE_PADDING_MINUTES));
-		let end = roundUpHour(clampCalendarMinute(lastEnd + RANGE_PADDING_MINUTES));
-
-		if (end - start < MIN_VISIBLE_MINUTES) {
-			const midpoint = (start + end) / 2;
-			start = roundDownHour(clampCalendarMinute(midpoint - MIN_VISIBLE_MINUTES / 2));
-			end = Math.min(start + MIN_VISIBLE_MINUTES, 24 * 60);
-
-			if (end - start < MIN_VISIBLE_MINUTES) {
-				start = Math.max(0, end - MIN_VISIBLE_MINUTES);
-			}
-		}
-
-		return { start, end };
-	}
-
-	function timeString(minutes: number) {
-		const hours = Math.floor(minutes / 60);
-		const mins = minutes % 60;
-		return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:00`;
-	}
-
-	function visibleDaysForCalendar(cards: ScheduleCard[], dayFilter: string) {
-		if (dayFilter && dayFilter in CALENDAR_DAY_INDEX) {
-			return [dayFilter as (typeof DAY_ORDER)[number]];
-		}
-
-		const daysWithSessions = new Set(cards.map((card) => card.day));
-		const visibleDays = DAY_ORDER.filter((day) => daysWithSessions.has(day));
-		return visibleDays.length ? visibleDays : DAY_ORDER;
-	}
-
-	function hiddenDaysForCalendar(visibleDays: ReadonlyArray<(typeof DAY_ORDER)[number]>) {
-		const visibleIndexes = new Set(visibleDays.map((day) => CALENDAR_DAY_INDEX[day]));
-		return [0, 1, 2, 3, 4, 5, 6].filter((dayIndex) => !visibleIndexes.has(dayIndex));
-	}
-
-	function calendarColumnWidth(visibleDayCount: number) {
-		if (visibleDayCount <= 1) return 'minmax(18rem, 1fr)';
-		if (visibleDayCount === 2) return 'minmax(16rem, 1fr)';
-		if (visibleDayCount === 3) return 'minmax(14rem, 1fr)';
-		return 'minmax(11.5rem, 1fr)';
-	}
-
-	function calendarSlotHeight(visibleDayCount: number) {
-		if (visibleDayCount <= 2) return 42;
-		if (visibleDayCount === 3) return 38;
-		return 34;
-	}
-
-	function dateForCalendarDay(day: (typeof DAY_ORDER)[number]) {
-		const date = createCalendarAnchorDate(calendarWeekOffset);
-		date.setDate(date.getDate() + DAY_ORDER.indexOf(day));
-		return date;
-	}
-
-	function dayKeyFromDate(date: Date): (typeof DAY_ORDER)[number] | null {
-		const map = {
-			1: 'SENIN',
-			2: 'SELASA',
-			3: 'RABU',
-			4: 'KAMIS',
-			5: 'JUMAT',
-			6: 'SABTU'
-		} as const;
-
-		return map[date.getDay() as keyof typeof map] ?? null;
-	}
-
-	function dateForScheduleCard(card: ScheduleCard, minutes: number) {
-		const date = dateForCalendarDay(card.day);
-		date.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
-		return date;
-	}
-
-	function isApprovedScheduleCard(card: ScheduleCard) {
-		return !card.original.status || card.original.status === 'APPROVED';
-	}
-
-	function upcomingScheduleRank(card: ScheduleCard, now = new Date()) {
-		if (!isApprovedScheduleCard(card)) return Number.POSITIVE_INFINITY;
-		const { dayOfWeek } = getTimeComponents(now, timezone);
-		const currentDayIndex = dayOfWeek >= 1 && dayOfWeek <= DAY_ORDER.length ? dayOfWeek - 1 : 0;
-		const currentMinutes =
-			dayOfWeek >= 1 && dayOfWeek <= DAY_ORDER.length ? toMinutes(now, timezone) : 0;
-		const dayDelta = DAY_ORDER.indexOf(card.day) - currentDayIndex;
-		if (dayDelta < 0 || (dayDelta === 0 && card.endMinutes <= currentMinutes)) {
-			return Number.POSITIVE_INFINITY;
-		}
-		return dayDelta * 24 * 60 + card.startMinutes;
-	}
-
-	function sortUpcomingSchedules(cards: ScheduleCard[], now = new Date()) {
-		return cards
-			.map((card) => ({ card, rank: upcomingScheduleRank(card, now) }))
-			.filter(({ rank }) => Number.isFinite(rank))
-			.sort((left, right) => left.rank - right.rank)
-			.map(({ card }) => card);
-	}
-
-	function sortWeeklySchedules(cards: ScheduleCard[]) {
-		return [...cards].filter(isApprovedScheduleCard).sort((left, right) => {
-			const dayDelta = DAY_ORDER.indexOf(left.day) - DAY_ORDER.indexOf(right.day);
-			return dayDelta === 0 ? left.startMinutes - right.startMinutes : dayDelta;
-		});
-	}
-
-	function escapeHtml(value: string) {
-		return value
-			.replaceAll('&', '&amp;')
-			.replaceAll('<', '&lt;')
-			.replaceAll('>', '&gt;')
-			.replaceAll('"', '&quot;')
-			.replaceAll("'", '&#39;');
 	}
 
 	let EventCalendarComponent = $state<Component<{ plugins?: unknown[]; options?: unknown }> | null>(
@@ -993,6 +628,8 @@
 	);
 	let classRoomDashboardLoaded = $state(false);
 	let classRoomDashboardRequestToken = 0;
+	let schedulePreviewRequestToken = 0;
+	let enrollmentCollectionRequestToken = 0;
 	let enrollmentPolicy = $state<EnrollmentPolicy>(createDefaultEnrollmentPolicy());
 	let enrollmentPolicyDraft = $state<EnrollmentPolicy>(createDefaultEnrollmentPolicy());
 	let enrollmentPolicyLoaded = $state(false);
@@ -1157,32 +794,23 @@
 	let bulkEditGradeFinalScore = $state<number | undefined>(undefined);
 
 	function bulkToggleId(kind: string, id: string) {
-		// eslint-disable-next-line svelte/prefer-svelte-reactivity
-		const next = new Set(bulkSelectedIds[kind] ?? []);
-		if (next.has(id)) {
-			next.delete(id);
-		} else {
-			next.add(id);
-		}
-		bulkSelectedIds = { ...bulkSelectedIds, [kind]: next };
+		bulkSelectedIds = toggleBulkId(bulkSelectedIds, kind, id);
 	}
 
 	function bulkToggleAll(kind: string, ids: string[]) {
-		const current = bulkSelectedIds[kind] ?? new Set();
-		const next = current.size === ids.length && ids.length > 0 ? new Set<string>() : new Set(ids);
-		bulkSelectedIds = { ...bulkSelectedIds, [kind]: next };
+		bulkSelectedIds = toggleAllBulkIds(bulkSelectedIds, kind, ids);
 	}
 
 	function bulkClear(kind: string) {
-		bulkSelectedIds = { ...bulkSelectedIds, [kind]: new Set() };
+		bulkSelectedIds = clearBulkIds(bulkSelectedIds, kind);
 	}
 
 	function bulkGetIds(kind: string): string[] {
-		return [...(bulkSelectedIds[kind] ?? [])];
+		return getBulkIds(bulkSelectedIds, kind);
 	}
 
 	function bulkCount(kind: string): number {
-		return bulkSelectedIds[kind]?.size ?? 0;
+		return countBulkIds(bulkSelectedIds, kind);
 	}
 
 	let classroomDraft = $state(emptyClassRoomDraft());
@@ -1191,7 +819,7 @@
 	let lecturerDraft = $state(emptyLecturerDraft());
 	let facultyDraft = $state(emptyFacultyDraft());
 	let studyProgramDraft = $state(emptyStudyProgramDraft());
-	let enrollmentDraft = $state(emptyEnrollmentDraft());
+	let enrollmentDraft = $state(emptyEnrollmentDraft('Asia/Jakarta'));
 	let gradeDraft = $state(emptyGradeDraft());
 	let userDraft = $state(emptyUserDraft());
 
@@ -1367,47 +995,6 @@
 		const nextIssues = { ...collectionIssues };
 		delete nextIssues[key];
 		collectionIssues = nextIssues;
-	}
-
-	function emptyCollectionPaginationState(): CollectionPaginationState {
-		return {
-			currentCursor: null,
-			nextCursor: null,
-			history: [],
-			pageNumber: 1,
-			limit: 0,
-			hasMore: false,
-			loading: false,
-			itemCount: 0
-		};
-	}
-
-	function createCollectionPaginationState(): Record<DataCollectionKey, CollectionPaginationState> {
-		return {
-			classrooms: emptyCollectionPaginationState(),
-			courses: emptyCollectionPaginationState(),
-			students: emptyCollectionPaginationState(),
-			lecturers: emptyCollectionPaginationState(),
-			faculties: emptyCollectionPaginationState(),
-			studyPrograms: emptyCollectionPaginationState(),
-			enrollments: emptyCollectionPaginationState(),
-			grades: emptyCollectionPaginationState(),
-			users: emptyCollectionPaginationState()
-		};
-	}
-
-	function createCollectionLoadedState(): CollectionLoadedState {
-		return {
-			classrooms: false,
-			courses: false,
-			students: false,
-			lecturers: false,
-			faculties: false,
-			studyPrograms: false,
-			enrollments: false,
-			grades: false,
-			users: false
-		};
 	}
 
 	function setCollectionPagination(
@@ -1692,6 +1279,8 @@
 		enrollments = [];
 		grades = [];
 		users = [];
+		schedulePreviewRequestToken += 1;
+		enrollmentCollectionRequestToken += 1;
 		schedulePreview = { items: [], hasMore: false, loading: false };
 		schedulePreviewLoaded = false;
 		conflictAudit = null;
@@ -1764,19 +1353,6 @@
 		scheduleLecturerFilterOpen = false;
 	}
 
-	function buildEnrollmentSearchParams(cursor: string | null) {
-		return {
-			cursor: cursor ?? undefined,
-			q: normalizedSearchValue(enrollmentSearch),
-			courseId: scheduleCourseFilter || undefined,
-			classRoomId: scheduleRoomFilter || undefined,
-			lecturerId: scheduleLecturerFilter || undefined,
-			scheduleDay: (scheduleDayFilter || undefined) as (typeof days)[number] | undefined,
-			semester: scheduleSemesterFilter || undefined,
-			academicYear: scheduleAcademicYearFilter || undefined
-		};
-	}
-
 	const requestClassroomsPage = createSimpleSearchRequester({
 		getSearchTerm: () => roomSearch,
 		normalizeSearchValue: normalizedSearchValue,
@@ -1820,7 +1396,16 @@
 	});
 
 	function requestEnrollmentsPage(cursor: string | null) {
-		const params = buildEnrollmentSearchParams(cursor);
+		const params = buildEnrollmentSearchParams({
+			cursor,
+			q: normalizedSearchValue(enrollmentSearch),
+			courseId: scheduleCourseFilter,
+			classRoomId: scheduleRoomFilter,
+			lecturerId: scheduleLecturerFilter,
+			scheduleDay: scheduleDayFilter,
+			semester: scheduleSemesterFilter,
+			academicYear: scheduleAcademicYearFilter
+		});
 		const sessionMode = activeView === 'builder';
 		const hasFilters = Object.entries(params).some(
 			([key, value]) => key !== 'cursor' && value != null
@@ -1874,13 +1459,24 @@
 	}
 
 	async function refreshSchedulePreview() {
+		const token = ++schedulePreviewRequestToken;
 		schedulePreview = { ...schedulePreview, loading: true };
 		try {
-			const params = buildEnrollmentSearchParams(null);
+			const params = buildEnrollmentSearchParams({
+				cursor: null,
+				q: normalizedSearchValue(enrollmentSearch),
+				courseId: scheduleCourseFilter,
+				classRoomId: scheduleRoomFilter,
+				lecturerId: scheduleLecturerFilter,
+				scheduleDay: scheduleDayFilter,
+				semester: scheduleSemesterFilter,
+				academicYear: scheduleAcademicYearFilter
+			});
 			const hasFilters = Object.values(params).some((value) => value != null);
 			const result = hasFilters
 				? await resolveRemoteQuery(searchEnrollments({ ...params, preview: true }))
 				: await resolveRemoteQuery(getSchedulePreview());
+			if (token !== schedulePreviewRequestToken) return;
 			schedulePreview = {
 				items: result.items,
 				hasMore: result.hasMore,
@@ -1888,47 +1484,10 @@
 			};
 			schedulePreviewLoaded = true;
 		} catch (error) {
+			if (token !== schedulePreviewRequestToken) return;
 			schedulePreview = { ...schedulePreview, loading: false };
 			throw error;
 		}
-	}
-
-	function buildConflictAuditFilters() {
-		const academicYear = scheduleAcademicYearFilter || scheduleAcademicYearOptions[0] || undefined;
-		const semester = scheduleSemesterFilter || scheduleSemesterOptions[0] || undefined;
-		const role = currentUser.current?.role as AppRole | undefined;
-		const auditEnrollmentSource =
-			role === 'STUDENT'
-				? []
-				: activeView === 'builder'
-					? filteredBuilderEnrollments
-					: activeView === 'enrollments'
-						? filteredEnrollments
-						: activeView === 'calendar'
-							? schedulePreview.items
-							: [];
-		const scopedEnrollmentIds = auditEnrollmentSource
-			.map((item) => item.id)
-			.filter((id): id is string => Boolean(id))
-			.slice(0, 500);
-		return {
-			academicYear,
-			semester,
-			day: (scheduleDayFilter || undefined) as
-				| 'SENIN'
-				| 'SELASA'
-				| 'RABU'
-				| 'KAMIS'
-				| 'JUMAT'
-				| 'SABTU'
-				| undefined,
-			courseId: scheduleCourseFilter || undefined,
-			classRoomId: scheduleRoomFilter || undefined,
-			lecturerId: scheduleLecturerFilter || undefined,
-			enrollmentIds: scopedEnrollmentIds.length ? scopedEnrollmentIds : undefined,
-			limitGroups: 1000,
-			memberSampleSize: 10
-		};
 	}
 
 	async function refreshConflictAudit() {
@@ -1941,7 +1500,21 @@
 		conflictAuditLoaded = false;
 		try {
 			conflictAudit = await resolveRemoteQuery(
-				getEnrollmentConflictAudit(buildConflictAuditFilters())
+				getEnrollmentConflictAudit(
+					buildConflictAuditFilters({
+						academicYear: scheduleAcademicYearFilter || scheduleAcademicYearOptions[0] || undefined,
+						semester: scheduleSemesterFilter || scheduleSemesterOptions[0] || undefined,
+						role: currentUser.current?.role as AppRole | undefined,
+						activeView,
+						builderEnrollments: filteredBuilderEnrollments,
+						filteredEnrollments,
+						schedulePreviewItems: schedulePreview.items,
+						scheduleDayFilter,
+						scheduleCourseFilter,
+						scheduleRoomFilter,
+						scheduleLecturerFilter
+					})
+				)
 			);
 			conflictAuditLoaded = true;
 		} catch {
@@ -2112,32 +1685,6 @@
 		});
 	}
 
-	function viewDataPlan(view: ViewId, role: AppRole | undefined): ViewDataPlan {
-		return viewDataPlanForRole(view, role) as ViewDataPlan;
-	}
-
-	function shouldLoadClassRoomDashboard(view: ViewId, role: AppRole | undefined) {
-		return view === 'dashboard' && role === 'ADMIN';
-	}
-
-	function shouldLoadConflictAudit(view: ViewId, role: AppRole | undefined) {
-		if (role === 'STUDENT') return false;
-		if (view === 'dashboard') return role === 'ADMIN';
-		return view === 'calendar' || view === 'builder' || view === 'enrollments';
-	}
-
-	function getViewIssues(view: ViewId, role: AppRole | undefined): string[] {
-		const plan = viewDataPlan(view, role);
-		const keys = new Set<DataCollectionKey>(plan.collections);
-		if (plan.requiresSchedulePreview) {
-			keys.add('enrollments');
-		}
-
-		return Array.from(keys)
-			.map((key) => collectionIssues[key])
-			.filter((message): message is string => Boolean(message));
-	}
-
 	async function ensureViewData(view: ViewId, force = false) {
 		const role = currentUser.current?.role as AppRole | undefined;
 		const plan = viewDataPlan(view, role);
@@ -2161,7 +1708,8 @@
 		}
 
 		for (const key of plan.collections) {
-			if (!force && collectionLoaded[key]) continue;
+			const shouldReloadForView = view === 'builder' && key === 'enrollments';
+			if (!force && !shouldReloadForView && collectionLoaded[key]) continue;
 			tasks.push(
 				loadCollection({
 					key,
@@ -2341,16 +1889,19 @@
 					getPagination: (key) => collectionPagination[key],
 					markLoaded: (key) => (collectionLoaded = { ...collectionLoaded, [key]: true })
 				}),
-			enrollments: (cursor = collectionPagination.enrollments.currentCursor) =>
-				loadCollectionPage({
+			enrollments: (cursor = collectionPagination.enrollments.currentCursor) => {
+				const token = ++enrollmentCollectionRequestToken;
+				return loadCollectionPage({
 					key: 'enrollments',
 					cursor,
 					request: requestEnrollmentsPage,
 					assign: (items) => (enrollments = items),
+					isCurrent: () => token === enrollmentCollectionRequestToken,
 					setPagination: setCollectionPagination,
 					getPagination: (key) => collectionPagination[key],
 					markLoaded: (key) => (collectionLoaded = { ...collectionLoaded, [key]: true })
-				}),
+				});
+			},
 			grades: (cursor = collectionPagination.grades.currentCursor) =>
 				loadCollectionPage({
 					key: 'grades',
@@ -2633,7 +2184,12 @@
 		for (const [index, group] of (conflictAudit?.groups ?? []).entries()) {
 			const groupId = `audit-conflict-${index + 1}`;
 			for (const member of group.members) {
-				cards[member.enrollmentId] = scheduleCardFromConflictMember(member, groupId, index);
+				cards[member.enrollmentId] = scheduleCardFromConflictMember(
+					member,
+					groupId,
+					index,
+					timezone
+				);
 			}
 		}
 		return cards;
@@ -2647,7 +2203,7 @@
 					id: groupId,
 					tone: index,
 					representative: representative
-						? scheduleCardFromConflictMember(representative, groupId, index)
+						? scheduleCardFromConflictMember(representative, groupId, index, timezone)
 						: null,
 					details: conflictAuditGroupsById[groupId] ?? null,
 					count: group.memberCount,
@@ -2688,7 +2244,9 @@
 	});
 	const scheduleAnalyticsCards = $derived(schedulePreview.hasMore ? [] : scheduleCards);
 	const filteredScheduleCards = $derived(scheduleCards);
-	const calendarVisibleDays = $derived(visibleDaysForCalendar(filteredScheduleCards, scheduleDayFilter));
+	const calendarVisibleDays = $derived(
+		visibleDaysForCalendar(filteredScheduleCards, scheduleDayFilter)
+	);
 	const calendarHiddenDays = $derived(hiddenDaysForCalendar(calendarVisibleDays));
 	const calendarColumnWidthValue = $derived(calendarColumnWidth(calendarVisibleDays.length));
 	const calendarSlotHeightValue = $derived(calendarSlotHeight(calendarVisibleDays.length));
@@ -2703,7 +2261,7 @@
 				day: 'numeric',
 				month: 'long'
 			});
-			return `${DAY_LABELS[day]}, ${formatter.format(dateForCalendarDay(day))}`;
+			return `${DAY_LABELS[day]}, ${formatter.format(dateForCalendarDay(day, calendarWeekOffset))}`;
 		}
 
 		const start = calendarAnchorDate.getTime();
@@ -2717,22 +2275,27 @@
 	const calendarVisibleRange = $derived.by(() => rangeForScheduleCards(calendarScheduleCards));
 	const calendarSessionCountByDay = $derived.by(() =>
 		Object.fromEntries(
-			calendarVisibleDays.map((day) => [day, calendarScheduleCards.filter((card) => card.day === day).length])
+			calendarVisibleDays.map((day) => [
+				day,
+				calendarScheduleCards.filter((card) => card.day === day).length
+			])
 		)
 	);
 	const calendarEvents = $derived.by(() =>
 		calendarScheduleCards.map((card) => ({
 			id: card.id,
 			title: card.course,
-			start: dateForScheduleCard(card, card.startMinutes),
-			end: dateForScheduleCard(card, card.endMinutes),
+			start: dateForScheduleCard(card, card.startMinutes, calendarWeekOffset),
+			end: dateForScheduleCard(card, card.endMinutes, calendarWeekOffset),
 			extendedProps: { card }
 		}))
 	);
 	const calendarConflictLegend = $derived.by(() =>
 		auditConflictGroups
 			.map((group) => {
-				const representative = calendarScheduleCards.find((card) => card.conflictGroupId === group.id);
+				const representative = calendarScheduleCards.find(
+					(card) => card.conflictGroupId === group.id
+				);
 				if (!representative) return null;
 
 				return {
@@ -2748,9 +2311,7 @@
 	const effectiveSelectedScheduleId = $derived.by(() => {
 		if (!selectedScheduleId) return null;
 
-		if (
-			calendarScheduleCards.some((item) => item.id === selectedScheduleId)
-		) {
+		if (calendarScheduleCards.some((item) => item.id === selectedScheduleId)) {
 			return selectedScheduleId;
 		}
 
@@ -2986,7 +2547,12 @@
 			);
 			if (!details) continue;
 			const memberCards = details.members.map((member, index) =>
-				scheduleCardFromConflictMember(member, group.id, group.representative.conflictTone ?? index)
+				scheduleCardFromConflictMember(
+					member,
+					group.id,
+					group.representative.conflictTone ?? index,
+					timezone
+				)
 			);
 			for (const card of memberCards) {
 				peers[card.id] = memberCards.filter((peer) => peer.id !== card.id);
@@ -3044,7 +2610,7 @@
 		return peers;
 	});
 	const upcomingScheduleCards = $derived.by(() =>
-		sortUpcomingSchedules(scheduleCards, scheduleNow)
+		sortUpcomingSchedules(scheduleCards, timezone, scheduleNow)
 	);
 	const weeklyScheduleCards = $derived.by(() => sortWeeklySchedules(scheduleCards));
 	const nextSchedule = $derived(upcomingScheduleCards[0] ?? null);
@@ -3414,7 +2980,7 @@
 		selectedEnrollmentId = item.id ?? null;
 		selectedEnrollmentRecord = item;
 		builderStep = 'review';
-		const seededDraft = enrollmentDraftFromRecord(item);
+		const seededDraft = enrollmentDraftFromRecord(item, timezone);
 		enrollmentDraft = seededDraft;
 		syncEnrollmentPickerLabels(item);
 		studentPickerOpen = false;
@@ -3471,7 +3037,10 @@
 			setFeedback('success', 'Peserta jadwal berhasil diperbarui.');
 		} catch (error) {
 			const message = (error as { body?: { message?: string }; message?: string })?.body?.message;
-			setFeedback('danger', message || (error as Error).message || 'Peserta jadwal gagal diperbarui.');
+			setFeedback(
+				'danger',
+				message || (error as Error).message || 'Peserta jadwal gagal diperbarui.'
+			);
 		} finally {
 			builderRosterSaving = false;
 		}
@@ -3650,7 +3219,7 @@
 		enrollments: () => {
 			selectedEnrollmentId = null;
 			selectedEnrollmentRecord = null;
-			enrollmentDraft = emptyEnrollmentDraft();
+			enrollmentDraft = emptyEnrollmentDraft(timezone);
 			builderStep = 'participant';
 			studentPickerSearch = '';
 			coursePickerSearch = '';
@@ -4592,7 +4161,11 @@
 		viewRefreshLoading = true;
 		try {
 			await refreshViewData(activeView);
-			const issues = getViewIssues(activeView, currentUser.current?.role as AppRole | undefined);
+			const issues = getViewIssues({
+				view: activeView,
+				role: currentUser.current?.role as AppRole | undefined,
+				collectionIssues
+			});
 			if (issues.length) {
 				setFeedback(
 					'danger',
@@ -4628,11 +4201,12 @@
 	const currentHeaderAction = $derived(
 		headerAction(activeView, currentUser.current?.role as AppRole | undefined)
 	);
-	const currentViewPlan = $derived(
-		viewDataPlan(activeView, currentUser.current?.role as AppRole | undefined)
-	);
 	const activeViewIssues = $derived(
-		getViewIssues(activeView, currentUser.current?.role as AppRole | undefined)
+		getViewIssues({
+			view: activeView,
+			role: currentUser.current?.role as AppRole | undefined,
+			collectionIssues
+		})
 	);
 	const courseEditorBlocked = $derived(
 		Boolean(collectionIssues.studyPrograms || collectionIssues.lecturers) &&
@@ -4667,9 +4241,13 @@
 	const selectedScheduleConflictPeers = $derived(
 		selectedSchedule ? (conflictPeersByCardId[selectedSchedule.id] ?? []) : []
 	);
-	const calendarSessionKeys = $derived.by(() => new Set(calendarScheduleCards.map(scheduleSessionKey)));
+	const calendarSessionKeys = $derived.by(
+		() => new Set(calendarScheduleCards.map(scheduleSessionKey))
+	);
 	const calendarSelectedScheduleConflictPeers = $derived(
-		selectedScheduleConflictPeers.filter((peer) => calendarSessionKeys.has(scheduleSessionKey(peer)))
+		selectedScheduleConflictPeers.filter((peer) =>
+			calendarSessionKeys.has(scheduleSessionKey(peer))
+		)
 	);
 	const selectedScheduleOverlapPeers = $derived(
 		selectedSchedule ? (overlapPeersByCardId[selectedSchedule.id] ?? []) : []

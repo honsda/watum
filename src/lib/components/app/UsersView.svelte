@@ -133,14 +133,23 @@
 					<Button variant="ghost" size="sm" class="ghost-button" onclick={onClearSelection}
 						>Batal</Button
 					>
-					<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onOpenBulkRole)}
-						>Ubah peran</Button
+					<Button
+						variant="ghost"
+						size="sm"
+						class="ghost-button"
+						onclick={() => openDetailPane(onOpenBulkRole)}>Ubah peran</Button
 					>
-					<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onOpenBulkPassword)}
-						>Reset password</Button
+					<Button
+						variant="ghost"
+						size="sm"
+						class="ghost-button"
+						onclick={() => openDetailPane(onOpenBulkPassword)}>Reset password</Button
 					>
-					<Button variant="destructive" size="sm" class="danger-button" onclick={() => openDetailPane(onOpenBulkDelete)}
-						>Hapus</Button
+					<Button
+						variant="destructive"
+						size="sm"
+						class="danger-button"
+						onclick={() => openDetailPane(onOpenBulkDelete)}>Hapus</Button
 					>
 				</div>
 			</div>
@@ -233,7 +242,12 @@
 		/>
 	</section>
 	{#if detailMobileOpen}
-		<button class="detail-slide-backdrop" type="button" aria-label="Tutup detail" onclick={closeDetailPane}></button>
+		<button
+			class="detail-slide-backdrop"
+			type="button"
+			aria-label="Tutup detail"
+			onclick={closeDetailPane}
+		></button>
 	{/if}
 	<section class="workspace-detail detail-slide-over" class:mobile-open={detailMobileOpen}>
 		<div class="pane-head compact">
@@ -247,8 +261,11 @@
 						>Tutup form</Button
 					>
 				{:else if selectedUser}
-					<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onBeginEdit)}
-						>Ubah akun</Button
+					<Button
+						variant="ghost"
+						size="sm"
+						class="ghost-button"
+						onclick={() => openDetailPane(onBeginEdit)}>Ubah akun</Button
 					>
 				{/if}
 			</div>

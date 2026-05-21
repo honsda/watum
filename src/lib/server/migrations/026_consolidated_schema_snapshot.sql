@@ -199,7 +199,6 @@ CREATE TABLE IF NOT EXISTS enrollments (
   PRIMARY KEY (id),
   UNIQUE KEY audit_sk (audit_sk),
   UNIQUE KEY enrollments_student_course_term_key (student_id, course_id, semester, academic_year),
-  UNIQUE KEY schedule_id (schedule_id),
   KEY idx_enrollments_semester_year (semester, academic_year),
   KEY idx_enrollments_student_schedule (student_id, schedule_id),
   KEY idx_enrollments_student_id_id (student_id, id),

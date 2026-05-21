@@ -197,9 +197,7 @@
 		Boolean(enrollmentPolicyLoaded && isEnrollmentRequestsOpen(enrollmentPolicy?.requestsOpen))
 	);
 	const studentCanRequestEnrollment = $derived(
-		Boolean(
-			policyRequestsOpen && requestCourses.length && requestEnrollmentEnhance
-		)
+		Boolean(policyRequestsOpen && requestCourses.length && requestEnrollmentEnhance)
 	);
 	let detailMobileOpen = $state(false);
 
@@ -286,7 +284,10 @@
 			</label>
 			<label>
 				<span>Tahun akademik</span>
-				<select bind:value={viewState.scheduleAcademicYearFilter} onchange={onAcademicYearFilterChange}>
+				<select
+					bind:value={viewState.scheduleAcademicYearFilter}
+					onchange={onAcademicYearFilterChange}
+				>
 					<option value="">Semua tahun</option>
 					{#each scheduleAcademicYearOptions as item (item)}
 						<option value={item}>{item}</option>
@@ -313,11 +314,17 @@
 				<div class="bulk-actions">
 					<Button variant="ghost" size="sm" class="ghost-button" onclick={onBulkClear}>Batal</Button
 					>
-					<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onOpenBulkEdit)}
-						>Ubah</Button
+					<Button
+						variant="ghost"
+						size="sm"
+						class="ghost-button"
+						onclick={() => openDetailPane(onOpenBulkEdit)}>Ubah</Button
 					>
-					<Button variant="destructive" size="sm" class="danger-button" onclick={() => openDetailPane(onOpenBulkDelete)}
-						>Hapus</Button
+					<Button
+						variant="destructive"
+						size="sm"
+						class="danger-button"
+						onclick={() => openDetailPane(onOpenBulkDelete)}>Hapus</Button
 					>
 				</div>
 			</div>
@@ -431,7 +438,12 @@
 		/>
 	</section>
 	{#if detailMobileOpen}
-		<button class="detail-slide-backdrop" type="button" aria-label="Tutup detail" onclick={closeDetailPane}></button>
+		<button
+			class="detail-slide-backdrop"
+			type="button"
+			aria-label="Tutup detail"
+			onclick={closeDetailPane}
+		></button>
 	{/if}
 	<section class="workspace-detail detail-slide-over" class:mobile-open={detailMobileOpen}>
 		<div class="pane-head compact">
@@ -619,7 +631,9 @@
 						</p>
 					</div>
 					<div class="policy-settings-badges">
-						<Badge variant="outline">{enrollmentPolicyLoaded ? enrollmentPolicy.semester : 'Memuat'}</Badge>
+						<Badge variant="outline"
+							>{enrollmentPolicyLoaded ? enrollmentPolicy.semester : 'Memuat'}</Badge
+						>
 						<Badge variant="secondary">
 							{enrollmentPolicyLoaded ? enrollmentPolicy.academicYear : 'Memuat'}
 						</Badge>
@@ -705,11 +719,19 @@
 				</label>
 				<label>
 					<span>Semester</span>
-					<input value={enrollmentPolicyLoaded ? enrollmentPolicy.semester : '-'} readonly disabled />
+					<input
+						value={enrollmentPolicyLoaded ? enrollmentPolicy.semester : '-'}
+						readonly
+						disabled
+					/>
 				</label>
 				<label>
 					<span>Tahun akademik</span>
-					<input value={enrollmentPolicyLoaded ? enrollmentPolicy.academicYear : '-'} readonly disabled />
+					<input
+						value={enrollmentPolicyLoaded ? enrollmentPolicy.academicYear : '-'}
+						readonly
+						disabled
+					/>
 				</label>
 				{#if enrollmentPolicyIssue}
 					<p class="editor-note">{enrollmentPolicyIssue}</p>
