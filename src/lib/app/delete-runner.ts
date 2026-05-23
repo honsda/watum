@@ -18,6 +18,25 @@ type BulkDeletePlan = {
 	afterDelete: () => AsyncMaybe;
 };
 
+function partialFailureMessage(result: unknown) {
+	const failed = (
+		(result as { results?: Array<{ id?: string; ok?: boolean; message?: string }> } | undefined)
+			?.results ?? []
+	).filter((item) => item.ok === false);
+	if (!failed.length) return null;
+
+	const detail = failed
+		.slice(0, 5)
+		.map((item) => [item.id, item.message].filter(Boolean).join(': '))
+		.filter(Boolean)
+		.join(', ');
+	const suffix = failed.length > 5 ? `, dan ${failed.length - 5} lainnya` : '';
+
+	return detail
+		? `Sebagian data gagal diproses. ${detail}${suffix}`
+		: 'Sebagian data gagal diproses.';
+}
+
 export async function runDeletePlan<K extends string>(options: {
 	kind: K;
 	id: string;
@@ -35,7 +54,9 @@ export async function runDeletePlan<K extends string>(options: {
 	try {
 		if (options.kind in options.singlePlans) {
 			const plan = options.singlePlans[options.kind]!;
-			await plan.execute(options.id);
+			const result = await plan.execute(options.id);
+			const partialFailure = partialFailureMessage(result);
+			if (partialFailure) throw new Error(partialFailure);
 			await options.refresh({
 				...plan.refresh,
 				collections: [...plan.refresh.collections]
@@ -45,7 +66,9 @@ export async function runDeletePlan<K extends string>(options: {
 
 		if (options.kind in options.bulkPlans) {
 			const plan = options.bulkPlans[options.kind]!;
-			await plan.execute(options.id);
+			const result = await plan.execute(options.id);
+			const partialFailure = partialFailureMessage(result);
+			if (partialFailure) throw new Error(partialFailure);
 			await options.refresh({
 				...plan.refresh,
 				collections: [...plan.refresh.collections]

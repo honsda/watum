@@ -144,8 +144,11 @@
 				<h3>Daftar mata kuliah</h3>
 			</div>
 			{#if canManage}
-				<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onBeginCreate)}
-					>Tambah</Button
+				<Button
+					variant="ghost"
+					size="sm"
+					class="ghost-button"
+					onclick={() => openDetailPane(onBeginCreate)}>Tambah</Button
 				>
 			{/if}
 		</div>
@@ -165,11 +168,17 @@
 				<div class="bulk-actions">
 					<Button variant="ghost" size="sm" class="ghost-button" onclick={onBulkClear}>Batal</Button
 					>
-					<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onOpenBulkEdit)}
-						>Ubah</Button
+					<Button
+						variant="ghost"
+						size="sm"
+						class="ghost-button"
+						onclick={() => openDetailPane(onOpenBulkEdit)}>Ubah</Button
 					>
-					<Button variant="destructive" size="sm" class="danger-button" onclick={() => openDetailPane(onOpenBulkDelete)}
-						>Hapus</Button
+					<Button
+						variant="destructive"
+						size="sm"
+						class="danger-button"
+						onclick={() => openDetailPane(onOpenBulkDelete)}>Hapus</Button
 					>
 				</div>
 			</div>
@@ -196,6 +205,7 @@
 						<label class="row-checkbox"
 							><input
 								type="checkbox"
+								aria-label={`Pilih mata kuliah ${item.id ?? item.name ?? ''}`}
 								checked={item.id != null && bulkSelectedIds.has(item.id)}
 								onchange={() => item.id && onBulkToggleId(item.id)}
 								onclick={(e) => e.stopPropagation()}
@@ -270,7 +280,12 @@
 		/>
 	</section>
 	{#if detailMobileOpen}
-		<button class="detail-slide-backdrop" type="button" aria-label="Tutup detail" onclick={closeDetailPane}></button>
+		<button
+			class="detail-slide-backdrop"
+			type="button"
+			aria-label="Tutup detail"
+			onclick={closeDetailPane}
+		></button>
 	{/if}
 	<section class="workspace-detail detail-slide-over" class:mobile-open={detailMobileOpen}>
 		<div class="pane-head compact">
@@ -293,8 +308,11 @@
 							>Tutup form</Button
 						>
 					{:else if selectedCourse}
-						<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onBeginEdit)}
-							>Edit</Button
+						<Button
+							variant="ghost"
+							size="sm"
+							class="ghost-button"
+							onclick={() => openDetailPane(onBeginEdit)}>Edit</Button
 						>
 					{/if}
 					{#if selectedCourseId}
@@ -306,6 +324,19 @@
 			{/if}
 		</div>
 		{#if pendingDelete?.kind === 'course' && pendingDelete.id === selectedCourseId}
+			<section class="warning-panel">
+				<p class="warning-title">Hapus {pendingDelete.label}?</p>
+				<p>{pendingDelete.message}</p>
+				<div class="warning-actions">
+					<Button class="danger-button" variant="destructive" size="sm" onclick={onConfirmDelete}
+						>{pendingDelete.confirmLabel}</Button
+					>
+					<Button class="ghost-button" variant="ghost" size="sm" onclick={onCancelDelete}
+						>Batal</Button
+					>
+				</div>
+			</section>
+		{:else if pendingDelete?.kind === 'bulk-courses'}
 			<section class="warning-panel">
 				<p class="warning-title">Hapus {pendingDelete.label}?</p>
 				<p>{pendingDelete.message}</p>

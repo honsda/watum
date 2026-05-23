@@ -436,7 +436,8 @@
 							type="button"
 							class={`calendar-conflict-chip ${group.selected ? 'selected' : ''}`}
 							style={conflictToneVariables(group.tone)}
-							onclick={() => openDetailPane(() => toggleConflictGroup(group.id, group.representative))}
+							onclick={() =>
+								openDetailPane(() => toggleConflictGroup(group.id, group.representative))}
 						>
 							<span class="calendar-conflict-chip-dot"></span>
 							<span class="calendar-conflict-chip-copy">

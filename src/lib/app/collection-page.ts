@@ -30,6 +30,7 @@ export async function loadCollectionPage<T, K extends string>(options: {
 		cursor: string | null
 	) => Promise<LimitedCollectionResponse<T>> | { run: () => Promise<LimitedCollectionResponse<T>> };
 	assign: (items: T[]) => void;
+	isCurrent?: () => boolean;
 	meta?: { history?: Array<string | null>; pageNumber?: number };
 	setPagination: (key: K, patch: Record<string, unknown>) => void;
 	getPagination: (key: K) => {
@@ -41,6 +42,7 @@ export async function loadCollectionPage<T, K extends string>(options: {
 	options.setPagination(options.key, { loading: true });
 	try {
 		const result = await resolveRemoteQuery(options.request(options.cursor));
+		if (options.isCurrent && !options.isCurrent()) return;
 		options.assign(result.items);
 		const pageState = options.getPagination(options.key);
 		const nextHistory = options.meta?.history ?? (options.cursor == null ? [] : pageState.history);
@@ -58,6 +60,7 @@ export async function loadCollectionPage<T, K extends string>(options: {
 		});
 		options.markLoaded(options.key);
 	} catch (error) {
+		if (options.isCurrent && !options.isCurrent()) return;
 		options.setPagination(options.key, { loading: false });
 		throw error;
 	}

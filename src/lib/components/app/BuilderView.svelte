@@ -376,13 +376,17 @@
 	const termStepLocked = $derived(builderMode !== 'create');
 	const rosterStudentIdSet = $derived(new Set(rosterStudentIds));
 	const rosterStudentRows = $derived.by(() => {
-		const byId = new Map<string, SelectEnrollmentsResult>();
+		const byId: Record<string, SelectEnrollmentsResult> = {};
 		for (const row of builderRoster) {
-			if (row.student_id) byId.set(row.student_id, row);
+			if (row.student_id) byId[row.student_id] = row;
 		}
-		return rosterStudentIds.map((studentId) => byId.get(studentId)).filter(Boolean) as SelectEnrollmentsResult[];
+		return rosterStudentIds
+			.map((studentId) => byId[studentId])
+			.filter(Boolean) as SelectEnrollmentsResult[];
 	});
-	const rosterPageCount = $derived(Math.max(1, Math.ceil(rosterStudentRows.length / ROSTER_PAGE_SIZE)));
+	const rosterPageCount = $derived(
+		Math.max(1, Math.ceil(rosterStudentRows.length / ROSTER_PAGE_SIZE))
+	);
 	const visibleRosterStudentRows = $derived.by(() => {
 		const currentPage = Math.min(rosterPage, rosterPageCount);
 		const start = (currentPage - 1) * ROSTER_PAGE_SIZE;
@@ -508,36 +512,39 @@
 	function selectedEnrollmentBelongsToSession(item: SelectEnrollmentsResult) {
 		if (!selectedEnrollmentId) return false;
 		if (selectedEnrollmentId === item.id) return true;
-		const selectedCard = scheduleCardMap[selectedEnrollmentId] ?? auditConflictCardMap[selectedEnrollmentId];
-		return Boolean(
-			item.schedule_id && selectedCard?.original.schedule_id === item.schedule_id
-		);
+		const selectedCard =
+			scheduleCardMap[selectedEnrollmentId] ?? auditConflictCardMap[selectedEnrollmentId];
+		return Boolean(item.schedule_id && selectedCard?.original.schedule_id === item.schedule_id);
 	}
 
 	function enrollmentSessionStudentCount(item: SelectEnrollmentsResult) {
-		const count = Number((item as SelectEnrollmentsResult & { student_count?: number | string }).student_count);
+		const count = Number(
+			(item as SelectEnrollmentsResult & { student_count?: number | string }).student_count
+		);
 		return Number.isFinite(count) && count > 0 ? count : 1;
 	}
 
 	const rolledUpBuilderEnrollments = $derived.by(() => {
-		const rows = new Map<
+		const rows: Record<
 			string,
 			{
 				item: SelectEnrollmentsResult;
 				studentCount: number;
 				studentNames: string[];
 			}
-		>();
+		> = {};
+		const rowKeys: string[] = [];
 
 		for (const item of filteredBuilderEnrollments) {
 			const key = builderEnrollmentSessionKey(item);
-			const existing = rows.get(key);
+			const existing = rows[key];
 			if (!existing) {
-				rows.set(key, {
+				rows[key] = {
 					item,
 					studentCount: enrollmentSessionStudentCount(item),
 					studentNames: item.student_name ? [item.student_name] : []
-				});
+				};
+				rowKeys.push(key);
 				continue;
 			}
 
@@ -554,12 +561,14 @@
 			}
 		}
 
-		return [...rows.values()];
+		return rowKeys.map((key) => rows[key]!);
 	});
 
 	const selectedBuilderSession = $derived.by(() => {
 		if (!selectedEnrollmentId) return null;
-		return rolledUpBuilderEnrollments.find((row) => selectedEnrollmentBelongsToSession(row.item)) ?? null;
+		return (
+			rolledUpBuilderEnrollments.find((row) => selectedEnrollmentBelongsToSession(row.item)) ?? null
+		);
 	});
 	const selectedSessionStudentCount = $derived(
 		selectedBuilderSession?.studentCount ?? (selectedEnrollmentId ? 1 : 0)
@@ -862,8 +871,11 @@
 			<div>
 				<h3>{builderTaskMode ? 'Jadwal terkait' : 'Jadwal aktif'}</h3>
 			</div>
-			<Button variant="ghost" size="sm" class="ghost-button" onclick={() => openDetailPane(onClearSelection)}
-				>Tambah jadwal</Button
+			<Button
+				variant="ghost"
+				size="sm"
+				class="ghost-button"
+				onclick={() => openDetailPane(onClearSelection)}>Tambah jadwal</Button
 			>
 		</div>
 
@@ -1321,7 +1333,11 @@
 						<span
 							><span>{row.studentCount} mahasiswa</span>
 							{#if row.studentNames.length}
-								<span> ({row.studentNames.slice(0, 2).join(', ')}{row.studentNames.length > 2 ? ` +${row.studentNames.length - 2}` : ''})</span>
+								<span>
+									({row.studentNames.slice(0, 2).join(', ')}{row.studentNames.length > 2
+										? ` +${row.studentNames.length - 2}`
+										: ''})</span
+								>
 							{/if}
 							•
 							<span
@@ -1365,9 +1381,17 @@
 	</section>
 
 	{#if detailMobileOpen}
-		<button class="detail-slide-backdrop" type="button" aria-label="Tutup detail" onclick={closeDetailPane}></button>
+		<button
+			class="detail-slide-backdrop"
+			type="button"
+			aria-label="Tutup detail"
+			onclick={closeDetailPane}
+		></button>
 	{/if}
-	<section class="workspace-detail builder-detail detail-slide-over" class:mobile-open={detailMobileOpen}>
+	<section
+		class="workspace-detail builder-detail detail-slide-over"
+		class:mobile-open={detailMobileOpen}
+	>
 		<div class="pane-head compact">
 			<div>
 				<h3>{builderTitle}</h3>
@@ -1643,7 +1667,10 @@
 											aria-expanded={workflowState.studentPickerOpen}
 											aria-controls="roster-student-picker-listbox"
 											aria-autocomplete="list"
-											aria-activedescendant={activeDescendantId('roster-student-picker', studentPickerActiveIndex)}
+											aria-activedescendant={activeDescendantId(
+												'roster-student-picker',
+												studentPickerActiveIndex
+											)}
 											bind:value={rosterSearch}
 											oninput={() => {
 												studentPickerActiveIndex = -1;
@@ -1652,19 +1679,23 @@
 												onQueueStudentPickerRefresh();
 											}}
 											onkeydown={handleStudentPickerKeydown}
-										onfocus={() => {
-											studentPickerActiveIndex = -1;
-											workflowState.studentPickerOpen = true;
-											workflowState.studentPickerSearch = rosterSearch;
-											onQueueStudentPickerRefresh(0);
-										}}
+											onfocus={() => {
+												studentPickerActiveIndex = -1;
+												workflowState.studentPickerOpen = true;
+												workflowState.studentPickerSearch = rosterSearch;
+												onQueueStudentPickerRefresh(0);
+											}}
 										/>
 										{#if studentPickerIssue}
 											<p class="combobox-error">{studentPickerIssue}</p>
 										{:else if workflowState.studentPickerOpen && studentPickerLoading && !rosterPickerOptions.length}
 											<p class="combobox-empty">Memuat mahasiswa...</p>
 										{:else if workflowState.studentPickerOpen}
-											<div id="roster-student-picker-listbox" class="combobox-dropdown" role="listbox">
+											<div
+												id="roster-student-picker-listbox"
+												class="combobox-dropdown"
+												role="listbox"
+											>
 												{#each rosterPickerOptions as item, index (item.id)}
 													<button
 														id={`roster-student-picker-option-${index}`}
@@ -1689,7 +1720,9 @@
 									</div>
 								</label>
 								<div class="builder-section-actions split roster-actions">
-									<p class="editor-note">Perubahan peserta disimpan terpisah dari jadwal dan ruang.</p>
+									<p class="editor-note">
+										Perubahan peserta disimpan terpisah dari jadwal dan ruang.
+									</p>
 									<Button
 										type="button"
 										class="primary-button"
@@ -2194,12 +2227,15 @@
 						Jika masih ragu, kembali satu langkah lalu perbaiki waktu atau ruang sebelum simpan.
 					</p>
 					<div class="builder-inline-actions">
-			<Button type="button" variant="ghost" class="ghost-button" onclick={retreatBuilderStep}
-				>Kembali</Button
-			>
-			<Button type="submit" class="primary-button builder-submit" disabled={rosterDirty || builderRosterSaving}
-				>{rosterDirty ? 'Simpan peserta dulu' : builderSubmitLabel}</Button
-			>
+						<Button type="button" variant="ghost" class="ghost-button" onclick={retreatBuilderStep}
+							>Kembali</Button
+						>
+						<Button
+							type="submit"
+							class="primary-button builder-submit"
+							disabled={rosterDirty || builderRosterSaving}
+							>{rosterDirty ? 'Simpan peserta dulu' : builderSubmitLabel}</Button
+						>
 					</div>
 				</div>
 			</section>

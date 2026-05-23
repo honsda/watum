@@ -95,7 +95,8 @@
 	const visibleScheduleCards = $derived(scheduleCards.slice(0, 6));
 	let lecturerClassPage = $state(1);
 	const lecturerClassCards = $derived.by(() => {
-		const classes = new Map<string, LecturerClassCard>();
+		const classes: Record<string, LecturerClassCard> = {};
+		const classKeys: string[] = [];
 		for (const card of scheduleCards) {
 			const key =
 				card.original.schedule_id ??
@@ -108,19 +109,18 @@
 					card.semester,
 					card.academicYear
 				].join('|');
-			const existing = classes.get(key);
+			const existing = classes[key];
 			if (existing) {
 				existing.studentCount += 1;
 				existing.hasConflict = existing.hasConflict || card.hasConflict;
 				continue;
 			}
-			classes.set(key, { ...card, studentCount: 1 });
+			classes[key] = { ...card, studentCount: 1 };
+			classKeys.push(key);
 		}
-		return [...classes.values()];
+		return classKeys.map((key) => classes[key]!);
 	});
-	const lecturerUpcomingClasses = $derived(
-		lecturerClassCards.slice(0, LECTURER_UPCOMING_COUNT)
-	);
+	const lecturerUpcomingClasses = $derived(lecturerClassCards.slice(0, LECTURER_UPCOMING_COUNT));
 	const lecturerClassPageCount = $derived(
 		Math.max(1, Math.ceil(lecturerClassCards.length / LECTURER_CLASS_PAGE_SIZE))
 	);
