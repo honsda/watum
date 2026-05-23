@@ -46,6 +46,14 @@
 
 	type ScheduleCardMap = Record<string, ScheduleCard>;
 	type ConflictSummaryMap = Record<string, string>;
+	type PendingDelete = {
+		kind: string;
+		id: string;
+		label: string;
+		message: string;
+		confirmLabel: string;
+	} | null;
+
 	let {
 		currentRole,
 		state: viewState = $bindable<EnrollmentsViewState>({
@@ -71,6 +79,7 @@
 		scheduleActiveFilterCount,
 		bulkSelectedIds,
 		bulkCount,
+		pendingDelete,
 		editorView,
 		collectionPagination,
 		bulkUpdateEnrollmentsEnhance,
@@ -106,6 +115,9 @@
 		onOpenBulkDelete,
 		onBulkToggleAll,
 		onBulkToggleId,
+		onRequestDelete,
+		onConfirmDelete,
+		onCancelDelete,
 		onPickEnrollment,
 		onPagePrevious,
 		onPageNext,
@@ -130,6 +142,7 @@
 		scheduleActiveFilterCount: number;
 		bulkSelectedIds: Set<string>;
 		bulkCount: number;
+		pendingDelete: PendingDelete;
 		editorView: string | null;
 		collectionPagination: PaginationState;
 		bulkUpdateEnrollmentsEnhance: EnhancedAction;
@@ -165,6 +178,9 @@
 		onOpenBulkDelete: () => void;
 		onBulkToggleAll: (ids: string[]) => void;
 		onBulkToggleId: (id: string) => void;
+		onRequestDelete: () => void;
+		onConfirmDelete: () => void;
+		onCancelDelete: () => void;
 		onPickEnrollment: (item: SelectEnrollmentsResult) => void;
 		onPagePrevious: () => void;
 		onPageNext: () => void;
@@ -353,6 +369,7 @@
 						<label class="row-checkbox"
 							><input
 								type="checkbox"
+								aria-label={`Pilih KRS ${item.id ?? item.student_name ?? item.course_name ?? ''}`}
 								checked={item.id != null && bulkSelectedIds.has(item.id)}
 								onchange={() => item.id && onBulkToggleId(item.id)}
 								onclick={(e) => e.stopPropagation()}
@@ -495,10 +512,41 @@
 							>Edit di penjadwalan</Button
 						>
 					{/if}
+					{#if currentRole !== 'STUDENT' && selectedEnrollment.id}
+						<Button variant="destructive" size="sm" class="danger-button" onclick={onRequestDelete}
+							>Hapus</Button
+						>
+					{/if}
 				</div>
 			{/if}
 		</div>
-		{#if selectedEnrollment && editorView !== 'enrollments-bulk'}
+		{#if pendingDelete?.kind === 'enrollment' && pendingDelete.id === selectedEnrollmentId}
+			<section class="warning-panel">
+				<p class="warning-title">Hapus {pendingDelete.label}?</p>
+				<p>{pendingDelete.message}</p>
+				<div class="warning-actions">
+					<Button class="danger-button" variant="destructive" size="sm" onclick={onConfirmDelete}
+						>{pendingDelete.confirmLabel}</Button
+					>
+					<Button class="ghost-button" variant="ghost" size="sm" onclick={onCancelDelete}
+						>Batal</Button
+					>
+				</div>
+			</section>
+		{:else if pendingDelete?.kind === 'bulk-enrollments'}
+			<section class="warning-panel">
+				<p class="warning-title">Hapus {pendingDelete.label}?</p>
+				<p>{pendingDelete.message}</p>
+				<div class="warning-actions">
+					<Button class="danger-button" variant="destructive" size="sm" onclick={onConfirmDelete}
+						>{pendingDelete.confirmLabel}</Button
+					>
+					<Button class="ghost-button" variant="ghost" size="sm" onclick={onCancelDelete}
+						>Batal</Button
+					>
+				</div>
+			</section>
+		{:else if selectedEnrollment && editorView !== 'enrollments-bulk'}
 			<div class="detail-stack">
 				{#if selectedEnrollmentConflictSummary}
 					<p class="builder-conflict-copy">Bentrok dengan {selectedEnrollmentConflictSummary}</p>

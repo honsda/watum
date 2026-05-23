@@ -4788,6 +4788,7 @@
 			filteredEnrollments,
 			selectedEnrollmentId,
 			selectedEnrollment,
+			pendingDelete,
 			selectedEnrollmentConflictSummary,
 			selectedEnrollmentConflictGroup,
 			scheduleCardMap: enrollmentScheduleCardMap,
@@ -4831,6 +4832,9 @@
 				successMessage: 'KRS terpilih berhasil dihapus.',
 				failureMessage: 'Gagal menghapus KRS terpilih.'
 			}),
+			onRequestDelete: () => requestDelete('enrollment', selectedEnrollmentId!),
+			onConfirmDelete: confirmPendingDelete,
+			onCancelDelete: cancelPendingDelete,
 			onOpenBuilderForEnrollment: openBuilderForEnrollment,
 			onOpenBuilderForApproval: (item: SelectEnrollmentsResult) => {
 				pickEnrollment(item);
