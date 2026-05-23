@@ -1,0 +1,21 @@
+{
+  "status": "init",
+  "scope": "codebase",
+  "type": "frontend",
+  "localEndpoint": "http://localhost:4173/",
+  "loginUser": "admin@watum.local",
+  "loginPassword": "admin123",
+  "serverPort": 41801,
+  "executionArgs": {
+    "projectName": "watum",
+    "projectPath": "/home/dharon/watum",
+    "testIds": [
+      "TC024"
+    ],
+    "additionalInstruction": "Run only TC024. Use / as the login page; do not navigate to /login. Use admin@watum.local / admin123. TC024 must edit the seeded existing faculty TC_FIX_FAC by searching TC_FIX_FAC, opening 000 TestSprite Fixture Faculty, changing its name to 000 TestSprite Fixture Faculty Updated, saving, and verifying the updated row appears.",
+    "serverMode": "production",
+    "envs": {
+      "API_KEY": "sk-user-S0EY_YuzOdEnIWsJmY69jliqfzUeu9t9W3uJjdYQ3SqF2Qnktt9rGzZjJx7t7gdJHH-c9_-xuDSU_CFq8sG-83EwrWORpOnilrEvfLexx0JcFPeIBsUo188w5KoWcAle-KA"
+    }
+  }
+}

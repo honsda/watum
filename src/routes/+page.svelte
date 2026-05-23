@@ -3604,13 +3604,17 @@
 		optimistic: () => {
 			const id = selectedStudyProgramId;
 			if (!id) return;
+			const facultyName =
+				faculties.find((faculty) => faculty.id === studyProgramDraft.facultyId)?.name ??
+				selectedStudyProgram?.faculty_name;
 			studyPrograms = studyPrograms.map((sp) =>
 				sp.id === id
 					? {
 							...sp,
 							name: studyProgramDraft.name,
 							head: studyProgramDraft.head,
-							faculty_id: studyProgramDraft.facultyId
+							faculty_id: studyProgramDraft.facultyId,
+							faculty_name: facultyName
 						}
 					: sp
 			);
@@ -3901,12 +3905,16 @@
 		form: bulkUpdateStudyPrograms,
 		optimistic: () => {
 			const ids = new Set(bulkGetIds('studyPrograms'));
+			const facultyName = faculties.find(
+				(faculty) => faculty.id === bulkEditStudyProgramFacultyId
+			)?.name;
 			studyPrograms = studyPrograms.map((sp) =>
 				ids.has(sp.id ?? '')
 					? {
 							...sp,
-							faculty_id: bulkEditStudyProgramFacultyId,
-							head: bulkEditStudyProgramHead
+							faculty_id: bulkEditStudyProgramFacultyId || sp.faculty_id,
+							faculty_name: facultyName ?? sp.faculty_name,
+							head: bulkEditStudyProgramHead || sp.head
 						}
 					: sp
 			);
@@ -4920,6 +4928,7 @@
 			selectedUserId,
 			selectedUser,
 			selectedUserIds,
+			pendingDelete,
 			editorView,
 			collectionPagination: collectionPagination.users,
 			updateUserEnhance,
@@ -4937,6 +4946,8 @@
 					successMessage: 'Akun terpilih berhasil dihapus.',
 					failureMessage: 'Gagal menghapus akun terpilih.'
 				}),
+			onConfirmDelete: confirmPendingDelete,
+			onCancelDelete: cancelPendingDelete,
 			onToggleAllUsers: toggleAllUsers,
 			onToggleUser: (id: string) => toggleUserSelection(id),
 			onPickUser: pickUser,
@@ -5251,6 +5262,21 @@
 		<Card.Root class="login-panel">
 			<Card.Header class="login-header">
 				<div class="login-actions">
+					<Button
+						class="theme-switch"
+						type="button"
+						variant="outline"
+						size="sm"
+						onclick={() => applyTheme(theme === 'dark' ? 'light' : 'dark')}
+					>
+						{#if theme === 'dark'}
+							<SunMedium size={16} />
+							<span>Mode terang</span>
+						{:else}
+							<MoonStar size={16} />
+							<span>Mode gelap</span>
+						{/if}
+					</Button>
 					<Button
 						type="button"
 						variant="outline"

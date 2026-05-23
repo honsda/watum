@@ -318,6 +318,13 @@ export const bulkDeleteCourses = command(v.pipe(v.string(), v.minLength(1)), asy
 		invalidateConflictAuditCache();
 		await getCourses().refresh();
 	}
+	const failed = results.filter((r) => !r.ok);
+	if (failed.length) {
+		const detail = failed
+			.map((item) => `${item.id}: ${item.message ?? 'Gagal menghapus'}`)
+			.join(', ');
+		throw error(400, `Sebagian mata kuliah tidak bisa dihapus. ${detail}`);
+	}
 	return { success: true, results };
 });
 

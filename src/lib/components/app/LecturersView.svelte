@@ -220,6 +220,7 @@
 						<label class="row-checkbox"
 							><input
 								type="checkbox"
+								aria-label={`Pilih dosen ${item.id ?? item.name ?? ''}`}
 								checked={item.id != null && bulkSelectedIds.has(item.id)}
 								onchange={() => item.id && onBulkToggleId(item.id)}
 								onclick={(e) => e.stopPropagation()}
@@ -307,6 +308,19 @@
 			{/if}
 		</div>
 		{#if pendingDelete?.kind === 'lecturer' && pendingDelete.id === selectedLecturerId}
+			<section class="warning-panel">
+				<p class="warning-title">Hapus {pendingDelete.label}?</p>
+				<p>{pendingDelete.message}</p>
+				<div class="warning-actions">
+					<Button class="danger-button" variant="destructive" size="sm" onclick={onConfirmDelete}
+						>{pendingDelete.confirmLabel}</Button
+					>
+					<Button class="ghost-button" variant="ghost" size="sm" onclick={onCancelDelete}
+						>Batal</Button
+					>
+				</div>
+			</section>
+		{:else if pendingDelete?.kind === 'bulk-lecturers'}
 			<section class="warning-panel">
 				<p class="warning-title">Hapus {pendingDelete.label}?</p>
 				<p>{pendingDelete.message}</p>

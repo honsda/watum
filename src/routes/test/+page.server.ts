@@ -1,8 +1,8 @@
-import { dev } from '$app/environment';
-import { error } from '@sveltejs/kit';
+import { error } from "@sveltejs/kit";
+import { env } from "$env/dynamic/private";
 
 export function load() {
-	if (!dev) {
-		throw error(404, 'Not found');
+	if (env.ENABLE_INTERNAL_TEST_ROUTE !== "true") {
+		throw error(404, "Not found");
 	}
 }

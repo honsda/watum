@@ -4,6 +4,7 @@
 	import type { SelectEnrollmentsResult, SelectGradesResult } from '$lib/server/sql';
 	import CollectionPagination from '$lib/components/app/CollectionPagination.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { calculateGrade } from '$lib/validations/grade';
 	import { Search, X } from '@lucide/svelte';
 	import './crud-view.css';
 
@@ -152,6 +153,13 @@
 			: courses
 	);
 	const canManageGrades = $derived(currentRole !== 'STUDENT');
+	const gradePreview = $derived(
+		calculateGrade(
+			Number(gradeDraft.assignmentScore) || 0,
+			Number(gradeDraft.midtermScore) || 0,
+			Number(gradeDraft.finalScore) || 0
+		)
+	);
 	let detailMobileOpen = $state(false);
 
 	function openDetailPane(action?: () => void) {
@@ -385,7 +393,7 @@
 			<form class="editor-grid" {...selectedGradeId ? updateGradeEnhance : createGradeEnhance}>
 				{#if selectedGradeId}<input type="hidden" name="id" value={gradeDraft.id} />{/if}
 				<label
-					><span>KRS</span><select bind:value={gradeDraft.enrollmentId}
+					><span>KRS</span><select name="enrollmentId" bind:value={gradeDraft.enrollmentId}
 						><option value="">Pilih KRS disetujui</option
 						>{#if enrollmentsIssue && !enrollments.length}<option value="" disabled
 								>{enrollmentsIssue}</option
@@ -424,16 +432,34 @@
 				>
 				<label
 					><span>Tugas</span><input
+						name="n:assignmentScore"
+						type="number"
 						min="0"
 						max="100"
 						bind:value={gradeDraft.assignmentScore}
 					/></label
 				>
 				<label
-					><span>UTS</span><input min="0" max="100" bind:value={gradeDraft.midtermScore} /></label
+					><span>UTS</span><input
+						name="n:midtermScore"
+						type="number"
+						min="0"
+						max="100"
+						bind:value={gradeDraft.midtermScore}
+					/></label
 				>
-				<label><span>UAS</span><input min="0" max="100" bind:value={gradeDraft.finalScore} /></label
+				<label><span>UAS</span><input
+						name="n:finalScore"
+						type="number"
+						min="0"
+						max="100"
+						bind:value={gradeDraft.finalScore}
+					/></label
 				>
+				<div class="detail-lines" aria-live="polite">
+					<div><span>Nilai Akhir</span><strong>Nilai Akhir: {gradePreview.total}</strong></div>
+					<div><span>Huruf</span><strong>{gradePreview.letter}</strong></div>
+				</div>
 				{#if gradeEditorBlocked}<p class="editor-note">
 						Data KRS harus tersedia sebelum nilai bisa disimpan.
 					</p>{/if}

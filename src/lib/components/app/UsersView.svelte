@@ -21,12 +21,21 @@
 		loading: boolean;
 	};
 
+	type PendingDelete = {
+		kind: string;
+		id: string;
+		label: string;
+		message: string;
+		confirmLabel: string;
+	} | null;
+
 	let {
 		userSearch = $bindable(''),
 		filteredUsers,
 		selectedUserId,
 		selectedUser,
 		selectedUserIds,
+		pendingDelete,
 		bulkUserRole = $bindable<'ADMIN' | 'STUDENT' | 'LECTURER'>('STUDENT'),
 		bulkUserPassword = $bindable(''),
 		userDraft = $bindable({
@@ -49,6 +58,8 @@
 		onOpenBulkRole,
 		onOpenBulkPassword,
 		onOpenBulkDelete,
+		onConfirmDelete,
+		onCancelDelete,
 		onToggleAllUsers,
 		onToggleUser,
 		onPickUser,
@@ -64,6 +75,7 @@
 		selectedUserId: string | null;
 		selectedUser: SelectUsersResult | null;
 		selectedUserIds: Set<string>;
+		pendingDelete: PendingDelete;
 		bulkUserRole: 'ADMIN' | 'STUDENT' | 'LECTURER';
 		bulkUserPassword: string;
 		userDraft: {
@@ -86,6 +98,8 @@
 		onOpenBulkRole: () => void;
 		onOpenBulkPassword: () => void;
 		onOpenBulkDelete: () => void;
+		onConfirmDelete: () => void;
+		onCancelDelete: () => void;
 		onToggleAllUsers: () => void;
 		onToggleUser: (id: string) => void;
 		onPickUser: (item: SelectUsersResult) => void;
@@ -174,6 +188,7 @@
 					<label class="row-checkbox"
 						><input
 							type="checkbox"
+							aria-label={`Pilih akun ${item.email ?? item.id ?? ''}`}
 							checked={item.id != null && selectedUserIds.has(item.id)}
 							onchange={() => item.id && onToggleUser(item.id)}
 							onclick={(e) => e.stopPropagation()}
@@ -270,6 +285,20 @@
 				{/if}
 			</div>
 		</div>
+		{#if pendingDelete?.kind === 'bulk-user'}
+			<section class="warning-panel">
+				<p class="warning-title">Hapus {pendingDelete.label}?</p>
+				<p>{pendingDelete.message}</p>
+				<div class="warning-actions">
+					<Button class="danger-button" variant="destructive" size="sm" onclick={onConfirmDelete}
+						>{pendingDelete.confirmLabel}</Button
+					>
+					<Button class="ghost-button" variant="ghost" size="sm" onclick={onCancelDelete}
+						>Batal</Button
+					>
+				</div>
+			</section>
+		{/if}
 		{#if selectedUser && editorView !== 'users'}
 			<div class="detail-stack">
 				<div class="detail-lines">
