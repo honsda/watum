@@ -335,7 +335,7 @@
 		onConfirmDelete: () => void;
 		onCancelDelete: () => void;
 		onQueueStudentPickerRefresh: (delay?: number) => void;
-		onSaveBuilderRoster: (studentIds: string[]) => void;
+		onSaveBuilderRoster: (studentIds: string[]) => Promise<boolean> | boolean;
 		onQueueCoursePickerRefresh: (delay?: number) => void;
 		onQueueRoomPickerRefresh: (delay?: number) => void;
 		onLoadMoreStudentPickerOptions: () => void;
@@ -639,9 +639,12 @@
 		rosterPage = Math.min(rosterPageCount, rosterPage + 1);
 	}
 
-	function saveRosterChanges() {
+	async function saveRosterChanges() {
 		if (!rosterDirty || builderRosterSaving || rosterStudentIds.length === 0) return;
-		onSaveBuilderRoster(rosterStudentIds);
+		const saved = await onSaveBuilderRoster(rosterStudentIds);
+		if (!saved) {
+			rosterStudentIds = builderRoster.map((row) => row.student_id).filter(Boolean) as string[];
+		}
 	}
 
 	function selectScheduleCourseFilterOption(item: SelectCoursesResult | null) {
@@ -1679,12 +1682,17 @@
 												<strong>{row.student_name}</strong>
 												<span>{row.student_id}</span>
 											</div>
+											{#if row.grade_id}
+												<Badge variant="secondary">Nilai: {row.letter_grade ?? '-'}</Badge>
+											{/if}
 											<Button
 												type="button"
 												variant="ghost"
 												size="sm"
 												class="ghost-button"
-												disabled={rosterStudentIds.length <= 1 || builderRosterSaving}
+												disabled={rosterStudentIds.length <= 1 ||
+													builderRosterSaving ||
+													Boolean(row.grade_id)}
 												onclick={() => removeRosterStudent(row.student_id)}
 											>
 												Hapus

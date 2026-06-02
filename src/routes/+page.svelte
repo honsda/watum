@@ -3067,7 +3067,7 @@
 	}
 
 	async function saveBuilderRoster(studentIds: string[]) {
-		if (!selectedEnrollmentId || builderRosterSaving) return;
+		if (!selectedEnrollmentId || builderRosterSaving) return false;
 		builderRosterSaving = true;
 		try {
 			const result = await updateEnrollmentSessionRoster({
@@ -3079,12 +3079,14 @@
 			await syncBuilderSelection(nextId, true);
 			await refreshBuilderRoster(nextId);
 			setFeedback('success', 'Peserta jadwal berhasil diperbarui.');
+			return true;
 		} catch (error) {
 			const message = (error as { body?: { message?: string }; message?: string })?.body?.message;
 			setFeedback(
 				'danger',
 				message || (error as Error).message || 'Peserta jadwal gagal diperbarui.'
 			);
+			return false;
 		} finally {
 			builderRosterSaving = false;
 		}
