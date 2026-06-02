@@ -3048,17 +3048,19 @@
 			return;
 		}
 		try {
-			const sessionQuery = getAvailableSessionsForCourse({
-				courseId,
-				studentId,
-				semester: selectedEnrollment?.semester ?? undefined,
-				academicYear: selectedEnrollment?.academic_year ?? undefined,
-				cursor: append ? approveSessionCursor ?? undefined : undefined
-			});
-			// Force a fresh read on initial load; cached results would hide
-			// sessions that were created or freed up since the last open.
-			if (!append) await sessionQuery.refresh();
-			const result = (await resolveRemoteQuery(sessionQuery)) as {
+			const result = (await untrack(async () => {
+				const sessionQuery = getAvailableSessionsForCourse({
+					courseId,
+					studentId,
+					semester: selectedEnrollment?.semester ?? undefined,
+					academicYear: selectedEnrollment?.academic_year ?? undefined,
+					cursor: append ? approveSessionCursor ?? undefined : undefined
+				});
+				// Force a fresh read on initial load; cached results would hide
+				// sessions that were created or freed up since the last open.
+				if (!append) await sessionQuery.refresh();
+				return resolveRemoteQuery(sessionQuery);
+			})) as {
 				items: SessionOption[];
 				hasMore: boolean;
 				nextCursor: string | null;
