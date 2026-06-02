@@ -59,3 +59,17 @@ pnpm-debug.log*
 *.tsbuildinfo
 .temp
 .tmp
+
+# AI tooling
+.agents/
+.kilo/
+.kilocode/
+.claude/
+.cursor/
+.codegraph/
+.mcp.json
+opencode.jsonc
+AGENTS.md
+.impeccable.md
+skills-lock.json
+testsprite_tests/
