@@ -10,7 +10,8 @@ import {
 	getListQueryLimit,
 	getPool,
 	mergeLimitedListResult,
-	toLimitedListResult
+	toLimitedListResult,
+	withTransaction
 } from '$lib/server/db';
 import {
 	containsSearchPattern,
@@ -598,14 +599,24 @@ export const bulkDeleteClassRooms = command(
 		if (!ids.length) throw error(400, 'Tidak ada ruang dipilih');
 		if (ids.length > 200) throw error(400, 'Maksimal 200 ruang sekaligus');
 		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
-		for (const id of ids) {
-			try {
-				await deleteClassRoomDb(getPool(), { id });
+		await withTransaction(async (conn) => {
+			for (const id of ids) {
+				const [room] = await selectClassRooms(conn, {
+					select: { id: true, schedule_count: true, enrollment_count: true },
+					where: [['id', '=', id]]
+				});
+				if (!room) {
+					results.push({ id, ok: false, message: 'Ruang tidak ditemukan' });
+					continue;
+				}
+				if ((room.schedule_count ?? 0) > 0 || (room.enrollment_count ?? 0) > 0) {
+					results.push({ id, ok: false, message: 'Masih digunakan jadwal atau KRS' });
+					continue;
+				}
+				await deleteClassRoomDb(conn, { id });
 				results.push({ id, ok: true });
-			} catch {
-				results.push({ id, ok: false, message: 'Gagal menghapus' });
 			}
-		}
+		});
 		if (results.some((r) => r.ok)) {
 			invalidateConflictAuditCache();
 			await getClassRooms().refresh();

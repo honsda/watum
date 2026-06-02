@@ -106,6 +106,13 @@ const enrollmentListSelect = {
 
 const weekdayFromIndex = ['MINGGU', ...days] as const;
 
+function isDuplicateEnrollmentError(err: unknown): boolean {
+	if (!err || typeof err !== 'object' || !('code' in err)) return false;
+	if ((err as { code?: string }).code !== 'ER_DUP_ENTRY') return false;
+	const message = String((err as { sqlMessage?: string; message?: string }).sqlMessage ?? '');
+	return message.includes('enrollments_student_course_term_key');
+}
+
 function scheduleWindowLabel(
 	start: Date | string | null | undefined,
 	end: Date | string | null | undefined,
@@ -1013,18 +1020,21 @@ export const getEnrollmentSessionRoster = query(v.string(), async (id) => {
 const availableSessionsSchema = v.object({
 	courseId: v.string(),
 	studentId: v.string(),
+	semester: v.optional(v.string()),
+	academicYear: v.optional(v.string()),
 	cursor: v.optional(v.string())
 });
 
 export const getAvailableSessionsForCourse = query(availableSessionsSchema, async (params) => {
 	await requireRole(['ADMIN', 'LECTURER']);
 	const PAGE_SIZE = 10;
-	const rows = await selectEnrollments(getPool(), {
-		where: [
-			['course_id', '=', params.courseId],
-			['status', '=', 'APPROVED']
-		]
-	});
+	const where: SelectEnrollmentsWhere[] = [
+		['course_id', '=', params.courseId],
+		['status', '=', 'APPROVED']
+	];
+	if (params.semester) where.push(['semester', '=', params.semester]);
+	if (params.academicYear) where.push(['academic_year', '=', params.academicYear]);
+	const rows = await selectEnrollments(getPool(), { where });
 	const seen = new Set<string>();
 	const sessions = rows.filter((row) => {
 		if (!row.schedule_id || seen.has(row.schedule_id)) return false;
@@ -1284,27 +1294,38 @@ export const createEnrollment = form(enrollmentSchema, async (data, issue) => {
 
 	const scheduleId = randomUUID();
 	const enrollmentId = randomUUID();
-	await withTransaction(async (conn) => {
-		await insertSchedule(conn, {
-			id: scheduleId,
-			class_room_id: data.classRoomId,
-			day: data.day,
-			start_time: startDate,
-			end_time: endDate,
-			lecturer_id: course.lecturer_id
-		});
+	try {
+		await withTransaction(async (conn) => {
+			await insertSchedule(conn, {
+				id: scheduleId,
+				class_room_id: data.classRoomId,
+				day: data.day,
+				start_time: startDate,
+				end_time: endDate,
+				lecturer_id: course.lecturer_id
+			});
 
-		await insertEnrollment(conn, {
-			id: enrollmentId,
-			student_id: data.studentId,
-			course_id: data.courseId,
-			class_room_id: data.classRoomId,
-			schedule_id: scheduleId,
-			semester: data.semester,
-			academic_year: data.academicYear,
-			status: 'APPROVED'
+			await insertEnrollment(conn, {
+				id: enrollmentId,
+				student_id: data.studentId,
+				course_id: data.courseId,
+				class_room_id: data.classRoomId,
+				schedule_id: scheduleId,
+				semester: data.semester,
+				academic_year: data.academicYear,
+				status: 'APPROVED'
+			});
 		});
-	});
+	} catch (err) {
+		if (isDuplicateEnrollmentError(err)) {
+			invalid(
+				issue.courseId(
+					'Mahasiswa sudah terdaftar di mata kuliah ini pada semester dan tahun akademik yang sama'
+				)
+			);
+		}
+		throw err;
+	}
 	invalidateConflictAuditCache();
 
 	await getEnrollments().refresh();
@@ -1802,14 +1823,25 @@ export const requestEnrollment = form(studentEnrollmentRequestSchema, async (dat
 	}
 
 	const enrollmentId = randomUUID();
-	await insertEnrollment(getPool(), {
-		id: enrollmentId,
-		student_id: user.studentId,
-		course_id: data.courseId,
-		semester: policy.semester,
-		academic_year: policy.academicYear,
-		status: 'PENDING'
-	});
+	try {
+		await insertEnrollment(getPool(), {
+			id: enrollmentId,
+			student_id: user.studentId,
+			course_id: data.courseId,
+			semester: policy.semester,
+			academic_year: policy.academicYear,
+			status: 'PENDING'
+		});
+	} catch (err) {
+		if (isDuplicateEnrollmentError(err)) {
+			invalid(
+				issue.courseId(
+					'Anda sudah terdaftar di mata kuliah ini pada semester dan tahun akademik yang sama'
+				)
+			);
+		}
+		throw err;
+	}
 	await getEnrollments().refresh();
 	return { success: true, id: enrollmentId };
 });
@@ -1862,8 +1894,37 @@ export const approveEnrollment = form(approveEnrollmentSchema, async (data, issu
 	const [sessionEnrollment] = await selectEnrollments(getPool(), {
 		where: [['id', '=', data.sessionEnrollmentId]]
 	});
-	if (!sessionEnrollment || sessionEnrollment.status !== 'APPROVED' || !sessionEnrollment.schedule_id) {
+	if (
+		!sessionEnrollment ||
+		sessionEnrollment.status !== 'APPROVED' ||
+		!sessionEnrollment.schedule_id
+	) {
 		invalid(issue.sessionEnrollmentId('Sesi jadwal tidak valid atau belum disetujui'));
+	}
+	if (
+		sessionEnrollment.course_id !== enrollment.course_id ||
+		sessionEnrollment.semester !== enrollment.semester ||
+		sessionEnrollment.academic_year !== enrollment.academic_year
+	) {
+		invalid(issue.sessionEnrollmentId('Sesi jadwal tidak sesuai dengan mata kuliah atau periode KRS'));
+	}
+	if (
+		sessionEnrollment.schedule_day &&
+		sessionEnrollment.schedule_start_time &&
+		sessionEnrollment.schedule_end_time
+	) {
+		const studentConflicts = await selectStudentScheduleConflict(getPool(), {
+			studentId: enrollment.student_id!,
+			day: sessionEnrollment.schedule_day,
+			startTime: sessionEnrollment.schedule_start_time,
+			endTime: sessionEnrollment.schedule_end_time,
+			semester: enrollment.semester ?? undefined,
+			academicYear: enrollment.academic_year ?? undefined,
+			excludeEnrollmentId: enrollment.id ?? undefined
+		});
+		if (studentConflicts.length) {
+			invalid(issue.sessionEnrollmentId('Mahasiswa memiliki jadwal bentrok dengan sesi ini'));
+		}
 	}
 
 	await updateEnrollmentDb(

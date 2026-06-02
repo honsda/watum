@@ -165,6 +165,52 @@
 		return `${details.count} jadwal • Ruang: ${details.rooms} • Dosen: ${details.lecturers}`;
 	}
 
+	let scheduleRoomFilterActiveIndex = $state(-1);
+
+	function clampActiveIndex(nextIndex: number, count: number) {
+		if (count <= 0) return -1;
+		if (nextIndex < 0) return count - 1;
+		if (nextIndex >= count) return 0;
+		return nextIndex;
+	}
+
+	function selectScheduleRoomFilterOption(item: SelectClassRoomsResult | null) {
+		viewState.scheduleRoomFilter = item?.id ?? '';
+		viewState.scheduleRoomFilterSearch = '';
+		viewState.scheduleRoomFilterOpen = false;
+		scheduleRoomFilterActiveIndex = -1;
+		queueCollectionRefresh('enrollments', 0);
+	}
+
+	function handleScheduleRoomFilterKeydown(event: KeyboardEvent) {
+		const optionCount = filteredScheduleRoomFilterOptions.length + 1;
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			event.preventDefault();
+			viewState.scheduleRoomFilterOpen = true;
+			if (!scheduleRoomFilterOptions.length) queueScheduleRoomFilterRefresh(0);
+			const delta = event.key === 'ArrowDown' ? 1 : -1;
+			scheduleRoomFilterActiveIndex = clampActiveIndex(
+				scheduleRoomFilterActiveIndex + delta,
+				optionCount
+			);
+			return;
+		}
+		if (event.key === 'Enter' && viewState.scheduleRoomFilterOpen) {
+			event.preventDefault();
+			if (scheduleRoomFilterActiveIndex <= 0) {
+				selectScheduleRoomFilterOption(null);
+				return;
+			}
+			const item = filteredScheduleRoomFilterOptions[scheduleRoomFilterActiveIndex - 1];
+			if (item) selectScheduleRoomFilterOption(item);
+			return;
+		}
+		if (event.key === 'Escape') {
+			viewState.scheduleRoomFilterOpen = false;
+			scheduleRoomFilterActiveIndex = -1;
+		}
+	}
+
 	let detailMobileOpen = $state(false);
 	let lastDetailScheduleId = $state<string | null>(null);
 
@@ -268,12 +314,20 @@
 							<input
 								type="text"
 								class="combobox-input"
+								role="combobox"
+								aria-expanded={viewState.scheduleRoomFilterOpen}
+								aria-controls="calendar-room-filter-listbox"
+								aria-autocomplete="list"
+								aria-activedescendant={scheduleRoomFilterActiveIndex >= 0
+									? `calendar-room-filter-option-${scheduleRoomFilterActiveIndex}`
+									: undefined}
 								placeholder="Cari ruang filter..."
 								value={viewState.scheduleRoomFilter
 									? selectedScheduleRoomFilterLabel
 									: viewState.scheduleRoomFilterSearch}
 								oninput={(e) => {
 									viewState.scheduleRoomFilterSearch = (e.currentTarget as HTMLInputElement).value;
+									scheduleRoomFilterActiveIndex = -1;
 									if (viewState.scheduleRoomFilter) {
 										viewState.scheduleRoomFilter = '';
 										queueCollectionRefresh('enrollments', 0);
@@ -281,10 +335,12 @@
 									queueScheduleRoomFilterRefresh();
 									viewState.scheduleRoomFilterOpen = true;
 								}}
+								onkeydown={handleScheduleRoomFilterKeydown}
 								onfocus={(e) => {
 									if (viewState.scheduleRoomFilter) {
 										(e.currentTarget as HTMLInputElement).select();
 									}
+									scheduleRoomFilterActiveIndex = -1;
 									viewState.scheduleRoomFilterOpen = true;
 									if (!scheduleRoomFilterOptions.length) {
 										queueScheduleRoomFilterRefresh(0);
@@ -296,13 +352,17 @@
 							{:else if viewState.scheduleRoomFilterOpen && scheduleRoomFilterLoading && !scheduleRoomFilterOptions.length}
 								<p class="combobox-empty">Memuat ruang kelas...</p>
 							{:else if viewState.scheduleRoomFilterOpen}
-								<div class="combobox-dropdown" role="listbox">
+								<div id="calendar-room-filter-listbox" class="combobox-dropdown" role="listbox">
 									<button
+										id="calendar-room-filter-option-0"
 										type="button"
 										role="option"
 										aria-selected={!viewState.scheduleRoomFilter}
 										class="combobox-option"
-										class:active={!viewState.scheduleRoomFilter}
+										class:active={scheduleRoomFilterActiveIndex === 0 ||
+											!viewState.scheduleRoomFilter}
+										onmouseover={() => (scheduleRoomFilterActiveIndex = 0)}
+										onfocus={() => (scheduleRoomFilterActiveIndex = 0)}
 										onmousedown={(e) => {
 											e.preventDefault();
 											viewState.scheduleRoomFilter = '';
@@ -314,13 +374,17 @@
 										<strong>Semua ruang</strong>
 										<span>Hapus filter ruang</span>
 									</button>
-									{#each filteredScheduleRoomFilterOptions as item (item.id)}
+									{#each filteredScheduleRoomFilterOptions as item, index (item.id)}
 										<button
+											id={`calendar-room-filter-option-${index + 1}`}
 											type="button"
 											role="option"
 											aria-selected={viewState.scheduleRoomFilter === item.id}
 											class="combobox-option"
-											class:active={viewState.scheduleRoomFilter === item.id}
+											class:active={scheduleRoomFilterActiveIndex === index + 1 ||
+												viewState.scheduleRoomFilter === item.id}
+											onmouseover={() => (scheduleRoomFilterActiveIndex = index + 1)}
+											onfocus={() => (scheduleRoomFilterActiveIndex = index + 1)}
 											onmousedown={(e) => {
 												e.preventDefault();
 												viewState.scheduleRoomFilter = item.id ?? '';

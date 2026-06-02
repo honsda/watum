@@ -723,26 +723,28 @@ export const bulkDeleteGrades = command(v.pipe(v.string(), v.minLength(1)), asyn
 	if (!ids.length) throw error(400, 'Tidak ada nilai dipilih');
 	if (ids.length > 200) throw error(400, 'Maksimal 200 nilai sekaligus');
 	const results: Array<{ id: string; ok: boolean; message?: string }> = [];
-	for (const id of ids) {
-		const [grade] = await selectGrades(getPool(), {
-			where: [['id', '=', id]]
-		});
-		if (!grade) {
-			results.push({ id, ok: false, message: 'Nilai tidak ditemukan' });
-			continue;
-		}
-		if (user.role === 'LECTURER') {
-			const [enrollment] = await selectEnrollments(getPool(), {
-				where: [['id', '=', grade.enrollment_id ?? '']]
+	await withTransaction(async (conn) => {
+		for (const id of ids) {
+			const [grade] = await selectGrades(conn, {
+				where: [['id', '=', id]]
 			});
-			if (enrollment?.lecturer_id !== user.lecturerId) {
-				results.push({ id, ok: false, message: 'Bukan mata kuliah Anda' });
+			if (!grade) {
+				results.push({ id, ok: false, message: 'Nilai tidak ditemukan' });
 				continue;
 			}
+			if (user.role === 'LECTURER') {
+				const [enrollment] = await selectEnrollments(conn, {
+					where: [['id', '=', grade.enrollment_id ?? '']]
+				});
+				if (enrollment?.lecturer_id !== user.lecturerId) {
+					results.push({ id, ok: false, message: 'Bukan mata kuliah Anda' });
+					continue;
+				}
+			}
+			await deleteGradeDb(conn, { id });
+			results.push({ id, ok: true });
 		}
-		await deleteGradeDb(getPool(), { id });
-		results.push({ id, ok: true });
-	}
+	});
 	if (results.some((r) => r.ok)) {
 		await getGrades().refresh();
 	}

@@ -6,7 +6,8 @@ import {
 	getListQueryCursor,
 	mergeLimitedListResult,
 	getPool,
-	toLimitedListResult
+	toLimitedListResult,
+	withTransaction
 } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
@@ -215,21 +216,23 @@ export const bulkDeleteStudyPrograms = command(
 		if (!ids.length) throw error(400, 'Tidak ada prodi dipilih');
 		if (ids.length > 200) throw error(400, 'Maksimal 200 prodi sekaligus');
 		const results: Array<{ id: string; ok: boolean; message?: string }> = [];
-		for (const id of ids) {
-			const [sp] = await selectStudyPrograms(getPool(), {
-				where: [['id', '=', id]]
-			});
-			if (!sp) {
-				results.push({ id, ok: false, message: 'Prodi tidak ditemukan' });
-				continue;
+		await withTransaction(async (conn) => {
+			for (const id of ids) {
+				const [sp] = await selectStudyPrograms(conn, {
+					where: [['id', '=', id]]
+				});
+				if (!sp) {
+					results.push({ id, ok: false, message: 'Prodi tidak ditemukan' });
+					continue;
+				}
+				if ((sp.student_count ?? 0) > 0) {
+					results.push({ id, ok: false, message: 'Masih memiliki mahasiswa' });
+					continue;
+				}
+				await deleteStudyProgramDb(conn, { id });
+				results.push({ id, ok: true });
 			}
-			if ((sp.student_count ?? 0) > 0) {
-				results.push({ id, ok: false, message: 'Masih memiliki mahasiswa' });
-				continue;
-			}
-			await deleteStudyProgramDb(getPool(), { id });
-			results.push({ id, ok: true });
-		}
+		});
 		if (results.some((r) => r.ok)) {
 			await getStudyPrograms().refresh();
 		}
