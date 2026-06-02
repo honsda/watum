@@ -1010,6 +1010,59 @@ export const getEnrollmentSessionRoster = query(v.string(), async (id) => {
 	return attachSessionStudentCounts(rows);
 });
 
+const availableSessionsSchema = v.object({
+	courseId: v.string(),
+	studentId: v.string(),
+	cursor: v.optional(v.string())
+});
+
+export const getAvailableSessionsForCourse = query(availableSessionsSchema, async (params) => {
+	await requireRole(['ADMIN', 'LECTURER']);
+	const PAGE_SIZE = 10;
+	const rows = await selectEnrollments(getPool(), {
+		where: [
+			['course_id', '=', params.courseId],
+			['status', '=', 'APPROVED']
+		]
+	});
+	const seen = new Set<string>();
+	const sessions = rows.filter((row) => {
+		if (!row.schedule_id || seen.has(row.schedule_id)) return false;
+		seen.add(row.schedule_id);
+		return true;
+	});
+	const withCounts = await attachSessionStudentCounts(sessions);
+
+	// Apply cursor-based pagination
+	let startIndex = 0;
+	if (params.cursor) {
+		const idx = withCounts.findIndex((s) => s.id === params.cursor);
+		if (idx >= 0) startIndex = idx + 1;
+	}
+	const page = withCounts.slice(startIndex, startIndex + PAGE_SIZE);
+	const hasMore = startIndex + PAGE_SIZE < withCounts.length;
+
+	// Check student conflicts for each session in the page
+	const items = await Promise.all(
+		page.map(async (session) => {
+			if (!session.schedule_day || !session.schedule_start_time || !session.schedule_end_time) {
+				return { ...session, hasConflict: false };
+			}
+			const conflicts = await selectStudentScheduleConflict(getPool(), {
+				studentId: params.studentId,
+				day: session.schedule_day as 'SENIN' | 'SELASA' | 'RABU' | 'KAMIS' | 'JUMAT' | 'SABTU',
+				startTime: session.schedule_start_time,
+				endTime: session.schedule_end_time,
+				semester: session.semester ?? undefined,
+				academicYear: session.academic_year ?? undefined
+			});
+			return { ...session, hasConflict: conflicts.length > 0 };
+		})
+	);
+
+	return { items, hasMore, nextCursor: hasMore ? page[page.length - 1]?.id ?? null : null };
+});
+
 const conflictAuditSchema = v.object({
 	conflictType: v.optional(v.picklist(['room', 'student', 'lecturer'])),
 	academicYear: v.optional(v.string()),
@@ -1806,93 +1859,28 @@ export const approveEnrollment = form(approveEnrollmentSchema, async (data, issu
 		throw error(403, 'Anda hanya dapat menyetujui mata kuliah yang Anda ampu');
 	}
 
-	const [classRoom] = await selectClassRooms(getPool(), {
-		where: [['id', '=', data.classRoomId]]
+	const [sessionEnrollment] = await selectEnrollments(getPool(), {
+		where: [['id', '=', data.sessionEnrollmentId]]
 	});
-	if (!classRoom) {
-		invalid(issue.classRoomId('Ruang kelas tidak ditemukan'));
+	if (!sessionEnrollment || sessionEnrollment.status !== 'APPROVED' || !sessionEnrollment.schedule_id) {
+		invalid(issue.sessionEnrollmentId('Sesi jadwal tidak valid atau belum disetujui'));
 	}
 
-	const { clientTimezone, startDate, endDate } = validateScheduleWindow(data, issue);
-	if (endDate <= startDate) {
-		invalid(issue.endTime('Waktu selesai harus lebih besar dari waktu mulai'));
-	}
-
-	const [roomConflicts, studentConflicts, lecturerConflicts] = await Promise.all([
-		selectSchedulesConflict(getPool(), {
-			classRoomId: data.classRoomId,
-			day: data.day,
-			startTime: startDate,
-			endTime: endDate,
-			semester: enrollment.semester ?? undefined,
-			academicYear: enrollment.academic_year ?? undefined
-		}),
-		selectStudentScheduleConflict(getPool(), {
-			studentId: enrollment.student_id!,
-			day: data.day,
-			startTime: startDate,
-			endTime: endDate,
-			semester: enrollment.semester ?? undefined,
-			academicYear: enrollment.academic_year ?? undefined
-		}),
-		selectLecturerScheduleConflict(getPool(), {
-			lecturerId: course?.lecturer_id ?? '',
-			day: data.day,
-			startTime: startDate,
-			endTime: endDate,
-			semester: enrollment.semester ?? undefined,
-			academicYear: enrollment.academic_year ?? undefined
-		})
-	]);
-
-	if (roomConflicts.length) {
-		invalid(
-			issue.classRoomId(
-				`Ruang kelas bentrok dengan ${roomConflicts.length} jadwal lain: ${summarizeConflictWindows(roomConflicts, clientTimezone)}`
-			)
-		);
-	}
-	if (studentConflicts.length) {
-		invalid(
-			issue.classRoomId(
-				`Mahasiswa memiliki ${studentConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(studentConflicts, clientTimezone)}`
-			)
-		);
-	}
-	if (lecturerConflicts.length) {
-		invalid(
-			issue.classRoomId(
-				`Dosen memiliki ${lecturerConflicts.length} jadwal bentrok: ${summarizeNamedConflicts(lecturerConflicts, clientTimezone)}`
-			)
-		);
-	}
-
-	const scheduleId = randomUUID();
-	await withTransaction(async (conn) => {
-		await insertSchedule(conn, {
-			id: scheduleId,
-			class_room_id: data.classRoomId,
-			day: data.day,
-			start_time: startDate,
-			end_time: endDate,
-			lecturer_id: course?.lecturer_id ?? undefined
-		});
-		await updateEnrollmentDb(
-			conn,
-			{
-				class_room_id: data.classRoomId,
-				schedule_id: scheduleId,
-				schedule_day: data.day,
-				schedule_start_time: startDate,
-				schedule_end_time: endDate,
-				status: 'APPROVED'
-			},
-			{ id: data.id }
-		);
-	});
+	await updateEnrollmentDb(
+		getPool(),
+		{
+			class_room_id: sessionEnrollment.class_room_id ?? undefined,
+			schedule_id: sessionEnrollment.schedule_id!,
+			schedule_day: sessionEnrollment.schedule_day ?? undefined,
+			schedule_start_time: sessionEnrollment.schedule_start_time ?? undefined,
+			schedule_end_time: sessionEnrollment.schedule_end_time ?? undefined,
+			status: 'APPROVED'
+		},
+		{ id: data.id }
+	);
 	invalidateConflictAuditCache();
 	await getEnrollments().refresh();
-	return { success: true, scheduleId };
+	return { success: true, scheduleId: sessionEnrollment.schedule_id };
 });
 
 export const rejectEnrollment = command(v.string(), async (id) => {
