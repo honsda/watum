@@ -1022,7 +1022,7 @@ const availableSessionsSchema = v.object({
 	studentId: v.string(),
 	semester: v.optional(v.string()),
 	academicYear: v.optional(v.string()),
-	cursor: v.optional(v.string())
+	page: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1)))
 });
 
 export const getAvailableSessionsForCourse = query(availableSessionsSchema, async (params) => {
@@ -1043,20 +1043,35 @@ export const getAvailableSessionsForCourse = query(availableSessionsSchema, asyn
 	});
 	const withCounts = await attachSessionStudentCounts(sessions);
 
-	// Apply cursor-based pagination
-	let startIndex = 0;
-	if (params.cursor) {
-		const idx = withCounts.findIndex((s) => s.id === params.cursor);
-		if (idx >= 0) startIndex = idx + 1;
-	}
-	const page = withCounts.slice(startIndex, startIndex + PAGE_SIZE);
-	const hasMore = startIndex + PAGE_SIZE < withCounts.length;
+	const pageCount = Math.max(1, Math.ceil(withCounts.length / PAGE_SIZE));
+	const page = Math.min(Math.max(params.page ?? 1, 1), pageCount);
+	const startIndex = (page - 1) * PAGE_SIZE;
+	const pageRows = withCounts.slice(startIndex, startIndex + PAGE_SIZE);
 
-	// Check student conflicts for each session in the page
+	// Resolve classroom capacity for the visible page to flag full sessions.
+	const roomIds = Array.from(
+		new Set(pageRows.map((row) => row.class_room_id).filter((id): id is string => Boolean(id)))
+	);
+	const rooms = roomIds.length
+		? await selectClassRooms(getPool(), {
+				select: { id: true, capacity: true },
+				where: [['id', 'IN', roomIds]]
+			})
+		: [];
+	const capacityByRoomId = new Map(rooms.map((room) => [room.id, room.capacity ?? 0]));
+
+	// Check student conflicts + capacity for each session in the page
 	const items = await Promise.all(
-		page.map(async (session) => {
+		pageRows.map(async (session) => {
+			const capacity = session.class_room_id
+				? (capacityByRoomId.get(session.class_room_id) ?? 0)
+				: 0;
+			const studentCount = Number(
+				(session as SelectEnrollmentsResult & { student_count?: number }).student_count ?? 0
+			);
+			const isFull = capacity > 0 && studentCount >= capacity;
 			if (!session.schedule_day || !session.schedule_start_time || !session.schedule_end_time) {
-				return { ...session, hasConflict: false };
+				return { ...session, hasConflict: false, capacity, isFull };
 			}
 			const conflicts = await selectStudentScheduleConflict(getPool(), {
 				studentId: params.studentId,
@@ -1066,11 +1081,11 @@ export const getAvailableSessionsForCourse = query(availableSessionsSchema, asyn
 				semester: session.semester ?? undefined,
 				academicYear: session.academic_year ?? undefined
 			});
-			return { ...session, hasConflict: conflicts.length > 0 };
+			return { ...session, hasConflict: conflicts.length > 0, capacity, isFull };
 		})
 	);
 
-	return { items, hasMore, nextCursor: hasMore ? page[page.length - 1]?.id ?? null : null };
+	return { items, page, pageCount, hasPrevious: page > 1, hasMore: page < pageCount };
 });
 
 const conflictAuditSchema = v.object({
@@ -1907,6 +1922,22 @@ export const approveEnrollment = form(approveEnrollmentSchema, async (data, issu
 		sessionEnrollment.academic_year !== enrollment.academic_year
 	) {
 		invalid(issue.sessionEnrollmentId('Sesi jadwal tidak sesuai dengan mata kuliah atau periode KRS'));
+	}
+	if (sessionEnrollment.class_room_id) {
+		const [[room], sessionRows] = await Promise.all([
+			selectClassRooms(getPool(), {
+				select: { id: true, capacity: true },
+				where: [['id', '=', sessionEnrollment.class_room_id]]
+			}),
+			selectEnrollments(getPool(), {
+				select: { id: true },
+				where: [['schedule_id', '=', sessionEnrollment.schedule_id!]]
+			})
+		]);
+		const capacity = room?.capacity ?? 0;
+		if (capacity > 0 && sessionRows.length >= capacity) {
+			invalid(issue.sessionEnrollmentId('Sesi jadwal sudah penuh'));
+		}
 	}
 	if (
 		sessionEnrollment.schedule_day &&

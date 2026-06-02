@@ -215,8 +215,12 @@
 		updateEnrollment,
 		approveEnrollment,
 		approveSessionOptions,
+		approveSessionPage,
+		approveSessionPageCount,
+		approveSessionHasPrevious,
 		approveSessionHasMore,
-		onLoadMoreApproveSessionOptions,
+		onPreviousApproveSessionPage,
+		onNextApproveSessionPage,
 		builderMode,
 		createEnrollmentEnhance,
 		updateEnrollmentEnhance,
@@ -310,9 +314,15 @@
 		approveSessionOptions: (SelectEnrollmentsResult & {
 			hasConflict?: boolean;
 			student_count?: number;
+			capacity?: number;
+			isFull?: boolean;
 		})[];
+		approveSessionPage: number;
+		approveSessionPageCount: number;
+		approveSessionHasPrevious: boolean;
 		approveSessionHasMore: boolean;
-		onLoadMoreApproveSessionOptions: () => void;
+		onPreviousApproveSessionPage: () => void;
+		onNextApproveSessionPage: () => void;
 		builderMode: BuilderMode;
 		createEnrollmentEnhance: EnhancedAction;
 		updateEnrollmentEnhance: EnhancedAction;
@@ -1484,21 +1494,45 @@
 							<button
 								type="button"
 								role="option"
-								class={`session-picker-item ${selectedSessionEnrollmentId === session.id ? 'selected' : ''} ${session.hasConflict ? 'has-conflict' : ''}`}
+								class={`session-picker-item ${selectedSessionEnrollmentId === session.id ? 'selected' : ''} ${session.hasConflict ? 'has-conflict' : ''} ${session.isFull ? 'is-full' : ''}`}
 								aria-selected={selectedSessionEnrollmentId === session.id}
+								disabled={session.isFull}
 								onclick={() => { selectedSessionEnrollmentId = session.id ?? ''; }}
 							>
 								<strong>{session.schedule_day} {session.schedule_start_time?.slice(0, 5)}–{session.schedule_end_time?.slice(0, 5)}</strong>
 								<span>{session.class_room_name ?? 'Tanpa ruang'}</span>
-								<span class="session-picker-count">{session.student_count ?? 1} mahasiswa</span>
+								<span class="session-picker-count"
+									>{session.student_count ?? 1}{session.capacity
+										? ` / ${session.capacity}`
+										: ''} mahasiswa</span
+								>
+								{#if session.isFull}
+									<Badge variant="destructive">Penuh</Badge>
+								{/if}
 								{#if session.hasConflict}
 									<Badge variant="destructive">Bentrok</Badge>
 								{/if}
 							</button>
 						{/each}
 					</div>
-					{#if approveSessionHasMore}
-						<Button type="button" variant="ghost" class="ghost-button" onclick={onLoadMoreApproveSessionOptions}>Muat lebih banyak</Button>
+					{#if approveSessionPageCount > 1}
+						<div class="builder-inline-actions session-picker-pagination">
+							<Button
+								type="button"
+								variant="ghost"
+								class="ghost-button"
+								disabled={!approveSessionHasPrevious}
+								onclick={onPreviousApproveSessionPage}>Sebelumnya</Button
+							>
+							<span>Halaman {approveSessionPage} / {approveSessionPageCount}</span>
+							<Button
+								type="button"
+								variant="ghost"
+								class="ghost-button"
+								disabled={!approveSessionHasMore}
+								onclick={onNextApproveSessionPage}>Berikutnya</Button
+							>
+						</div>
 					{/if}
 				{/if}
 			</section>
@@ -3167,6 +3201,20 @@
 	.session-picker-item.has-conflict {
 		border-color: var(--destructive);
 		opacity: 0.7;
+	}
+
+	.session-picker-item.is-full {
+		opacity: 0.55;
+		cursor: not-allowed;
+	}
+
+	.session-picker-pagination {
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+		font-size: 0.8rem;
+		color: var(--muted-foreground);
 	}
 
 	.session-picker-item strong {
