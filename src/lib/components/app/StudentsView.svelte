@@ -353,6 +353,19 @@
 					>
 				</div>
 			</section>
+		{:else if pendingDelete?.kind === 'bulk-students'}
+			<section class="warning-panel">
+				<p class="warning-title">Hapus {pendingDelete.label}?</p>
+				<p>{pendingDelete.message}</p>
+				<div class="warning-actions">
+					<Button class="danger-button" variant="destructive" size="sm" onclick={onConfirmDelete}
+						>{pendingDelete.confirmLabel}</Button
+					>
+					<Button class="ghost-button" variant="ghost" size="sm" onclick={onCancelDelete}
+						>Batal</Button
+					>
+				</div>
+			</section>
 		{/if}
 		{#if selectedStudent && editorView !== 'students' && editorView !== 'students-bulk'}
 			<div class="detail-stack">

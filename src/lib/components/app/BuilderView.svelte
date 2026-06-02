@@ -45,11 +45,7 @@
 	type ApprovalFormState = {
 		fields: {
 			id: FieldAccessor;
-			classRoomId: FieldAccessor;
-			day: FieldAccessor;
-			startTime: FieldAccessor;
-			endTime: FieldAccessor;
-			timezone: FieldAccessor;
+			sessionEnrollmentId: FieldAccessor;
 		};
 	};
 
@@ -218,6 +214,9 @@
 		createEnrollment,
 		updateEnrollment,
 		approveEnrollment,
+		approveSessionOptions,
+		approveSessionHasMore,
+		onLoadMoreApproveSessionOptions,
 		builderMode,
 		createEnrollmentEnhance,
 		updateEnrollmentEnhance,
@@ -308,6 +307,9 @@
 		createEnrollment: unknown;
 		updateEnrollment: unknown;
 		approveEnrollment: unknown;
+		approveSessionOptions: (SelectEnrollmentsResult & { hasConflict?: boolean })[];
+		approveSessionHasMore: boolean;
+		onLoadMoreApproveSessionOptions: () => void;
 		builderMode: BuilderMode;
 		createEnrollmentEnhance: EnhancedAction;
 		updateEnrollmentEnhance: EnhancedAction;
@@ -357,6 +359,7 @@
 	let rosterLastSelectionKey = $state<string | null>(null);
 	let rosterSearch = $state('');
 	let rosterPage = $state(1);
+	let selectedSessionEnrollmentId = $state('');
 	const ROSTER_PAGE_SIZE = 8;
 
 	const participantStepReady = $derived(
@@ -849,7 +852,6 @@
 	}
 
 	function currentScheduleFieldAccessor() {
-		if (builderMode === 'approve') return approveEnrollmentForm().fields;
 		return selectedEnrollmentId ? updateEnrollmentForm().fields : createEnrollmentForm().fields;
 	}
 
@@ -1435,6 +1437,68 @@
 			</section>
 		{/if}
 
+		{#if builderMode === 'approve'}
+		<form class="builder-form" {...approveEnrollmentEnhance}>
+			<input
+				{...approveEnrollmentForm().fields.id.as('text')}
+				type="hidden"
+				value={enrollmentDraft.id}
+			/>
+			<input
+				{...approveEnrollmentForm().fields.sessionEnrollmentId.as('text')}
+				type="hidden"
+				value={selectedSessionEnrollmentId}
+			/>
+			<section class="builder-section">
+				<div class="builder-section-head">
+					<h4>Pengajuan KRS</h4>
+					<p class="builder-note">Pilih sesi jadwal yang sudah ada untuk mahasiswa ini.</p>
+				</div>
+				<div class="detail-lines">
+					<div><span>Mahasiswa</span><strong>{selectedDraftStudent}</strong></div>
+					<div><span>Mata kuliah</span><strong>{selectedDraftCourse}</strong></div>
+				</div>
+			</section>
+			<section class="builder-section">
+				<div class="builder-section-head">
+					<h4>Pilih sesi jadwal</h4>
+					<p class="builder-note">Mahasiswa akan bergabung ke sesi yang dipilih.</p>
+				</div>
+				{#if approveSessionOptions.length === 0}
+					<p class="empty-copy">Belum ada sesi jadwal untuk mata kuliah ini. Buat jadwal terlebih dahulu.</p>
+				{:else}
+					<div class="session-picker-list" role="listbox" aria-label="Pilih sesi">
+						{#each approveSessionOptions as session (session.id)}
+							<button
+								type="button"
+								role="option"
+								class={`session-picker-item ${selectedSessionEnrollmentId === session.id ? 'selected' : ''} ${session.hasConflict ? 'has-conflict' : ''}`}
+								aria-selected={selectedSessionEnrollmentId === session.id}
+								onclick={() => { selectedSessionEnrollmentId = session.id ?? ''; }}
+							>
+								<strong>{session.schedule_day} {session.schedule_start_time?.slice(0, 5)}–{session.schedule_end_time?.slice(0, 5)}</strong>
+								<span>{session.class_room_name ?? 'Tanpa ruang'}</span>
+								<span class="session-picker-count">{(session as any).student_count ?? 1} mahasiswa</span>
+								{#if session.hasConflict}
+									<Badge variant="destructive">Bentrok</Badge>
+								{/if}
+							</button>
+						{/each}
+					</div>
+					{#if approveSessionHasMore}
+						<Button type="button" variant="ghost" class="ghost-button" onclick={onLoadMoreApproveSessionOptions}>Muat lebih banyak</Button>
+					{/if}
+				{/if}
+			</section>
+			<div class="builder-inline-actions">
+				<Button
+					type="submit"
+					class="primary-button builder-submit"
+					disabled={!selectedSessionEnrollmentId}
+				>Setujui KRS</Button>
+			</div>
+		</form>
+		{:else}
 		<div class="builder-progress" aria-label="Tahapan penjadwalan">
 			{#each builderSteps as step, index (step.id)}
 				<button
@@ -1454,9 +1518,7 @@
 
 		<form
 			class="builder-form"
-			{...builderMode === 'approve'
-				? approveEnrollmentEnhance
-				: selectedEnrollmentId
+			{...selectedEnrollmentId
 					? updateEnrollmentEnhance
 					: createEnrollmentEnhance}
 		>
@@ -1468,9 +1530,7 @@
 
 			{#if selectedEnrollmentId}
 				<input
-					{...builderMode === 'approve'
-						? approveEnrollmentForm().fields.id.as('text')
-						: updateEnrollmentForm().fields.id?.as('text')}
+					{...updateEnrollmentForm().fields.id?.as('text')}
 					type="hidden"
 					value={enrollmentDraft.id}
 				/>
@@ -2240,6 +2300,7 @@
 				</div>
 			</section>
 		</form>
+		{/if}
 	</section>
 </div>
 
@@ -3061,5 +3122,46 @@
 			justify-self: start;
 			text-align: left;
 		}
+	}
+
+	.session-picker-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.session-picker-item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+		padding: 0.75rem;
+		border: 1px solid var(--border);
+		border-radius: 0.5rem;
+		text-align: left;
+		cursor: pointer;
+		background: var(--card);
+	}
+
+	.session-picker-item.selected {
+		border-color: var(--primary);
+		background: var(--accent);
+	}
+
+	.session-picker-item.has-conflict {
+		border-color: var(--destructive);
+		opacity: 0.7;
+	}
+
+	.session-picker-item strong {
+		font-size: 0.875rem;
+	}
+
+	.session-picker-item span {
+		font-size: 0.75rem;
+		color: var(--muted-foreground);
+	}
+
+	.session-picker-count {
+		font-weight: 500;
 	}
 </style>

@@ -241,6 +241,7 @@
 		getEnrollments,
 		getEnrollment,
 		getEnrollmentSessionRoster,
+		getAvailableSessionsForCourse,
 		getEnrollmentConflictAudit,
 		getSchedulePreview,
 		searchEnrollments,
@@ -2072,6 +2073,18 @@
 	});
 
 	$effect(() => {
+		if (activeView !== 'builder' || builderMode !== 'approve') {
+			approveSessionOptions = [];
+			approveSessionHasMore = false;
+			approveSessionCursor = null;
+			return;
+		}
+		const _deps = [selectedEnrollmentId, activeView, builderMode];
+		void _deps;
+		void refreshApproveSessionOptions(selectedEnrollment?.course_id);
+	});
+
+	$effect(() => {
 		if (!selectedConflictGroupId) return;
 		if (calendarConflictLegend.some((group) => group.id === selectedConflictGroupId)) return;
 		selectedConflictGroupId = null;
@@ -2504,6 +2517,10 @@
 	const approvedEnrollmentOptions = $derived(
 		enrollments.filter((item) => item.status === 'APPROVED')
 	);
+	type SessionOption = SelectEnrollmentsResult & { hasConflict?: boolean };
+	let approveSessionOptions = $state<SessionOption[]>([]);
+	let approveSessionHasMore = $state(false);
+	let approveSessionCursor = $state<string | null>(null);
 	const selectedGradeEnrollment = $derived(
 		enrollments.find((item) => item.id === gradeDraft.enrollmentId) ?? null
 	);
@@ -3019,6 +3036,31 @@
 			builderRosterIssue = errorMessage(error, 'Daftar peserta sesi gagal dimuat.');
 		} finally {
 			builderRosterLoading = false;
+		}
+	}
+
+	async function refreshApproveSessionOptions(courseId: string | null | undefined, append = false) {
+		const studentId = selectedEnrollment?.student_id;
+		if (!courseId || !studentId) {
+			approveSessionOptions = [];
+			approveSessionHasMore = false;
+			approveSessionCursor = null;
+			return;
+		}
+		try {
+			const result = await resolveRemoteQuery(
+				getAvailableSessionsForCourse({
+					courseId,
+					studentId,
+					cursor: append ? approveSessionCursor ?? undefined : undefined
+				})
+			) as { items: SessionOption[]; hasMore: boolean; nextCursor: string | null };
+			approveSessionOptions = append ? [...approveSessionOptions, ...result.items] : result.items;
+			approveSessionHasMore = result.hasMore;
+			approveSessionCursor = result.nextCursor;
+		} catch {
+			if (!append) approveSessionOptions = [];
+			approveSessionHasMore = false;
 		}
 	}
 
@@ -4412,6 +4454,9 @@
 			createEnrollment,
 			updateEnrollment,
 			approveEnrollment,
+			approveSessionOptions,
+			approveSessionHasMore,
+			onLoadMoreApproveSessionOptions: () => refreshApproveSessionOptions(selectedEnrollment?.course_id, true),
 			builderMode,
 			createEnrollmentEnhance,
 			updateEnrollmentEnhance,

@@ -28,11 +28,7 @@ export const studentEnrollmentRequestSchema = v.object({
 
 export const approveEnrollmentSchema = v.object({
 	id: v.string(),
-	classRoomId: requiredField('Ruang kelas wajib dipilih'),
-	timezone: v.optional(v.string()),
-	day: requiredDay,
-	startTime: requiredField('Waktu mulai wajib diisi'),
-	endTime: requiredField('Waktu selesai wajib diisi')
+	sessionEnrollmentId: requiredField('Sesi jadwal wajib dipilih')
 });
 
 export const enrollmentSessionRosterSchema = v.object({

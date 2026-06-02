@@ -20,21 +20,24 @@ type BulkDeletePlan = {
 
 function partialFailureMessage(result: unknown) {
 	const failed = (
-		(result as { results?: Array<{ id?: string; ok?: boolean; message?: string }> } | undefined)
-			?.results ?? []
+		(
+			result as
+				| { results?: Array<{ id?: string; ok?: boolean; message?: string }> }
+				| undefined
+		)?.results ?? []
 	).filter((item) => item.ok === false);
 	if (!failed.length) return null;
 
 	const detail = failed
 		.slice(0, 5)
-		.map((item) => [item.id, item.message].filter(Boolean).join(': '))
+		.map((item) => [item.id, item.message].filter(Boolean).join(": "))
 		.filter(Boolean)
-		.join(', ');
-	const suffix = failed.length > 5 ? `, dan ${failed.length - 5} lainnya` : '';
+		.join(", ");
+	const suffix = failed.length > 5 ? `, dan ${failed.length - 5} lainnya` : "";
 
 	return detail
 		? `Sebagian data gagal diproses. ${detail}${suffix}`
-		: 'Sebagian data gagal diproses.';
+		: "Sebagian data gagal diproses.";
 }
 
 export async function runDeletePlan<K extends string>(options: {
@@ -59,7 +62,7 @@ export async function runDeletePlan<K extends string>(options: {
 			if (partialFailure) throw new Error(partialFailure);
 			await options.refresh({
 				...plan.refresh,
-				collections: [...plan.refresh.collections]
+				collections: [...plan.refresh.collections],
 			});
 			await plan.afterDelete(options.id);
 		}
@@ -71,14 +74,20 @@ export async function runDeletePlan<K extends string>(options: {
 			if (partialFailure) throw new Error(partialFailure);
 			await options.refresh({
 				...plan.refresh,
-				collections: [...plan.refresh.collections]
+				collections: [...plan.refresh.collections],
 			});
 			await plan.afterDelete();
 		}
 
-		options.onSuccess(options.intent.successMessage ?? 'Data berhasil dihapus.');
+		options.onSuccess(
+			options.intent.successMessage ?? "Data berhasil dihapus.",
+		);
 	} catch (error) {
-		const message = (error as { body?: { message?: string }; message?: string })?.body?.message;
-		options.onFailure(message || options.intent.failureMessage || 'Penghapusan gagal.');
+		const message =
+			(error as { body?: { message?: string }; message?: string })?.body
+				?.message || (error as Error)?.message;
+		options.onFailure(
+			message || options.intent.failureMessage || "Penghapusan gagal.",
+		);
 	}
 }
