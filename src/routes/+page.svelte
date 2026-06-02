@@ -1503,8 +1503,8 @@
 			conflictAudit = await resolveRemoteQuery(
 				getEnrollmentConflictAudit(
 					buildConflictAuditFilters({
-						academicYear: scheduleAcademicYearFilter || scheduleAcademicYearOptions[0] || undefined,
-						semester: scheduleSemesterFilter || scheduleSemesterOptions[0] || undefined,
+						academicYear: scheduleAcademicYearFilter || undefined,
+						semester: scheduleSemesterFilter || undefined,
 						role: currentUser.current?.role as AppRole | undefined,
 						activeView,
 						builderEnrollments: filteredBuilderEnrollments,
