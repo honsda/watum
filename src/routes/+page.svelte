@@ -3052,6 +3052,8 @@
 				getAvailableSessionsForCourse({
 					courseId,
 					studentId,
+					semester: selectedEnrollment?.semester ?? undefined,
+					academicYear: selectedEnrollment?.academic_year ?? undefined,
 					cursor: append ? approveSessionCursor ?? undefined : undefined
 				})
 			) as { items: SessionOption[]; hasMore: boolean; nextCursor: string | null };
@@ -4898,7 +4900,8 @@
 			onDayChange: () => queueCollectionRefresh('enrollments', 0),
 			onCourseFilterChange: () => queueCollectionRefresh('enrollments', 0),
 			onSemesterFilterChange: () => queueCollectionRefresh('enrollments', 0),
-			onAcademicYearFilterChange: () => queueCollectionRefresh('enrollments', 0)
+			onAcademicYearFilterChange: () => queueCollectionRefresh('enrollments', 0),
+			onLecturerFilterChange: () => queueCollectionRefresh('enrollments', 0)
 		})
 	);
 

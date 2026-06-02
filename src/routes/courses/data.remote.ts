@@ -7,7 +7,8 @@ import {
 	getListQueryCursor,
 	getListQueryLimit,
 	getPool,
-	toLimitedListResult
+	toLimitedListResult,
+	withTransaction
 } from '$lib/server/db';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
 import {
@@ -299,21 +300,23 @@ export const bulkDeleteCourses = command(v.pipe(v.string(), v.minLength(1)), asy
 	if (!ids.length) throw error(400, 'Tidak ada mata kuliah dipilih');
 	if (ids.length > 200) throw error(400, 'Maksimal 200 mata kuliah sekaligus');
 	const results: Array<{ id: string; ok: boolean; message?: string }> = [];
-	for (const id of ids) {
-		const [course] = await selectCourses(getPool(), {
-			where: [['id', '=', id]]
-		});
-		if (!course) {
-			results.push({ id, ok: false, message: 'Mata kuliah tidak ditemukan' });
-			continue;
+	await withTransaction(async (conn) => {
+		for (const id of ids) {
+			const [course] = await selectCourses(conn, {
+				where: [['id', '=', id]]
+			});
+			if (!course) {
+				results.push({ id, ok: false, message: 'Mata kuliah tidak ditemukan' });
+				continue;
+			}
+			if ((course.enrollment_count ?? 0) > 0) {
+				results.push({ id, ok: false, message: 'Masih memiliki KRS' });
+				continue;
+			}
+			await deleteCourseDb(conn, { id });
+			results.push({ id, ok: true });
 		}
-		if ((course.enrollment_count ?? 0) > 0) {
-			results.push({ id, ok: false, message: 'Masih memiliki KRS' });
-			continue;
-		}
-		await deleteCourseDb(getPool(), { id });
-		results.push({ id, ok: true });
-	}
+	});
 	if (results.some((r) => r.ok)) {
 		invalidateConflictAuditCache();
 		await getCourses().refresh();

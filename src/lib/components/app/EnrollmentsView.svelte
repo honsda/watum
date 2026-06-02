@@ -124,7 +124,8 @@
 		onDayChange,
 		onCourseFilterChange,
 		onSemesterFilterChange,
-		onAcademicYearFilterChange
+		onAcademicYearFilterChange,
+		onLecturerFilterChange
 	}: {
 		currentRole: AppRole;
 		state: EnrollmentsViewState;
@@ -188,6 +189,7 @@
 		onCourseFilterChange: () => void;
 		onSemesterFilterChange: () => void;
 		onAcademicYearFilterChange: () => void;
+		onLecturerFilterChange: () => void;
 	} = $props();
 
 	function resolveScheduleCard(item: SelectEnrollmentsResult) {
@@ -282,7 +284,7 @@
 			</label>
 			<label>
 				<span>Dosen</span>
-				<select bind:value={viewState.scheduleLecturerFilter} onchange={onDayChange}>
+				<select bind:value={viewState.scheduleLecturerFilter} onchange={onLecturerFilterChange}>
 					<option value="">Semua Dosen</option>
 					{#each lecturers as item (item.id)}
 						<option value={item.id}>{item.name}</option>

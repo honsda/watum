@@ -307,7 +307,10 @@
 		createEnrollment: unknown;
 		updateEnrollment: unknown;
 		approveEnrollment: unknown;
-		approveSessionOptions: (SelectEnrollmentsResult & { hasConflict?: boolean })[];
+		approveSessionOptions: (SelectEnrollmentsResult & {
+			hasConflict?: boolean;
+			student_count?: number;
+		})[];
 		approveSessionHasMore: boolean;
 		onLoadMoreApproveSessionOptions: () => void;
 		builderMode: BuilderMode;
@@ -606,6 +609,12 @@
 	$effect(() => {
 		if (rosterPage <= rosterPageCount) return;
 		rosterPage = rosterPageCount;
+	});
+
+	$effect(() => {
+		const _deps = [selectedEnrollmentId, builderMode];
+		void _deps;
+		selectedSessionEnrollmentId = '';
 	});
 
 	function addRosterStudent(item: SelectStudentsResult) {
@@ -1478,7 +1487,7 @@
 							>
 								<strong>{session.schedule_day} {session.schedule_start_time?.slice(0, 5)}–{session.schedule_end_time?.slice(0, 5)}</strong>
 								<span>{session.class_room_name ?? 'Tanpa ruang'}</span>
-								<span class="session-picker-count">{(session as any).student_count ?? 1} mahasiswa</span>
+								<span class="session-picker-count">{session.student_count ?? 1} mahasiswa</span>
 								{#if session.hasConflict}
 									<Badge variant="destructive">Bentrok</Badge>
 								{/if}

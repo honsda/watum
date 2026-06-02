@@ -6,7 +6,8 @@ import {
 	getListQueryCursor,
 	mergeLimitedListResult,
 	getPool,
-	toLimitedListResult
+	toLimitedListResult,
+	withTransaction
 } from '$lib/server/db';
 import { requireRole } from '$lib/server/auth';
 import { insertWithGeneratedId } from '$lib/server/entity-id';
@@ -163,21 +164,23 @@ export const bulkDeleteFaculties = command(v.pipe(v.string(), v.minLength(1)), a
 	if (!ids.length) throw error(400, 'Tidak ada fakultas dipilih');
 	if (ids.length > 200) throw error(400, 'Maksimal 200 fakultas sekaligus');
 	const results: Array<{ id: string; ok: boolean; message?: string }> = [];
-	for (const id of ids) {
-		const [faculty] = await selectFaculties(getPool(), {
-			where: [['id', '=', id]]
-		});
-		if (!faculty) {
-			results.push({ id, ok: false, message: 'Fakultas tidak ditemukan' });
-			continue;
+	await withTransaction(async (conn) => {
+		for (const id of ids) {
+			const [faculty] = await selectFaculties(conn, {
+				where: [['id', '=', id]]
+			});
+			if (!faculty) {
+				results.push({ id, ok: false, message: 'Fakultas tidak ditemukan' });
+				continue;
+			}
+			if ((faculty.study_program_count ?? 0) > 0) {
+				results.push({ id, ok: false, message: 'Masih memiliki prodi' });
+				continue;
+			}
+			await deleteFacultyDb(conn, { id });
+			results.push({ id, ok: true });
 		}
-		if ((faculty.study_program_count ?? 0) > 0) {
-			results.push({ id, ok: false, message: 'Masih memiliki prodi' });
-			continue;
-		}
-		await deleteFacultyDb(getPool(), { id });
-		results.push({ id, ok: true });
-	}
+	});
 	if (results.some((r) => r.ok)) {
 		await getFaculties().refresh();
 	}
