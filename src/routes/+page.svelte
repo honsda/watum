@@ -2075,13 +2075,16 @@
 	$effect(() => {
 		if (activeView !== 'builder' || builderMode !== 'approve') {
 			approveSessionOptions = [];
+			approveSessionPage = 1;
+			approveSessionPageCount = 1;
+			approveSessionHasPrevious = false;
 			approveSessionHasMore = false;
-			approveSessionCursor = null;
 			return;
 		}
 		const _deps = [selectedEnrollmentId, activeView, builderMode];
 		void _deps;
-		void refreshApproveSessionOptions(selectedEnrollment?.course_id);
+		approveSessionPage = 1;
+		void refreshApproveSessionOptions(selectedEnrollment?.course_id, 1);
 	});
 
 	$effect(() => {
@@ -2517,10 +2520,16 @@
 	const approvedEnrollmentOptions = $derived(
 		enrollments.filter((item) => item.status === 'APPROVED')
 	);
-	type SessionOption = SelectEnrollmentsResult & { hasConflict?: boolean };
+	type SessionOption = SelectEnrollmentsResult & {
+		hasConflict?: boolean;
+		capacity?: number;
+		isFull?: boolean;
+	};
 	let approveSessionOptions = $state<SessionOption[]>([]);
+	let approveSessionPage = $state(1);
+	let approveSessionPageCount = $state(1);
+	let approveSessionHasPrevious = $state(false);
 	let approveSessionHasMore = $state(false);
-	let approveSessionCursor = $state<string | null>(null);
 	const selectedGradeEnrollment = $derived(
 		enrollments.find((item) => item.id === gradeDraft.enrollmentId) ?? null
 	);
@@ -3039,12 +3048,14 @@
 		}
 	}
 
-	async function refreshApproveSessionOptions(courseId: string | null | undefined, append = false) {
+	async function refreshApproveSessionOptions(courseId: string | null | undefined, page = 1) {
 		const studentId = selectedEnrollment?.student_id;
 		if (!courseId || !studentId) {
 			approveSessionOptions = [];
+			approveSessionPage = 1;
+			approveSessionPageCount = 1;
+			approveSessionHasPrevious = false;
 			approveSessionHasMore = false;
-			approveSessionCursor = null;
 			return;
 		}
 		try {
@@ -3054,22 +3065,27 @@
 					studentId,
 					semester: selectedEnrollment?.semester ?? undefined,
 					academicYear: selectedEnrollment?.academic_year ?? undefined,
-					cursor: append ? approveSessionCursor ?? undefined : undefined
+					page
 				});
-				// Force a fresh read on initial load; cached results would hide
-				// sessions that were created or freed up since the last open.
-				if (!append) await sessionQuery.refresh();
+				// Force a fresh read so sessions created or freed up since the
+				// last open are reflected in the picker.
+				await sessionQuery.refresh();
 				return resolveRemoteQuery(sessionQuery);
 			})) as {
 				items: SessionOption[];
+				page: number;
+				pageCount: number;
+				hasPrevious: boolean;
 				hasMore: boolean;
-				nextCursor: string | null;
 			};
-			approveSessionOptions = append ? [...approveSessionOptions, ...result.items] : result.items;
+			approveSessionOptions = result.items;
+			approveSessionPage = result.page;
+			approveSessionPageCount = result.pageCount;
+			approveSessionHasPrevious = result.hasPrevious;
 			approveSessionHasMore = result.hasMore;
-			approveSessionCursor = result.nextCursor;
 		} catch {
-			if (!append) approveSessionOptions = [];
+			approveSessionOptions = [];
+			approveSessionHasPrevious = false;
 			approveSessionHasMore = false;
 		}
 	}
@@ -4467,8 +4483,14 @@
 			updateEnrollment,
 			approveEnrollment,
 			approveSessionOptions,
+			approveSessionPage,
+			approveSessionPageCount,
+			approveSessionHasPrevious,
 			approveSessionHasMore,
-			onLoadMoreApproveSessionOptions: () => refreshApproveSessionOptions(selectedEnrollment?.course_id, true),
+			onPreviousApproveSessionPage: () =>
+				refreshApproveSessionOptions(selectedEnrollment?.course_id, approveSessionPage - 1),
+			onNextApproveSessionPage: () =>
+				refreshApproveSessionOptions(selectedEnrollment?.course_id, approveSessionPage + 1),
 			builderMode,
 			createEnrollmentEnhance,
 			updateEnrollmentEnhance,
